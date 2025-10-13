@@ -1,0 +1,5 @@
+{% extends "layout/base.html" %}
+{% block content %}
+<h1>Ledger Repair ({{ 'dry-run' if dry else 'applied' }})</h1>
+<pre>{{ planned | tojson(indent=2) }}</pre>
+{% endblock %}

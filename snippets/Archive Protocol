@@ -1,0 +1,15 @@
+Archive Protocol
+
+Bash Shell create achrive snapshot protocol
+Stop app and all dbase write activities.
+
+bash scripts/Shell/make_snapshot.sh
+
+
+Restore a snapshot
+
+unzip snapshots/vcdb-v2-YYYYMMDD-HHMMSS.zip -d /tmp/restore-vcdb
+cd /tmp/restore-vcdb
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt 2>/dev/null || true  # or your env bootstrap
+python manage_vcdb.py  # or however you start it

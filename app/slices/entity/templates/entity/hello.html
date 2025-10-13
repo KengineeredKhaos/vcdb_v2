@@ -1,0 +1,7 @@
+{% extends "layout/base.html" %}
+{% block title %}Entity · Hello{% endblock %}
+{% block content %}
+<h1>Entity Slice</h1>
+<p>Shared people/contacts/roles/address utilities for other slices.</p>
+<p><a class="btn" href="{{ url_for('entity.list_people') }}">Directory</a></p>
+{% endblock %}

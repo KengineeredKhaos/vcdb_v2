@@ -1,0 +1,57 @@
+
+
+Governance resource_codes
+
+    "med_hospital",
+    "med_urgent_care",
+    "med_clinic",
+    "med_pharmacy",
+    "food_pantry",
+    "cal_fresh",
+    "barber",
+    "mobile_shower",
+    "service_dog",
+    "housing",
+    "shelter_men",
+    "shelter_women",
+    "transport_public",
+    "transport_medical",
+    "transport_ride_share",
+    "employment",
+    "education",
+    "legal_civ",
+    "legal_crim",
+    "legal_fam",
+    "counseling_behavioral",
+    "counseling_financial",
+    "counseling_peer_group"
+    "events",
+    "logistics",
+    "quartermaster_drmo",
+    "quartermaster_commerical",
+    "quartermaster_household_goods",
+    "quartermaster_used_clothing",
+    "volunteer_srvs",
+    "professional_srvs",
+    
+Governance role_codes
+
+    CODE        Role Notes
+
+    "admin",    CRUD, has governance policy override authority
+    "staff",    CRU-only, no delete,
+    "audit",    transaction ledger read-only
+    "board",    read-only, has governance policy override authority
+    "customer",
+    "resource",
+    "sponsor",
+
+Public us_state_codes
+    (this is only for input validation during entity.contact creation.)
+    (not sensitive data, can be accessed through static/codes if you like)
+   
+    "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA",
+    "HI","ID","IL","IN","IA","KS","KY","LA","ME","MD",
+    "MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+    "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
+    "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY",

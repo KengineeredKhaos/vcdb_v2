@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "event.request.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["domain", "operation", "request_id", "actor_ulid"],
+  "properties": {
+    "domain": { "type": "string", "minLength": 1 },
+    "operation": { "type": "string", "minLength": 1 },
+    "happened_at": { "type": "string", "format": "date-time" },
+    "request_id": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" },
+    "actor_ulid": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" },
+    "target_ulid": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" },
+    "changed": { "type": "object", "additionalProperties": true },
+    "refs": { "type": "object", "additionalProperties": true },
+    "correlation_id": { "type": "string", "minLength": 1 }
+  }
+}

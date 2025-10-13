@@ -1,0 +1,46 @@
+
+In Templates
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+
+# ---   Macro Setup   ---
+in macros
+
+{# app/templates/_macros.html #}
+{% macro csrf() -%}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
+
+in forms
+
+{% from "_macros.html" import csrf %}
+<form method="post"> {{ csrf() }} ... </form>
+
+# ---   JSON/AJAX   ---
+(only if/when you need it)
+
+If you later POST JSON (no form), send the token in a header:
+
+Header: X-CSRFToken (or X-CSRF-Token)
+
+Value: {{ csrf_token() }}
+
+cURL example:
+
+curl -sk -b "$jar" -X POST "$BASE/some/json/endpoint" \
+  -H "X-CSRFToken: $csrftoken" -H "Content-Type: application/json" \
+  -d '{"ok": true}'
+
+
+#---   Exemptions (rare)   ---
+
+For endpoints that must be POST but are public and machine-to-machine (e.g., webhooks), mark them exempt:
+
+from app.extensions import csrf
+
+@csrf.exempt
+@bp.post("/webhook")
+def webhook():
+    ...
+
+**  Keep exemptions to an absolute minimum.  **

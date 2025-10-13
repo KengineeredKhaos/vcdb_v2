@@ -1,0 +1,32 @@
+Shm & Wal in database ops
+
+Here's what each file represents:
+
+XXX.db-wal (Write-Ahead Log file):
+This file acts as a transaction log. Instead of writing changes directly to 
+the main XXX.db database file, SQLite first appends them to the WAL file.
+This allows for concurrent reads and writes, as readers can access the main 
+database while writers are appending to the WAL file.
+It also improves transaction performance and provides better data integrity 
+in case of crashes.
+
+Changes from the WAL file are periodically checkpointed (written) to the main 
+database file.
+
+XXX.db-shm (Shared Memory file):
+This is a shared memory file used in conjunction with the WAL file.
+It contains temporary data, primarily an index for the WAL file.
+In WAL mode, multiple database connections sharing the same XXX.db file need 
+to access and update this shared memory location to coordinate access to the 
+WAL file.
+
+The shared memory file does not contain persistent data and is only present 
+while the database is actively in WAL mode.
+
+
+In summary, these files indicate that your SQLite database, managed by 
+SQLAlchemy, is utilizing WAL mode for enhanced performance and concurrency.
+
+When you use DB Browser for SQLite to look at a database operating in
+WAL mode, you will see the full, current state of the data, which includes
+committed changes from the .db-wal file.

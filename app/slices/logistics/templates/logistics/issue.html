@@ -1,0 +1,20 @@
+{% extends "layout/base.html" %}
+{% block content %}
+<h1>Issue Kit</h1>
+<form method="post" action="{{ url_for('inventory.issue_submit') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div>
+    <label>Kit Template ID</label>
+    <input name="kit_template_id" required placeholder="KT-001">
+  </div>
+  <div>
+    <label>Customer ID (optional)</label>
+    <input name="customer_id" placeholder="01H...ULID">
+  </div>
+  <div>
+    <label>Related Event ID (optional)</label>
+    <input name="event_id" placeholder="01H...ULID">
+  </div>
+  <button type="submit">Issue</button>
+</form>
+{% endblock %}

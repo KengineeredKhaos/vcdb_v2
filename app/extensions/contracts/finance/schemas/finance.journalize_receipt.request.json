@@ -1,0 +1,11 @@
+{ "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["pledge_ulid","amount","currency","happened_at_utc"],
+  "properties": {
+    "pledge_ulid": { "type": "string", "minLength": 26, "maxLength": 26 },
+    "amount": { "type": "integer", "minimum": 0 },
+    "currency": { "type": "string", "maxLength": 8 },
+    "happened_at_utc": { "type": "string", "format": "date-time" },
+    "memo": { "type": "string", "maxLength": 120 }
+  },
+  "additionalProperties": false }

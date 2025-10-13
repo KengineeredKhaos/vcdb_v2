@@ -1,0 +1,19 @@
+{% extends "layout/base.html" %}
+{% import "_macros.html" as _macros %}
+{% block content %}
+<h1>Admin</h1>
+
+<form method="post" action="{{ url_for('admin.ledger_verify') }}">
+  {{ _macros.csrf_field() }} <button>Verify ledger</button>
+</form>
+<form method="post" action="{{ url_for('admin.ledger_repair', dry_run=1) }}">
+  {{ _macros.csrf_field() }} <button>Dry-run repair</button>
+</form>
+<form method="post" action="{{ url_for('admin.ledger_repair') }}">
+  {{ _macros.csrf_field() }} <button>Apply repair</button>
+</form>
+<form method="post" action="{{ url_for('admin.snapshot_db') }}">
+  {{ _macros.csrf_field() }} <button>Snapshot DB</button>
+</form>
+<p><a class="btn" href="{{ url_for('admin.cron_index') }}">Cron Status</a></p>
+{% endblock %}

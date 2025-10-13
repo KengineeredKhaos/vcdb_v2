@@ -1,0 +1,142 @@
+Title: Cron / Alerts Primer (status table, SLAs, and admin banner)
+
+Purpose
+- Track health of background jobs (cron / schedulers) in a DB table.
+- Surface clear, admin-only alerts in the UI.
+- Provide safe operations: dry-run, snapshots, and audit via Transactions.
+
+Core Table (SQLite / SQLAlchemy-agnostic)
+CREATE TABLE IF NOT EXISTS cron_status (
+  job_name         TEXT PRIMARY KEY,
+  last_success_utc DATETIME,   -- UTC-naive
+  last_error_utc   DATETIME,   -- UTC-naive
+  last_error       TEXT        -- last exception / message
+);
+
+Recommended Indexes
+- PRIMARY KEY(job_name) is enough for point lookups.
+- (Optional) Add an audit table if you need history per run.
+
+Update Contract (what each job must do)
+On success:
+  UPSERT(job_name) SET last_success_utc = NOW_UTC, last_error_utc = NULL, last_error = NULL
+On failure:
+  UPSERT(job_name) SET last_error_utc = NOW_UTC, last_error = "<exception or message>"
+
+SQLite UPSERT Example
+INSERT INTO cron_status (job_name, last_success_utc, last_error_utc, last_error)
+VALUES (:job, :now, NULL, NULL)
+ON CONFLICT(job_name) DO UPDATE SET
+  last_success_utc = excluded.last_success_utc,
+  last_error_utc   = NULL,
+  last_error       = NULL;
+
+…and for failure:
+INSERT INTO cron_status (job_name, last_success_utc, last_error_utc, last_error)
+VALUES (:job, NULL, :now, :err)
+ON CONFLICT(job_name) DO UPDATE SET
+  last_error_utc = excluded.last_error_utc,
+  last_error     = excluded.last_error;
+
+Python Helper (put in a tiny util module)
+from datetime import datetime, timezone
+from sqlalchemy import text
+from app.extensions import db
+
+def utcnow_naive():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+def cron_mark_success(job_name: str):
+    db.session.execute(text("""
+      INSERT INTO cron_status (job_name, last_success_utc, last_error_utc, last_error)
+      VALUES (:job, :now, NULL, NULL)
+      ON CONFLICT(job_name) DO UPDATE SET
+        last_success_utc = excluded.last_success_utc,
+        last_error_utc   = NULL,
+        last_error       = NULL
+    """), {"job": job_name, "now": utcnow_naive()})
+    db.session.commit()
+
+def cron_mark_failure(job_name: str, err_msg: str):
+    db.session.execute(text("""
+      INSERT INTO cron_status (job_name, last_success_utc, last_error_utc, last_error)
+      VALUES (:job, NULL, :now, :err)
+      ON CONFLICT(job_name) DO UPDATE SET
+        last_error_utc = excluded.last_error_utc,
+        last_error     = excluded.last_error
+    """), {"job": job_name, "now": utcnow_naive(), "err": err_msg[:2000]})
+    db.session.commit()
+
+How a Job Should Report
+try:
+    # do work
+    cron_mark_success("nightly-backup")
+except Exception as e:
+    cron_mark_failure("nightly-backup", str(e))
+    raise  # let your scheduler re-try / backoff as configured
+
+Service Level Expectations (SLAs)
+- Choose a staleness window per job class:
+  • High-frequency (every 5–15 min): stale if > 1 hour
+  • Daily jobs: stale if > 36 hours (default used by banner)
+  • Weekly jobs: stale if > 10 days
+- You can store per-job SLA in a small JSON policy (e.g., governance key cron.sla_hours) if needs differ.
+
+Admin-Only Alert Banner (UI)
+- Banner renders ONLY for admins (see user_is_admin()).
+- “Stale” if job has NO last_success_utc or it is older than SLA window.
+- “Error” if last_error is non-empty (show timestamp + brief message).
+- Current default window: 36 hours.
+
+Example Jinja Context (already wired)
+alerts = []
+cutoff = now_utc - timedelta(hours=36)
+for row in cron_status:
+  if row.last_error:
+    alerts.append(f"{row.job_name} error at {row.last_error_utc}: {row.last_error}")
+  elif not row.last_success_utc or row.last_success_utc < cutoff:
+    alerts.append(f"{row.job_name} is stale; no success in 36h.")
+
+Admin Tools (recommended buttons)
+- Verify jobs: show table with job_name, last_success_utc, last_error_utc, last_error.
+- “Acknowledge” last error (optional): clears last_error but leaves last_error_utc (use sparingly).
+- Run-now / Trigger (optional hook): invoke a safe endpoint to enqueue the job (must be CSRF+admin protected).
+- Snapshot DB (existing button) before any destructive job (e.g., compaction).
+
+Audit via Transactions
+- When Admin triggers “Run-now” or “Acknowledge”, emit an event:
+  type="cron.job.triggered" / "cron.job.acknowledged"
+  slice="admin"
+  refs={"job_name": "...", "action": "..."}
+- The job’s own success/failure is not ledgered by default (status table is enough). If needed, you can add a separate “cron.job.finished” event.
+
+CLI / Script Checks
+- List status:
+  SELECT * FROM cron_status ORDER BY job_name;
+- Stale count (36h):
+  SELECT COUNT(*) FROM cron_status
+    WHERE last_success_utc IS NULL
+       OR last_success_utc < DATETIME('now', '-36 hours');
+- Clear an error (manual):
+  UPDATE cron_status SET last_error=NULL WHERE job_name=:job;
+
+Common Pitfalls
+- Not committing the UPSERT (job exits early → no status change).
+- Timezone drift: always store UTC-naive, compare to UTC-naive now().
+- Unbounded error strings: truncate to a safe length (2–4KB).
+- Running banner for non-admins: keep the banner admin-only.
+
+Backoff & Retries (operational note)
+- Let your scheduler (cron/systemd/celery) handle exponential backoff.
+- Jobs must still record failure immediately so the banner surfaces it.
+
+Retention / Cleanup
+- cron_status stores only the latest state per job (no growth).
+- If you keep a history table, prune with a weekly job (e.g., keep 90 days).
+
+Rollout Checklist
+[ ] Create cron_status table
+[ ] Add cron_mark_success / cron_mark_failure to each job
+[ ] Confirm Admin banner appears for test failures
+[ ] Add Admin page section listing cron_status
+[ ] (Optional) Add per-job SLA policy and honor it in banner

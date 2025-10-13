@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["happened_at_utc","amount_cents","restricted_fund"],
+  "properties": {
+    "happened_at_utc": { "type": "string", "format": "date-time" },
+    "amount_cents": { "type": "integer", "minimum": 1 },
+    "restricted_fund": { "type": "string", "maxLength": 32 },
+    "unrestricted_fund": { "type": "string", "maxLength": 32, "default": "unrestricted" },
+    "memo": { "type": "string", "maxLength": 160 }
+  },
+  "additionalProperties": false
+}

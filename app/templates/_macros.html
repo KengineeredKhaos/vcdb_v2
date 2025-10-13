@@ -1,0 +1,82 @@
+{# app/templates/_macros.html #}
+{% macro paginate(p, page_url, window=2, sr_label='Pagination', anchor=None) %}
+{# p must have: page, pages, has_prev, has_next, prev_num, next_num #}
+
+{% if p.pages > 1 %}
+  {% set start = [1, p.page - window] | max %}
+  {% set end   = [p.pages, p.page + window] | min %}
+
+  <nav class="pagination-nav" aria-label="{{ sr_label }}">
+    <ul class="pagination">
+      <!-- First -->
+      <li class="page-item {{ 'disabled' if p.page == 1 }}">
+        {% if p.page == 1 %}
+          <span class="page-link" aria-disabled="true">« First</span>
+        {% else %}
+          <a class="page-link" href="{{ page_url(1) }}{{ '#' ~ anchor if anchor }}">« First</a>
+        {% endif %}
+      </li>
+
+      <!-- Prev -->
+      <li class="page-item {{ 'disabled' if not p.has_prev }}">
+        {% if p.has_prev %}
+          <a class="page-link" href="{{ page_url(p.prev_num) }}{{ '#' ~ anchor if anchor }}">‹ Prev</a>
+        {% else %}
+          <span class="page-link" aria-disabled="true">‹ Prev</span>
+        {% endif %}
+      </li>
+
+      <!-- Leading + ellipsis -->
+      {% if start > 1 %}
+        <li class="page-item"><a class="page-link" href="{{ page_url(1) }}">1</a></li>
+        {% if start > 2 %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+      {% endif %}
+
+      <!-- Window -->
+      {% for n in range(start, end + 1) %}
+        <li class="page-item {{ 'active' if n == p.page }}">
+          {% if n == p.page %}
+            <span class="page-link" aria-current="page">{{ n }}</span>
+          {% else %}
+            <a class="page-link" href="{{ page_url(n) }}">{{ n }}</a>
+          {% endif %}
+        </li>
+      {% endfor %}
+
+      <!-- Ellipsis + last -->
+      {% if end < p.pages %}
+        {% if end < p.pages - 1 %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+        <li class="page-item"><a class="page-link" href="{{ page_url(p.pages) }}">{{ p.pages }}</a></li>
+      {% endif %}
+
+      <!-- Next -->
+      <li class="page-item {{ 'disabled' if not p.has_next }}">
+        {% if p.has_next %}
+          <a class="page-link" href="{{ page_url(p.next_num) }}{{ '#' ~ anchor if anchor }}">Next ›</a>
+        {% else %}
+          <span class="page-link" aria-disabled="true">Next ›</span>
+        {% endif %}
+      </li>
+
+      <!-- Last -->
+      <li class="page-item {{ 'disabled' if p.page == p.pages }}">
+        {% if p.page == p.pages %}
+          <span class="page-link" aria-disabled="true">Last »</span>
+        {% else %}
+          <a class="page-link" href="{{ page_url(p.pages) }}">Last »</a>
+        {% endif %}
+      </li>
+    </ul>
+  </nav>
+{% endif %}
+{% endmacro %}
+
+{% macro csrf_field() -%}
+  {% if csrf_token is defined %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% endif %}
+{%- endmacro %}

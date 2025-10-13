@@ -1,0 +1,7 @@
+{% extends "layout/base.html" %}
+{% block title %}Resources · Hello{% endblock %}
+{% block content %}
+<h1>Resources Slice</h1>
+<p>This is a protected hello endpoint. You’re signed in — nice.</p>
+<p><a class="btn" href="{{ url_for('resources.list_resources') }}">View resources</a></p>
+{% endblock %}

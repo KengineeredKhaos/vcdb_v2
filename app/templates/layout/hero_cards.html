@@ -1,0 +1,62 @@
+{% extends "layout/base.html" %}
+{% block title %}VCDB · Community Impact Ledger{% endblock %}
+{% block content %}
+
+<section class="hero">
+  <div class="hero-card">
+    <div class="glow"></div>
+    <h1>Transparent operations for real-world impact</h1>
+    <p>VCDB v2 keeps donors, staff, and community aligned with a tamper-evident, publicly auditable ledger.</p>
+    <div>
+      <a class="btn" href="{{ url_for('transactions.ledger_index') }}">View Ledger</a>
+      {% if not current_user.is_authenticated %}
+        <a class="btn" href="{{ url_for('auth.login') }}">Sign in</a>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="features">
+  <div class="card">
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3l7.53 4.35v8.7L12 21l-7.53-4.95v-8.7L12 3Zm0 2.3L6.2 8.02v7.1L12 18.9l5.8-3.78v-7.1L12 5.3Z"/></svg>
+    <h3>Ledger you can trust</h3>
+    <p>UTC-normalized events, idempotent writes, and a SHA-256 hash chain for tamper evidence.</p>
+  </div>
+  <div class="card">
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 4h18v2H3V4Zm0 7h18v2H3v-2Zm0 7h18v2H3v-2Z"/></svg>
+    <h3>Vertical slices</h3>
+    <p>Auth, Governance, Inventory, Sponsors, Transactions — clear boundaries, no circular imports.</p>
+  </div>
+  <div class="card">
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20Zm1 5v4l3 3-.7.7L12 12.4V7h1Z"/></svg>
+    <h3>Real-time audits</h3>
+    <p>Verify the chain and export JSONL for public reviews in one click.</p>
+  </div>
+</section>
+
+<section style="margin:18px 0 28px">
+  <div style="display:flex; align-items:center; gap:8px; margin:6px 0 8px">
+    <strong>Recent highlights</strong>
+    <span class="kbd">scroll →</span>
+  </div>
+  <div class="strip" aria-label="Highlights">
+    <article class="snap">
+      <h4 style="margin:4px 0 6px">Role assignment</h4>
+      <p class="muted">Every `auth.user_role.assigned` event is linked into the hash chain.</p>
+    </article>
+    <article class="snap">
+      <h4 style="margin:4px 0 6px">Policy knobs</h4>
+      <p class="muted">Governance seeds enable spend caps & reimbursement windows without code changes.</p>
+    </article>
+    <article class="snap">
+      <h4 style="margin:4px 0 6px">Issue kits</h4>
+      <p class="muted">Inventory actions emit idempotent ledger events — auditable end-to-end.</p>
+    </article>
+    <article class="snap">
+      <h4 style="margin:4px 0 6px">Lean stack</h4>
+      <p class="muted">Flask, Jinja, SQLite. No heavy bundles; fast on small VPS & dev laptops.</p>
+    </article>
+  </div>
+</section>
+
+{% endblock %}

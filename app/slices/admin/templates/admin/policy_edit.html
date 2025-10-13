@@ -1,0 +1,20 @@
+{% extends "layout/base.html" %}
+{% block content %}
+<h1>Policy: {{ key }}</h1>
+
+{% if diff %}
+  <h3>Diff preview</h3>
+  <pre>{{ diff }}</pre>
+{% endif %}
+
+<form method="post">
+  {{ macros.csrf_field() }}
+  <textarea name="value" rows="18" style="width:100%">{{ textval }}</textarea>
+  {% if needs_confirm %}
+    <input type="hidden" name="confirm" value="yes">
+    <button type="submit">Confirm & Save</button>
+  {% else %}
+    <button type="submit">Preview Changes</button>
+  {% endif %}
+</form>
+{% endblock %}

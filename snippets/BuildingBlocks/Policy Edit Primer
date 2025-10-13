@@ -1,0 +1,52 @@
+Title: Policy Edit Primer (JSON rules, safety, and audit)
+
+Purpose
+- Standardize how admins edit governance policies (string or JSON).
+- Ensure edits are validated, diffed, snapshotted, and audited in the Transactions ledger.
+
+Policy Keys (examples)
+- entity.allowed_roles      -> JSON list of strings (e.g., ["customer","resource","sponsor","staff","admin"])
+- entity.resource_codes     -> JSON list of strings
+- entity.us_states          -> JSON list of 2-letter codes (or string if you store CSV)
+
+Golden Rules
+1) Prefer JSON for lists/dicts; plain string for single scalar.
+2) Validate JSON before saving; show a unified diff (current vs proposed).
+3) Snapshot the DB before writing.
+4) Save via governance service (policy_set) so it logs to the ledger.
+5) Never store Python literals (True/None) — use strict JSON (true/null).
+
+JSON Validation
+- Accept either:
+  - Valid JSON value (object/array/string/number/bool/null), OR
+  - Plain string (fallback).
+- If `json.loads(...)` succeeds → store as JSON; else store raw string.
+- Minify for hashing; pretty-print for UI.
+
+Diff Preview
+- Use unified diff (difflib) of current_text vs proposed_text.
+- Require explicit “Confirm & Save” after preview.
+
+DB Snapshot (belt & suspenders)
+- Take an online sqlite backup before applying the change.
+- Keep last N snapshots in var/snapshots/ (optional cron to prune).
+
+Audit Trail
+- Use governance.services.policy_set(key=..., value=..., ptype="json"|"string", actor_id, request_id)
+- Emit event: governance.policy.updated
+- Put key + value in refs: {"policy_key": key, "value": value, "ptype": ptype}
+
+Common Pitfalls
+- Trailing commas or single quotes (invalid JSON).
+- Accidentally storing JSON-encoded strings inside strings (double-encoding).
+- Huge payloads: keep policies small; large catalogs belong in tables.
+
+Quick Operator Flow (UI)
+1) Paste/edit JSON.
+2) Click “Preview Changes” → review diff.
+3) Click “Confirm & Save” (creates snapshot → emits policy_set).
+4) See success toast + ledger link.
+
+Rollback
+- Restore most recent DB snapshot (sqlite backup) OR
+- Re-open editor, paste previous value from diff, save again.

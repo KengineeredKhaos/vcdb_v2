@@ -1,0 +1,29 @@
+{ "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["sponsor_ulid", "pledge"],
+  "properties": {
+    "sponsor_ulid": { "type": "string", "minLength": 26, "maxLength": 26 },
+    "pledge": {
+      "type": "object",
+      "required": ["pledge_ulid","type","status"],
+      "properties": {
+        "pledge_ulid": { "type": "string", "minLength": 26, "maxLength": 26 },
+        "type": { "type": "string", "enum": ["cash","in_kind"] },
+        "status": { "type": "string", "enum": ["proposed","active","fulfilled","cancelled"] },
+        "currency": { "type": "string", "maxLength": 8 },
+        "stated_amount": { "type": "integer", "minimum": 0 },
+        "in_kind_category": { "type": "string", "maxLength": 64 },
+        "estimated_value": { "type": "integer", "minimum": 0 },
+        "valuation_basis": { "type": "string", "maxLength": 32 },
+        "restriction": {
+          "type": "object",
+          "properties": { "fund_code": { "type": "string", "maxLength": 32 }, "purpose": { "type": "string", "maxLength": 64 } },
+          "additionalProperties": false
+        },
+        "schedule": { "type": "object" },
+        "notes": { "type": "string", "maxLength": 120 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false }

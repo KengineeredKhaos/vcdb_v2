@@ -1,0 +1,17 @@
+{# app/templates/transactions/ledger.html #}
+{% extends "layout/base.html" %}
+{% from "_macros.html" import paginate %}
+
+{% block content %}
+<h1>Ledger (recent)</h1>
+
+<form method="get" class="filters">
+  <input name="type" placeholder="type…" value="{{ request.args.get('type','') }}">
+  <input name="slice" placeholder="slice…" value="{{ request.args.get('slice','') }}">
+  <button type="submit">Filter</button>
+</form>
+
+<table> … your rows … </table>
+
+{{ paginate(p, endpoint='transactions.ledger_index', qargs=qargs) }}
+{% endblock %}

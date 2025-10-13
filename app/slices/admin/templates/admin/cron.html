@@ -1,0 +1,47 @@
+{% extends "layout/base.html" %}
+{% import "_macros.html" as _macros %}
+{% block content %}
+<h1>Cron Status</h1>
+
+{% if rows|length == 0 %}
+  <p class="muted">No jobs found. Create rows in <code>cron_status</code> as jobs start reporting success/failure.</p>
+{% else %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Job</th>
+        <th>Last success (UTC)</th>
+        <th>Last error (UTC)</th>
+        <th>Error message</th>
+        <th style="width:220px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><code>{{ r.job_name }}</code></td>
+        <td>{{ r.last_success_utc or "—" }}</td>
+        <td>{{ r.last_error_utc or "—" }}</td>
+        <td class="wrap">{{ r.last_error or "—" }}</td>
+        <td class="stack-h">
+          <form method="post" action="{{ url_for('admin.cron_ack') }}">
+            {{ _macros.csrf_field() }}
+            <input type="hidden" name="job_name" value="{{ r.job_name }}">
+            <button class="btn btn-secondary" {% if not r.last_error %}disabled{% endif %}>Acknowledge</button>
+          </form>
+          <form method="post" action="{{ url_for('admin.cron_run_now') }}">
+            {{ _macros.csrf_field() }}
+            <input type="hidden" name="job_name" value="{{ r.job_name }}">
+            <button class="btn">Run now</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+
+<p>
+  <a class="btn" href="{{ url_for('admin.index') }}">← Back to Admin</a>
+</p>
+{% endblock %}

@@ -1,0 +1,32 @@
+Schema & cross-cutting
+
+VCDB v2 — ERD & Table Constraints (MVP) ← canonical tables, constraints, enums, ASCII ERD
+
+VCDB v2 — Transactions Slice (Pinned Revisions R1–R7) ← event taxonomy, idempotency, ledger envelope/fields, archiver cadence
+
+Slices
+
+Customers Slice ← personal/contact fields + event types for customer.created/updated
+
+Resources Slice ← classifications, contacts (primary/secondary), pre-confirm semantics
+
+Sponsors Slice ← contributions/tiers/thresholds/assignments; WHK reimbursement rules; restrictions
+
+Inventory & Logistics Slice ← items, kits, issuance, maintenance freeze/recon, quarantine
+
+Calendar & Events Slice (Restored) ← hours/holidays/Black Friday, conflicts + admin override, T-90 recon child event, special-event scheduling template, Appendix — Codes & Templates
+
+Staff/Admin & Governance Slice ← officer directory (pro tempore slot), authorizations table (policy knobs), RBAC notes
+
+Optional but helpful (not strictly required to scaffold code)
+
+Deployment Checklist (Server & Kiosks) ← helps pick config constants early (hostnames, ports, CA)
+
+Infrastructure Checklists ← TLS/CA and Firewall matrices (useful if we wire local dev settings)
+
+Operations Runbook ← good for test scenarios & smoke tests
+
+MASTER ← index/POW (for quick navigation/log)
+
+Suggested import order (helps FK wiring):
+ERD → Staff/Admin & Governance → Customers → Resources → Sponsors → Inventory & Logistics → Transactions → Calendar & Events.

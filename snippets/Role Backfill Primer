@@ -1,0 +1,76 @@
+Title: Role Backfill Primer (attach/remove entity roles safely)
+
+Purpose
+- Attach or remove entity roles (e.g., 'customer', 'resource') in bulk with dry-run, guardrails, and audit.
+
+Definitions
+- entity_role table: (id ULID PK, entity_id, role_code, granted_at_utc)
+- Roles are additive; uniqueness enforced on (entity_id, role_code).
+
+Golden Rules
+1) Always dry-run first: show how many rows will change and sample IDs.
+2) Snapshot DB before apply.
+3) Idempotent writes: rely on unique (entity_id, role_code).
+4) Emit an event per change (entity.role.attached / entity.role.removed) via services.
+
+Typical Backfills
+
+A) Attach 'resource' to all resources missing it
+SQL (selector):
+  SELECT r.entity_id
+  FROM entity_resource r
+  LEFT JOIN entity_role er
+    ON er.entity_id = r.entity_id AND er.role_code = 'resource'
+  WHERE er.entity_id IS NULL;
+
+Apply (pseudo):
+  for each entity_id: ensure_role(entity_id, 'resource', request_id, actor_id)
+
+B) Attach 'customer' to people created via customers flow only
+- Prefer a precise selector (created source, form flag, or recent date window) to avoid overreach.
+- If none exists, manually select from a CSV of known IDs.
+
+C) Remove mistaken roles (cleanup)
+Example: remove 'customer' from all resource entities
+  DELETE FROM entity_role
+  WHERE id IN (
+    SELECT er.id
+    FROM entity_role er
+    JOIN entity_resource r ON r.entity_id = er.entity_id
+    WHERE er.role_code = 'customer'
+  );
+
+Safety Rails
+- Dry-run: compute candidate IDs (query only), show count and first 10.
+- Confirm step: requires “type ROLE and count” ⟶ then apply.
+- DB snapshot before apply.
+- Wrap writes in a transaction; on IntegrityError, skip and continue (idempotent).
+- Log each change (emit event_bus.emit with refs={"role_code": ...}).
+
+Audit Trail
+- entity.role.attached (target_id = entity_id, refs.role_code = ...)
+- entity.role.removed  (target_id = entity_id, refs.role_code = ...)
+- Each with unique request_id (e.g., "req-backfill-<ulid()>").
+
+Mutual Exclusivity (optional)
+- If business rules forbid certain combinations (e.g., cannot be both 'customer' and 'resource'):
+  - Enforce in service: check for conflicting role; raise or skip.
+  - Or run cleanup after attaching.
+
+UI Flow (Admin Tools)
+1) Choose operation: Attach / Remove.
+2) Choose role: customer/resource/...
+3) Choose scope:
+   - Predefined query (e.g., “resources missing role”)
+   - Date window
+   - Paste CSV of entity_ids
+4) Dry-run → shows count + sample + diff (“0 → 1 role”).
+5) Confirm → Snapshot → Apply → Toast + ledger link.
+
+Rollback
+- If over-applied: run complementary cleanup (remove), or restore snapshot.
+
+Pitfalls
+- Running without constraints: always filter scope tightly.
+- Reusing request_id: each action must have a new ULID.
+- Conflating RBAC (user/admin) with entity roles (customer/resource).

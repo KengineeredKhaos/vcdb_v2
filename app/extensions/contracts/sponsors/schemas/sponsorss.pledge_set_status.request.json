@@ -1,0 +1,8 @@
+{ "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["pledge_ulid","status"],
+  "properties": {
+    "pledge_ulid": { "type": "string", "minLength": 26, "maxLength": 26 },
+    "status": { "type": "string", "enum": ["proposed","active","fulfilled","cancelled"] }
+  },
+  "additionalProperties": false }

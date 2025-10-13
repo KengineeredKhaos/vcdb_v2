@@ -1,0 +1,16 @@
+<nav>
+  {% set slices = [
+    ('Customers','v2.customers.hello'),
+    ('Calendar','v2.calendar.hello'),
+    ('Governance','v2.governance.hello'),
+    ('Inventory','v2.inventory.hello'),
+    ('Resources','v2.resources.hello'),
+    ('Sponsors','v2.sponsors.hello'),
+    ('Transactions','v2.transactions.hello'),
+  ] %}
+  <ul>
+    {% for label, ep in slices %}
+      <li><a href="{{ url_for(ep) }}">{{ label }}</a></li>
+    {% endfor %}
+  </ul>
+</nav>

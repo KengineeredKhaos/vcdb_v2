@@ -1,0 +1,74 @@
+Python venv pip Protocol
+
+# ---   Running snips and scripts:
+
+python - <<'PY'
+from app.extensions import ulid
+a = [ulid() for _ in range(5)]
+print(a)
+print(a == sorted(a))  # should be True
+PY
+
+
+python - <<'PY'
+from app import create_app
+from app.extensions import policy
+app = create_app("config.DevConfig")
+with app.app_context():
+    print("spend cap:", policy.get("staff_spend_cap_cents", cast=int))
+    print("expiry days:", policy.get("reimbursement_expiry_days", cast=int))
+PY
+
+
+
+# ---   Virtual Environment:
+
+From your desired root directory:
+
+python -m venv venv
+
+To activate from your root directory:
+
+source bin/active
+
+Setup:
+
+python -V
+pip --version
+python -m pip install --upgrade pip wheel setuptools
+
+Close:
+
+deactivate
+
+# ---  Freeze required packages list:
+
+pip freeze --exclude-editable > requirements.txt
+
+Quick bash script version:
+#!/usr/bin/env bash
+set -euo pipefail
+python -m pip install --upgrade pip wheel setuptools
+pip freeze --exclude-editable > requirements.txt
+echo "Wrote requirements.txt"
+
+# ---   Wheelhouse
+
+Build local repo (wheelhouse) of binary wheels
+
+mkdir -p wheelhouse
+# Prefer prebuilt wheels; build if needed
+pip download --only-binary=:all: -r requirements.txt -d wheelhouse || true
+# Fallback build for any sdists that were missed above
+pip wheel -r requirements.txt -w wheelhouse
+
+Tip: Build on the same OS/arch/Python as your target.
+     Wheels are platform/ABI-specific.
+
+
+Install from wheelhouse
+
+python -m venv /tmp/rehydrate
+source /tmp/rehydrate/bin/activate
+python -m pip install --upgrade pip
+pip install --no-index --find-links=wheelhouse -r requirements.txt

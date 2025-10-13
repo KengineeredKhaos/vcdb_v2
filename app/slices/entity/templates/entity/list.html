@@ -1,0 +1,52 @@
+{% extends "layout/base.html" %}
+{% from "_macros.html" import paginate %}
+
+{% block title %}Resources{% endblock %}
+
+{% block content %}
+<h1>Resources</h1>
+
+<form method="get" action="{{ url_for('resources.list_resources') }}" style="margin-bottom:1rem;">
+  <label>Type:
+    <select name="kind" onchange="this.form.submit()">
+      <option value="any"   {{ 'selected' if kind=='any' }}>Any</option>
+      <option value="person"{{ 'selected' if kind=='person' }}>People</option>
+      <option value="org"   {{ 'selected' if kind=='org' }}>Orgs</option>
+    </select>
+  </label>
+  <noscript><button type="submit">Apply</button></noscript>
+</form>
+
+<table class="table">
+  <thead>
+    <tr>
+      <th>Name / Legal</th>
+      <th>Email</th>
+      <th>Phone</th>
+      <th>Kind</th>
+      <th>Updated</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>
+          {% if r.kind == 'org' %}
+            {{ r.doing_business_as or r.legal_name }}
+          {% else %}
+            {{ r.first_name }} {{ r.last_name }}
+          {% endif %}
+        </td>
+        <td>{{ r.email or '—' }}</td>
+        <td>{{ r.phone or '—' }}</td>
+        <td>{{ r.kind or ('person' if r.first_name else 'org') }}</td>
+        <td>{{ r.updated_at_utc or '—' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No resources found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{{ paginate(p, page_url) }}
+{% endblock %}

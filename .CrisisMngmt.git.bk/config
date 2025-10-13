@@ -1,0 +1,7 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+[gitg]
+	mainline = refs/tags/v2-freeze-boot_clean-no_web_ui,refs/tags/v2-freeze-fresh_db-38_tables

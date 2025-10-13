@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["resource_ulid", "capabilities"],
+  "properties": {
+    "resource_ulid": { "type": "string", "minLength": 26, "maxLength": 26 },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "has": { "type": "boolean" },
+          "note": { "type": ["string", "null"], "maxLength": 120 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

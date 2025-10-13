@@ -1,0 +1,7 @@
+{% extends "layout/base.html" %}
+{% block title %}Customers · Hello{% endblock %}
+{% block content %}
+<h1>Customers Slice</h1>
+<p>Protected hello endpoint. You’re signed in.</p>
+<p><a class="btn" href="{{ url_for('customers.list_customers') }}">View customers</a></p>
+{% endblock %}

@@ -1,0 +1,43 @@
+{# app/templates/_forms.html #}
+{% macro text(name, label, value='', type='text', placeholder='', pattern=None, help=None, required=False, maxlength=None, inputmode=None) -%}
+  <label class="fld">
+    <div class="lbl">{{ label }}{% if required %} <span class="req">*</span>{% endif %}</div>
+    <input
+      name="{{ name }}" id="id_{{ name }}" type="{{ type }}"
+      value="{{ value|e }}" placeholder="{{ placeholder }}"
+      {% if pattern %} pattern="{{ pattern }}"{% endif %}
+      {% if required %} required{% endif %}
+      {% if maxlength %} maxlength="{{ maxlength }}"{% endif %}
+      {% if inputmode %} inputmode="{{ inputmode }}"{% endif %}
+    >
+    {% if help %}<div class="help">{{ help }}</div>{% endif %}
+  </label>
+{%- endmacro %}
+
+{% macro select(name, label, options, value='', required=False, help=None) -%}
+  <label class="fld">
+    <div class="lbl">{{ label }}{% if required %} <span class="req">*</span>{% endif %}</div>
+    <select name="{{ name }}" id="id_{{ name }}" {% if required %}required{% endif %}>
+      <option value="">— choose —</option>
+      {% for opt in options %}
+        {% set optval = opt[0] if opt is sequence and opt|length>1 else opt %}
+        {% set optlbl = opt[1] if opt is sequence and opt|length>1 else opt %}
+        <option value="{{ optval }}" {{ 'selected' if optval==value else '' }}>{{ optlbl }}</option>
+      {% endfor %}
+    </select>
+    {% if help %}<div class="help">{{ help }}</div>{% endif %}
+  </label>
+{%- endmacro %}
+
+{% macro radios(name, label, options, value='') -%}
+  <fieldset class="fld">
+    <legend class="lbl">{{ label }}</legend>
+    <div class="radios">
+      {% for opt in options %}
+        {% set optval = opt[0] if opt is sequence and opt|length>1 else opt %}
+        {% set optlbl = opt[1] if opt is sequence and opt|length>1 else opt %}
+        <label><input type="radio" name="{{ name }}" value="{{ optval }}" {{ 'checked' if optval==value else '' }}> {{ optlbl }}</label>
+      {% endfor %}
+    </div>
+  </fieldset>
+{%- endmacro %}

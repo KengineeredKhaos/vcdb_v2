@@ -1,0 +1,32 @@
+{
+  "$schema":"http://json-schema.org/draft-07/schema#",
+  "type":"object",
+  "required":["category","name","unit"],
+  "properties":{
+    "category":{"type":"string","maxLength":32},
+    "name":{"type":"string","maxLength":160},
+    "unit":{"type":"string","enum":["each","lbs","kits","boxes","packs"]},
+    "condition":{"type":"string","maxLength":16,"default":"mixed"},
+
+    "sku":{"type":"string","pattern":"^[A-Z]{2}-[A-Z]{2,3}-[A-Z]{2}-[A-Z0-9]{2,3}-[A-Z]{2,3}-[A-Z]-[0-9A-Z]{3}$"},
+    "sku_parts":{
+      "type":"object",
+      "properties":{
+        "cat":{"type":"string","pattern":"^[A-Z]{2}$"},
+        "sub":{"type":"string","pattern":"^[A-Z]{2,3}$"},
+        "src":{"type":"string","pattern":"^[A-Z]{2}$"},
+        "size":{"type":"string","pattern":"^[A-Z0-9]{2,3}$"},
+        "col":{"type":"string","pattern":"^[A-Z]{2,3}$"},
+        "grade":{"type":"string","pattern":"^[A-Z]$"},
+        "seq":{"type":"string","pattern":"^[0-9A-Z]{3}$"}
+      },
+      "additionalProperties":false
+    },
+    "bin":{"type":"string","maxLength":32},
+    "nsx":{"type":"string","maxLength":32}
+  },
+  "additionalProperties":false,
+  "allOf":[
+    { "anyOf":[ {"required":["sku"]}, {"required":["sku_parts"]} ] }
+  ]
+}

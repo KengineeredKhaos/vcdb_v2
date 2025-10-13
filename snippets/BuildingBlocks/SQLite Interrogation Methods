@@ -1,0 +1,49 @@
+SQLite Interrogation Methods
+
+### One-liner
+
+```bash
+sqlite3 var/app-instance/dev.db "
+  .headers on
+  .mode column
+  SELECT id, slice, type, happened_at_utc, prev_hash, event_hash
+  FROM transactions_ledger
+  ORDER BY happened_at_utc ASC, id ASC
+  LIMIT 25;
+"
+```
+
+### Interactive session
+
+```bash
+sqlite3 var/app-instance/dev.db
+.headers on
+.mode column
+SELECT id, slice, type, happened_at_utc, prev_hash, event_hash
+FROM transactions_ledger
+ORDER BY happened_at_utc ASC, id ASC
+LIMIT 25;
+.quit
+```
+
+### Python (no sqlite3 CLI needed)
+
+```bash
+python - <<'PY'
+from app import create_app
+from app.extensions import db
+from sqlalchemy import text
+app = create_app("config.DevConfig")
+with app.app_context():
+    rows = db.session.execute(text("""
+        SELECT id, slice, type, happened_at_utc, prev_hash, event_hash
+        FROM transactions_ledger
+        ORDER BY happened_at_utc ASC, id ASC
+        LIMIT 25
+    """)).all()
+    for r in rows:
+        print(r)
+PY
+```
+
+Since `verify_ledger_chain.py` is green, you’re good. The `ORDER BY …` examples are just for spot-checking if you want to inspect rows yourself.

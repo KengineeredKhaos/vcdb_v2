@@ -1,0 +1,56 @@
+# .gitignore
+
+# --- Dev, MVP docs, IDE environment and Tests
+/tests/*
+/MVP_docs/*
+pyproject.toml
+pyrightconfig.json
+*.sublime-*
+.cache/
+*.zip
+
+# --- Virtual Environment ---
+/bin/
+/include/
+/lib
+/lib64
+/pyvenv.cfg
+env/
+.pyenv/
+pip-wheel-metadata/
+pip-log.txt
+
+# --- Python / build ---
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg*
+.eggs/
+dist/
+build/
+
+# --- Databases (SQLite etc.) ---
+*.sqlite
+*.sqlite3
+*.db
+*.db-*
+/var
+instance/*
+!instance/.gitkeep
+
+# --- Logs (DEV-ONLY JSONL, keep dirs) ---
+logs/**
+!logs/.gitkeep
+app/logs/*.log
+!app/logs/.gitkeep
+
+# --- Runtime/output dirs (not versioned) ---
+archive/**
+!archive/.gitkeep
+exports/**
+
+# --- Secrets & local config ---
+.env
+.env.*
+!.env.example

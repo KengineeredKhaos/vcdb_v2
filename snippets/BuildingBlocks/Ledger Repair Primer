@@ -1,0 +1,132 @@
+
+# -----------------
+# Title: Ledger Repair Primer (link+hash chain)
+#------------------
+This is a flattened version of repair_ledger_links that demonstrates
+the flow and program logic. Context and implementation details can be found
+below. While this is viable, flatten, python code, it does not
+follow strict pyright/black/ruff/PEP8 standards. It is for demonstorative,
+instructive and informational purposes.
+
+# rows_desc: newest -> oldest, length N+1
+rows_desc = fetch_desc(limit + 1)
+
+# seed from the true predecessor (outside the window)
+seed_prev_id   = rows_desc[limit]["id"] if len(rows_desc) > limit else None
+seed_prev_hash = rows_desc[limit]["event_hash"] if len(rows_desc) > limit else None
+
+# work on the N newest rows, oldest -> newest
+window_rows = rows_desc[:limit][::-1]
+
+updates = []
+prev_id = seed_prev_id
+prev_hash = seed_prev_hash
+
+for row in window_rows:
+    rid = row["id"]
+
+    # current values (from DB)
+    cur_prev_id = row.get("prev_event_id")
+    cur_prev_hash = row.get("prev_hash")
+
+    # what they SHOULD be
+    new_prev_id = prev_id
+    new_prev_hash = prev_hash
+
+    # recompute hash using your canonical function
+    tmp = {k: row.get(k) for k in _HASH_KEYS}
+    tmp["prev_event_id"] = new_prev_id
+    tmp["prev_hash"] = new_prev_hash
+    new_event_hash = compute_event_hash(tmp)
+
+    # record needed update
+    if (
+        cur_prev_id != new_prev_id
+        or cur_prev_hash != new_prev_hash
+        or row.get("event_hash") != new_event_hash
+    ):
+        updates.append((rid, new_prev_id, new_prev_hash, new_event_hash))
+
+    # advance for next item
+    prev_id = rid
+    prev_hash = new_event_hash
+
+
+* -----------------
+* Ethos and Modality
+* -----------------
+
+Context
+- The transactions_ledger is a singly linked list:
+  prev_event_id -> previous row’s id
+  prev_hash     -> previous row’s event_hash
+  event_hash    -> hash(canonical payload INCLUDING prev_event_id/prev_hash)
+- Writer must compute event_hash AFTER prev_* are set.
+- Verifier/Repair must use the SAME compute_event_hash() as writer.
+
+Canonical Fields (HASH_KEYS)
+- id
+- happened_at_utc (UTC-naive ISO micros)
+- prev_event_id
+- prev_hash
+- type
+- slice
+- operation
+- request_id
+- actor_id
+- target_id
+- customer_id
+- entity_ids_json
+- changed_fields_json
+- refs_json
+
+Golden Rules
+1) Always hash the final payload (with prev_* already set).
+2) Always use compute_event_hash(...) from app.slices.transactions.services.
+3) Define the chain head deterministically as the last row by (happened_at_utc DESC, id DESC).
+4) Store happened_at_utc as UTC-naive; normalize consistently before hashing.
+
+Repair Algorithm (windowed)
+- Fetch the latest N+1 rows ORDER BY (happened_at_utc DESC, id DESC).
+- Seed prev_* from the (N+1)th row (the TRUE predecessor outside the window):
+    seed_prev_id   = rows_desc[N].id    (if exists; else None)
+    seed_prev_hash = rows_desc[N].hash  (if exists; else None)
+- Take the window of N newest rows and iterate OLDEST -> NEWEST.
+- For each row:
+    new_prev_id   = prior row’s id (or seed_prev_id for first)
+    new_prev_hash = prior row’s event_hash (or seed_prev_hash for first)
+    tmp = dict(row); tmp.prev_event_id = new_prev_id; tmp.prev_hash = new_prev_hash
+    new_event_hash = compute_event_hash(tmp)
+    If any of (prev_event_id, prev_hash, event_hash) differ from stored → plan update.
+- Dry-run by default; apply only on explicit confirm.
+
+Why N+1?
+- Without the extra row, you’ll incorrectly anchor the OLDEST row in your window to None.
+- The (N+1)th row provides the “true” predecessor hash; a healthy chain should produce zero updates.
+
+Verification Algorithm
+- Walk ALL rows in ASC order (or the same window seeded as above).
+- For each row:
+    recompute expected_hash via compute_event_hash(with corrected prev_*).
+    Ensure:
+      row.event_hash == expected_hash
+      row.prev_event_id == prev_id (prior row’s id or None for very first)
+      row.prev_hash == prev_hash (prior row’s event_hash or None for very first)
+
+Common Pitfalls
+- Hashing with a datetime object (serialize to ISO micros first).
+- Different canonical fields between writer vs verifier vs repair.
+- Anchoring repair to None instead of the real predecessor.
+- Changing which JSON keys go into refs/changed_fields after deployment (allowed, but re-run repair to normalize historic rows to new canonicalization).
+- Reusing request_id (idempotency will collapse events).
+
+Operational Tips
+- Pause emission during repair if you plan to write.
+- Always snapshot DB before destructive ops.
+- “Verify” in Admin UI should match this algorithm exactly.
+- Keep HASH_KEYS and compute_event_hash() as the single source of truth—import them everywhere else.
+
+Quick Commands
+- Verify: PYTHONPATH=. python scripts/Python/verify_ledger_chain.py
+- Repair (dry): PYTHONPATH=. python scripts/Python/repair_ledger_links.py --limit 200
+- Repair (apply): PYTHONPATH=. python scripts/Python/repair_ledger_links.py --limit 200 --commit

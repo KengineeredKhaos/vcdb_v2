@@ -1,0 +1,409 @@
+.
+├── app
+│   ├── extensions
+│   │   ├── adapters
+│   │   ├── contracts
+│   │   │   ├── admin
+│   │   │   │   └── v1.py
+│   │   │   ├── auth
+│   │   │   │   └── v1.py
+│   │   │   ├── boilerplate-v1.py
+│   │   │   ├── customers
+│   │   │   ├── entity
+│   │   │   │   └── v1.py
+│   │   │   ├── governance
+│   │   │   │   └── v1.py
+│   │   │   ├── ledger
+│   │   │   │   └── v1.py
+│   │   │   ├── resources
+│   │   │   ├── sponsors
+│   │   │   └── types.py
+│   │   ├── errors.py
+│   │   ├── event_bus.py
+│   │   ├── __init__.py
+│   │   └── __pycache__
+│   ├── governance
+│   │   └── governance_policy.py
+│   ├── __init__.py
+│   ├── lib
+│   │   ├── chrono.py
+│   │   ├── geo.py
+│   │   ├── ids.py
+│   │   ├── logging.py
+│   │   ├── models.py
+│   │   ├── __pycache__
+│   │   ├── security.py
+│   │   └── utils.py
+│   ├── logs
+│   │   ├── app.log
+│   │   ├── audit.log
+│   │   ├── export.log
+│   │   └── jobs.log
+│   ├── __pycache__
+│   ├── seeders
+│   │   └── seed_ulid_minimal.py
+│   ├── services
+│   │   ├── docs_library.py
+│   │   ├── __init__.py
+│   │   └── __pycache__
+│   ├── slices
+│   │   ├── admin
+│   │   │   ├── cron.py
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py
+│   │   │   ├── __pycache__
+│   │   │   ├── routes.py
+│   │   │   └── templates
+│   │   │       └── admin
+│   │   │           ├── cron.html
+│   │   │           ├── index.html
+│   │   │           ├── ledger_repair.html
+│   │   │           ├── ledger_report.html
+│   │   │           ├── policy_edit.html
+│   │   │           └── roles_adjust.html
+│   │   ├── auth
+│   │   │   ├── decorators.py
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py
+│   │   │   ├── __pycache__
+│   │   │   ├── routes.py
+│   │   │   ├── seeds.py
+│   │   │   ├── services.py
+│   │   │   ├── templates
+│   │   │   │   └── auth
+│   │   │   │       ├── change_password.html
+│   │   │   │       └── login.html
+│   │   │   └── user.py
+│   │   ├── calendar
+│   │   │   ├── forms.py
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py
+│   │   │   ├── __pycache__
+│   │   │   ├── routes.py
+│   │   │   ├── services.py
+│   │   │   └── templates
+│   │   │       └── calendar
+│   │   │           └── hello.html
+│   │   ├── customers
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py
+│   │   │   ├── __pycache__
+│   │   │   ├── routes.py
+│   │   │   ├── services.py
+│   │   │   └── templates
+│   │   │       └── customers
+│   │   │           ├── hello.html
+│   │   │           └── list.html
+│   │   ├── entity
+│   │   │   ├── dto.py
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py
+│   │   │   ├── __pycache__
+│   │   │   ├── routes.py
+│   │   │   ├── services.py
+│   │   │   └── templates
+│   │   │       └── entity
+│   │   │           ├── create.html
+│   │   │           ├── hello.html
+│   │   │           └── list.html
+│   │   ├── governance
+│   │   │   ├── forms.py
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py
+│   │   │   ├── __pycache__
+│   │   │   ├── routes.py
+│   │   │   ├── services.py
+│   │   │   └── templates
+│   │   │       └── governance
+│   │   │           ├── hello.html
+│   │   │           ├── policy_edit.html
+│   │   │           └── policy_index.html
+│   │   ├── ledger
+│   │   │   ├── models.py
+│   │   │   └── services.py
+│   │   ├── logistics
+│   │   │   ├── forms.py
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py
+│   │   │   ├── __pycache__
+│   │   │   ├── routes.py
+│   │   │   ├── services.py
+│   │   │   └── templates
+│   │   │       └── logistics
+│   │   │           ├── hello.html
+│   │   │           └── issue.html
+│   │   ├── __pycache__
+│   │   ├── resources
+│   │   │   ├── forms.py
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py
+│   │   │   ├── __pycache__
+│   │   │   ├── routes.py
+│   │   │   ├── services.py
+│   │   │   └── templates
+│   │   │       └── resources
+│   │   │           ├── hello.html
+│   │   │           └── list.html
+│   │   ├── sponsors
+│   │   │   ├── forms.py
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py
+│   │   │   ├── __pycache__
+│   │   │   ├── routes.py
+│   │   │   ├── services.py
+│   │   │   └── templates
+│   │   │       └── sponsors
+│   │   │           ├── contribution.html
+│   │   │           └── hello.html
+│   │   └── transactions
+│   │       ├── forms.py
+│   │       ├── __init__.py
+│   │       ├── models.py
+│   │       ├── __pycache__
+│   │       ├── routes.py
+│   │       ├── services.py
+│   │       └── templates
+│   │           └── transactions
+│   │               ├── hello.html
+│   │               └── ledger.html
+│   ├── static
+│   │   ├── css
+│   │   │   ├── app.css
+│   │   │   └── v2.css
+│   │   ├── documents
+│   │   └── js
+│   │       └── app.js
+│   ├── templates
+│   │   ├── _forms.html
+│   │   ├── layout
+│   │   │   ├── base.html
+│   │   │   ├── hero_cards.html
+│   │   │   ├── index.html
+│   │   │   └── _nav.html
+│   │   └── _macros.html
+│   ├── utils
+│   │   ├── paging.py
+│   │   └── __pycache__
+│   └── web.py
+├── archive
+│   └── migrations.2025-09-25-1727
+│       ├── alembic.ini
+│       ├── env.py
+│       ├── __pycache__
+│       ├── README
+│       ├── script.py.mako
+│       └── versions
+│           ├── 1f5a2baed3f9_smoke.py
+│           ├── 20250924_ledger_guardrails.py
+│           ├── 20250924_ledger_reqid_guards.py
+│           ├── 52d29843084a_baseline_no_op.py
+│           ├── a8dc33f47677_entity_core.py
+│           └── __pycache__
+├── lib64 -> lib
+├── logs
+├── Makefile
+├── manage_vcdb.py
+├── migrations
+│   ├── alembic.ini
+│   ├── env.py
+│   ├── __pycache__
+│   ├── README
+│   ├── script.py.mako
+│   └── versions
+│       ├── 0735607b935c_initial_schema_entity_centric.py
+│       ├── 328430b2b208_time_now_std_cron_table.py
+│       ├── 79eef5608998_ein_partial_unique_index.py
+│       ├── ce437fd10a7f_ein_partial_unique_index.py
+│       ├── ee831be61a9c_resource_overhaul.py
+│       └── __pycache__
+├── MVP_docs
+│   ├── DB_SnapShot_09252025
+│   │   ├── alembic_version.json
+│   │   ├── calendar.json
+│   │   ├── customers.json
+│   │   ├── db_snapshot.zip
+│   │   ├── entity_address.json
+│   │   ├── entity_contact.json
+│   │   ├── entity_entity.json
+│   │   ├── entity_org.json
+│   │   ├── entity_person.json
+│   │   ├── entity_role.json
+│   │   ├── governance_authorization.json
+│   │   ├── governance_office.json
+│   │   ├── governance_officer_term.json
+│   │   ├── governance_policy.json
+│   │   ├── inventory.json
+│   │   ├── party_address.json
+│   │   ├── party_contact.json
+│   │   ├── party_person.json
+│   │   ├── party_role.json
+│   │   ├── resources_assignment.json
+│   │   ├── resources_location.json
+│   │   ├── resources_resource.json
+│   │   ├── roles.json
+│   │   ├── sponsors.json
+│   │   ├── transactions_ledger.json
+│   │   ├── user_roles.json
+│   │   └── users.json
+│   ├── Entity chat handoff.md
+│   ├── Python Order of March
+│   ├── Scaffolding Docs Requirements
+│   ├── vcdb_v2_auth_role_events_pack_2025-09-21.zip
+│   ├── Vcdb V2 — Calendar & Events Slice (restored).docx
+│   ├── Vcdb V2 — Customer Slice.docx
+│   ├── Vcdb V2 — Deployment Checklist (server & Kiosks).docx
+│   ├── Vcdb V2 — Erd & Table Constraints (mvp).docx
+│   ├── vcdb_v_2_flask_scaffold_mvp_skeleton.py
+│   ├── vcdb_v2_governance_auth_seed_pack_2025-09-21_r2.zip
+│   ├── Vcdb V2 — Infrastructure Checklists.docx
+│   ├── Vcdb V2 — Inventory & Logistics Slice.docx
+│   ├── Vcdb V2 — Master (index & Decision Log).docx
+│   ├── Vcdb V2 — Operations Runbook.docx
+│   ├── Vcdb V2 — Resources Slice.docx
+│   ├── vcdb_v2_scaffolding_pack_2025-09-21.zip
+│   ├── Vcdb V2 — Sponsors Slice.docx
+│   ├── Vcdb V2 — Staff_Admin & Governance Slice.docx
+│   ├── vcdb_v2_transactions_ledger_wiring_pack_2025-09-21.zip
+│   └── Vcdb V2 — Transactions Slice.docx
+├── ORDER
+├── Project (VCDB v2) Slice Build-Out Spec.md
+├── __pycache__
+├── pyproject.toml
+├── pyrightconfig.json
+├── pytest.ini
+├── pyvenv.cfg
+├── README.md
+├── requirements.txt
+├── scaffolding_docs
+│   ├── Scaffolding Docs Requirements
+│   ├── Vcdb V2 — Calendar & Events Slice (restored).docx
+│   ├── Vcdb V2 — Customer Slice.docx
+│   ├── Vcdb V2 — Deployment Checklist (server & Kiosks).docx
+│   ├── Vcdb V2 — Erd & Table Constraints (mvp).docx
+│   ├── Vcdb V2 — Infrastructure Checklists.docx
+│   ├── Vcdb V2 — Inventory & Logistics Slice.docx
+│   ├── Vcdb V2 — Master (index & Decision Log).docx
+│   ├── Vcdb V2 — Operations Runbook.docx
+│   ├── Vcdb V2 — Resources Slice.docx
+│   ├── Vcdb V2 — Sponsors Slice.docx
+│   ├── Vcdb V2 — Staff_Admin & Governance Slice.docx
+│   └── Vcdb V2 — Transactions Slice.docx
+├── scaffolding_docs.zip
+├── scripts
+│   ├── Python
+│   │   ├── backfill_ledger_hash_chain.py
+│   │   ├── codemods
+│   │   │   └── normalize_time_calls.py
+│   │   ├── db_create_all.py
+│   │   ├── debug_hash.py
+│   │   ├── dev_emit.py
+│   │   ├── export_ledger_public.py
+│   │   ├── print_ledger.py
+│   │   ├── rebuild_from_json.py
+│   │   ├── repair_ledger_links.py
+│   │   ├── role_fix.py
+│   │   ├── sanity_check.py
+│   │   ├── sanity_probe.py
+│   │   ├── seed_auth_users.py
+│   │   ├── seed_governance_core.py
+│   │   ├── seed_minimal.py
+│   │   ├── seed_transactions_ledger.py
+│   │   ├── seed_trans.py
+│   │   ├── set_password.py
+│   │   ├── show_roles.py
+│   │   └── verify_ledger_chain.py
+│   ├── Shell
+│   │   ├── make_snapshot.sh
+│   │   ├── pip_freeze.sh
+│   │   ├── smoke_auth_role_events.sh
+│   │   ├── smoke_auth.sh
+│   │   ├── smoke_governance_rbac.sh
+│   │   ├── smoke_slices.sh
+│   │   └── verify_chain.sh
+│   ├── SQL
+│   │   ├── rbac_sqlite.sql
+│   │   └── user_person_sqlite.sql
+│   └── test
+├── SELECT
+├── Slice Build_Out Status 9_23_2025.md
+├── snapshots
+│   ├── vcdb-v2-20250922-184437.zip
+│   ├── vcdb-v2-20250922-184437.zip.sha256
+│   ├── vcdb-v2-20250923-100114.zip
+│   ├── vcdb-v2-20250923-100114.zip.sha256
+│   ├── vcdb-v2-20250924-185040.zip
+│   ├── vcdb-v2-20250924-185040.zip.sha256
+│   ├── vcdb-v2-20250928-210109.zip
+│   └── vcdb-v2-20250928-210109.zip.sha256
+├── snippets
+│   ├── app_init_blueprints.py
+│   ├── App Logging Info.md
+│   ├── Archive Protocol
+│   ├── cli_gov.py
+│   ├── Cron_Alerts Primer
+│   ├── CSRF Token Tricks
+│   ├── cURL Cheatsheet
+│   ├── Git Protocol
+│   ├── governance_codes_lists
+│   ├── Jinja Template Snippets
+│   ├── JSON Notes.md
+│   ├── Ledger Repair Primer
+│   ├── Ledger Snippets
+│   ├── Migration Protocol (SQLite + Alembic).md
+│   ├── nav_base_snippet.html
+│   ├── pagination_in Routes_excerpt.py
+│   ├── pagination_in_Templates_except.html
+│   ├── Password Reset Protocol
+│   ├── pip.freeze.2025-09-27.txt
+│   ├── Policy Edit Primer
+│   ├── Python Reference.md
+│   ├── Python venv pip Protocol
+│   ├── register_event_sink.py
+│   ├── remove stale pycache
+│   ├── Request_envelope_Response_DTO.py
+│   ├── Role Backfill Primer
+│   ├── Shm & Wal in database ops
+│   ├── SKU format.md
+│   ├── Slice Data Ownership.md
+│   ├── SQLite Interrogation Methods
+│   ├── VCDB Ethos.md
+│   ├── VCDB v2 — Opening Statement (pin this).md
+│   └── What to include.md
+├── tests
+│   ├── auth_helpers.py
+│   ├── conftest.py
+│   ├── governance
+│   │   ├── __pycache__
+│   │   ├── test_policy_edit_route.py
+│   │   ├── test_policy_ledger.py
+│   │   └── test_policy_validation.py
+│   ├── __init__.py
+│   ├── __pycache__
+│   ├── pytest.ini
+│   ├── test_auth_gates.py
+│   ├── test_entity_read_contract.py
+│   ├── test_public.py
+│   ├── test_validators.py
+│   └── test_wiring.py
+├── tree.txt
+├── var
+│   ├── app-instance
+│   │   ├── dev.db
+│   │   ├── dev.db.backup.2025-09-25-1727
+│   │   └── dev.db.sql
+│   ├── db_browser-dumps
+│   │   └── dev.db.sql
+│   ├── migrations
+│   │   ├── 20250922_add_ledger_hash_chain.sql
+│   │   └── 20250922_add_password_hash.sql
+│   └── seeds
+│       ├── governance_core.sql
+│       └── transactions_ledger.sql
+├── vcdb_tree
+├── vcdb-v2-20250921-083533.zip
+├── vcdb-v2-20250921-090924.zip
+├── vcdb-v2.sublime-project
+├── vcdb-v2.sublime-workspace
+└── wheelhouse
+
+1666 directories, 8495 files

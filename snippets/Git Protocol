@@ -1,0 +1,130 @@
+# Git Protocol
+
+## Add / Commit / Tag
+
+- git add -A
+- git commit -m "checkpoint: new chat ses entity in db"
+- git tag -a v2-freeze-new_ses-entity_in_db
+
+
+Here’s a tight, copy-pasteable cheatsheet you can drop into your notes.
+it covers creating a safe branch for UI work, staging/committing,
+merging back, and moving HEAD (including “new head” via tags or resets).
+
+```bash
+# --- One-time safety net (optional but recommended) ---
+git switch main                      # or: git checkout main
+git pull --ff-only                   # ensure local main is up to date
+git tag -a pre-webui -m "Baseline before web UI"   # easy fallback
+# (or create a backup branch: git branch backup/pre-webui main)
+
+# --- Start a feature branch for web UI ---
+git switch -c web-ui                 # or: git checkout -b web-ui
+git push -u origin web-ui            # publish & set upstream
+
+# --- Stage & commit frequently ---
+git status                           # see what changed
+git add <file> ...                   # stage specific files
+git add -p                           # stage hunks interactively
+git commit -m "feat(ui): message"    # commit staged changes
+git commit --amend --no-edit         # amend last commit (msg unchanged)
+
+# --- Keep your branch fresh with main (choose one style) ---
+git fetch origin
+git rebase origin/main               # linear history (preferred by many)
+# or:
+git merge origin/main                # merge main into your branch
+
+# --- Merge web-ui back into main when ready ---
+git fetch origin
+git switch main
+git pull --ff-only                   # update main locally
+git merge --no-ff web-ui -m "Merge web-ui"   # create explicit merge commit
+# Resolve conflicts if any:
+#   edit files -> git add <resolved files> -> git merge --continue
+# Abort a bad merge attempt:
+#   git merge --abort
+
+# --- Push the new main (this updates remote HEAD to the new tip) ---
+git push origin main
+
+# --- Make a “new head” easy to reference (tag the release) ---
+git tag -a vX.Y.Z -m "UI ready"
+git push origin main --tags
+
+# --- If you need to move HEAD locally (advanced/reset) ---
+git reset --soft HEAD~1              # move HEAD back 1 commit, keep changes staged
+git reset --mixed HEAD~1             # keep changes in working tree (default)
+git reset --hard <commit>            # WARNING: discard local changes
+
+# --- Cleanups ---
+git branch -d web-ui                 # delete local branch (after merge)
+git push origin :web-ui              # delete remote branch
+git stash                            # stash WIP
+git stash pop                        # restore stashed WIP
+```
+
+quick flow you can follow:
+
+1. tag current `main` (`pre-webui`), 2) `git switch -c web-ui`, 3) commit as you go, rebasing or merging `origin/main` into `web-ui` to stay current, 4) switch to `main` and `git merge --no-ff web-ui`, 5) push `main`, 6) tag the release (`vX.Y.Z`).
+
+
+
+Shotgun approach to .gitignore
+
+# .gitignore
+
+# --- Dev, MVP docs, IDE environment and Tests
+/tests/*
+/MVP_docs/*
+pyproject.toml
+pyrightconfig.json
+*.sublime-*
+.cache/
+*.zip
+
+# --- Virtual Environment ---
+/bin/
+/include/
+/lib
+/lib64
+/pyvenv.cfg
+env/
+.pyenv/
+pip-wheel-metadata/
+pip-log.txt
+
+# --- Python / build ---
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg*
+.eggs/
+dist/
+build/
+
+# --- Databases (SQLite etc.) ---
+*.sqlite
+*.sqlite3
+*.db
+*.db-*
+/var
+instance/*
+!instance/.gitkeep
+
+# --- Logs (DEV-ONLY JSONL, keep dirs) ---
+logs/**
+!logs/.gitkeep
+app/logs/*.log
+!app/logs/.gitkeep
+
+# --- Runtime/output dirs (not versioned) ---
+archive/**
+!archive/.gitkeep
+exports/**
+
+# --- Secrets & local config ---
+.env
+.env.*
+!.env.example

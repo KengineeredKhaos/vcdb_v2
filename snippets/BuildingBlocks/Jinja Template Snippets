@@ -1,0 +1,14 @@
+# Jinja Template Snippets
+
+
+**Select field with JSON schema backing**
+
+{% set options = policy.schema.items.enum %}
+<label for="roles">Allowed roles</label>
+<select id="roles" name="roles" multiple>
+  {% for role in options %}
+    <option value="{{ role }}" {{ 'selected' if role in policy.value else '' }}>
+      {{ role|capitalize }}
+    </option>
+  {% endfor %}
+</select>

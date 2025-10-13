@@ -1,0 +1,13 @@
+# Ledger Snippets
+
+### Policy edits ledger entry
+
+**When roles are edited,** emit a single, normalized ledger event:
+
+domain="governance", 
+type="policy_change", 
+operation="set",
+target_id=None (or a synthetic governance ULID if you prefer),
+changed_fields_json={"entity.allowed_roles": {"from": [...], "to": [...]}}.
+
+That gives you a clean, consistent trail.

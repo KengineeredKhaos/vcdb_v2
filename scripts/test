@@ -1,0 +1,5 @@
+# scripts/test (make it executable: chmod +x scripts/test)
+#!/usr/bin/env bash
+set -euo pipefail
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+exec python -m pytest "$@"

@@ -1,0 +1,32 @@
+<!-- app/slices/auth/templates/auth/login.html -->
+{% extends "layout/base.html" %}
+{% block title %}Sign in · VCDB{% endblock %}
+
+{% block content %}
+<h1>Sign in</h1>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <ul class="flashes">
+      {% for cat, msg in messages %}
+        <li class="flash {{cat}}">{{ msg }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endwith %}
+
+<form method="post" action="{{ url_for('auth.login_post', **request.args) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div>
+    <label>Email</label><br>
+    <input type="email" name="email" required autocomplete="username">
+  </div>
+  <div>
+    <label>Password</label><br>
+    <input type="password" name="password" required autocomplete="current-password">
+  </div>
+  <div style="margin-top:.75rem;">
+    <button class="btn" type="submit">Sign in</button>
+  </div>
+</form>
+{% endblock %}

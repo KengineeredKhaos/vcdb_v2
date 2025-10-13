@@ -1,0 +1,13 @@
+{ "$schema":"http://json-schema.org/draft-07/schema#",
+  "type":"object","required":["item_ulid","quantity","unit","happened_at_utc","location_from_ulid","location_to_ulid"],
+  "properties":{
+    "item_ulid":{"type":"string","minLength":26,"maxLength":26},
+    "quantity":{"type":"integer","minimum":1},
+    "unit":{"type":"string","enum":["each","lbs","kits","boxes","packs"]},
+    "happened_at_utc":{"type":"string","format":"date-time"},
+    "location_from_ulid":{"type":"string","minLength":26,"maxLength":26},
+    "location_to_ulid":{"type":"string","minLength":26,"maxLength":26},
+    "batch_ulid":{"type":"string","minLength":26,"maxLength":26},
+    "note":{"type":"string","maxLength":160}
+  },
+  "additionalProperties":false }

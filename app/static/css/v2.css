@@ -1,0 +1,12 @@
+body { font-family: system-ui, sans-serif; margin: 0; padding: 0; }
+main { padding: 1rem 1.5rem; }
+.flashes { list-style: none; padding: 0; }
+.flash { padding: .5rem .75rem; margin: .25rem 0; border-radius: .25rem; background: #eee; }
+
+<style>
+.pagination { list-style: none; display: flex; gap: .25rem; padding: 0; margin: .75rem 0 0;}
+.page-item .page-link { display:inline-block; padding:.35rem .6rem; border:1px solid #ddd; border-radius:6px; text-decoration:none; }
+.page-item.active .page-link { font-weight: 600; background:#f6f6f6; }
+.page-item.disabled .page-link { opacity:.55; pointer-events:none; }
+</style>
+

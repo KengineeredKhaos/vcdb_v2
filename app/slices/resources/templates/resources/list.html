@@ -1,0 +1,56 @@
+{% extends "layout/base.html" %}
+{% from "_macros.html" import paginate %}
+{% block title %}Resources · List{% endblock %}
+{% block content %}
+<h1>Resources</h1>
+
+<form method="post" action="{{ url_for('resources.create') }}" style="display:flex; gap:.5rem; flex-wrap:wrap; align-items:end; margin:.5rem 0 1rem;">
+  <div>
+    <div style="font-size:.85rem;opacity:.8;">Code</div>
+    <input name="code" required>
+  </div>
+  <div>
+    <div style="font-size:.85rem;opacity:.8;">Name</div>
+    <input name="name" required>
+  </div>
+  <div>
+    <div style="font-size:.85rem;opacity:.8;">Type</div>
+    <input name="type" placeholder="room|van|gear|service" required>
+  </div>
+  <div>
+    <div style="font-size:.85rem;opacity:.8;">Status</div>
+    <select name="status">
+      <option value="active">active</option>
+      <option value="inactive">inactive</option>
+    </select>
+  </div>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit">Create</button>
+</form>
+
+<table>
+  <tr>
+    <th>code</th><th>name</th><th>type</th><th>status</th><th>created</th>
+  </tr>
+  {% for r in rows %}
+  <tr>
+    <td><code>{{ r.code }}</code></td>
+    <td>{{ r.name }}</td>
+    <td>{{ r.type }}</td>
+    <td>{{ r.status }}</td>
+    <td>{{ r.created_at_utc }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5"><em>No resources yet.</em></td></tr>
+  {% endfor %}
+</table>
+
+{{ paginate(p, page_url) }}
+
+<style>
+  table { width:100%; border-collapse:collapse; margin-top:.75rem; }
+  th, td { padding:.4rem .5rem; border-bottom:1px solid #eee; text-align:left; }
+  .btn { display:inline-block; padding:.35rem .6rem; border:1px solid #ddd; border-radius:6px; text-decoration:none; }
+  .btn:hover { background:#f6f6f6; }
+</style>
+{% endblock %}

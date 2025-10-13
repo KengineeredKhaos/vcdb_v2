@@ -1,0 +1,82 @@
+{% extends "layout/base.html" %}
+{% from "_forms.html" import text, select, radios %}
+
+{% block content %}
+<h1>Create Entity</h1>
+
+<form method="post" action="{{ url_for('entity.create') }}" id="entity-form">
+  {{ radios("kind", "Entity Type", [("person","Person"), ("org","Organization")], value="person") }}
+
+  <div id="person-fields">
+    {{ text("first_name", "First name", required=True, maxlength=80) }}
+    {{ text("last_name", "Last name", required=True, maxlength=80) }}
+    {{ text("email", "Email", type="email", placeholder="name@example.org", help="Use a monitored email inbox if possible.") }}
+    {{ text("phone", "Phone", placeholder="(555) 867-5309", help="Digits only or (###) ###-####. Will be normalized.", inputmode="numeric", maxlength=20) }}
+  </div>
+
+  <div id="org-fields" style="display:none;">
+    {{ text("legal_name", "Legal name", required=True, maxlength=200) }}
+    {{ text("doing_business_as", "DBA (optional)", maxlength=200) }}
+    {{ text("ein", "EIN", placeholder="12-3456789", help="9 digits; dashes optional. Will be normalized.", inputmode="numeric", maxlength=10, pattern="^\\d{2}-?\\d{7}$") }}
+  </div>
+
+  <h3>Address (optional)</h3>
+  {{ select("addr_purpose", "Purpose", [("physical","Physical"), ("mailing","Mailing"), ("pickup","Pickup")], value="physical") }}
+  {{ text("addr1", "Address 1", placeholder="123 Main St") }}
+  {{ text("addr2", "Address 2", placeholder="Apt 2B") }}
+  <div class="row">
+    <div class="col">{{ text("city", "City") }}</div>
+    <div class="col">{{ select("state", "State", states) }}</div>
+    <div class="col">{{ text("postal", "Postal", inputmode="numeric", maxlength=12) }}</div>
+  </div>
+
+  <h3>Role (optional)</h3>
+  {{ select("role", "Role code", role_codes, help="Choose a standardized role code if applicable.") }}
+
+  <div style="margin-top:.75rem;">
+    <button class="btn" type="submit">Save</button>
+    <a class="btn" href="{{ url_for('entity.list_people') }}">Cancel</a>
+  </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+(function(){
+  const kindRadios = document.querySelectorAll('input[name="kind"]');
+  const person = document.getElementById('person-fields');
+  const org    = document.getElementById('org-fields');
+  function swap(){
+    const val = [...kindRadios].find(r => r.checked)?.value || 'person';
+    person.style.display = (val === 'person') ? '' : 'none';
+    org.style.display    = (val === 'org') ? '' : 'none';
+  }
+  kindRadios.forEach(r => r.addEventListener('change', swap));
+  swap();
+
+  // Light client-side normalization; server still validates strictly.
+  const ein = document.getElementById('id_ein');
+  if (ein) {
+    ein.addEventListener('blur', () => {
+      const digits = (ein.value || '').replace(/\D+/g,'').slice(0,9);
+      if (digits.length === 9) {
+        ein.value = digits.slice(0,2) + '-' + digits.slice(2);
+      }
+    });
+  }
+  const phone = document.getElementById('id_phone');
+  if (phone) {
+    phone.addEventListener('blur', () => {
+      const digits = (phone.value || '').replace(/\D+/g,'').slice(0,15);
+      if (digits.length === 10) {
+        phone.value = '(' + digits.slice(0,3) + ') ' + digits.slice(3,6) + '-' + digits.slice(6);
+      } else {
+        phone.value = digits; // let server normalize more fully
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

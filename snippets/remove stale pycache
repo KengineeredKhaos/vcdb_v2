@@ -1,0 +1,3 @@
+remove stale byte code 
+
+find app -name "__pycache__" -type d -exec rm -rf {} +

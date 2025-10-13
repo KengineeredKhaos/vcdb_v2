@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["source","happened_at_utc","lines"],
+  "properties": {
+    "source": { "type": "string", "maxLength": 32 },
+    "external_ref_ulid": { "type": "string", "minLength": 26, "maxLength": 26 },
+    "happened_at_utc": { "type": "string", "format": "date-time" },
+    "currency": { "type": "string", "enum": ["USD"], "default": "USD" },
+    "memo": { "type": "string", "maxLength": 160 },
+    "lines": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["account_code","fund_code","amount_cents"],
+        "properties": {
+          "account_code": { "type": "string", "maxLength": 24 },
+          "fund_code": { "type": "string", "maxLength": 32 },
+          "project_ulid": { "type": "string", "minLength": 26, "maxLength": 26 },
+          "amount_cents": { "type": "integer" },
+          "memo": { "type": "string", "maxLength": 160 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

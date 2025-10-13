@@ -1,0 +1,13 @@
+<!-- In app/templates/layout/base.html, inside <nav> -->
+<a href="{{ url_for('customers.hello') }}">Customers</a> ·
+<a href="{{ url_for('resources.hello') }}">Resources</a> ·
+<a href="{{ url_for('sponsors.hello') }}">Sponsors</a> ·
+<a href="{{ url_for('inventory.hello') }}">Inventory</a> ·
+<a href="{{ url_for('transactions.hello') }}">Transactions</a> ·
+<a href="{{ url_for('calendar.hello') }}">Calendar</a> ·
+<a href="{{ url_for('governance.hello') }}">Governance</a> ·
+{% if current_user.is_authenticated %}
+  <a href="{{ url_for('auth.logout') }}">Logout</a>
+{% else %}
+  <a href="{{ url_for('auth.login') }}">Login</a>
+{% endif %}

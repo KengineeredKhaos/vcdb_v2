@@ -1,0 +1,62 @@
+{% extends "layout/base.html" %}
+{% from "_macros.html" import paginate %}
+{% block title %}Customers · List{% endblock %}
+{% block content %}
+<h1>Customers</h1>
+
+<form method="post" action="{{ url_for('customers.create') }}" style="display:flex; gap:.5rem; flex-wrap:wrap; align-items:end; margin:.5rem 0 1rem;">
+  <div>
+    <div style="font-size:.85rem;opacity:.8;">First name</div>
+    <input name="first_name" required>
+  </div>
+  <div>
+    <div style="font-size:.85rem;opacity:.8;">Last name</div>
+    <input name="last_name" required>
+  </div>
+  <div>
+    <div style="font-size:.85rem;opacity:.8;">Email</div>
+    <input name="email" type="email" placeholder="name@example.org">
+  </div>
+  <div>
+    <div style="font-size:.85rem;opacity:.8;">Phone</div>
+    <input name="phone" placeholder="+1 555 123 4567">
+  </div>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit">Create</button>
+</form>
+
+<table>
+  <tr>
+    <th>name</th><th>email</th><th>phone</th><th>status</th><th>updated</th><th>actions</th>
+  </tr>
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.first_name }} {{ r.last_name }}</td>
+    <td>{{ r.email or "—" }}</td>
+    <td>{{ r.phone or "—" }}</td>
+    <td>{{ 'customer' if r.is_customer else '—' }}</td>
+    <td>{{ r.updated_at_utc }}</td>
+    <td>
+      <form method="post" action="{{ url_for('customers.update_contact') }}" style="display:flex; gap:.25rem; align-items:center;">
+        <input type="hidden" name="person_id" value="{{ r.id }}">
+        <input name="email" type="email" placeholder="new email">
+        <input name="phone" placeholder="new phone">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">Update</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6"><em>No customers yet.</em></td></tr>
+  {% endfor %}
+</table>
+
+{{ paginate(p, page_url) }}
+
+<style>
+  table { width:100%; border-collapse:collapse; margin-top:.75rem; }
+  th, td { padding:.4rem .5rem; border-bottom:1px solid #eee; text-align:left; }
+  .btn { display:inline-block; padding:.35rem .6rem; border:1px solid #ddd; border-radius:6px; text-decoration:none; }
+  .btn:hover { background:#f6f6f6; }
+</style>
+{% endblock %}

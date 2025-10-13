@@ -1,0 +1,37 @@
+{# app/slices/governance/templates/governance/policy_edit.html #}
+{% extends "layout/base.html" %}
+{% import "_macros.html" as macros %}
+{% block content %}
+<h1>{{ title }}</h1>
+
+<form method="post" action="{{ url_for('governance.policy_edit_post', key=key) }}" class="stack">
+  {{ macros.csrf_field() }}
+  <label>Key
+    <input name="key" value="{{ key }}" readonly>
+  </label>
+
+  <label>Value (JSON list or string)
+    <textarea name="value" rows="10" spellcheck="false" class="mono">{{ current_value }}</textarea>
+  </label>
+
+  {% if updated_at %}
+  <p class="muted">Last updated: {{ updated_at }}</p>
+  {% endif %}
+
+  <div class="row">
+    <button class="btn" type="submit">Save</button>
+    <a class="btn btn--secondary" href="{{ url_for('governance.policy_index') }}">Back</a>
+  </div>
+</form>
+
+<div class="muted" style="margin-top:1rem">
+  <details>
+    <summary>Help</summary>
+    <ul>
+      <li><code>entity.allowed_roles</code> — JSON array or CSV; strings only.</li>
+      <li><code>entity.resource_codes</code> — JSON array or CSV; strings only.</li>
+      <li><code>entity.us_states</code> — JSON array of two-letter codes (e.g. <code>"CA"</code>); validated.</li>
+    </ul>
+  </details>
+</div>
+{% endblock %}
