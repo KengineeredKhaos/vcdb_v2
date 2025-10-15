@@ -1,92 +1,64 @@
 # app/slices/governance/models.py
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Index, Integer, String, UniqueConstraint
+from datetime import datetime
+
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.extensions import db
-from app.lib.chrono import now_iso8601_ms, utcnow_naive
-from app.lib.models import ULIDFK, ULIDPK
+from app.lib.chrono import utcnow_naive
+from app.lib.models import ULIDPK
 
 
-class Policy(db.Model, ULIDPK):
+class CanonicalState(db.Model, ULIDPK):
+    __tablename__ = "gov_canonical_state"
+    code: Mapped[str] = mapped_column(String(2), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at_utc: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive
+    )
+    updated_at_utc: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive
+    )
+
+
+class ServiceClassification(db.Model, ULIDPK):
+    __tablename__ = "gov_service_class"
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    label: Mapped[str] = mapped_column(String(128))
+    sort: Mapped[int] = mapped_column(Integer, default=100)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at_utc: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive
+    )
+    updated_at_utc: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive
+    )
+    __table_args__ = (Index("ix_gov_service_class_sort", "sort"),)
+
+
+class RoleCode(db.Model, ULIDPK):
     """
-    Versioned policy document; one active version per (namespace, key).
-    """
-
-    __tablename__ = "governance_policy"
-
-    namespace: Mapped[str] = mapped_column(
-        String(64), nullable=False, index=True
-    )  # e.g. "governance"
-    key: Mapped[str] = mapped_column(
-        String(64), nullable=False, index=True
-    )  # e.g. "roles"
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-
-    # Store JSON as TEXT in SQLite; keep shape at the service boundary.
-    value_json: Mapped[str] = mapped_column(
-        String, nullable=False
-    )  # stable_dumps(value)
-    schema_json: Mapped[str | None] = mapped_column(String, nullable=True)
-
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, index=True
-    )
-
-    updated_by_actor_ulid: Mapped[str | None] = mapped_column(
-        String(26), nullable=True
-    )
-
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
-        nullable=False,
-    )
-
-    __table_args__ = (
-        UniqueConstraint(
-            "namespace", "key", "is_active", name="uq_policy_active_one"
-        ),
-        Index("ix_policy_family", "namespace", "key", "is_active"),
-    )
-
-
-class CapabilityGrant(db.Model, ULIDPK):
-    """
-    Grants a named capability to a principal (an Entity) in an optional scope.
-    Keep this distinct from RBAC (Auth slice); this is domain capability.
+    Canonical list of allowed RBAC role codes (read-only for other slices).
+    Auth slice still owns actual assignments; this just publishes the vocabulary.
     """
 
-    __tablename__ = "governance_capability_grant"
-
-    principal_ulid: Mapped[str] = ULIDFK(
-        "entity_entity", index=True
-    )  # ← matches your Entity table
-    capability: Mapped[str] = mapped_column(
-        String(120), nullable=False, index=True
-    )  # e.g., "governor"
-    scope: Mapped[str | None] = mapped_column(
-        String(255), nullable=True
-    )  # freeform "finance:*" or JSON pointer
-
-    issued_by_actor_ulid: Mapped[str | None] = mapped_column(
-        String(26), nullable=True
+    __tablename__ = "gov_role_code"
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    description: Mapped[str] = mapped_column(String(200), default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at_utc: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive
     )
-    expires_at_utc: Mapped[str | None] = mapped_column(
-        String(30), nullable=True
-    )
-
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
-        nullable=False,
+    updated_at_utc: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive
     )

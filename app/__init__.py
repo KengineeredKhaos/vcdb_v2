@@ -137,6 +137,7 @@ def create_app(config_object="config.DevConfig"):
     from app.slices.entity import bp as entity_bp
     from app.slices.finance import bp as finance_bp
     from app.slices.governance import bp as governance_bp
+    from app.slices.ledger import bp as ledger_bp
     from app.slices.logistics import bp as logistics_bp
     from app.slices.resources import bp as resources_bp
     from app.slices.sponsors import bp as sponsors_bp
@@ -149,6 +150,7 @@ def create_app(config_object="config.DevConfig"):
     app.register_blueprint(entity_bp)
     app.register_blueprint(finance_bp)
     app.register_blueprint(governance_bp)
+    app.register_blueprint(ledger_bp)
     app.register_blueprint(logistics_bp)
     app.register_blueprint(resources_bp)
     app.register_blueprint(sponsors_bp)

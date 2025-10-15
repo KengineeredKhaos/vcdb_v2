@@ -17,9 +17,6 @@ from flask_wtf import CSRFProtect
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
-from app.extensions.contracts import auth as _auth_pkg
-from app.extensions.contracts import governance as _gov_pkg
-from app.extensions.contracts import ledger as _ledger_pkg
 from app.lib.chrono import parse_iso8601, to_iso8601, now_iso8601_ms
 from app.lib.ids import new_ulid
 
@@ -473,35 +470,3 @@ def init_extensions(app):
 # -----------------
 # Export Hygiene
 # -----------------
-
-__all__ = [
-    # Flask ext objects
-    "login_manager",
-    "csrf",
-    "db",
-    "migrate",
-    # facades
-    "entity_api",
-    "entity_read",
-    # infra
-    "event_bus",
-    "policy",
-    "enforcers",
-    # utils
-    "current_actor_id",
-    "normalize_email",
-    "validate_email",
-    "assert_valid_email",
-    "normalize_phone",
-    "validate_phone",
-    "assert_valid_phone",
-    "normalize_ein",
-    "validate_ein",
-    "allowed_role_codes",
-    # lifecycle
-    "init_extensions",
-    # state code mapping
-    "us_state_codes",
-    "us_state_choices",
-    "state_label",
-]

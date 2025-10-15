@@ -1,13 +1,9 @@
-# app/slices/governance/__init__.py
+# app/slices/ledger/__init__.py
 from __future__ import annotations
-
 from flask import Blueprint
 
 bp = Blueprint(
-    "governance",
-    __name__,
-    url_prefix="/governance",
-    template_folder="templates",
+    "ledger", __name__, url_prefix="/ledger", template_folder="templates"
 )
 
 from . import routes  # noqa: E402,F401

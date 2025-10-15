@@ -1,16 +1,18 @@
 # app/slices/governance/services.py
 from __future__ import annotations
-from typing import Any, Dict, Tuple
 
 import json
+from typing import Any, Dict, Tuple
+
 from jsonschema import Draft202012Validator, ValidationError
+from sqlalchemy import asc, func, select
 
-from sqlalchemy import select, func
-
-from app.extensions import db, event_bus, policy as policy_cache
+from app.extensions import db, event_bus
+from app.extensions import policy as policy_cache
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps, stable_loads  # from your lib.zip
-from .models import Policy
+
+from .models import CanonicalState, RoleCode, ServiceClassification
 
 
 class PolicyNotFoundError(ValueError):
@@ -19,6 +21,38 @@ class PolicyNotFoundError(ValueError):
 
 class PolicyValidationError(ValueError):
     pass
+
+
+def list_states() -> list[dict]:
+    rows = (
+        db.session.query(CanonicalState)
+        .filter_by(is_active=True)
+        .order_by(asc(CanonicalState.code))
+        .all()
+    )
+    return [{"code": r.code, "name": r.name} for r in rows]
+
+
+def list_service_classifications() -> list[dict]:
+    rows = (
+        db.session.query(ServiceClassification)
+        .filter_by(is_active=True)
+        .order_by(
+            asc(ServiceClassification.sort), asc(ServiceClassification.code)
+        )
+        .all()
+    )
+    return [{"code": r.code, "label": r.label, "sort": r.sort} for r in rows]
+
+
+def list_domain_roles() -> list[dict]:
+    rows = (
+        db.session.query(RoleCode)
+        .filter_by(is_active=True)
+        .order_by(asc(RoleCode.code))
+        .all()
+    )
+    return [{"code": r.code, "description": r.description} for r in rows]
 
 
 # ---- Registry (schema + defaults) ------------------------------------------
