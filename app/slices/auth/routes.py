@@ -1,5 +1,6 @@
 # app/slices/auth/routes.py
 from __future__ import annotations
+
 from flask import (
     Blueprint,
     flash,
@@ -10,9 +11,11 @@ from flask import (
     url_for,
 )
 from flask_login import login_required, login_user, logout_user
+
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
-from .decorators import rbac
+
 from . import services as svc
+from .decorators import rbac
 from .models import User
 
 bp = Blueprint(
@@ -39,6 +42,7 @@ def login_post():
             SessionUser(
                 ulid=view["ulid"],
                 name=view["username"],
+                username=view["username"],
                 email=view["email"],
                 roles=view["roles"],
             ),

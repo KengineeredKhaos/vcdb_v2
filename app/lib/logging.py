@@ -1,11 +1,11 @@
 # app/lib/logging.py
 
-import logging
 import json
+import logging
 from pathlib import Path
 from typing import Optional
-from .chrono import parse_iso8601, utc_now, to_iso8601
 
+from .chrono import now_iso8601_ms, parse_iso8601, to_iso8601
 
 """
 What to move into app/lib/logging.py

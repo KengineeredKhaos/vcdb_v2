@@ -11,9 +11,17 @@ bp = Blueprint(
 
 
 class SessionUser:
-    def __init__(self, ulid: str, name: str, email: str, roles: list[str]):
+    def __init__(
+        self,
+        ulid: str,
+        name: str,
+        email: str,
+        roles: list[str],
+        username: str | None = None,
+    ):
         self.ulid = ulid
         self.name = name
+        self.username = username or name
         self.email = email
         self.roles = roles
         self.is_authenticated = True
@@ -44,6 +52,7 @@ def _dev_auto_login():
         identity = {
             "ulid": new_ulid(),
             "name": "dev",
+            "username": "dev",
             "email": "dev@example.org",
             "roles": ["admin"],  # convenient for local dev
         }

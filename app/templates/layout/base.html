@@ -63,14 +63,16 @@
             {{ current_user.username or current_user.name or current_user.email }}
           </span>
 
-          {% if 'auth.change_password' in current_app.view_functions %}
+          {% if has_endpoint('auth.change_password') %}
             <a class="btn" href="{{ url_for('auth.change_password') }}">Change password</a>
           {% endif %}
 
-          <form method="post" action="{{ url_for('auth.logout') }}" style="display:inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button class="btn" type="submit">Logout</button>
-          </form>
+          {% if has_endpoint('auth.logout') %}
+            <form method="post" action="{{ url_for('auth.logout') }}" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn" type="submit">Logout</button>
+            </form>
+          {% endif %}
         {% else %}
           {# Our GET form endpoint is auth.login (alias). #}
           <a class="btn" href="{{ url_for('auth.login') }}">Login</a>
