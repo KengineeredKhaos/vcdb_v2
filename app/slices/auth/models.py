@@ -21,7 +21,9 @@ from app.lib.models import ULIDFK, ULIDPK
 class User(db.Model, ULIDPK):
     __tablename__ = "auth_user"
 
-    entity_ulid: Mapped[str | None] = ULIDFK("entity", nullable=True)
+    entity_ulid: Mapped[str | None] = mapped_column(
+        String(26), index=True, nullable=True
+    )
 
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     email: Mapped[str] = mapped_column(String(254), unique=True, index=True)

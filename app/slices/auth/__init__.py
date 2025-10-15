@@ -1,13 +1,17 @@
 # app/slices/auth/__init__.py
 from __future__ import annotations
-from flask import Blueprint, current_app, session
+
+from flask import Blueprint, current_app, request, session
 from flask_login import current_user, login_user
+
 from app.extensions import login_manager
 from app.lib.ids import new_ulid
 
 bp = Blueprint(
     "auth", __name__, url_prefix="/auth", template_folder="templates"
 )
+
+from . import models, routes  # noqa: F401
 
 
 class SessionUser:
@@ -63,6 +67,19 @@ def _dev_auto_login():
         pass
 
 
-from . import models, routes  # noqa: F401
+@login_manager.request_loader
+def _load_user_from_request(req: request):
+    ident = session.get("session_user")
+    if ident:
+        # Accept session_user as an authenticated principal for this request.
+        return SessionUser(
+            ulid=ident.get("ulid"),
+            name=ident.get("name") or ident.get("username") or "user",
+            username=ident.get("username") or ident.get("name") or "user",
+            email=ident.get("email") or "",
+            roles=ident.get("roles") or [],
+        )
+    return None
 
-__all__ = ["SessionUser"]
+
+__all__ = ["SessionUser", "bp"]

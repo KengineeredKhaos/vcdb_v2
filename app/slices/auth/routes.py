@@ -12,20 +12,19 @@ from flask import (
 )
 from flask_login import login_required, login_user, logout_user
 
+from app.extensions import csrf
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
 
+from . import bp
 from . import services as svc
 from .decorators import rbac
 from .models import User
 
-bp = Blueprint(
-    "auth", __name__, url_prefix="/auth", template_folder="templates"
-)
-
 
 @bp.get("/login", endpoint="login")
 def login_form():
-    return render_template("auth/login.html")  # include CSRF hidden field
+    nxt = request.args.get("next", "")
+    return render_template("auth/login.html", next_url=nxt)
 
 
 @bp.post("/login", endpoint="login_post")
@@ -63,14 +62,13 @@ def logout():
 
 
 # --- Minimal admin API to manage roles (JSON) ---
-@bp.post("/admin/users/<user_ulid>/roles")
-@rbac("admin")
+
+
+@bp.post("/admin/users/<user_ulid>/roles", endpoint="admin_set_roles")
+@csrf.exempt  # tests don’t send a token; exempt the JSON admin endpoint
+@rbac("admin")  # our decorator returns 401/403 instead of redirecting
 def admin_set_roles(user_ulid: str):
     payload = request.get_json(force=True) or {}
     roles = payload.get("roles", [])
-    svc.set_account_roles(
-        account_ulid=user_ulid,
-        roles=roles,
-        actor_entity_ulid=get_actor_ulid(),
-    )
+    svc.set_account_roles(account_ulid=user_ulid, roles=roles)
     return jsonify(svc.user_view(user_ulid))

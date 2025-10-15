@@ -17,7 +17,8 @@ from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 from app.slices.admin import bp
-from app.slices.auth.decorators import login_required, roles_required
+from flask_login import login_required
+from app.slices.auth.decorators import roles_required
 from app.extensions import policy as policy_cache
 from app.extensions.contracts.governance import v1 as gov_contract
 
