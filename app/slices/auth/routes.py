@@ -1,17 +1,25 @@
 # app/slices/auth/routes.py
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import (
+    Blueprint,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+from flask_login import login_required, login_user, logout_user
 
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
 from app.lib.security import (
     require_rbac,  # if you want to gate routes; can be toggled
 )
-from app.slices.auth import services as auth_svc
 
-bp = Blueprint("auth", __name__, url_prefix="/auth")
-
-# ---- Helpers ---------------------------------------------------------------
+from . import SessionUser, bp
+from . import services as auth_svc
 
 
 def _json_ok(data=None, **extras):
@@ -146,13 +154,13 @@ def detach_role(user_ulid: str, role_code: str):
 
 # ---- AuthN (basic) ---------------------------------------------------------
 
-
+"""
 @bp.post("/login")
 def login_basic():
-    """
-    Simple credential check; session mgmt happens in your web layer if/when you add it.
-    Returns user_ulid on success (no cookies here).
-    """
+
+    Simple credential check; session mgmt happens in your web layer
+    if/when you add it. Returns user_ulid on success (no cookies here).
+
     try:
         payload = request.get_json(force=True, silent=False) or {}
         req_id = ensure_request_id()
@@ -166,3 +174,76 @@ def login_basic():
         return _json_ok({"user_ulid": user_ulid})
     except Exception as e:
         return _json_err(e)
+"""
+
+# -----------------
+# "Stub" Login Procedures
+# -----------------
+
+
+@bp.get("/login", endpoint="login")
+def login_form():
+    nxt = request.args.get("next") or ""
+    next_url = nxt if nxt.startswith("/") else None  # avoid open redirect
+    return render_template("auth/login.html", next_url=next_url)
+
+
+@bp.post("/login", endpoint="login_post")
+def login_post():
+    username = (request.form.get("username") or "").strip()
+    password = request.form.get("password") or ""
+    if not username or not password:
+        flash("Username and password are required.", "error")
+        return redirect(url_for("auth.login"))
+
+    try:
+        req_id = ensure_request_id()
+        user_ulid = auth_svc.authenticate(
+            username=username, password=password, request_id=req_id
+        )
+        if not user_ulid:
+            flash("Invalid credentials.", "error")
+            return redirect(url_for("auth.login"))
+
+        # Build a minimal identity and stash it for the stub loader
+        view = auth_svc.user_view(user_ulid) or {}
+        identity = {
+            "name": view.get("username") or view.get("email") or "User",
+            "email": view.get("email"),
+            "roles": [
+                r if isinstance(r, str) else r.get("role")
+                for r in (view.get("roles") or [])
+            ],
+        }
+        users = session.get("users", {})
+        users[user_ulid] = identity
+        session["users"] = users
+
+        # Log in this request too (so current_user works immediately)
+        login_user(
+            # Import SessionUser from auth.__init__ if you exported it,
+            # otherwise recreate a tiny object here
+            SessionUser(
+                user_id=user_ulid,
+                name=identity["name"],
+                email=identity["email"],
+                roles=identity["roles"],
+            ),
+            remember=True,
+        )
+
+        flash("Welcome!", "success")
+        next_url = request.form.get("next")
+        return redirect(next_url or url_for("web.index"))
+
+    except Exception as e:
+        flash(f"Login failed: {e}", "error")
+        return redirect(url_for("auth.login"))
+
+
+@bp.post("/logout", endpoint="logout")
+@login_required
+def logout():
+    logout_user()
+    flash("Signed out.", "info")
+    return redirect(url_for("auth.login"))

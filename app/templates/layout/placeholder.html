@@ -1,0 +1,7 @@
+<!-- app/templates/layout/placeholder.html -->
+{% extends "layout/base.html" %}
+{% block title %}{{ title or "Coming soon" }} · VCDB{% endblock %}
+{% block content %}
+  <h1>{{ title or "Coming soon" }}</h1>
+  <p class="muted">{{ message or "This page is under construction." }}</p>
+{% endblock %}
