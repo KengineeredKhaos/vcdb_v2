@@ -11,7 +11,7 @@ from app.extensions.contracts.types import (
     ContractResponse,
 )
 from app.lib import new_ulid
-from app.lib.chrono import parse_iso8601, to_iso8601, utc_now
+from app.lib.chrono import parse_iso8601, to_iso8601, now_iso8601_ms
 from app.lib.ids import new_ulid  # central ULID helper
 
 ALLOWED_DOMAINS = {
@@ -64,7 +64,7 @@ def emit(req: ContractRequest) -> ContractResponse:
         return {
             "contract": "ledger.emit.v1",
             "request_id": req["request_id"],
-            "ts": utc_now(),
+            "ts": now_iso8601_ms(),
             "ok": False,
             "errors": [
                 {
@@ -77,7 +77,7 @@ def emit(req: ContractRequest) -> ContractResponse:
         return {
             "contract": "ledger.emit.v1",
             "request_id": req["request_id"],
-            "ts": utc_now(),
+            "ts": now_iso8601_ms(),
             "ok": False,
             "errors": [
                 {
@@ -93,7 +93,7 @@ def emit(req: ContractRequest) -> ContractResponse:
         "type": data["type"],
         "domain": data["domain"],
         "operation": data["operation"],
-        "happened_at_utc": data.get("happened_at_utc") or utc_now(),
+        "happened_at_utc": data.get("happened_at_utc") or now_iso8601_ms(),
         "request_id": data["request_id"],
         "actor_id": data.get("actor_id"),
         "target_id": data.get("target_id"),
@@ -109,7 +109,7 @@ def emit(req: ContractRequest) -> ContractResponse:
         return {
             "contract": "ledger.emit.v1",
             "request_id": req["request_id"],
-            "ts": utc_now(),
+            "ts": now_iso8601_ms(),
             "ok": True,
             "data": {
                 "id": event["id"],
@@ -132,7 +132,7 @@ def emit(req: ContractRequest) -> ContractResponse:
         return {
             "contract": "ledger.emit.v1",
             "request_id": req["request_id"],
-            "ts": utc_now(),
+            "ts": now_iso8601_ms(),
             "ok": True,
             "data": {
                 "id": event["id"],

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from app.extensions.contracts.types import ContractRequest, ContractResponse
 from app.extensions.contracts.validate import load_schema, validate_payload
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.slices.finance import services as fin
 
 SCHEMA_POST = load_schema(
@@ -43,7 +43,7 @@ def journal_post(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "finance.journal.post.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"journal_ulid": j},
     }
@@ -57,7 +57,7 @@ def journal_reverse(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "finance.journal.reverse.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"reversal_journal_ulid": rid},
     }
@@ -80,7 +80,7 @@ def inkind_record(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "finance.inkind.record.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"journal_ulid": j},
     }
@@ -99,7 +99,7 @@ def restrict_release(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "finance.restrict.release.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"journal_ulid": j},
     }
@@ -111,7 +111,7 @@ def period_set_status(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "finance.period.set_status.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {},
     }
@@ -125,7 +125,7 @@ def balance_rebuild(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "finance.balance.rebuild.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": out,
     }
@@ -144,7 +144,7 @@ def stat_record(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "finance.stat.record.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"stat_ulid": ulid},
     }

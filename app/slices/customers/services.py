@@ -7,7 +7,7 @@ import json
 from sqlalchemy import desc, func
 
 from app.extensions import db, event_bus
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
 from app.slices.entity.models import Entity
 
@@ -114,7 +114,7 @@ def ensure_customer(
         db.session.query(Customer).filter_by(entity_ulid=entity_ulid).first()
     )
     if not cust:
-        now = utc_now()
+        now = now_iso8601_ms()
         cust = Customer(
             entity_ulid=entity_ulid,
             first_seen_utc=now,
@@ -134,7 +134,7 @@ def ensure_customer(
         )
     else:
         # touch on ensure to mark activity if desired
-        cust.last_touch_utc = utc_now()
+        cust.last_touch_utc = now_iso8601_ms()
         db.session.commit()
 
     return cust.ulid
@@ -195,7 +195,7 @@ def update_needs_tier(
     # watchlist_since_utc management
     prev_watch = bool(cust.watchlist)
     cust.watchlist = watch
-    now = utc_now()
+    now = now_iso8601_ms()
     if watch and not prev_watch and not cust.watchlist_since_utc:
         cust.watchlist_since_utc = now
     if not watch and prev_watch:

@@ -1,5 +1,5 @@
 # app/lib/__init__.py
-from .chrono import parse_iso8601, to_iso8601, utc_now
+from .chrono import now_iso8601_ms, parse_iso8601, to_iso8601
 from .db import commit_or_rollback
 from .errors import (
     AppError,
@@ -41,7 +41,6 @@ from .request_ctx import (
     set_request_id,
 )
 from .schema import enum_values, try_validate_json, validate_json
-from .tracing import trace_fields
 from .utils import (
     assert_valid_email,
     assert_valid_phone,
@@ -55,9 +54,9 @@ from .utils import (
 
 __all__ = [
     "new_ulid",
-    "utc_now",
-    "to_iso8601",
+    "now_iso8601_ms",
     "parse_iso8601",
+    "to_iso8601",
     "JSONLineFormatter",
     "_reset_logger",
     "AppError",
@@ -88,7 +87,6 @@ __all__ = [
     "get_actor_ulid",
     "Page",
     "commit_or_rollback",
-    "trace_fields",
     "assert_valid_email",
     "assert_valid_phone",
     "normalize_ein",

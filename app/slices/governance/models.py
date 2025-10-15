@@ -1,12 +1,12 @@
 # app/slices/governance/models.py
 from __future__ import annotations
 
-from sqlalchemy import String, Boolean, Integer, UniqueConstraint, Index
+from sqlalchemy import Boolean, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.extensions import db
-from app.lib.models import ULIDPK, ULIDFK
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms, utcnow_naive
+from app.lib.models import ULIDFK, ULIDPK
 
 
 class Policy(db.Model, ULIDPK):
@@ -39,10 +39,13 @@ class Policy(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
     __table_args__ = (
@@ -79,8 +82,11 @@ class CapabilityGrant(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from app.extensions.contracts.types import ContractRequest, ContractResponse
 from app.extensions.contracts.validate import load_schema, validate_payload
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.slices.attachments import services as att_svc
 
 SCHEMA_LINK = load_schema(__file__, "schemas/attachments.link.request.json")
@@ -30,7 +30,7 @@ def link(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "attachments.link.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"link_ulid": link_ulid},
     }
@@ -46,7 +46,7 @@ def unlink(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "attachments.unlink.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {},
     }
@@ -63,7 +63,7 @@ def sign_url(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "attachments.sign_url.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"url": url},
     }

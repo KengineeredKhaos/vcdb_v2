@@ -5,7 +5,7 @@ from sqlalchemy import Boolean, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms, utcnow_naive
 from app.lib.models import ULIDFK, ULIDPK
 
 
@@ -45,7 +45,7 @@ class Attachment(db.Model, ULIDPK):
     )  # active|quarantined|archived
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     created_by_actor: Mapped[str | None] = mapped_column(
         String(26), nullable=True
@@ -83,7 +83,7 @@ class AttachmentLink(db.Model, ULIDPK):
     note: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     created_by_actor: Mapped[str | None] = mapped_column(
         String(26), nullable=True

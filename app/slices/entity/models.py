@@ -5,7 +5,7 @@ from sqlalchemy import String, UniqueConstraint, CheckConstraint, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms, utcnow_naive
 from app.lib.models import ULIDPK, ULIDFK
 
 
@@ -19,10 +19,13 @@ class Entity(db.Model, ULIDPK):
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
     # One-to-ones
@@ -61,10 +64,13 @@ class EntityPerson(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
     # enforce 1:1 with Entity
@@ -89,10 +95,13 @@ class EntityOrg(db.Model, ULIDPK):
     )  # normalized/validated in service
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
     __table_args__ = (
@@ -112,10 +121,13 @@ class EntityRole(db.Model, ULIDPK):
     role: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
     __table_args__ = (
@@ -145,10 +157,13 @@ class EntityContact(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
 
@@ -179,10 +194,13 @@ class EntityAddress(db.Model, ULIDPK):
     postal_code: Mapped[str] = mapped_column(String(10), nullable=False)
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
     __table_args__ = (

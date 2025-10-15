@@ -7,7 +7,7 @@ from typing import Dict, Optional
 from sqlalchemy import and_, func, select
 
 from app.extensions import db, event_bus
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.slices.logistics.models import (
     InventoryBatch,
     InventoryItem,
@@ -196,7 +196,7 @@ def _apply_stock_delta(
         )
         db.session.add(rec)
     rec.qty_on_hand = int(rec.qty_on_hand) + int(delta)
-    rec.updated_at_utc = utc_now()
+    rec.updated_at_utc = now_iso8601_ms()
     if rec.qty_on_hand < 0:
         raise ValueError("stock underflow")
 
@@ -247,7 +247,7 @@ def rebuild_stock(
         actor_id=None,
         target_id="-",
         request_id="-",
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         refs={"deleted": deleted, "entries": len(deltas)},
     )
     return {"deleted": deleted, "entries": len(deltas)}

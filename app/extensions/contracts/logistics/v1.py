@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from app.extensions.contracts.types import ContractRequest, ContractResponse
 from app.extensions.contracts.validate import load_schema, validate_payload
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.slices.logistics import services as logi
 
 SCHEMA_LOC_ENS = load_schema(
@@ -32,7 +32,7 @@ def location_ensure(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "logistics.location.ensure.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"location_ulid": ulid},
     }
@@ -50,7 +50,7 @@ def item_ensure(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "logistics.item.ensure.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"item_ulid": ulid},
     }
@@ -72,7 +72,7 @@ def inventory_receive(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "logistics.inventory.receive.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": out,
     }
@@ -94,7 +94,7 @@ def inventory_issue(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "logistics.inventory.issue.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"movement_ulid": mid},
     }
@@ -116,7 +116,7 @@ def inventory_transfer(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "logistics.inventory.transfer.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": out,
     }
@@ -130,7 +130,7 @@ def stock_rebuild(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "logistics.stock.rebuild.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": out,
     }

@@ -16,7 +16,7 @@ from werkzeug.exceptions import HTTPException
 
 from app.extensions import event_bus
 from app.extensions import policy as policy_cache
-from app.lib.chrono import now_dt_utc, parse_utc, utc_now
+from app.lib.chrono import parse_iso8601, utcnow_aware
 from app.lib.logging import configure_logging
 
 from .extensions import init_extensions
@@ -231,7 +231,7 @@ def create_app(config_object="config.DevConfig"):
         # parse ISO → dt, and get dt now (UTC)
 
         alerts = []
-        cutoff_dt = now_dt_utc() - timedelta(hours=6)
+        cutoff_dt = utcnow_aware() - timedelta(hours=6)
 
         for r in rows:
             last_err = r.get("last_error")
@@ -249,7 +249,7 @@ def create_app(config_object="config.DevConfig"):
                 continue
 
             try:
-                last_ok_dt = parse_utc(last_ok_iso)  # datetime aware UTC
+                last_ok_dt = parse_iso8601(last_ok_iso)  # datetime aware UTC
                 if last_ok_dt < cutoff_dt:
                     alerts.append(
                         f"Job {r['job_name']} is stale; no success in 6h (last: {last_ok_iso})."

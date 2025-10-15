@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 import threading
 import uuid
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 
 # Local cache: family -> {"value": <dict>, "version": int, "ulid": str}
 _CACHE: Dict[str, Dict[str, Any]] = {}
@@ -26,7 +26,7 @@ def refresh() -> None:
 
     req = {
         "request_id": _rid(),
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "actor_ulid": None,
         "data": {},
     }

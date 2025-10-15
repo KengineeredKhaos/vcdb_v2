@@ -11,7 +11,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms, utcnow_naive
 from app.lib.models import ULIDFK, ULIDPK
 
 
@@ -68,10 +68,13 @@ class Customer(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
     histories: Mapped[list["CustomerHistory"]] = relationship(
@@ -97,7 +100,7 @@ class CustomerHistory(db.Model, ULIDPK):
     data_json: Mapped[str] = mapped_column(String, nullable=False)
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     created_by_actor: Mapped[str | None] = mapped_column(
         String(26), nullable=True

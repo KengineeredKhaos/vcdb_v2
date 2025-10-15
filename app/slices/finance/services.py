@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterable, Optional
 from sqlalchemy import select
 
 from app.extensions import db, event_bus
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.slices.finance.models import (
     Account,
     BalanceMonthly,
@@ -154,7 +154,7 @@ def post_journal(
         happened_at_utc=happened_at_utc,
         memo=(memo or None),
         created_by_actor=created_by_actor,
-        posted_at_utc=utc_now(),
+        posted_at_utc=now_iso8601_ms(),
     )
     db.session.add(j)
     db.session.flush()  # to get j.ulid
@@ -226,7 +226,7 @@ def reverse_journal(
     return post_journal(
         source="finance",
         external_ref_ulid=j.ulid,
-        happened_at_utc=utc_now(),
+        happened_at_utc=now_iso8601_ms(),
         currency=j.currency,
         memo=f"Reversal of {j.ulid}",
         lines=lines,
@@ -338,7 +338,7 @@ def _apply_to_balances(*, lines: Iterable[dict], period_key: str) -> None:
         k = (l["account_code"], l["fund_code"], l.get("project_ulid"))
         buckets[k] += int(l["amount_cents"])
 
-    now = utc_now()
+    now = now_iso8601_ms()
     for (acct, fund, project), net in buckets.items():
         row = db.session.execute(
             select(BalanceMonthly).where(
@@ -412,7 +412,7 @@ def rebuild_balances(*, period_from: str, period_to: str) -> dict:
         actor_id=None,
         target_id="-",
         request_id="-",
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         refs={
             "period_from": period_from,
             "period_to": period_to,
@@ -445,7 +445,7 @@ def set_period_status(*, period_key: str, status: str) -> None:
         actor_id=None,
         target_id=period_key,
         request_id="-",
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         refs={"status": status},
     )
 
@@ -484,7 +484,7 @@ def record_stat_metric(
         actor_id=None,
         target_id=m.ulid,
         request_id="-",
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         refs={
             "period_key": period_key,
             "metric_code": metric_code,

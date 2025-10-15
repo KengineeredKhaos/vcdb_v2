@@ -5,7 +5,7 @@ import json  # <-- add
 
 from app.extensions import db  # <-- add
 from app.extensions.contracts.types import ContractRequest, ContractResponse
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.slices.governance import services as gov
 from app.slices.governance.models import Policy
 
@@ -16,7 +16,7 @@ def roles_list(req: ContractRequest) -> ContractResponse:
         return {
             "contract": "governance.roles.v2/list",
             "request_id": req["request_id"],
-            "ts": utc_now(),
+            "ts": now_iso8601_ms(),
             "ok": True,
             "data": data,
         }
@@ -24,7 +24,7 @@ def roles_list(req: ContractRequest) -> ContractResponse:
         return {
             "contract": "governance.roles.v2/list",
             "request_id": req["request_id"],
-            "ts": utc_now(),
+            "ts": now_iso8601_ms(),
             "ok": False,
             "error": {"message": str(e)},
         }
@@ -41,7 +41,7 @@ def policy_set(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "governance.policy.v2/set",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"policy_ulid": row.ulid, "version": row.version},
     }
@@ -77,7 +77,7 @@ def dump_active(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "governance.dump_active.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"rows": out},
     }
