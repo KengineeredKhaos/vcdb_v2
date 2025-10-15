@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, jsonify, request
@@ -14,15 +14,13 @@ from sqlalchemy import inspect, text
 from sqlalchemy.sql.sqltypes import NullType
 from werkzeug.exceptions import HTTPException
 
-from app.lib.chrono import utc_now, parse_utc, now_dt_utc
+from app.extensions import event_bus
+from app.extensions import policy as policy_cache
+from app.lib.chrono import parse_iso8601, utcnow_aware
 from app.lib.logging import configure_logging
 
 from .extensions import init_extensions
-
 from .web import bp as web_bp
-
-from app.extensions import event_bus
-from app.extensions import policy as policy_cache
 
 
 def _on_governance_policy_updated(evt: dict):
@@ -98,16 +96,33 @@ def create_app(config_object="config.DevConfig"):
     # Configure logging first
     from app.lib.logging import JSONLineFormatter
 
-    # 1) configure logging ONCE, right after config
     configure_logging(app)
 
-    # 2) init extensions first
+    # init extensions first
     init_extensions(app)
 
     # Wire in-process event subscribers (e.g., policy cache refresh)
     wire_event_subscribers()
 
-    # 3) jinja strict mode (keep)
+    from flask_wtf.csrf import CSRFError, generate_csrf
+
+    # Make {{ csrf_token() }} available in templates
+    app.jinja_env.globals["csrf_token"] = generate_csrf
+
+    # Nice error for CSRF failures
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        return (
+            {
+                "error": "csrf_failed",
+                "description": getattr(
+                    e, "description", "CSRF validation failed."
+                ),
+            },
+            400,
+        )
+
+    # jinja strict mode (keep)
     app.jinja_env.undefined = StrictUndefined
 
     # register web first (no prefix)
@@ -128,7 +143,7 @@ def create_app(config_object="config.DevConfig"):
 
     app.register_blueprint(admin_bp)
     app.register_blueprint(attachments_bp)
-    app.register_blueprint(auth_bp, url_prefix="/auth")
+    app.register_blueprint(auth_bp)
     app.register_blueprint(calendar_bp)
     app.register_blueprint(customers_bp)
     app.register_blueprint(entity_bp)
@@ -156,6 +171,7 @@ def create_app(config_object="config.DevConfig"):
     @app.context_processor
     def inject_globals():
         from flask import current_app
+        from flask_login import current_user
 
         def has_endpoint(name: str) -> bool:
             return name in current_app.view_functions
@@ -164,17 +180,13 @@ def create_app(config_object="config.DevConfig"):
             return name in current_app.blueprints
 
         def user_is_admin() -> bool:
-            try:
-                return bool(
-                    getattr(current_user, "is_authenticated", False)
-                ) and (
-                    getattr(current_user, "is_admin", False)
-                    or ("admin" in getattr(current_user, "roles", ()))
-                )
-            except Exception:
-                return False
+            roles = getattr(current_user, "roles", []) or []
+            roles = [r.lower() for r in roles]
+            return "admin" in roles
+            # tweak if you prefer
 
         return {
+            "current_year": datetime.now(timezone.utc).year,
             "has_endpoint": has_endpoint,
             "has_blueprint": has_blueprint,
             "user_is_admin": user_is_admin,
@@ -219,7 +231,7 @@ def create_app(config_object="config.DevConfig"):
         # parse ISO → dt, and get dt now (UTC)
 
         alerts = []
-        cutoff_dt = now_dt_utc() - timedelta(hours=6)
+        cutoff_dt = utcnow_aware() - timedelta(hours=6)
 
         for r in rows:
             last_err = r.get("last_error")
@@ -237,7 +249,7 @@ def create_app(config_object="config.DevConfig"):
                 continue
 
             try:
-                last_ok_dt = parse_utc(last_ok_iso)  # datetime aware UTC
+                last_ok_dt = parse_iso8601(last_ok_iso)  # datetime aware UTC
                 if last_ok_dt < cutoff_dt:
                     alerts.append(
                         f"Job {r['job_name']} is stale; no success in 6h (last: {last_ok_iso})."

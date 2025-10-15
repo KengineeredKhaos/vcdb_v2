@@ -17,63 +17,51 @@
 
         <button class="menu-btn" data-menu-btn aria-label="Toggle navigation">Menu</button>
 
-        {% set bp = (request.blueprint or '') %}
+        {% set bp = request.blueprint %}
         <nav class="navlinks" data-navlinks>
-          {# Only show links if endpoints exist. aria-current is applied when the current blueprint matches. #}
-          {% if has_endpoint('resources.search_resources') %}
-            <a href="{{ url_for('resources.search_resources') }}"
-               aria-current="{{ 'page' if bp.startswith('resources') else '' }}">Resources</a>
+          {% if has_endpoint('transactions.ledger_index') %}
+            <a href="{{ url_for('transactions.ledger_index') }}" aria-current="{{ 'page' if bp=='transactions' }}">Ledger</a>
           {% endif %}
-
-          {% if has_endpoint('customers.view_customer') or has_endpoint('customers.ensure_customer') or has_endpoint('customers.update_tier1') %}
-            <a href="{{ url_for('customers.ensure_customer') }}"
-               aria-current="{{ 'page' if bp.startswith('customers') else '' }}">Customers</a>
+          {% if has_endpoint('customers.hello') %}
+            <a href="{{ url_for('customers.hello') }}" aria-current="{{ 'page' if bp=='customers' }}">Customers</a>
           {% endif %}
-
           {% if has_endpoint('inventory.hello') %}
-            <a href="{{ url_for('inventory.hello') }}"
-               aria-current="{{ 'page' if bp.startswith('inventory') else '' }}">Inventory</a>
+            <a href="{{ url_for('inventory.hello') }}" aria-current="{{ 'page' if bp=='inventory' }}">Inventory</a>
           {% endif %}
-
           {% if has_endpoint('sponsors.hello') %}
-            <a href="{{ url_for('sponsors.hello') }}"
-               aria-current="{{ 'page' if bp.startswith('sponsors') else '' }}">Sponsors</a>
+            <a href="{{ url_for('sponsors.hello') }}" aria-current="{{ 'page' if bp=='sponsors' }}">Sponsors</a>
           {% endif %}
-
           {% if has_endpoint('calendar.hello') %}
-            <a href="{{ url_for('calendar.hello') }}"
-               aria-current="{{ 'page' if bp.startswith('calendar') else '' }}">Calendar</a>
+            <a href="{{ url_for('calendar.hello') }}" aria-current="{{ 'page' if bp=='calendar' }}">Calendar</a>
           {% endif %}
-
-          {% if has_endpoint('governance.policy_index') %}
-            <a href="{{ url_for('governance.policy_index') }}"
-               aria-current="{{ 'page' if bp.startswith('governance') else '' }}">Governance</a>
+          {% if has_endpoint('governance.hello') %}
+            <a href="{{ url_for('governance.policy_index') }}" aria-current="{{ 'page' if bp=='governance' }}">Governance</a>
           {% endif %}
-
+          {% if has_endpoint('resources.hello') %}
+            <a href="{{ url_for('resources.hello') }}" aria-current="{{ 'page' if bp=='resources' }}">Resources</a>
+          {% endif %}
           {% if has_endpoint('admin.index') and user_is_admin() %}
-            <a href="{{ url_for('admin.index') }}"
-               aria-current="{{ 'page' if bp.startswith('admin') else '' }}">Admin Tools</a>
+            <a href="{{ url_for('admin.index') }}" aria-current="{{ 'page' if bp=='admin' }}">Admin Tools</a>
           {% endif %}
         </nav>
-
         <div class="spacer"></div>
 
         {% if current_user.is_authenticated %}
-          <span class="btn" style="margin-right:.5rem;">
-            {{ current_user.username or current_user.name or current_user.email }}
-          </span>
-
+          <span class="btn" style="margin-right:.5rem;">{{ current_user.name or current_user.email }}</span>
+          {# Only show Change Password if that route exists #}
           {% if 'auth.change_password' in current_app.view_functions %}
             <a class="btn" href="{{ url_for('auth.change_password') }}">Change password</a>
           {% endif %}
 
           <form method="post" action="{{ url_for('auth.logout') }}" style="display:inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {# If CSRF is globally registered, include it; otherwise omit in dev #}
+            {% if 'csrf_token' in globals() %}
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% endif %}
             <button class="btn" type="submit">Logout</button>
           </form>
         {% else %}
-          {# Our GET form endpoint is auth.login (alias). #}
-          <a class="btn" href="{{ url_for('auth.login') }}">Login</a>
+          <a class="btn" href="{{ url_for('auth.login_form') }}">Login</a>
         {% endif %}
       </div>
     </header>
@@ -96,6 +84,7 @@
           {% for a in admin_alerts %}<div>{{ a }}</div>{% endfor %}
         </div>
       {% endif %}
+
       {% endblock %}
     </main>
 
@@ -105,7 +94,7 @@
     </footer>
 
     {% block scripts %}
-      <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
     {% endblock %}
   </body>
 </html>

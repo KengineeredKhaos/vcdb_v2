@@ -6,7 +6,7 @@ import os
 from typing import Optional, BinaryIO, Tuple
 
 from app.extensions import db, event_bus
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from .models import Attachment, AttachmentLink
 
 # ---- Storage abstraction ----------------------------------------------------
@@ -127,7 +127,7 @@ def upload_register(
             actor_id=actor_id,
             target_id=att.ulid,
             request_id=request_id,
-            happened_at=utc_now(),
+            happened_at=now_iso8601_ms(),
             refs={"sha256": sha256, "mime": mime, "size_bytes": size},
         )
     return att.ulid
@@ -199,7 +199,7 @@ def link_attachment(
         actor_id=actor_id,
         target_id=link.ulid,
         request_id=request_id,
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         refs={
             "attachment_ulid": attachment_ulid,
             "slice": slice_name,
@@ -221,7 +221,7 @@ def unlink_attachment(
     link = db.session.get(AttachmentLink, link_ulid)
     if not link or link.archived_at_utc:
         return
-    link.archived_at_utc = utc_now()
+    link.archived_at_utc = now_iso8601_ms()
     link.archived_by_actor = actor_id
     db.session.commit()
 
@@ -264,7 +264,7 @@ def sign_url(
         actor_id=actor_id,
         target_id=attachment_ulid,
         request_id=request_id,
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         refs={"ttl_seconds": ttl_seconds},
     )
     return url

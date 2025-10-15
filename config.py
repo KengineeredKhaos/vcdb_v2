@@ -62,10 +62,11 @@ class DevConfig(BaseConfig):
     )
 
     # Dev ergonomics
-    AUTH_MODE = "real"  # or 'stub' if you’re iterating quickly on UI
+    AUTH_MODE = "stub"  # 'real' or 'stub' if iterating quickly on UI
     ALLOW_HEADER_AUTH = (
         os.environ.get("VCDB_ALLOW_HEADER_AUTH", "false").lower() == "true"
     )
+    AUTO_LOGIN_ADMIN = True
     AUDIT_LOG_LEVEL = "DEBUG"
 
 

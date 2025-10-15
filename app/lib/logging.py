@@ -34,7 +34,7 @@ then initstantiate the rest: db, blueprints, error handlers, etc.
 class ISOFormatter(logging.Formatter):
     def format(self, record):
         try:
-            ts = utc_now()  # already like '2025-10-12T19:23:45Z'
+            ts = now_iso8601_ms()  # already like '2025-10-12T19:23:45Z'
         except Exception:
             ts = "0000-00-00T00:00:00Z"
         record.msg = f"[{ts}] {record.msg}"
@@ -45,7 +45,7 @@ class JSONLineFormatter(logging.Formatter):
     """One JSON object per line, UTC timestamp."""
 
     def format(self, record: logging.LogRecord) -> str:
-        ts = utc_now()
+        ts = now_iso8601_ms()
         base = {
             "ts": ts.replace("+00:00", "Z"),  # show explicit UTC
             "lvl": record.levelname,

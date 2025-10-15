@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from app.extensions.contracts.types import ContractRequest, ContractResponse
 from app.extensions.contracts.validate import load_schema, validate_payload
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.slices.resources import services as res_svc
 
 # Schemas you’ll add beside this file:
@@ -48,7 +48,7 @@ def patch_capabilities(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "resources.patch_capabilities.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"history_ulid": hist_ulid, "resource": view},
     }
@@ -65,7 +65,7 @@ def rebuild_all(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "resources.rebuild_all.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": summary,
     }
@@ -83,7 +83,7 @@ def set_readiness(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "resources.set_readiness.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": view,
     }
@@ -101,7 +101,7 @@ def set_mou(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "resources.set_mou.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": view,
     }
@@ -118,7 +118,7 @@ def rebuild_index(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "resources.rebuild_index.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"rows": rows, "resource": view},
     }
@@ -135,7 +135,7 @@ def promote_if_clean(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "resources.promote_if_clean.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"promoted": promoted, "resource": view},
     }
@@ -151,7 +151,7 @@ def ensure_resource(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "resources.ensure_resource.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"resource_ulid": resource_ulid},
     }
@@ -173,7 +173,7 @@ def upsert_capabilities(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "resources.upsert_capabilities.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"history_ulid": hist_ulid or None, "resource": view},
     }

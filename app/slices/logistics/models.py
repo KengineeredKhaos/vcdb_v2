@@ -12,7 +12,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.extensions import db
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms, utcnow_naive
 from app.lib.models import ULIDFK, ULIDPK
 
 
@@ -28,10 +28,13 @@ class Location(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
 
@@ -93,10 +96,13 @@ class InventoryItem(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
     __table_args__ = (
@@ -130,7 +136,7 @@ class InventoryBatch(db.Model, ULIDPK):
         String(26), nullable=True
     )
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
 
 
@@ -166,7 +172,7 @@ class InventoryMovement(db.Model, ULIDPK):
         String(26), nullable=True
     )
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
 
     __table_args__ = (
@@ -185,7 +191,10 @@ class InventoryStock(db.Model, ULIDPK):
         Integer, nullable=False, default=0
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
     __table_args__ = (

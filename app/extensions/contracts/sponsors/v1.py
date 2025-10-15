@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from app.extensions.contracts.types import ContractRequest, ContractResponse
 from app.extensions.contracts.validate import load_schema, validate_payload
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.slices.sponsors import services as sp_svc
 
 SCHEMA_ENSURE = load_schema(__file__, "schemas/sponsors.ensure.request.json")
@@ -31,7 +31,7 @@ def ensure_sponsor(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "sponsors.ensure_sponsor.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"sponsor_ulid": sid},
     }
@@ -49,7 +49,7 @@ def upsert_capabilities(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "sponsors.upsert_capabilities.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"history_ulid": hist, "sponsor": view},
     }
@@ -67,7 +67,7 @@ def patch_capabilities(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "sponsors.patch_capabilities.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"history_ulid": hist, "sponsor": view},
     }
@@ -85,7 +85,7 @@ def pledge_upsert(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "sponsors.pledge.upsert.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {"pledge_ulid": pid, "sponsor": view},
     }
@@ -102,7 +102,7 @@ def pledge_set_status(req: ContractRequest) -> ContractResponse:
     return {
         "contract": "sponsors.pledge.set_status.v2",
         "request_id": req["request_id"],
-        "ts": utc_now(),
+        "ts": now_iso8601_ms(),
         "ok": True,
         "data": {},
     }

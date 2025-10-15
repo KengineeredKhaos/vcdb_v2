@@ -11,7 +11,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.lib.models import ULIDPK
 
 # ---- Reference tables ------------------------------------------------------
@@ -32,10 +32,10 @@ class Account(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30), default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
 
@@ -54,10 +54,10 @@ class Fund(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30), default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
 
@@ -70,10 +70,10 @@ class Project(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30), default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
 
@@ -88,10 +88,10 @@ class Period(db.Model, ULIDPK):
     )  # open|soft_closed|closed
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30), default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
 
@@ -116,7 +116,7 @@ class Journal(db.Model, ULIDPK):
     )  # YYYY-MM
     happened_at_utc: Mapped[str] = mapped_column(String(30), nullable=False)
     posted_at_utc: Mapped[str] = mapped_column(
-        String(30), nullable=False, default=utc_now
+        String(30), nullable=False, default=utcnow_naive
     )
 
     memo: Mapped[str | None] = mapped_column(String(160), nullable=True)
@@ -125,7 +125,7 @@ class Journal(db.Model, ULIDPK):
         String(26), nullable=True
     )
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
 
     lines: Mapped[list["JournalLine"]] = relationship(
@@ -197,7 +197,7 @@ class BalanceMonthly(db.Model, ULIDPK):
     net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, onupdate=utc_now, nullable=False
+        String(30), default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
     __table_args__ = (
@@ -237,7 +237,7 @@ class StatMetric(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utc_now, nullable=False
+        String(30), default=utcnow_naive, nullable=False
     )
 
     __table_args__ = (

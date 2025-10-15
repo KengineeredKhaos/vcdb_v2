@@ -8,7 +8,7 @@ from jsonschema import Draft202012Validator, ValidationError
 from sqlalchemy import select, func
 
 from app.extensions import db, event_bus, policy as policy_cache
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps, stable_loads  # from your lib.zip
 from .models import Policy
 
@@ -136,7 +136,7 @@ def set_policy(
     # determine next version
     if current:
         current.is_active = False
-        current.updated_at_utc = utc_now()
+        current.updated_at_utc = now_iso8601_ms()
         db.session.add(current)
         next_ver = current.version + 1
         schema_json = current.schema_json or stable_dumps(
@@ -172,7 +172,7 @@ def set_policy(
         actor_id=actor_entity_ulid,
         target_id=new_row.ulid,
         request_id=new_row.ulid,
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         refs={"family": family, "version": next_ver},
     )
 

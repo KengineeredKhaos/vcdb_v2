@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Tuple
 from sqlalchemy import desc, func
 
 from app.extensions import db, event_bus
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
 
 from .models import Resource, ResourceCapabilityIndex, ResourceHistory
@@ -169,7 +169,7 @@ def ensure_resource(
 
     r = db.session.query(Resource).filter_by(entity_ulid=entity_ulid).first()
     if not r:
-        now = utc_now()
+        now = now_iso8601_ms()
         r = Resource(
             entity_ulid=entity_ulid,
             first_seen_utc=now,
@@ -191,7 +191,7 @@ def ensure_resource(
             refs={"entity_ulid": entity_ulid},
         )
     else:
-        r.last_touch_utc = utc_now()
+        r.last_touch_utc = now_iso8601_ms()
         db.session.commit()
     return r.ulid
 
@@ -225,7 +225,7 @@ def upsert_capabilities(
     last = _latest_snapshot(resource_ulid)
     if last and stable_dumps(last) == stable_dumps(norm):
         # touch resource but don't write new version
-        res.last_touch_utc = utc_now()
+        res.last_touch_utc = now_iso8601_ms()
         db.session.commit()
         return ""  # indicate no new version created
 
@@ -255,7 +255,7 @@ def upsert_capabilities(
         .all()
     }
     # 2) Upsert new/updated rows
-    now = utc_now()
+    now = now_iso8601_ms()
     seen_pairs: set[tuple[str, str]] = set()
     for flat, obj in norm.items():
         domain, key = _split(flat)
@@ -437,7 +437,7 @@ def set_readiness_status(
         return
 
     r.readiness_status = status
-    r.last_touch_utc = utc_now()
+    r.last_touch_utc = now_iso8601_ms()
     db.session.commit()
 
     event_bus.emit(
@@ -447,7 +447,7 @@ def set_readiness_status(
         actor_id=actor_id,
         target_id=resource_ulid,
         request_id=request_id,
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         changed_fields={"readiness_status": status, "prev": prev},
     )
 
@@ -470,7 +470,7 @@ def set_mou_status(
         return
 
     r.mou_status = status
-    r.last_touch_utc = utc_now()
+    r.last_touch_utc = now_iso8601_ms()
     db.session.commit()
 
     event_bus.emit(
@@ -480,7 +480,7 @@ def set_mou_status(
         actor_id=actor_id,
         target_id=resource_ulid,
         request_id=request_id,
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         changed_fields={"mou_status": status, "prev": prev},
     )
 
@@ -499,7 +499,7 @@ def rebuild_capability_index(
         raise ValueError("resource not found")
 
     snapshot = _latest_snapshot(resource_ulid)
-    now = utc_now()
+    now = now_iso8601_ms()
 
     # wipe and recreate for deterministic state
     db.session.query(ResourceCapabilityIndex).filter_by(
@@ -626,7 +626,7 @@ def patch_capabilities(
 
     if stable_dumps(merged) == stable_dumps(latest):
         # no effective change
-        res.last_touch_utc = utc_now()
+        res.last_touch_utc = now_iso8601_ms()
         db.session.commit()
         return None
 
@@ -648,7 +648,7 @@ def patch_capabilities(
     db.session.add(hist)
 
     # update projection (only touched keys)
-    now = utc_now()
+    now = now_iso8601_ms()
     # 1) upsert keys from patch payload
     for flat, obj in norm_patch.items():
         domain, key = _split(flat)

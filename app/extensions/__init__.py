@@ -20,7 +20,7 @@ from sqlalchemy.engine import Engine
 from app.extensions.contracts import auth as _auth_pkg
 from app.extensions.contracts import governance as _gov_pkg
 from app.extensions.contracts import ledger as _ledger_pkg
-from app.lib.chrono import parse_iso8601, to_iso8601, utc_now
+from app.lib.chrono import parse_iso8601, to_iso8601, now_iso8601_ms
 from app.lib.ids import new_ulid
 
 # -----------------------
@@ -232,7 +232,7 @@ class _EventBus:
     ) -> str:
         # Normalize timestamp to ISO-8601 Z string from your chrono helper
         if happened_at is None:
-            happened_at = utc_now()
+            happened_at = now_iso8601_ms()
 
         env: Dict[str, Any] = {
             "type": type,
@@ -333,7 +333,7 @@ class _Policy:
             self._cache = {r.key: r.value for r in rows}
         except Exception:
             self._cache = {}
-        self._loaded_at = utc_now()
+        self._loaded_at = now_iso8601_ms()
 
     def refresh(self) -> None:
         if self._refresh_provider:

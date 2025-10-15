@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Tuple
 from sqlalchemy import desc, func
 
 from app.extensions import db, event_bus
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
 
 from .models import (
@@ -103,7 +103,7 @@ def ensure_sponsor(
     _ensure_reqid(request_id)
     s = db.session.query(Sponsor).filter_by(entity_ulid=entity_ulid).first()
     if not s:
-        now = utc_now()
+        now = now_iso8601_ms()
         s = Sponsor(
             entity_ulid=entity_ulid,
             first_seen_utc=now,
@@ -124,7 +124,7 @@ def ensure_sponsor(
             refs={"entity_ulid": entity_ulid},
         )
     else:
-        s.last_touch_utc = utc_now()
+        s.last_touch_utc = now_iso8601_ms()
         db.session.commit()
     return s.ulid
 
@@ -146,7 +146,7 @@ def upsert_capabilities(
     norm = _validate_caps(payload)
     last = _latest_caps(sponsor_ulid)
     if last and stable_dumps(last) == stable_dumps(norm):
-        s.last_touch_utc = utc_now()
+        s.last_touch_utc = now_iso8601_ms()
         db.session.commit()
         return None
 
@@ -171,7 +171,7 @@ def upsert_capabilities(
             sponsor_ulid=sponsor_ulid
         )
     }
-    now = utc_now()
+    now = now_iso8601_ms()
     seen: set[tuple[str, str]] = set()
     for flat, obj in norm.items():
         d, k = _split(flat)
@@ -255,7 +255,7 @@ def patch_capabilities(
             else:
                 merged[flat]["note"] = str(note)[:NOTE_MAX]
     if stable_dumps(merged) == stable_dumps(last):
-        s.last_touch_utc = utc_now()
+        s.last_touch_utc = now_iso8601_ms()
         db.session.commit()
         return None
 
@@ -274,7 +274,7 @@ def patch_capabilities(
     db.session.add(hist)
 
     # touch only affected keys in projection (no deletions)
-    now = utc_now()
+    now = now_iso8601_ms()
     for flat, obj in patch.items():
         d, k = _split(flat)
         active = bool(obj.get("has"))
@@ -352,7 +352,7 @@ def set_readiness_status(
         return
     prev = s.readiness_status
     s.readiness_status = status
-    s.last_touch_utc = utc_now()
+    s.last_touch_utc = now_iso8601_ms()
     db.session.commit()
     event_bus.emit(
         type="sponsor.readiness.updated",
@@ -361,7 +361,7 @@ def set_readiness_status(
         actor_id=actor_id,
         target_id=sponsor_ulid,
         request_id=request_id,
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         changed_fields={"readiness_status": status, "prev": prev},
     )
 
@@ -384,7 +384,7 @@ def set_mou_status(
         return
     prev = s.mou_status
     s.mou_status = status
-    s.last_touch_utc = utc_now()
+    s.last_touch_utc = now_iso8601_ms()
     db.session.commit()
     event_bus.emit(
         type="sponsor.mou.updated",
@@ -393,7 +393,7 @@ def set_mou_status(
         actor_id=actor_id,
         target_id=sponsor_ulid,
         request_id=request_id,
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         changed_fields={"mou_status": status, "prev": prev},
     )
 
@@ -499,7 +499,7 @@ def upsert_pledge(
 
     changed = stable_dumps(merged) != stable_dumps(latest)
     if not changed:
-        s.last_touch_utc = utc_now()
+        s.last_touch_utc = now_iso8601_ms()
         db.session.commit()
         return list(merged.keys())[0]  # return pledge id anyway
 
@@ -514,7 +514,7 @@ def upsert_pledge(
     db.session.add(hist)
 
     # projection row upsert
-    now = utc_now()
+    now = now_iso8601_ms()
     pid = valid["pledge_ulid"]
     has_rest = bool(valid.get("restriction"))
     est_val = (
@@ -585,7 +585,7 @@ def set_pledge_status(
     if row.status == status:
         return
     row.status = status
-    row.updated_at_utc = utc_now()
+    row.updated_at_utc = now_iso8601_ms()
     # bump sponsor ops
     s = db.session.get(Sponsor, row.sponsor_ulid)
     if s:

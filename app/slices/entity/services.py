@@ -11,7 +11,7 @@ from app.extensions import (
     db,
     event_bus,
 )
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 from app.lib.utils import (
     normalize_ein,
@@ -176,7 +176,7 @@ def ensure_person(
         actor_id=actor_id,
         target_id=ent.ulid,
         request_id=request_id,
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         changed_fields={
             "first_name": fn,
             "last_name": ln,
@@ -262,7 +262,7 @@ def ensure_org(
         actor_id=actor_id,
         target_id=ent.ulid,
         request_id=request_id,
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         changed_fields={
             "legal_name": ln,
             "dba_name": dba_name,
@@ -314,7 +314,7 @@ def upsert_contacts(
             actor_id=actor_id,
             target_id=entity_ulid,
             request_id=request_id,
-            happened_at=utc_now(),
+            happened_at=now_iso8601_ms(),
             changed_fields=changed,
         )
 
@@ -387,7 +387,7 @@ def upsert_address(
         actor_id=actor_id,
         target_id=entity_ulid,
         request_id=request_id,
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         changed_fields={
             "is_physical": is_physical,
             "is_postal": is_postal,
@@ -438,7 +438,7 @@ def ensure_role(
         actor_id=actor_id,
         target_id=entity_ulid,
         request_id=request_id,
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         refs={"role": role},
     )
     return True
@@ -478,7 +478,7 @@ def remove_role(
         actor_id=actor_id,
         target_id=entity_ulid,
         request_id=request_id,
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         refs={"role": role},
     )
     return True

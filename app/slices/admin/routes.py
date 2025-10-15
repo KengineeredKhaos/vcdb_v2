@@ -14,7 +14,7 @@ from flask import (
 from sqlalchemy import text
 
 from app.extensions import db, event_bus
-from app.lib.chrono import utc_now
+from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 from app.slices.admin import bp
 from app.slices.auth.decorators import login_required, roles_required
@@ -80,7 +80,7 @@ def _sqlite_backup() -> str:
     os.makedirs("var/snapshots", exist_ok=True)
     # Build a compact filesystem-safe name from ISO timestamp
     ts = (
-        utc_now()
+        now_iso8601_ms()
         .replace(":", "")
         .replace("-", "")
         .replace("T", "-")
@@ -107,7 +107,7 @@ def policy_edit(family: str):
         if current is None:
             # warm one-shot
             resp = gov_contract.dump_active(
-                {"request_id": new_ulid(), "ts": utc_now(), "data": {}}
+                {"request_id": new_ulid(), "ts": now_iso8601_ms(), "data": {}}
             )
             if resp.get("ok"):
                 policy_cache.refresh()
@@ -173,7 +173,7 @@ def policy_save(family: str):
     resp = gov_contract.policy_set(
         {
             "request_id": new_ulid(),
-            "ts": utc_now(),
+            "ts": now_iso8601_ms(),
             "actor_ulid": None,
             "data": payload,
         }
@@ -227,7 +227,7 @@ def cron_ack():
         request_id=new_ulid(),
         actor_id=None,
         target_id=None,
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         refs={"job_name": job},
     )
     db.session.execute(
@@ -257,7 +257,7 @@ def cron_run_now():
         request_id=new_ulid(),
         actor_id=None,
         target_id=None,
-        happened_at=utc_now(),
+        happened_at=now_iso8601_ms(),
         refs={"job_name": job},
     )
 
