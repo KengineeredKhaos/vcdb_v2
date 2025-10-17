@@ -35,7 +35,10 @@ class Account(db.Model, ULIDPK):
         String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, onupdate=utcnow_naive, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
 
@@ -57,7 +60,10 @@ class Fund(db.Model, ULIDPK):
         String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, onupdate=utcnow_naive, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
 
@@ -73,7 +79,10 @@ class Project(db.Model, ULIDPK):
         String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, onupdate=utcnow_naive, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
 
@@ -91,7 +100,10 @@ class Period(db.Model, ULIDPK):
         String(30), default=utcnow_naive, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, onupdate=utcnow_naive, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
 
@@ -197,7 +209,10 @@ class BalanceMonthly(db.Model, ULIDPK):
     net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, onupdate=utcnow_naive, nullable=False
+        String(30),
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
+        nullable=False,
     )
 
     __table_args__ = (

@@ -1,17 +1,25 @@
 # app/slices/auth/services.py
 from __future__ import annotations
 
+from hashlib import sha256
 from typing import Iterable, List, Tuple
 
 from sqlalchemy import asc
 from sqlalchemy.orm import joinedload
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from app.extensions import db, event_bus
+from app.extensions import db
+from app.extensions.event_bus import emit
 from app.lib.chrono import utcnow_naive
+from app.lib.ids import new_ulid
 from app.lib.utils import normalize_email, validate_email
 
 from .models import Role, User, UserRole
+
+
+# Domain-local error for 404 mapping in routes
+class NotFound(Exception):
+    pass
 
 
 # ---- Role helpers ----
@@ -71,8 +79,15 @@ def create_user(
     )
     db.session.add(u)
     db.session.commit()
-    event_bus.emit(
-        "auth.user.created", {"user_ulid": u.ulid, "username": u.username}
+    # Actor is unclear here (self vs admin).
+    # Use the new user as actor for now.
+    emit(
+        domain="auth",
+        operation="user.created",
+        request_id=new_ulid(),
+        actor_ulid=u.ulid,
+        target_ulid=u.ulid,
+        changed={"username": u.username, "email": u.email},
     )
     return user_view(u.ulid)
 
@@ -86,24 +101,52 @@ def authenticate(username_or_email: str, password: str) -> dict:
     u = q.filter(
         (User.username == ident) | (User.email == ident)
     ).one_or_none()
+
+    # Unknown / inactive / locked
     if not u or not u.is_active or u.is_locked:
+        # PII-safe invalid-ident event; schema requires actor_ulid, use a fresh ULID (attempt id)
+        ident_fpr = sha256(ident.encode("utf-8")).hexdigest()[:12]
+        emit(
+            domain="auth",
+            operation="login.invalid_ident",
+            request_id=new_ulid(),
+            actor_ulid=new_ulid(),  # synthetic actor for unknown identity
+            refs={"ident_fpr": ident_fpr},
+        )
         raise ValueError("Invalid credentials")
 
+    # Bad password
     if not check_password_hash(u.password_hash, password):
         u.failed_login_attempts = (u.failed_login_attempts or 0) + 1
         if u.failed_login_attempts >= LOCKOUT_THRESHOLD:
             u.is_locked = True
         db.session.commit()
-        event_bus.emit(
-            "auth.login.failed", {"user_ulid": u.ulid, "locked": u.is_locked}
+
+        emit(
+            domain="auth",
+            operation="login.failed",
+            request_id=new_ulid(),
+            actor_ulid=u.ulid,
+            target_ulid=u.ulid,
+            changed={
+                "failed_login_attempts": u.failed_login_attempts,
+                "is_locked": u.is_locked,
+            },
         )
         raise ValueError("Invalid credentials")
 
-    # success
+    # Success
     u.failed_login_attempts = 0
     u.last_login_at_utc = utcnow_naive()
     db.session.commit()
-    event_bus.emit("auth.login.success", {"user_ulid": u.ulid})
+
+    emit(
+        domain="auth",
+        operation="login.success",
+        request_id=new_ulid(),
+        actor_ulid=u.ulid,
+        target_ulid=u.ulid,
+    )
     return user_view(u.ulid)
 
 
@@ -115,7 +158,13 @@ def change_password(
         raise ValueError("invalid credentials")
     u.password_hash = generate_password_hash(new_password)
     db.session.commit()
-    event_bus.emit("auth.password.changed", {"user_ulid": user_ulid})
+    emit(
+        domain="auth",
+        operation="password.changed",
+        request_id=new_ulid(),
+        actor_ulid=user_ulid,
+        target_ulid=user_ulid,
+    )
 
 
 # ---- RBAC management ----
@@ -133,8 +182,13 @@ def assign_role(*, user_ulid: str, role_code: str) -> None:
         return
     u.roles.append(r)
     db.session.commit()
-    event_bus.emit(
-        "auth.role.assigned", {"user_ulid": u.ulid, "role": r.code}
+    emit(
+        domain="auth",
+        operation="role.assigned",
+        request_id=new_ulid(),
+        actor_ulid=u.ulid,  # if you prefer, pass the admin actor here
+        target_ulid=u.ulid,
+        changed={"role": r.code},
     )
 
 
@@ -145,8 +199,13 @@ def remove_role(*, user_ulid: str, role_code: str) -> None:
         return
     u.roles[:] = [r for r in u.roles if r.code != role_code]
     db.session.commit()
-    event_bus.emit(
-        "auth.role.removed", {"user_ulid": user_ulid, "role": role_code}
+    emit(
+        domain="auth",
+        operation="role.removed",
+        request_id=new_ulid(),
+        actor_ulid=user_ulid,  # if you prefer, pass the admin actor here
+        target_ulid=user_ulid,
+        changed={"role": role_code},
     )
 
 
@@ -157,9 +216,10 @@ def set_account_roles(
     actor_entity_ulid: str | None = None,
 ) -> None:
     roles = sorted({(r or "").strip().lower() for r in roles if r})
-    existing = {
-        r.code for r in (db.session.get(User, account_ulid).roles or [])
-    }
+    u = db.session.get(User, account_ulid)
+    if not u:
+        raise NotFound("user not found")
+    existing = {r.code for r in (u.roles or [])}
     to_add = set(roles) - existing
     to_drop = existing - set(roles)
     for r in to_add:

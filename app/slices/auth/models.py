@@ -1,11 +1,8 @@
 # app/slices/auth/models.py
 from __future__ import annotations
 
-from datetime import datetime
-
 from sqlalchemy import (
     Boolean,
-    DateTime,
     Index,
     Integer,
     String,
@@ -33,14 +30,15 @@ class User(db.Model, ULIDPK):
     is_locked: Mapped[bool] = mapped_column(Boolean, default=False)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
 
-    last_login_at_utc: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True
+    last_login_at_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
     )
-    created_at_utc: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive
+
+    created_at_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
     )
-    updated_at_utc: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive
+    updated_at_utc: Mapped[str | None] = mapped_column(
+        String(30), default=utcnow_naive, nullable=False
     )
 
     # relationship via association table
@@ -61,11 +59,11 @@ class Role(db.Model, ULIDPK):
     description: Mapped[str | None] = mapped_column(String(200), default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    created_at_utc: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive
+    created_at_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
     )
-    updated_at_utc: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive
+    updated_at_utc: Mapped[str | None] = mapped_column(
+        String(30), default=utcnow_naive, nullable=False
     )
 
     users = relationship(

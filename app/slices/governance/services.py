@@ -7,12 +7,13 @@ from typing import Any, Dict, Tuple
 from jsonschema import Draft202012Validator, ValidationError
 from sqlalchemy import asc, func, select
 
-from app.extensions import db, event_bus
-from app.extensions import policy as policy_cache
+from app.extensions import db
+from app.extensions.event_bus import emit
 from app.lib.chrono import now_iso8601_ms
+from app.lib.ids import new_ulid
 from app.lib.jsonutil import stable_dumps, stable_loads  # from your lib.zip
 
-from .models import CanonicalState, RoleCode, ServiceClassification
+from .models import CanonicalState, Policy, RoleCode, ServiceClassification
 
 
 class PolicyNotFoundError(ValueError):
@@ -53,6 +54,44 @@ def list_domain_roles() -> list[dict]:
         .all()
     )
     return [{"code": r.code, "description": r.description} for r in rows]
+
+
+# -----------------
+# Internal Services
+# (contract v1)
+# -----------------
+
+
+def svc_list_states_rows() -> List[CanonicalState]:
+    return (
+        db.session.query(CanonicalState)
+        .filter(CanonicalState.is_active.is_(True))
+        .order_by(asc(CanonicalState.code))
+        .all()
+    )
+
+
+def svc_list_domain_roles_rows() -> List[RoleCode]:
+    return (
+        db.session.query(RoleCode)
+        .filter(RoleCode.is_active.is_(True))
+        .order_by(asc(RoleCode.code))
+        .all()
+    )
+
+
+def svc_get_policy_value(namespace: str, key: str) -> Optional[dict]:
+    row = (
+        db.session.query(Policy)
+        .filter(
+            Policy.namespace == namespace,
+            Policy.key == key,
+            Policy.is_active.is_(True),
+        )
+        .order_by(Policy.version.desc())
+        .first()
+    )
+    return stable_loads(row.value_json) if row else None
 
 
 # ---- Registry (schema + defaults) ------------------------------------------
@@ -110,7 +149,8 @@ def _normalize_value(key: str, value: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def list_policy_keys() -> list[str]:
-    return list(POLICY_REGISTRY.keys())
+    # stable ordering helps tests and UX
+    return sorted(POLICY_REGISTRY.keys())
 
 
 def get_policy(namespace: str, key: str) -> tuple[Dict[str, Any], Policy]:
@@ -196,18 +236,5 @@ def set_policy(
     )
     db.session.add(new_row)
     db.session.commit()
-
-    # refresh cache + emit names-only event
-    policy_cache.refresh()
-    event_bus.emit(
-        type="governance.policy.updated",
-        slice="governance",
-        operation="insert",
-        actor_id=actor_entity_ulid,
-        target_id=new_row.ulid,
-        request_id=new_row.ulid,
-        happened_at=now_iso8601_ms(),
-        refs={"family": family, "version": next_ver},
-    )
 
     return new_row

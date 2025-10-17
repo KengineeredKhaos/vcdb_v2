@@ -10,8 +10,6 @@ from app.extensions import (
     allowed_role_codes,
     current_actor_id,
     entity_api,
-    us_state_choices,
-    us_state_codes,
 )
 
 from . import bp

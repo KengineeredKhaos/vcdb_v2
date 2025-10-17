@@ -14,45 +14,12 @@ from sqlalchemy import inspect, text
 from sqlalchemy.sql.sqltypes import NullType
 from werkzeug.exceptions import HTTPException
 
-from app.extensions import event_bus
-from app.extensions import policy as policy_cache
+from app.extensions.event_bus import register_sink
 from app.lib.chrono import parse_iso8601, utcnow_aware
 from app.lib.logging import configure_logging
 
 from .extensions import init_extensions
 from .web import bp as web_bp
-
-
-def _on_governance_policy_updated(evt: dict):
-    # evt["type"] == "governance.policy.updated"
-    try:
-        policy_cache.refresh()
-    except Exception as e:
-        # Don’t crash the app on cache errors; log and continue
-        print(f"[policy] refresh failed after governance update: {e}")
-
-
-def wire_event_subscribers():
-    """
-    Wire in-process listeners if the bus supports them.
-    Works with both the legacy _EventBus instance and module-level API.
-    """
-    sub = getattr(event_bus, "subscribe", None)
-    if not callable(sub):
-        # Try the direct module (newer bus lives here)
-        try:
-            from app.extensions.event_bus import subscribe as _subscribe
-
-            sub = _subscribe
-        except Exception:
-            sub = None
-
-    if callable(sub):
-        sub("governance.policy.updated", _on_governance_policy_updated)
-    else:
-        print(
-            "[event_bus] subscribe() not available; skipping in-process listeners"
-        )
 
 
 def _bind_contracts(app):
@@ -62,12 +29,7 @@ def _bind_contracts(app):
     """
     # If you want to eagerly import contract modules so any module-level
     # registration runs, do it here (safe, best-effort):
-    try:
-        from app.extensions.contracts import governance as _gc  # noqa: F401
-
-        # add more as they exist: resources, logistics, customers, etc.
-    except Exception as e:
-        print(f"[contracts] governance import skipped: {e}")
+    pass
     # Nothing else required for boot; specific bind calls happen below.
 
 
@@ -100,9 +62,6 @@ def create_app(config_object="config.DevConfig"):
 
     # init extensions first
     init_extensions(app)
-
-    # Wire in-process event subscribers (e.g., policy cache refresh)
-    wire_event_subscribers()
 
     from flask_wtf.csrf import CSRFError, generate_csrf
 
@@ -155,21 +114,10 @@ def create_app(config_object="config.DevConfig"):
     app.register_blueprint(resources_bp)
     app.register_blueprint(sponsors_bp)
 
-    # Now bind contracts to providers (late wiring, no circular import)
-    with app.app_context():
-        from app.extensions.contracts import governance as gov_contract
-        from app.slices.governance import services as gov_services
+    # -------------
+    # Globals Injection
+    # -------------
 
-        # 5) bind contracts AFTER extensions are up
-        _bind_contracts(app)
-
-        gov_contract.bind_provider(gov_services)
-
-        # If you want: preload/ensure policies, but do it *here*,
-        # not in module top-level
-        # gov_services.ensure_seed_policies()
-
-    # app/__init__.py
     @app.context_processor
     def inject_globals():
         from flask import current_app
@@ -270,24 +218,6 @@ def create_app(config_object="config.DevConfig"):
         tmpl = current_app.jinja_env.get_template("_macros.html")
         return {"_macros": tmpl.module}
 
-    from app.extensions import event_bus
-    from app.extensions import policy as policy_cache
-
-    with app.app_context():
-        # Warm the cache once the DB & contracts are available (compat with older exports)
-        ensure_init = getattr(policy_cache, "ensure_initialized", None)
-        if callable(ensure_init):
-            ensure_init()
-        else:
-            try:
-                from app.extensions.policy import (
-                    ensure_initialized as _ensure_init,
-                )
-
-                _ensure_init()
-            except Exception as e:
-                print(f"[policy] warm cache skipped: {e}")
-
     # Global error handler (logs all exceptions once, honors debugger in dev)
     @app.errorhandler(Exception)
     def _handle_any_exception(e: Exception):
@@ -314,12 +244,65 @@ def create_app(config_object="config.DevConfig"):
             raise
         return jsonify({"error": "internal_error"}), 500
 
+    # -------------
+    # Ledger Sink
+    # -------------
+    def _ledger_sink(env: dict) -> Optional[str]:
+        """
+        Maps schema-aligned envelope to ledger_event.
+        - We use type=f"{domain}.{operation}" for human-readable filtering.
+        - We pass domain as chain_key
+          (so per-domain chains verify independently).
+        - Everything not mapped goes into meta.
+        """
+        try:
+            from app.slices.ledger.services import log_event
+
+            domain = env["domain"]
+            operation = env["operation"]
+            ev_type = f"{domain}.{operation}"
+
+            known = {
+                "ev_type": ev_type,
+                "chain_key": domain,  # useful for per-domain verify
+                "operation": operation,
+                "request_id": env.get("request_id"),
+                "happened_at_utc": env.get("happened_at"),
+                "actor_ulid": env.get("actor_ulid"),
+                "subject_ulid": env.get("target_ulid"),
+                "customer_ulid": env.get(
+                    "customer_ulid"
+                ),  # if callers set this
+            }
+            meta = {
+                k: v
+                for k, v in env.items()
+                if k
+                not in {
+                    "domain",
+                    "operation",
+                    "request_id",
+                    "happened_at",
+                    "actor_ulid",
+                    "target_ulid",
+                    "customer_ulid",
+                }
+                and v is not None
+            }
+            return log_event(**{**known, "meta": meta})
+        except Exception:
+            return None
+
+    register_sink(_ledger_sink)
+
+    # -------------
     # dev Dbase schema check, Route dump, Sanity check
+    # -------------
     if app.debug:
         _dump_routes(app)
         _boot_sanity(app)
 
-    # 6) only in dev, not during tests
+    # only in dev, not during tests
     if app.config.get("ENV") == "development" and not app.testing:
         _5chema_5heck(app)
 

@@ -2,8 +2,8 @@
 from app.extensions import db
 from app.slices.governance.models import (
     CanonicalState,
-    ServiceClassification,
     RoleCode,
+    ServiceClassification,
 )
 
 US_STATES = [
@@ -67,11 +67,6 @@ SERVICE_CLASSES = [
     ("education", "Education", 40),
 ]
 
-ROLE_CODES = [
-    ("user", "Standard user"),
-    ("auditor", "Read-only"),
-    ("admin", "Administrator"),
-]
 
 DOMAIN_ROLES = [
     ("customer", "Customer domain actor"),
@@ -109,3 +104,7 @@ def run():
         upsert(RoleCode, code=code, description=desc, is_active=True)
     db.session.commit()
     print("governance canonicals seeded")
+    print(
+        "domain_roles:",
+        [r.code for r in RoleCode.query.order_by(RoleCode.code).all()],
+    )

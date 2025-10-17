@@ -1,0 +1,77 @@
+
+# See where the DB is vs. your code
+flask db current
+flask db heads
+
+
+# Prepare a migration script
+flask db migrate -m "descriptive Notes or comments"
+
+"""
+Review the script at
+app/migrations/versions/<file>.py
+"""
+
+# SEND IT !
+flask db upgrade
+
+
+(dev-safe reset)
+
+1. **Delete the dev DB** (so we don’t have a stamped-but-empty file):
+
+
+rm -f var/app-instance/dev.db
+mkdir -p var/app-instance
+
+
+2. **Ensure migrations exist** (and that your app loads models before autogenerate):
+
+- Confirm `migrations/versions/` has your revisions.
+
+  - If it’s empty or you want a fresh baseline, do:
+
+
+    rm -rf migrations
+    flask --app manage_vcdb.py db init
+
+
+- Now **autogenerate** the baseline:
+
+FLASK_ENV=development \
+flask --app manage_vcdb.py db migrate -m "fresh baseline"
+
+
+  Make sure your `create_app()` imports all slices/models so Alembic sees them (i.e., blueprints/models are imported inside `create_app` before `Migrate` runs).
+
+
+3. **Upgrade (this actually creates tables)**
+
+
+flask --app manage_vcdb.py db upgrade
+
+
+
+
+
+Options:
+  -d, --directory TEXT  Migration script directory (default is "migrations")
+  -x, --x-arg TEXT      Additional arguments consumed by custom env.py scripts
+  --help                Show this message and exit.
+
+Commands:
+  branches        Show current branch points
+  check           Check if there are any new operations to migrate
+  current         Display the current revision for each database.
+  downgrade       Revert to a previous version
+  edit            Edit a revision file
+  heads           Show current available heads in the script directory
+  history         List changeset scripts in chronological order.
+  init            Creates a new migration repository.
+  list-templates  List available templates.
+  merge           Merge two revisions together, creating a new revision file
+  migrate         Autogenerate a new revision file (Alias for 'revision...
+  revision        Create a new revision file.
+  show            Show the revision denoted by the given symbol.
+  stamp           'stamp' the revision table with the given revision;...
+  upgrade         Upgrade to a later version

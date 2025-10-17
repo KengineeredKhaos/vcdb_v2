@@ -1,119 +1,113 @@
 # app/extensions/event_bus.py
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional, DefaultDict, List, Tuple
-from collections import defaultdict
-import threading
+from threading import RLock
+from typing import Callable, Iterable, Optional
 
-# -----------------------------------------------------------------------------
-# Public contract
-# -----------------------------------------------------------------------------
-# - register_sink(fn): set a persistence sink (Transactions / Ledger) that accepts
-#   an envelope dict and returns an event id (e.g., ULID). Optional; if unset, emit
-#   still notifies in-process subscribers.
-# - emit(**envelope): validate required keys, forward to sink (if any), then fan out
-#   to in-process subscribers (exact type and prefix subscribers). Returns sink result.
-# - subscribe(event_type, handler): exact match subscription.
-# - subscribe_prefix(prefix, handler): prefix subscription (e.g., "governance.").
-# - unsubscribe(handler): remove handler from all subscriptions (helpful for tests).
-#
-# Envelope requirements (minimal):
-#   {'type', 'slice', 'request_id', 'happened_at'}
-# You may include anything else (actor_id, target_id, refs, etc.).
-#
-# IMPORTANT: This bus does not do any I/O; the sink you register does. Keep handlers
-# lightweight and non-blocking where possible.
-# -----------------------------------------------------------------------------
+from app.lib.chrono import now_iso8601_ms
 
-SinkFn = Callable[[Dict[str, Any]], Optional[str]]
-HandlerFn = Callable[[Dict[str, Any]], None]
-
-_REQUIRED_KEYS = {"type", "slice", "request_id", "happened_at"}
-
-_sink: Optional[SinkFn] = None
-
-_lock = threading.RLock()
-_exact: DefaultDict[str, List[HandlerFn]] = defaultdict(list)
-_prefix: List[
-    Tuple[str, HandlerFn]
-] = []  # (prefix, handler), checked in order
+Envelope = dict
+Sink = Callable[[Envelope], Optional[str]]
 
 
-def register_sink(fn: SinkFn) -> None:
-    """Register the Transactions/Ledger slice function that persists events."""
-    global _sink
-    with _lock:
-        _sink = fn
+class EventBus:
+    """Schema-aligned bus for ledger events (single responsibility: normalize + fan-out)."""
 
+    def __init__(self) -> None:
+        self._sinks: list[Sink] = []
+        self._lock = RLock()
 
-def subscribe(event_type: str, handler: HandlerFn) -> None:
-    """Subscribe to a specific event type, e.g., 'governance.policy.updated'."""
-    if not callable(handler):
-        raise TypeError("handler must be callable")
-    with _lock:
-        _exact[event_type].append(handler)
+    def register_sink(self, sink: Sink) -> None:
+        with self._lock:
+            self._sinks.append(sink)
 
+    def sinks(self) -> Iterable[Sink]:
+        with self._lock:
+            return tuple(self._sinks)
 
-def subscribe_prefix(prefix: str, handler: HandlerFn) -> None:
-    """Subscribe to all events whose type starts with prefix, e.g., 'finance.'."""
-    if not callable(handler):
-        raise TypeError("handler must be callable")
-    with _lock:
-        _prefix.append((prefix, handler))
+    def emit(
+        self,
+        *,
+        # --- required by contract ---
+        domain: str,
+        operation: str,
+        request_id: str,
+        actor_ulid: str,
+        # --- optional by contract ---
+        happened_at: Optional[str] = None,
+        target_ulid: Optional[str] = None,
+        changed: Optional[dict] = None,
+        refs: Optional[dict] = None,
+        correlation_id: Optional[str] = None,
+        # --- legacy compatibility (will be mapped if provided) ---
+        **legacy,
+    ) -> Optional[str]:
+        # Backfill timestamp
+        if not happened_at:
+            happened_at = now_iso8601_ms()
 
+        # Map legacy fields → contract fields (so old callers don’t explode)
+        # - slice -> domain
+        # - type "domain.operation" -> domain/operation (if provided)
+        # - actor_id -> actor_ulid
+        # - target_id -> target_ulid
+        # - changed_fields -> changed
+        # - request_id required: keep if already passed; else accept legacy
+        if not domain and (sl := legacy.get("slice")):
+            domain = sl
+        if legacy.get("type") and not operation:
+            t = legacy["type"]
+            if "." in t:
+                d, op = t.split(".", 1)
+                domain = domain or d
+                operation = op
+        actor_ulid = actor_ulid or legacy.get("actor_id")
+        target_ulid = target_ulid or legacy.get("target_id")
+        changed = changed or legacy.get("changed_fields")
+        refs = refs or legacy.get("refs")
+        if not correlation_id:
+            correlation_id = legacy.get("correlation_id")
 
-def unsubscribe(handler: HandlerFn) -> int:
-    """Remove a handler from all subscriptions. Returns number of removals."""
-    removed = 0
-    with _lock:
-        for k, lst in list(_exact.items()):
-            before = len(lst)
-            _exact[k] = [h for h in lst if h is not handler]
-            removed += before - len(_exact[k])
-            if not _exact[k]:
-                _exact.pop(k, None)
-        global _prefix
-        before = len(_prefix)
-        _prefix = [(p, h) for (p, h) in _prefix if h is not handler]
-        removed += before - len(_prefix)
-    return removed
+        env: Envelope = {
+            "domain": domain,
+            "operation": operation,
+            "happened_at": happened_at,
+            "request_id": request_id,
+            "actor_ulid": actor_ulid,
+            "target_ulid": target_ulid,
+            "changed": changed,
+            "refs": refs,
+            "correlation_id": correlation_id,
+        }
 
-
-def emit(**envelope) -> Optional[str]:
-    """Emit an event:
-    1) Validate minimal shape,
-    2) Forward to sink (if registered),
-    3) Fan-out to in-process subscribers (best effort).
-
-    Returns the sink's result (e.g., event id) or None if no sink registered.
-    """
-    missing = _REQUIRED_KEYS - set(envelope.keys())
-    if missing:
-        raise ValueError(
-            f"event_bus.emit missing required fields: {sorted(missing)}"
-        )
-
-    # Persist first (if any), then notify in-process subscribers
-    result: Optional[str] = None
-    if _sink is not None:
-        result = _sink(envelope)
-
-    # Copy refs for handlers so they can’t mutate original
-    evt = dict(envelope)
-
-    # Fan-out (best effort; handler exceptions are logged and suppressed)
-    # Keep a snapshot of subscribers to avoid holding the lock while calling.
-    with _lock:
-        exact_handlers = list(_exact.get(evt["type"], ()))
-        prefix_handlers = [
-            h for (p, h) in _prefix if evt["type"].startswith(p)
+        # Validate minimal requireds
+        missing = [
+            k
+            for k in (
+                "domain",
+                "operation",
+                "request_id",
+                "actor_ulid",
+                "happened_at",
+            )
+            if not env.get(k)
         ]
+        if missing:
+            raise ValueError(
+                f"event_bus.emit missing required fields: {missing}"
+            )
 
-    for handler in exact_handlers + prefix_handlers:
-        try:
-            handler(evt)
-        except Exception as e:
-            # Minimal inline logging; replace with your logger if present
-            print(f"[event_bus] handler error for '{evt['type']}': {e}")
+        result: Optional[str] = None
+        for sink in self.sinks():
+            try:
+                r = sink(env)
+                result = result or r
+            except Exception:
+                # Swallow; logging is fine here if you want.
+                pass
+        return result
 
-    return result
+
+event_bus = EventBus()
+register_sink = event_bus.register_sink
+emit = event_bus.emit

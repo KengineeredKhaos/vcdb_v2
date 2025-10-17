@@ -1,41 +1,24 @@
-# app/extension/contracts/governance/v1.py
+# app/extensions/contracts/governance/v1.py
 from __future__ import annotations
 
-from dataclasses import dataclass
+from types import SimpleNamespace
+from typing import List, Optional
+
+from app.slices.governance import services as gsvc
 
 
-@dataclass(frozen=True)
-class StateDTO:
-    code: str
-    name: str
+def get_states() -> List[SimpleNamespace]:
+    """Public read API: returns simple objects with .code and .name."""
+    rows = gsvc.svc_list_states_rows()
+    return [SimpleNamespace(code=r.code, name=r.name) for r in rows]
 
 
-@dataclass(frozen=True)
-class ServiceClassDTO:
-    code: str
-    label: str
-    sort: int
+def get_domain_roles() -> List[SimpleNamespace]:
+    """Domain roles (customer, resource, sponsor, governor). Not RBAC."""
+    rows = gsvc.svc_list_domain_roles_rows()
+    return [SimpleNamespace(code=r.code, name=r.name) for r in rows]
 
 
-@dataclass(frozen=True)
-class DomainRoleDTO:
-    code: str
-    description: str
-
-
-def get_states() -> list[StateDTO]:
-    from app.slices.governance.services import list_states
-
-    return [StateDTO(**x) for x in list_states()]
-
-
-def get_service_classifications() -> list[ServiceClassDTO]:
-    from app.slices.governance.services import list_service_classifications
-
-    return [ServiceClassDTO(**x) for x in list_service_classifications()]
-
-
-def get_domain_roles() -> list[DomainRolesDTO]:
-    from app.slices.governance.services import list_domain_roles
-
-    return [DomainRoleDTO(**x) for x in list_domain_roles()]
+def get_policy_value(namespace: str, key: str) -> Optional[dict]:
+    """Return the active policy value (dict) or None."""
+    return gsvc.svc_get_policy_value(namespace, key)

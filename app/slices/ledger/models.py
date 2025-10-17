@@ -17,8 +17,8 @@ class LedgerEvent(db.Model, ULIDPK):
     type: Mapped[str] = mapped_column(
         String(64), index=True
     )  # e.g. "auth.login.success"
-    happened_at_utc: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, index=True
+    happened_at_utc: Mapped[str | None] = mapped_column(
+        String(30), default=utcnow_naive, index=True
     )
 
     actor_ulid: Mapped[str | None] = mapped_column(

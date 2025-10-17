@@ -1,0 +1,11 @@
+# bash one-liner sequence to dump/create/seed dev dbase
+rm -f var/app-instance/dev.db
+FLASK_ENV=development flask --app manage_vcdb.py db upgrade
+FLASK_ENV=development flask --app manage_vcdb.py shell <<'PY'
+from scripts.seed_governance import run as seed_gov
+from scripts.seed_auth import run as seed_auth
+from scripts.seed_calendar import run as seed_calendar
+seed_gov(); seed_auth(); seed_calendar()
+print("states:", __import__('app').slices.governance.models.CanonicalState.query.count())
+print("roles(auth):", [r.code for r in __import__('app').slices.auth.models.Role.query.all()])
+PY
