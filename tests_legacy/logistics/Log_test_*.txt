@@ -1,0 +1,11 @@
+# tests/logistics/test_*.py (where it emits)
+from app.extensions import event_bus
+from app.lib.chrono import now_iso8601_ms
+
+event_bus.emit(
+    "item.updated",
+    {"changed_fields": {"qty_on_hand": 10}},
+    domain="logistics",
+    actor_ulid="01TESTACTOR",
+    happened_at=now_iso8601_ms(),
+)

@@ -14,7 +14,6 @@ from sqlalchemy import inspect, text
 from sqlalchemy.sql.sqltypes import NullType
 from werkzeug.exceptions import HTTPException
 
-from app.extensions.event_bus import register_sink
 from app.lib.chrono import parse_iso8601, utcnow_aware
 from app.lib.logging import configure_logging
 
@@ -113,6 +112,15 @@ def create_app(config_object="config.DevConfig"):
     app.register_blueprint(logistics_bp)
     app.register_blueprint(resources_bp)
     app.register_blueprint(sponsors_bp)
+
+    # -------------
+    # Event Bus Subscribe
+    # -------------
+
+    from app.extensions import event_bus
+    from app.slices.ledger.services import log_event
+
+    event_bus.subscribe(log_event)
 
     # -------------
     # Globals Injection
@@ -243,57 +251,6 @@ def create_app(config_object="config.DevConfig"):
         if app.debug:
             raise
         return jsonify({"error": "internal_error"}), 500
-
-    # -------------
-    # Ledger Sink
-    # -------------
-    def _ledger_sink(env: dict) -> Optional[str]:
-        """
-        Maps schema-aligned envelope to ledger_event.
-        - We use type=f"{domain}.{operation}" for human-readable filtering.
-        - We pass domain as chain_key
-          (so per-domain chains verify independently).
-        - Everything not mapped goes into meta.
-        """
-        try:
-            from app.slices.ledger.services import log_event
-
-            domain = env["domain"]
-            operation = env["operation"]
-            ev_type = f"{domain}.{operation}"
-
-            known = {
-                "ev_type": ev_type,
-                "chain_key": domain,  # useful for per-domain verify
-                "operation": operation,
-                "request_id": env.get("request_id"),
-                "happened_at_utc": env.get("happened_at"),
-                "actor_ulid": env.get("actor_ulid"),
-                "subject_ulid": env.get("target_ulid"),
-                "customer_ulid": env.get(
-                    "customer_ulid"
-                ),  # if callers set this
-            }
-            meta = {
-                k: v
-                for k, v in env.items()
-                if k
-                not in {
-                    "domain",
-                    "operation",
-                    "request_id",
-                    "happened_at",
-                    "actor_ulid",
-                    "target_ulid",
-                    "customer_ulid",
-                }
-                and v is not None
-            }
-            return log_event(**{**known, "meta": meta})
-        except Exception:
-            return None
-
-    register_sink(_ledger_sink)
 
     # -------------
     # dev Dbase schema check, Route dump, Sanity check
@@ -576,7 +533,7 @@ def _ledger_sanity(app, limit: int = 20) -> None:
             "prev_event_id": payload.get("prev_event_id"),
             "prev_hash": payload.get("prev_hash"),
             "type": payload.get("type"),
-            "slice": payload.get("slice"),
+            "domain": payload.get("domain"),
             "operation": payload.get("operation"),
             "request_id": payload.get("request_id"),
             "actor_id": payload.get("actor_id"),
@@ -600,7 +557,7 @@ def _ledger_sanity(app, limit: int = 20) -> None:
                     text(
                         f"""
                         SELECT id, happened_at_utc, prev_event_id, prev_hash, event_hash,
-                               type, slice, operation, request_id, actor_id, target_id,
+                               type, domain, operation, request_id, actor_id, target_id,
                                entity_ids_json, changed_fields_json, refs_json
                           FROM {tname}
                       ORDER BY happened_at_utc DESC, id DESC

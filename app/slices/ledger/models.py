@@ -14,9 +14,11 @@ from app.lib.models import ULIDPK
 class LedgerEvent(db.Model, ULIDPK):
     __tablename__ = "ledger_event"
 
-    type: Mapped[str] = mapped_column(
-        String(64), index=True
+    event_type: Mapped[str | None] = mapped_column(
+        "type", String(64), index=True
     )  # e.g. "auth.login.success"
+    domain: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    operation: Mapped[str | None] = mapped_column(String(20), nullable=True)
     happened_at_utc: Mapped[str | None] = mapped_column(
         String(30), default=utcnow_naive, index=True
     )
