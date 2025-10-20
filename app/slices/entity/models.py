@@ -19,15 +19,15 @@ class Entity(db.Model, ULIDPK):
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
         String(30),
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
         nullable=False,
     )
-
+    archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
     # One-to-ones
     person: Mapped["EntityPerson"] = relationship(
         "EntityPerson", back_populates="entity", uselist=False
@@ -64,15 +64,15 @@ class EntityPerson(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
         String(30),
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
         nullable=False,
     )
-
+    archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
     # enforce 1:1 with Entity
     __table_args__ = (
         UniqueConstraint("entity_ulid", name="uq_person_entity"),
@@ -95,17 +95,19 @@ class EntityOrg(db.Model, ULIDPK):
     )  # normalized/validated in service
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
         String(30),
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
         nullable=False,
     )
-
+    archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
     __table_args__ = (
         UniqueConstraint("entity_ulid", name="uq_org_entity"),  # enforce 1:1
+        UniqueConstraint("ein", name="uq_org_ein"),
+        # works ONLY if DB allows UNIQUE with NULLs
     )
 
 
@@ -121,15 +123,15 @@ class EntityRole(db.Model, ULIDPK):
     role: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
         String(30),
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
         nullable=False,
     )
-
+    archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
     __table_args__ = (
         # Governance enforces allowed values;
         # DB enforces uniqueness per entity
@@ -157,14 +159,15 @@ class EntityContact(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
         String(30),
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
         nullable=False,
     )
+    archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
 
 # -------------------------
@@ -194,14 +197,15 @@ class EntityAddress(db.Model, ULIDPK):
     postal_code: Mapped[str] = mapped_column(String(10), nullable=False)
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
         String(30),
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
         nullable=False,
     )
+    archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
     __table_args__ = (
         CheckConstraint("length(state) = 2", name="ck_state_len_2"),

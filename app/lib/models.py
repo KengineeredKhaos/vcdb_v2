@@ -1,4 +1,10 @@
 # app/lib/models.py
+# -*- coding: utf-8 -*-
+# VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
+# File: <relative path>
+# Purpose: Stable library primitive for VCDB.
+# Canon API: lib-core v1.0.0 (frozen)
+
 from typing import Optional, Tuple
 
 from sqlalchemy import CheckConstraint, ForeignKey, String

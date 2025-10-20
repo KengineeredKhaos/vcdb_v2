@@ -1,0 +1,232 @@
+.
+├── app_tree.txt
+├── extensions
+│   ├── contracts
+│   │   ├── admin
+│   │   │   └── v1.py
+│   │   ├── attachments
+│   │   │   ├── schemas
+│   │   │   │   ├── attachments.link.request.json
+│   │   │   │   ├── attachments.signurl.request.json
+│   │   │   │   └── attachments.unlink.request.json
+│   │   │   └── v1.py
+│   │   ├── auth
+│   │   │   └── v1.py
+│   │   ├── boilerplate-v1.py
+│   │   ├── customers
+│   │   ├── entity
+│   │   │   └── v1.py
+│   │   ├── errors.py
+│   │   ├── finance
+│   │   │   ├── schemas
+│   │   │   │   ├── finance.balance_rebuild.request.json
+│   │   │   │   ├── finance.inkind_record.request.json
+│   │   │   │   ├── finance.journalize_receipt.request.json
+│   │   │   │   ├── finance.journal_post.request.json
+│   │   │   │   ├── finance.journal_reverse.request.json
+│   │   │   │   ├── finance.period_set_status.request.json
+│   │   │   │   ├── finance.register_pledge.request.json
+│   │   │   │   ├── finance.restrict_release.request.json
+│   │   │   │   └── finance.stat_record.request.json
+│   │   │   └── v1.py
+│   │   ├── governance
+│   │   │   ├── __pycache__
+│   │   │   └── v1.py
+│   │   ├── ledger
+│   │   │   ├── __init__.py
+│   │   │   ├── __pycache__
+│   │   │   ├── schemas
+│   │   │   │   ├── event.request.json
+│   │   │   │   └── event.response.json
+│   │   │   └── v1.py
+│   │   ├── logistics
+│   │   │   ├── schemas
+│   │   │   │   ├── logistics.inventory.issue.request.json
+│   │   │   │   ├── logistics.inventory.receive.request.json
+│   │   │   │   ├── logistics.inventory.transfer.request.json
+│   │   │   │   ├── logistics.item.ensure.request.json
+│   │   │   │   ├── logistics.location.ensure.request.json
+│   │   │   │   └── logistics.stock.rebuild.request.json
+│   │   │   └── v1.py
+│   │   ├── __pycache__
+│   │   ├── resources
+│   │   │   ├── schemas
+│   │   │   │   ├── resource.rebuild_index.request.json
+│   │   │   │   ├── resources.ensure_resource.request.json
+│   │   │   │   ├── resources.patch_capabilities.request.json
+│   │   │   │   ├── resources.promote_if_clean.request.json
+│   │   │   │   ├── resources.rebuild_all.request.json
+│   │   │   │   ├── resources.set_mou.request.json
+│   │   │   │   ├── resources.set_readiness.request.json
+│   │   │   │   └── resources.upsert_capabilities.request.json
+│   │   │   └── v1.py
+│   │   ├── sponsors
+│   │   │   ├── schemas
+│   │   │   │   ├── sponsors.ensure.request.json
+│   │   │   │   ├── sponsors.patch_capabilities.request.json
+│   │   │   │   ├── sponsors.pledge_upsert.request.json
+│   │   │   │   ├── sponsorss.pledge_set_status.request.json
+│   │   │   │   └── sponsors.upsert_capabilities.request.json
+│   │   │   └── v1.py
+│   │   ├── types.py
+│   │   └── validate.py
+│   ├── event_bus.py
+│   ├── __init__.py
+│   └── __pycache__
+├── __init__.py
+├── logs
+├── services
+│   ├── docs_library.py
+│   ├── __init__.py
+│   └── __pycache__
+├── slices
+│   ├── admin
+│   │   ├── cron.py
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── __pycache__
+│   │   ├── routes.py
+│   │   └── templates
+│   │       └── admin
+│   │           ├── cron.html
+│   │           ├── index.html
+│   │           ├── ledger_repair.html
+│   │           ├── ledger_report.html
+│   │           ├── policy_edit.html
+│   │           └── roles_adjust.html
+│   ├── attachments
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── __pycache__
+│   │   ├── routes.py
+│   │   └── services.py
+│   ├── auth
+│   │   ├── BKUP_user.py
+│   │   ├── decorators.py
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── __pycache__
+│   │   ├── routes.py
+│   │   ├── services.py
+│   │   └── templates
+│   │       └── auth
+│   │           ├── change_password.html
+│   │           └── login.html
+│   ├── calendar
+│   │   ├── forms.py
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── __pycache__
+│   │   ├── routes.py
+│   │   ├── services.py
+│   │   └── templates
+│   │       └── calendar
+│   │           └── hello.html
+│   ├── customers
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── __pycache__
+│   │   ├── routes.py
+│   │   ├── services.py
+│   │   └── templates
+│   │       └── customers
+│   │           ├── hello.html
+│   │           └── list.html
+│   ├── entity
+│   │   ├── dto.py
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── __pycache__
+│   │   ├── routes.py
+│   │   ├── services.py
+│   │   └── templates
+│   │       └── entity
+│   │           ├── create.html
+│   │           ├── hello.html
+│   │           └── list.html
+│   ├── finance
+│   │   ├── forms.py
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── __pycache__
+│   │   ├── routes.py
+│   │   ├── services.py
+│   │   └── templates
+│   │       └── finanace
+│   │           └── hello.html
+│   ├── governance
+│   │   ├── forms.py
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── __pycache__
+│   │   ├── routes.py
+│   │   ├── services.py
+│   │   └── templates
+│   │       └── governance
+│   │           ├── hello.html
+│   │           ├── policy_edit.html
+│   │           └── policy_index.html
+│   ├── ledger
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── __pycache__
+│   │   ├── routes.py
+│   │   └── services.py
+│   ├── logistics
+│   │   ├── forms.py
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── __pycache__
+│   │   ├── routes.py
+│   │   ├── services.py
+│   │   ├── sku.py
+│   │   └── templates
+│   │       └── logistics
+│   │           ├── hello.html
+│   │           └── issue.html
+│   ├── __pycache__
+│   ├── resources
+│   │   ├── forms.py
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── __pycache__
+│   │   ├── routes.py
+│   │   ├── services.py
+│   │   └── templates
+│   │       └── resources
+│   │           ├── hello.html
+│   │           └── list.html
+│   └── sponsors
+│       ├── forms.py
+│       ├── __init__.py
+│       ├── models.py
+│       ├── __pycache__
+│       ├── routes.py
+│       ├── services.py
+│       └── templates
+│           └── sponsors
+│               ├── contribution.html
+│               └── hello.html
+├── static
+│   ├── css
+│   │   ├── app.css
+│   │   └── v2.css
+│   ├── documents
+│   └── js
+│       └── app.js
+├── templates
+│   ├── _forms.html
+│   ├── layout
+│   │   ├── base.html
+│   │   ├── BKUP_base.html
+│   │   ├── hero_cards.html
+│   │   ├── index.html
+│   │   ├── _nav.html
+│   │   └── placeholder.html
+│   └── _macros.html
+├── utils
+│   ├── paging.py
+│   └── __pycache__
+└── web.py
+
+81 directories, 149 files

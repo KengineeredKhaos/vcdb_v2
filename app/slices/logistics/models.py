@@ -28,12 +28,12 @@ class Location(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
         String(30),
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
         nullable=False,
     )
 
@@ -96,12 +96,12 @@ class InventoryItem(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
         String(30),
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
         nullable=False,
     )
 
@@ -136,7 +136,7 @@ class InventoryBatch(db.Model, ULIDPK):
         String(26), nullable=True
     )
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
+        String(30), default=now_iso8601_ms, nullable=False
     )
 
 
@@ -172,7 +172,7 @@ class InventoryMovement(db.Model, ULIDPK):
         String(26), nullable=True
     )
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
+        String(30), default=now_iso8601_ms, nullable=False
     )
 
     __table_args__ = (
@@ -192,8 +192,8 @@ class InventoryStock(db.Model, ULIDPK):
     )
     updated_at_utc: Mapped[str] = mapped_column(
         String(30),
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
         nullable=False,
     )
 

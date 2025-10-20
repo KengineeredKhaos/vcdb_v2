@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from jsonschema import Draft202012Validator, ValidationError
 from sqlalchemy import asc, func, select
 
-from app.extensions import db
-from app.extensions.event_bus import emit
+from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 from app.lib.jsonutil import stable_dumps, stable_loads  # from your lib.zip
@@ -145,7 +144,9 @@ def _normalize_value(key: str, value: Dict[str, Any]) -> Dict[str, Any]:
     return {field_name: out}
 
 
-# ---- Public API -------------------------------------------------------------
+# -----------------
+# Public API
+# -----------------
 
 
 def list_policy_keys() -> list[str]:
@@ -181,11 +182,72 @@ def get_policy_value(family: str) -> Dict[str, Any]:
         return default_value
 
 
+# -----------------
+# Emit event to ledger for "Set Policy"
+# -----------------
+def _emit_policy_event(
+    *,
+    op: str,  # "policy.created" | "policy.updated"
+    namespace: str,
+    key: str,
+    new_version: int,
+    new_value: dict,
+    prev_version: int | None,
+    prev_value: dict | None,
+    actor_entity_ulid: str | None,
+    request_id: str | None,
+) -> None:
+    """
+    Push a normalized governance policy event onto the emit bus.
+    Keeps ULIDs out of policy identity (which has no ULID) and records identity in meta.refs.
+    """
+
+    # Strongly prefer a caller-supplied request_id; fall back to a new ULID if missing.
+    req_id = request_id or new_ulid()
+
+    # Minimal, PII-free change summary
+    changed = {
+        "version_prev": prev_version,
+        "version_new": new_version,
+        # store compact JSON strings to keep envelope small & deterministic
+        "value_prev_json": stable_dumps(prev_value)
+        if prev_value is not None
+        else None,
+        "value_new_json": stable_dumps(new_value),
+    }
+
+    # References to identify *which* policy changed
+    meta = {
+        "refs": {
+            "policy": {
+                "namespace": namespace,
+                "key": key,
+                "version": new_version,
+            }
+        }
+    }
+
+    # Emit using domain+operation. Leave ULID “targets” empty (policies don’t have ULIDs).
+    event_bus.emit(
+        domain="governance",
+        operation=f"policy.{op}",
+        request_id=req_id,
+        actor_ulid=actor_entity_ulid,  # may be None for system bootstrap; your sink should tolerate this
+        target_ulid=None,  # no natural ULID for policies
+        changed=changed,
+        refs=meta.get("refs"),
+    )
+
+
+# -----------------
+# Set Policy
+# -----------------
 def set_policy(
     namespace: str,
     key: str,
     value: Dict[str, Any],
     actor_entity_ulid: str | None,
+    request_id: str | None = None,  # <— NEW (preferred)
 ) -> Policy:
     family = f"{namespace}.{key}"
     if family not in POLICY_REGISTRY:
@@ -198,25 +260,30 @@ def set_policy(
     except ValidationError as e:
         raise PolicyValidationError(str(e)) from e
 
-    # find current active
+    # find current active (if any)
     current = db.session.execute(
         select(Policy).where(
             Policy.namespace == namespace,
             Policy.key == key,
-            Policy.is_active == True,
-        )  # noqa: E712
+            Policy.is_active == True,  # noqa: E712
+        )
     ).scalar_one_or_none()
 
-    # determine next version
     if current:
+        prev_version = current.version
+        prev_value = stable_loads(current.value_json)
+        # retire current
         current.is_active = False
         current.updated_at_utc = now_iso8601_ms()
         db.session.add(current)
-        next_ver = current.version + 1
+        next_ver = prev_version + 1
         schema_json = current.schema_json or stable_dumps(
             POLICY_REGISTRY[family][0]
         )
+        op = "updated"
     else:
+        prev_version = None
+        prev_value = None
         max_ver = db.session.execute(
             select(func.max(Policy.version)).where(
                 Policy.namespace == namespace, Policy.key == key
@@ -224,6 +291,7 @@ def set_policy(
         ).scalar_one_or_none()
         next_ver = (int(max_ver) + 1) if max_ver else 1
         schema_json = stable_dumps(POLICY_REGISTRY[family][0])
+        op = "created"
 
     new_row = Policy(
         namespace=namespace,
@@ -235,6 +303,19 @@ def set_policy(
         updated_by_actor_ulid=actor_entity_ulid,
     )
     db.session.add(new_row)
-    db.session.commit()
+    db.session.commit()  # commit first so the event reflects persisted state
+
+    # Emit governance policy event
+    _emit_policy_event(
+        op=op,
+        namespace=namespace,
+        key=key,
+        new_version=next_ver,
+        new_value=norm,
+        prev_version=prev_version,
+        prev_value=prev_value,
+        actor_entity_ulid=actor_entity_ulid,
+        request_id=request_id,
+    )
 
     return new_row

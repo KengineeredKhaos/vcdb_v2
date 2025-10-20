@@ -1,0 +1,5 @@
+Command Line Tools
+
+# Flask python shell
+
+flask --app manage_vcdb.py shell

@@ -1,154 +1,204 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-manage_vcdb.py — one-entry launcher for VCDB v2
+VCDB v2 launcher / CLI entrypoint
 
-Lazy Dev Default:
-    python manage_vcdb.py run
+Usage:
+  # Run the dev server
+  python manage_vcdb.py run --env dev
 
-Dev on another port:
-    python manage_vcdb.py run --env dev --host 0.0.0.0 --port 5100
-
-Test with a twist:
-    python manage_vcdb.py run --env test --port 5101 --no-debug
-
-
-Production Mode will require some specific tuning:
-    VCDB_DB="<SQLite path>"
-    ATTACHMENTS_ROOT="/data/attachments" \
-    VCDB_SECRET_KEY="supersecret" \
-
-python manage_vcdb.py run --env prod --host 0.0.0.0 --port 8000 --no-debug
-
-
-General Usage:
-  python manage_vcdb.py run --env dev   [--host 0.0.0.0] [--port 5000] [--debug]
-  python manage_vcdb.py run --env test  [--port 5001]
-  python manage_vcdb.py run --env prod  [--host 0.0.0.0] [--port 8000]
-
-Environment knobs (optional):
-  VCDB_DB             -> SQLAlchemy URI override (especially for prod)
-  VCDB_SECRET_KEY     -> Flask secret
-  ATTACHMENTS_ROOT    -> root for blob storage (default var/data/attachments/<env>)
-  VCDB_LOG_DIR        -> logs directory
+  # Flask CLI (custom commands like ledger-verify)
+  flask --app manage_vcdb.py ledger-verify
+  flask --app manage_vcdb.py ledger-verify --chain entity
 """
-
 from __future__ import annotations
 
 import argparse
 import os
 import sys
-from pathlib import Path
+from typing import Any
 
-from app import create_app
-
-
-# ENV_TO_CONFIG = {
-#     "dev": "config.DevConfig",
-#     "test": "config.TestConfig",
-#     "prod": "config.ProdConfig",  # ensure this class exists in config.py
-# }
+# -----------------
+# Config mapping
+# -----------------
 
 
-def _config_for(env: str) -> str:
+def _config_for(env: str):
+    """Return a config object class for the given env."""
+    from config import (
+        DevConfig,
+        ProdConfig,
+        TestConfig,
+    )  # local import avoids early side-effects
+
     env = (env or "dev").lower()
-    if env in ("dev", "development"):
-        return "config.DevConfig"
-    if env in ("test", "testing"):
-        return "config.TestConfig"
     if env in ("prod", "production"):
-        return "config.ProdConfig"
-    raise SystemExit(f"Unknown --env {env}")
+        return ProdConfig
+    if env in ("test", "testing"):
+        return TestConfig
+    return DevConfig  # default
 
 
-def ensure_dir(p: str | Path) -> str:
-    path = Path(p)
-    path.mkdir(parents=True, exist_ok=True)
-    return str(path.resolve())
+# -----------------
+# Small helpers
+# -----------------
+
+
+def ensure_dir(path: str) -> str:
+    """Ensure a directory exists and return its absolute path."""
+    abspath = os.path.abspath(path)
+    os.makedirs(abspath, exist_ok=True)
+    return abspath
 
 
 def pick_attachments_root(env: str) -> str:
-    # Prefer explicit env var; otherwise default to an env-scoped folder.
+    """Choose an attachments root based on env (overridable by env var)."""
     root = os.environ.get("ATTACHMENTS_ROOT")
-    if not root or not root.strip():
-        root = f"var/data/attachments/{env.lower()}"
-        os.environ["ATTACHMENTS_ROOT"] = root
-    return root
+    if root:
+        return root
+    base = os.path.join("var", "data", "attachments", env)
+    return base
 
 
-def print_banner(env: str, host: str, port: int, cfg: str, app):
+def print_banner(env: str, host: str, port: int, cfg_obj: Any, app: Any):
+    """Pretty banner showing key runtime info. Call once in the main process."""
+    db_uri = app.config.get("SQLALCHEMY_DATABASE_URI", "<unset>")
+    att_root = os.environ.get("ATTACHMENTS_ROOT", "<unset>")
+    log_dir = os.environ.get("VCDB_LOG_DIR", "app/logs")
     print("\n=== VCDB v2 — launcher ===")
     print(f"ENV                 : {env}")
-    print(f"CONFIG OBJECT       : {cfg}")
+    print(f"CONFIG OBJECT       : {cfg_obj.__module__}.{cfg_obj.__name__}")
     print(f"HOST:PORT           : {host}:{port}")
-    print(
-        f"DATABASE URI        : {app.config.get('SQLALCHEMY_DATABASE_URI')}"
-    )
-    print(f"ATTACHMENTS_ROOT    : {os.environ.get('ATTACHMENTS_ROOT')}")
-    print(f"LOG DIR             : {app.config.get('LOG_DIR')}")
+    print(f"DATABASE URI        : {db_uri}")
+    print(f"ATTACHMENTS_ROOT    : {att_root}")
+    print(f"LOG DIR             : {log_dir}")
     print("==========================\n")
 
 
-def run(env: str, host: str, port: int, debug_flag: bool):
-    # Attachments root (env-scoped default) + ensure directory exists
+# -----------------
+# Flask app factory wrapper for Flask CLI
+# (--app manage_vcdb.py)
+# -----------------
+
+
+def create_app():
+    """
+    Flask CLI entrypoint. Builds the app with a sensible default env and
+    registers custom CLI commands.
+    """
+    # Prefer VCDB_ENV, then FLASK_ENV, default 'dev'
+    env = os.environ.get("VCDB_ENV") or os.environ.get("FLASK_ENV") or "dev"
+    debug = env == "dev"
+
+    # Ensure dirs that the app expects
     att_root = pick_attachments_root(env)
     abs_att = ensure_dir(att_root)
-
-    # Optional: ensure a logs directory exists too
+    os.environ["ATTACHMENTS_ROOT"] = abs_att
     ensure_dir(os.environ.get("VCDB_LOG_DIR", "app/logs"))
 
+    # Build the Flask app with the selected config
     cfg_object = _config_for(env)
-    app = create_app(config_object=cfg_object)
+    from app import (
+        create_app as _create_flask_app,
+    )  # import here to avoid cycles
 
-    # Re-assert attachments path inside the app for clarity (services read env)
+    app = _create_flask_app(config_object=cfg_object)
+
+    # Register custom CLI commands on this app instance
+    from app.cli import register_cli
+
+    register_cli(app)
+
+    # Optional: print a short banner once when using CLI (suppressed by default)
+    # is_main = os.environ.get("WERKZEUG_RUN_MAIN") in (None, "true")
+    # if is_main or not debug:
+    #     print_banner(env, "CLI", 0, cfg_object, app)
+
+    return app
+
+
+# -----------------
+# Run server
+# (python manage_vcdb.py run ...)
+# -----------------
+
+
+def run(env: str, host: str, port: int, debug_flag: bool | None):
+    # Decide debug FIRST
+    debug = (env == "dev") if debug_flag is None else bool(debug_flag)
+
+    # Ensure expected directories / env
+    att_root = pick_attachments_root(env)
+    abs_att = ensure_dir(att_root)
     os.environ["ATTACHMENTS_ROOT"] = abs_att
+    ensure_dir(os.environ.get("VCDB_LOG_DIR", "app/logs"))
 
-    # Debug preference:
-    # - dev: default True unless --debug=False
-    # - test/prod: default False unless explicitly set True (not recommended in prod)
-    if debug_flag is None:
-        debug = env == "dev"
-    else:
-        debug = bool(debug_flag)
+    # Build app
+    cfg_object = _config_for(env)
+    from app import (
+        create_app as _create_flask_app,
+    )  # import here to avoid cycles
 
-    print_banner(env, host, port, cfg_object, app)
+    app = _create_flask_app(config_object=cfg_object)
+
+    # Register custom CLI commands on this app instance
+    from app.cli import register_cli
+
+    register_cli(app)
+
+    # Print banner only in the main process (avoid duplicate prints under reloader)
+    is_main = os.environ.get("WERKZEUG_RUN_MAIN") in (None, "true")
+    if is_main or not debug:
+        print_banner(env, host, port, cfg_object, app)
+
+    # Single run call
     app.run(host=host, port=port, debug=debug, use_reloader=debug)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="VCDB v2 manager")
-    sub = parser.add_subparsers(dest="cmd", required=True)
+# -----------------
+# Argparse entrypoint
+# -----------------
 
-    run_p = sub.add_parser("run", help="Run the web server")
-    run_p.add_argument(
-        "--env", choices=["dev", "test", "prod"], default="dev"
+
+def main(argv: list[str] | None = None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    parser = argparse.ArgumentParser(
+        prog="manage_vcdb.py", description="VCDB v2 app manager"
     )
-    run_p.add_argument("--host", default="127.0.0.1")
-    run_p.add_argument("--port", type=int, default=5000)
-    run_p.add_argument(
-        "--debug",
-        dest="debug",
-        action="store_true",
-        help="Force debug ON",
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_run = sub.add_parser("run", help="Run the Flask development server")
+    p_run.add_argument(
+        "--env",
+        default="dev",
+        choices=["dev", "test", "prod", "production", "testing"],
+        help="Environment",
     )
-    run_p.add_argument(
+    p_run.add_argument("--host", default="127.0.0.1", help="Host")
+    p_run.add_argument("--port", default=5000, type=int, help="Port")
+    p_run.add_argument(
+        "--debug", action="store_true", help="Force debug=True"
+    )
+    p_run.add_argument(
         "--no-debug",
         dest="debug",
         action="store_false",
-        help="Force debug OFF",
+        help="Force debug=False",
     )
-    run_p.set_defaults(debug=None)
+    p_run.set_defaults(debug=None)  # None => infer from env
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    if args.cmd == "run":
+    if args.command == "run":
         run(
             env=args.env,
             host=args.host,
             port=args.port,
             debug_flag=args.debug,
         )
-    else:
-        parser.print_help()
+        return
+
+    parser.error("Unknown command")
 
 
 if __name__ == "__main__":

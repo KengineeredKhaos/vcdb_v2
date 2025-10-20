@@ -11,6 +11,10 @@ from app.extensions import (
     current_actor_id,
     entity_api,
 )
+from app.extensions.contracts.entity import v2 as entity_contract
+from app.lib.geo import us_states
+from app.lib.ids import new_ulid
+from app.lib.security import require_permission, require_roles_any
 
 from . import bp
 from . import services as svc
@@ -22,11 +26,36 @@ def hello():
     return render_template("entity/hello.html")
 
 
+# -----------------
+# DTO (PII scrubbed)
+# -----------------
+
+
+def _person_to_dto(p: EntityPerson) -> dict:
+    ent = p.entity
+    return {
+        "entity_ulid": ent.ulid if ent else None,
+        "first_name": p.first_name[0] + "."
+        if p.first_name
+        else None,  # minimal
+        "last_name": p.last_name,  # ok if policy allows; otherwise mask similarly
+        "preferred_name": None,  # avoid PII here in lists
+        "has_email": bool(
+            ent and any(c.is_primary and c.email for c in ent.contacts or [])
+        ),
+        "has_phone": bool(
+            ent and any(c.is_primary and c.phone for c in ent.contacts or [])
+        ),
+        "created_at_utc": ent.created_at_utc if ent else None,
+        "updated_at_utc": ent.updated_at_utc if ent else None,
+    }
+
+
 # -------------------------
 # People listing
 # -------------------------
 @bp.get("/people")
-@login_required
+@require_permission("entity:pii:read")
 def list_people():
     """
     List people. Optional ?role=<role_code> to restrict by role.
@@ -69,7 +98,7 @@ def list_people():
 # Orgs listing
 # -------------------------
 @bp.get("/orgs")
-@login_required
+@require_permission("entity:pii:read")
 def list_orgs():
     """
     List orgs. By default shows RESOURCE and SPONSOR orgs.
@@ -153,75 +182,38 @@ def create():
     Address fields (optional, for either kind):
       addr_purpose, addr1, addr2, city, state, postal, tz
     """
-    kind = (request.form.get("kind") or "person").strip().lower()
+
+    req_id = new_ulid()
     actor = current_actor_id()
-    req_id = f"req-entity-create-{int(time.time() * 1000)}"
 
-    try:
-        if kind == "org":
-            legal_name = (request.form.get("legal_name") or "").strip()
-            dba = request.form.get("doing_business_as") or None
-            ein = request.form.get("ein") or None
+    env = entity_contract.ContractEnvelope(
+        request_id=req_id, actor_id=actor, dry_run=False
+    )
 
-            entity_id = entity_api.ensure_org(
-                legal_name=legal_name,
-                doing_business_as=dba,
-                ein=ein,
-                request_id=req_id,
-                actor_id=actor,
-            )
+    kind = (request.form.get("kind") or "person").strip().lower()
+    if kind == "org":
+        res = entity_contract.ensure_org(
+            env,
+            legal_name=(request.form.get("legal_name") or "").strip(),
+            dba_name=request.form.get("doing_business_as") or None,
+            ein=request.form.get("ein") or None,
+        )
+        entity_id = res["entity_ulid"]
+    else:
+        res = entity_contract.ensure_person(
+            env,
+            first_name=(request.form.get("first_name") or "").strip(),
+            last_name=(request.form.get("last_name") or "").strip(),
+            email=request.form.get("email") or None,
+            phone=request.form.get("phone") or None,
+        )
+        entity_id = res["entity_ulid"]
 
-        else:
-            # default: person
-            first = (request.form.get("first_name") or "").strip()
-            last = (request.form.get("last_name") or "").strip()
-            email = request.form.get("email") or None
-            phone = request.form.get("phone") or None
+    # address (optional) — call your service/contract as appropriate
+    # role (optional) — continue to use contract v2
+    role_code = (request.form.get("role") or "").strip().lower()
+    if role_code:
+        entity_contract.add_entity_role(env, entity_id, role_code)
 
-            entity_id = entity_api.ensure_person(
-                first_name=first,
-                last_name=last,
-                email=email,
-                phone=phone,
-                request_id=req_id,
-                actor_id=actor,
-            )
-
-        # Optional address upsert (for either kind)
-        addr1 = request.form.get("addr1")
-        city = request.form.get("city")
-        state = request.form.get("state")
-        postal = request.form.get("postal")
-        if any([addr1, city, state, postal]):
-            if state and state.upper() not in us_state_codes():
-                flash(f"Invalid state: {state}", "error")
-                return redirect(url_for("entity.create_form"))
-            entity_api.upsert_address(
-                entity_id=entity_id,
-                purpose=(request.form.get("addr_purpose") or "physical"),
-                address1=addr1 or "",
-                address2=request.form.get("addr2"),
-                city=city or "",
-                state=state or "",
-                postal=postal or "",
-                tz=request.form.get("tz") or None,
-                request_id=req_id,
-                actor_id=actor,
-            )
-
-        # Optional role grant
-        role_code = (request.form.get("role") or "").strip().lower()
-        if role_code:
-            entity_api.ensure_role(
-                entity_id=entity_id,
-                role_code=role_code,
-                request_id=req_id,
-                actor_id=actor,
-            )
-
-        flash("Entity saved.", "success")
-        return redirect(url_for("entity.hello"))
-
-    except ValueError as ve:
-        flash(str(ve), "error")
-        return redirect(url_for("entity.hello"))
+    flash("Entity saved.", "success")
+    return redirect(url_for("entity.hello"))

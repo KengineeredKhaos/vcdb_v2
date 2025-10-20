@@ -1,4 +1,10 @@
 # app/lib/jsonutil.py
+# -*- coding: utf-8 -*-
+# VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
+# File: <relative path>
+# Purpose: Stable library primitive for VCDB.
+# Canon API: lib-core v1.0.0 (frozen)
+
 from __future__ import annotations
 
 import hashlib
@@ -9,7 +15,9 @@ from typing import Any, Iterable, Iterator, TextIO, Union
 Pathish = Union[str, Path]
 
 
-# ---------- dumps / loads ----------
+# -----------------
+# dumps / loads
+# -----------------
 
 
 def stable_dumps(obj: Any) -> str:
@@ -52,7 +60,25 @@ def stable_loads(s: str) -> Any:
     return json.loads(s)
 
 
-# ---------- normalization / equality / hashing ----------
+# -----------------
+# Aliases used by canon ledger/services
+# (keep names stable)
+# -----------------
+dumps_compact = stable_dumps
+
+
+def try_parse_json(
+    s: str,
+):  # returns None on invalid JSON (ledger verify expects that)
+    try:
+        return json.loads(s) if s is not None else None
+    except Exception:
+        return None
+
+
+# -----------------
+# normalization / equality / hashing
+# -----------------
 
 
 def _normalize(value: Any) -> Any:
@@ -85,7 +111,9 @@ def canonical_hash(obj: Any) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-# ---------- NDJSON (JSON Lines) ----------
+# -----------------
+# NDJSON (JSON Lines)
+# -----------------
 
 
 def iter_ndjson(stream: TextIO) -> Iterator[Any]:
@@ -108,7 +136,10 @@ def to_ndjson_lines(items: Iterable[Any]) -> str:
     return "".join(stable_dumps(it) + "\n" for it in items)
 
 
-# ---------- JSON Merge Patch (RFC 7386-ish) ----------
+# -----------------
+# JSON Merge Patch
+# (RFC 7386-ish)
+# -----------------
 
 
 def json_merge_patch(target: Any, patch: Any) -> Any:
@@ -138,7 +169,9 @@ def json_merge_patch(target: Any, patch: Any) -> Any:
     return result
 
 
-# ---------- tiny file I/O helpers ----------
+# -----------------
+# tiny file I/O helpers
+# -----------------
 
 
 def read_json_file(path: Pathish, *, default: Any = None) -> Any:

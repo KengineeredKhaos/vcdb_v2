@@ -1,8 +1,6 @@
 # app/slices/governance/models.py
 from __future__ import annotations
 
-from datetime import datetime
-
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -24,10 +22,13 @@ class CanonicalState(db.Model, ULIDPK):
     name: Mapped[str] = mapped_column(String(64))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at_utc: Mapped[str | None] = mapped_column(
-        String(30), default=utcnow_naive
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str | None] = mapped_column(
-        String(30), default=utcnow_naive, onupdate=utcnow_naive
+        String(30),
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
+        nullable=False,
     )
 
 
@@ -38,10 +39,13 @@ class ServiceClassification(db.Model, ULIDPK):
     sort: Mapped[int] = mapped_column(Integer, default=100)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at_utc: Mapped[str | None] = mapped_column(
-        String(30), default=utcnow_naive
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str | None] = mapped_column(
-        String(30), default=utcnow_naive, onupdate=utcnow_naive
+        String(30),
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
+        nullable=False,
     )
     __table_args__ = (Index("ix_gov_service_class_sort", "sort"),)
 
@@ -57,10 +61,13 @@ class RoleCode(db.Model, ULIDPK):
     description: Mapped[str] = mapped_column(String(200), default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at_utc: Mapped[str | None] = mapped_column(
-        String(30), default=utcnow_naive
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str | None] = mapped_column(
-        String(30), default=utcnow_naive, onupdate=utcnow_naive
+        String(30),
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
+        nullable=False,
     )
 
 
@@ -90,10 +97,13 @@ class Policy(db.Model, ULIDPK):
 
     # Store as ISO-8601 strings (VARCHAR(30)) to match your migration history
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, onupdate=now_iso8601_ms
+        String(30),
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
+        nullable=False,
     )
 
     __table_args__ = (

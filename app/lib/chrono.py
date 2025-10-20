@@ -1,3 +1,10 @@
+# app/lib/chrono.py
+# -*- coding: utf-8 -*-
+# VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
+# File: <relative path>
+# Purpose: Stable library primitive for VCDB.
+# Canon API: lib-core v1.0.0 (frozen)
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -44,7 +51,9 @@ Replace: parse_iso8601(s) → parse_iso8601(s)
 Need naive for DB? → as_naive_utc(parse_iso8601(s))
 """
 
-# ---- Primary helpers ----
+# -----------------
+# Primary helpers
+# -----------------
 
 
 def utcnow_aware() -> datetime:
@@ -99,8 +108,26 @@ def to_iso8601(dt: datetime) -> str:
     return z.isoformat().replace("+00:00", "Z")
 
 
-# ---- Back-compat aliases (remove after migration) ----
+# -----------------
+# Back-compat aliases
+# (remove after migration)
+# -----------------
 utc_now = now_iso8601_ms  # legacy "string now"
 utcnow_aware = utcnow_aware
 utcnow_naive = utcnow_naive
 parse_iso8601 = parse_iso8601
+
+__all__ = [
+    "utcnow_aware",
+    "utcnow_naive",
+    "ensure_aware_utc",
+    "as_naive_utc",
+    "now_iso8601_ms",
+    "parse_iso8601",
+    "to_iso8601",
+    # legacy aliases (remove when safe)
+    "utc_now",
+    "utcnow_aware",
+    "utcnow_naive",
+    "parse_iso8601",
+]

@@ -1,4 +1,10 @@
 # app/lib/utils.py
+# -*- coding: utf-8 -*-
+# VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
+# File: <relative path>
+# Purpose: Stable library primitive for VCDB.
+# Canon API: lib-core v1.0.0 (frozen)
+
 from __future__ import annotations
 
 import re
@@ -40,7 +46,8 @@ def assert_valid_email(value: str | None) -> None:
 
 
 # -----------------
-# Phone Normailizer (US-style, 10-digit)
+# Phone Normalizer
+# (US-style, 10-digit)
 # -----------------
 
 
@@ -88,3 +95,21 @@ def validate_ein(value: str | None) -> bool:
     if value is None:
         return True
     return bool(_EIN_DIGITS_RE.fullmatch(value))
+
+
+def assert_valid_ein(value: str | None) -> None:
+    if not validate_ein(value):
+        raise ValueError("Invalid EIN (expected 9 digits or None)")
+
+
+__all__ = [
+    "normalize_email",
+    "validate_email",
+    "assert_valid_email",
+    "normalize_phone",
+    "validate_phone",
+    "assert_valid_phone",
+    "normalize_ein",
+    "validate_ein",
+    "assert_valid_ein",
+]

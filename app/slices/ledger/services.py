@@ -1,17 +1,36 @@
 # app/slices/ledger/services.py
+# -*- coding: utf-8 -*-
+# VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
+# File: <set to the relative path of this file>
+# Purpose: Single source of truth for audit/ledger write-path.
+# Canon API: ledger-core v1.0.0  (frozen)
+# Ethos: skinny routes, fat services, ULID, ISO timestamps, no PII in ledger
 from __future__ import annotations
 
 import hashlib
 import json
 from datetime import datetime
-from typing import Any, Iterable, Mapping
+from typing import Any, Dict, Iterable, Mapping, Optional
+
+from sqlalchemy import desc, select
 
 from app.extensions import db
+from app.lib.chrono import now_iso8601_ms
+from app.lib.ids import new_ulid
+from app.lib.jsonutil import (  # use your finalized helpers
+    dumps_compact,
+    try_parse_json,
+)
 
 from .models import LedgerEvent
 
+# -*- coding: utf-8 -*-
+# VCDB Canon — DO NOT MODIFY WITHOUT GOVERNANCE APPROVAL
+CANON_API = "ledger-core"
+CANON_VERSION = "1.0.0"
 
-def verify_chain() -> dict:
+
+def verify_chain(chain_key: str | None = None) -> dict:
     """
     Minimal integrity check for tests and the /ledger/verify route.
     Replace later with full prev_hash/chain_key validation as needed.
@@ -36,32 +55,46 @@ def _json_safe(obj: Any) -> Any:
     return str(obj)
 
 
-def _canonical_envelope(
+def _canon_envelope(
     *,
-    event_type: str,
     domain: str,
     operation: str,
-    actor_ulid: str,
-    happened_at_utc: str,
     request_id: str,
-    subject_ulid: str | None,
-    entity_ulid: str | None,
-    changed_fields: dict | None,
-    meta: dict | None,
-) -> dict[str, Any]:
-    # Only the fields that define event identity go into the digest:
-    return {
+    actor_ulid: Optional[str],
+    target_ulid: Optional[str],
+    refs: Optional[Dict[str, Any]],
+    changed: Optional[Dict[str, Any]],
+    meta: Optional[Dict[str, Any]],
+    happened_at_utc: Optional[str] = None,
+    chain_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build a stable, minimal, string-serialized envelope for hashing."""
+    event_type = f"{domain}.{operation}"
+    ck = chain_key or domain
+    env = {
+        "chain_key": ck,
         "event_type": event_type,
         "domain": domain,
         "operation": operation,
-        "actor_ulid": actor_ulid,
-        "happened_at_utc": happened_at_utc,
         "request_id": request_id,
-        "subject_ulid": subject_ulid,
-        "entity_ulid": entity_ulid,
-        "changed_fields": _json_safe(changed_fields),
-        "meta": _json_safe(meta),
+        "actor_ulid": actor_ulid,
+        "target_ulid": target_ulid,
+        "happened_at_utc": happened_at_utc or now_iso8601_ms(),
+        "refs": refs or None,
+        "changed": changed or None,
+        "meta": meta or None,
     }
+    return env
+
+
+def _hash_env(prev_hash_hex: Optional[str], env: Dict[str, Any]) -> str:
+    """SHA-256 over prev-hash + compact JSON of envelope core fields."""
+    h = hashlib.sha256()
+    if prev_hash_hex:
+        h.update(prev_hash_hex.encode("utf-8"))
+    # hash only deterministic, compact representation
+    h.update(dumps_compact(env).encode("utf-8"))
+    return h.hexdigest()
 
 
 def _digest(envelope: dict[str, Any]) -> bytes:
@@ -116,3 +149,130 @@ def log_event(
         # TODO: fill chain_key / prev_hash here if you’re chaining
     )
     db.session.add(row)
+
+
+def append_event(
+    *,
+    domain: str,
+    operation: str,
+    request_id: str,
+    actor_ulid: Optional[str],
+    target_ulid: Optional[str],
+    refs: Optional[Dict[str, Any]] = None,
+    changed: Optional[Dict[str, Any]] = None,
+    meta: Optional[Dict[str, Any]] = None,
+    happened_at_utc: Optional[str] = None,
+    chain_key: Optional[str] = None,
+) -> LedgerEvent:
+    """
+    Append a ledger event. Callers are slice services or the event bus.
+    No PII—ULIDs and names only. Commits the row.
+    """
+    env = _canon_envelope(
+        domain=domain,
+        operation=operation,
+        request_id=request_id,
+        actor_ulid=actor_ulid,
+        target_ulid=target_ulid,
+        refs=refs,
+        changed=changed,
+        meta=meta,
+        happened_at_utc=happened_at_utc,
+        chain_key=chain_key,
+    )
+
+    # Find previous hash for this chain
+    stmt = (
+        select(LedgerEvent.curr_hash_hex)
+        .where(LedgerEvent.chain_key == env["chain_key"])
+        .order_by(desc(LedgerEvent.ulid))
+        .limit(1)
+    )
+    prev_hash_hex = db.session.execute(stmt).scalar_one_or_none()
+    curr_hash_hex = _hash_env(prev_hash_hex, env)
+
+    row = LedgerEvent(
+        ulid=new_ulid(),
+        chain_key=env["chain_key"],
+        domain=env["domain"],
+        operation=env["operation"],
+        event_type=env["event_type"],
+        actor_ulid=env["actor_ulid"],
+        target_ulid=env["target_ulid"],
+        request_id=env["request_id"],
+        happened_at_utc=env["happened_at_utc"],
+        refs_json=dumps_compact(env["refs"])
+        if env["refs"] is not None
+        else None,
+        changed_json=dumps_compact(env["changed"])
+        if env["changed"] is not None
+        else None,
+        meta_json=dumps_compact(env["meta"])
+        if env["meta"] is not None
+        else None,
+        prev_hash_hex=prev_hash_hex,
+        curr_hash_hex=curr_hash_hex,
+        created_at_utc=now_iso8601_ms(),
+    )
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def verify_chain(chain_key: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Recompute hashes for one chain or all chains and report the first break (if any).
+    """
+
+    def _iter_events(key: Optional[str]) -> Iterable[LedgerEvent]:
+        q = select(LedgerEvent).order_by(
+            LedgerEvent.chain_key, LedgerEvent.ulid
+        )
+        if key:
+            q = (
+                select(LedgerEvent)
+                .where(LedgerEvent.chain_key == key)
+                .order_by(LedgerEvent.ulid)
+            )
+        return (x[0] for x in db.session.execute(q).all())
+
+    broken = None
+    checked = 0
+    chains = set()
+
+    prev_for: Dict[str, Optional[str]] = {}
+    for ev in _iter_events(chain_key):
+        chains.add(ev.chain_key)
+        prev = prev_for.get(ev.chain_key)
+        # reconstruct envelope as hashed
+        env = {
+            "chain_key": ev.chain_key,
+            "event_type": ev.event_type,
+            "domain": ev.domain,
+            "operation": ev.operation,
+            "request_id": ev.request_id,
+            "actor_ulid": ev.actor_ulid,
+            "target_ulid": ev.target_ulid,
+            "happened_at_utc": ev.happened_at_utc,
+            "refs": try_parse_json(ev.refs_json),
+            "changed": try_parse_json(ev.changed_json),
+            "meta": try_parse_json(ev.meta_json),
+        }
+        calc = _hash_env(prev, env)
+        if calc != ev.curr_hash_hex:
+            broken = {
+                "chain_key": ev.chain_key,
+                "event_id": ev.ulid,
+                "expected": ev.curr_hash_hex,
+                "recomputed": calc,
+            }
+            break
+        prev_for[ev.chain_key] = ev.curr_hash_hex
+        checked += 1
+
+    return {
+        "ok": broken is None,
+        "checked": checked,
+        "broken": broken,
+        "chains": sorted(chains),
+    }

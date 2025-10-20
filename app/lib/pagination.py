@@ -1,4 +1,10 @@
 # app/lib/pagination.py
+# -*- coding: utf-8 -*-
+# VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
+# File: <relative path>
+# Purpose: Stable library primitive for VCDB.
+# Canon API: lib-core v1.0.0 (frozen)
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -219,3 +225,6 @@ def paginate(
     raise TypeError(
         "Unsupported source for paginate(). Pass a Sequence, Query, or Select."
     )
+
+
+__all__ = ["Page", "paginate_list", "paginate_sa", "paginate", "T", "U"]

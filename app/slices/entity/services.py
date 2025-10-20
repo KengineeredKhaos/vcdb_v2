@@ -169,21 +169,21 @@ def ensure_person(
         )
         db.session.commit()
 
+    # PII-safe, canon emit
     event_bus.emit(
-        type="entity.person.created" if created else "entity.person.upserted",
-        slice="entity",
-        operation="insert" if created else "update",
-        actor_id=actor_id,
-        target_id=ent.ulid,
+        domain="entity",
+        operation="person.created" if created else "person.upserted",
         request_id=request_id,
-        happened_at=now_iso8601_ms(),
-        changed_fields={
-            "first_name": fn,
-            "last_name": ln,
-            "email": email_norm,
-            "phone": phone_norm,
+        actor_ulid=actor_id,
+        target_ulid=ent.ulid,
+        refs=None,
+        changed={
+            "fields": ["first_name", "last_name"]
+            + (["email"] if email is not None else [])
+            + (["phone"] if phone is not None else [])
         },
     )
+
     return ent.ulid
 
 
@@ -254,21 +254,21 @@ def ensure_org(
             )
 
     db.session.commit()
-
+    # PII-safe, canon emit
     event_bus.emit(
-        type="entity.org.created" if created else "entity.org.upserted",
-        slice="entity",
-        operation="insert" if created else "update",
-        actor_id=actor_id,
-        target_id=ent.ulid,
+        domain="entity",
+        operation="org.created" if created else "org.upserted",
         request_id=request_id,
-        happened_at=now_iso8601_ms(),
-        changed_fields={
-            "legal_name": ln,
-            "dba_name": dba_name,
-            "ein": ein_norm,
+        actor_ulid=actor_id,
+        target_ulid=ent.ulid,
+        refs=None,
+        changed={
+            "fields": ["legal_name"]
+            + (["dba_name"] if dba_name is not None else [])
+            + (["ein"] if ein is not None else [])
         },
     )
+
     return ent.ulid
 
 
@@ -308,14 +308,13 @@ def upsert_contacts(
     db.session.commit()
     if changed:
         event_bus.emit(
-            type="entity.contact.upserted",
-            slice="entity",
-            operation="upsert",
-            actor_id=actor_id,
-            target_id=entity_ulid,
+            domain="entity",
+            operation="contact.upserted",
             request_id=request_id,
-            happened_at=now_iso8601_ms(),
-            changed_fields=changed,
+            actor_ulid=actor_id,
+            target_ulid=entity_ulid,
+            refs=None,
+            changed={"fields": list(changed.keys())},
         )
 
 
@@ -381,20 +380,18 @@ def upsert_address(
     db.session.commit()
 
     event_bus.emit(
-        type="entity.address.upserted",
-        slice="entity",
-        operation="insert" if created else "update",
-        actor_id=actor_id,
-        target_id=entity_ulid,
+        domain="entity",
+        operation="address.upserted",
         request_id=request_id,
-        happened_at=now_iso8601_ms(),
-        changed_fields={
-            "is_physical": is_physical,
-            "is_postal": is_postal,
-            "postal_code": addr.postal_code,
-        },
+        actor_ulid=actor_id,
+        target_ulid=entity_ulid,
         refs={"address_ulid": addr.ulid},
+        changed={
+            "fields": ["is_physical", "is_postal"]
+            + (["postal_code"] if postal_code else [])
+        },
     )
+
     return addr.ulid
 
 
@@ -431,15 +428,15 @@ def ensure_role(
     db.session.add(rr)
     db.session.commit()
 
+    # attached
     event_bus.emit(
-        type="entity.role.attached",
-        slice="entity",
-        operation="attached",
-        actor_id=actor_id,
-        target_id=entity_ulid,
+        domain="entity",
+        operation="role.attached",
         request_id=request_id,
-        happened_at=now_iso8601_ms(),
-        refs={"role": role},
+        actor_ulid=actor_id,
+        target_ulid=entity_ulid,
+        refs=None,
+        changed={"fields": ["role"], "role": role},
     )
     return True
 
@@ -471,15 +468,15 @@ def remove_role(
     db.session.delete(existing)
     db.session.commit()
 
+    # removed
     event_bus.emit(
-        type="entity.role.removed",
-        slice="entity",
-        operation="removed",
-        actor_id=actor_id,
-        target_id=entity_ulid,
+        domain="entity",
+        operation="role.removed",
         request_id=request_id,
-        happened_at=now_iso8601_ms(),
-        refs={"role": role},
+        actor_ulid=actor_id,
+        target_ulid=entity_ulid,
+        refs=None,
+        changed={"fields": ["role"], "role": role},
     )
     return True
 

@@ -11,7 +11,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.chrono import utcnow_naive
+from app.lib.chrono import now_iso8601_ms
 from app.lib.models import ULIDFK, ULIDPK
 
 
@@ -35,10 +35,13 @@ class User(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str | None] = mapped_column(
-        String(30), nullable=True
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str | None] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
+        String(30),
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
+        nullable=False,
     )
 
     # relationship via association table
@@ -60,10 +63,13 @@ class Role(db.Model, ULIDPK):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at_utc: Mapped[str | None] = mapped_column(
-        String(30), nullable=True
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str | None] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
+        String(30),
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
+        nullable=False,
     )
 
     users = relationship(

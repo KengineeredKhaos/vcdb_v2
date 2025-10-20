@@ -110,7 +110,8 @@ def authenticate(username_or_email: str, password: str) -> dict:
             domain="auth",
             operation="login.invalid_ident",
             request_id=new_ulid(),
-            actor_ulid=new_ulid(),  # synthetic actor for unknown identity
+            actor_ulid=new_ulid(),  # synthetic actor for unknown actor
+            target_ulid=new_ulid(),  # synthetic target for unknown actor
             refs={"ident_fpr": ident_fpr},
         )
         raise ValueError("Invalid credentials")

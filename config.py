@@ -68,6 +68,10 @@ class DevConfig(BaseConfig):
     )
     AUTO_LOGIN_ADMIN = True
     AUDIT_LOG_LEVEL = "DEBUG"
+    PERMISSIONS_MAP = {
+        "governance:policy:edit": {"admin"},
+        "ledger:read": {"admin", "auditor"},
+    }
 
 
 # ---------- Testing ----------

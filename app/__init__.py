@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Flask, jsonify, request
@@ -114,15 +114,6 @@ def create_app(config_object="config.DevConfig"):
     app.register_blueprint(sponsors_bp)
 
     # -------------
-    # Event Bus Subscribe
-    # -------------
-
-    from app.extensions import event_bus
-    from app.slices.ledger.services import log_event
-
-    event_bus.subscribe(log_event)
-
-    # -------------
     # Globals Injection
     # -------------
 
@@ -150,6 +141,7 @@ def create_app(config_object="config.DevConfig"):
             "user_is_admin": user_is_admin,
         }
 
+    @app.context_processor
     def _user_is_admin() -> bool:
         try:
             # Flexible: supports either boolean flag or a roles list/tuple
@@ -162,6 +154,7 @@ def create_app(config_object="config.DevConfig"):
         except Exception:
             return False
 
+    @app.context_processor
     def admin_alerts():
         from app.extensions import db
 
@@ -219,6 +212,7 @@ def create_app(config_object="config.DevConfig"):
 
         return {"admin_alerts": alerts}
 
+    @app.context_processor
     def macro_ctx():
         from flask import current_app
 
@@ -255,6 +249,8 @@ def create_app(config_object="config.DevConfig"):
     # -------------
     # dev Dbase schema check, Route dump, Sanity check
     # -------------
+    """
+    Silenced during Development
     if app.debug:
         _dump_routes(app)
         _boot_sanity(app)
@@ -267,6 +263,7 @@ def create_app(config_object="config.DevConfig"):
         _ledger_sanity(
             app, limit=int(app.config.get("LEDGER_CHECK_LIMIT", 20))
         )
+    """
 
     return app
 

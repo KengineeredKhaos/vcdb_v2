@@ -52,12 +52,12 @@ class Resource(db.Model, ULIDPK):
     )
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
+        String(30), default=now_iso8601_ms, nullable=False
     )
     updated_at_utc: Mapped[str] = mapped_column(
         String(30),
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
         nullable=False,
     )
 
@@ -91,7 +91,7 @@ class ResourceHistory(db.Model, ULIDPK):
     )  # flattened key -> {has: bool, note?: str}
 
     created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=utcnow_naive, nullable=False
+        String(30), default=now_iso8601_ms, nullable=False
     )
     created_by_actor: Mapped[str | None] = mapped_column(
         String(26), nullable=True
@@ -125,8 +125,8 @@ class ResourceCapabilityIndex(db.Model, ULIDPK):
 
     updated_at_utc: Mapped[str] = mapped_column(
         String(30),
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
         nullable=False,
     )
 

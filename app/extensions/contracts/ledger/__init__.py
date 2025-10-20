@@ -1,12 +1,14 @@
-# app/extensions/contracts/ledger/v1/__init__.py
+# app/extensions/contracts/ledger/__init__.py
 
-from typing import Dict, Any
-from app.extensions.contracts.validate import load_schema, validate_payload
+from typing import Any, Dict
+
+from app.extensions.contracts.ledger import v2 as v2  # re-export module
 from app.extensions.contracts.errors import (
-    ContractDataNotFound,
     ContractConflict,
+    ContractDataNotFound,
     ContractUnavailable,
 )
+from app.extensions.contracts.validate import load_schema, validate_payload
 from app.slices.ledger import services as ledger
 
 
@@ -35,3 +37,6 @@ def get_event(*, event_ulid: str) -> Dict[str, Any]:
     if not data:
         raise ContractDataNotFound(f"ledger event '{event_ulid}' not found")
     return data
+
+
+__all__ = ["v2"]
