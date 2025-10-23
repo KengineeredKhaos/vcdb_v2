@@ -42,7 +42,7 @@ def patch_capabilities(req: ContractRequest) -> ContractResponse:
         resource_ulid=data["resource_ulid"],
         payload=data["capabilities"],
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     view = res_svc.resource_view(data["resource_ulid"])
     return {
@@ -60,7 +60,7 @@ def rebuild_all(req: ContractRequest) -> ContractResponse:
         page=data.get("page", 1),
         per=data.get("per", 200),
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     return {
         "contract": "resources.rebuild_all.v2",
@@ -77,7 +77,7 @@ def set_readiness(req: ContractRequest) -> ContractResponse:
         resource_ulid=data["resource_ulid"],
         status=data["status"],
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     view = res_svc.resource_view(data["resource_ulid"])
     return {
@@ -95,7 +95,7 @@ def set_mou(req: ContractRequest) -> ContractResponse:
         resource_ulid=data["resource_ulid"],
         status=data["status"],
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     view = res_svc.resource_view(data["resource_ulid"])
     return {
@@ -112,7 +112,7 @@ def rebuild_index(req: ContractRequest) -> ContractResponse:
     rows = res_svc.rebuild_capability_index(
         resource_ulid=data["resource_ulid"],
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     view = res_svc.resource_view(data["resource_ulid"])
     return {
@@ -129,7 +129,7 @@ def promote_if_clean(req: ContractRequest) -> ContractResponse:
     promoted = res_svc.promote_readiness_if_clean(
         resource_ulid=data["resource_ulid"],
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     view = res_svc.resource_view(data["resource_ulid"])
     return {
@@ -146,7 +146,7 @@ def ensure_resource(req: ContractRequest) -> ContractResponse:
     resource_ulid = res_svc.ensure_resource(
         entity_ulid=data["entity_ulid"],
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     return {
         "contract": "resources.ensure_resource.v2",
@@ -165,7 +165,7 @@ def upsert_capabilities(req: ContractRequest) -> ContractResponse:
             "capabilities"
         ],  # { "domain.key": {"has": bool, "note"?: str<=120}, ... }
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
         idempotency_key=req.get("idempotency_key") or req["request_id"],
     )
     # services already emit names-only ledger events; contract just returns the pointer

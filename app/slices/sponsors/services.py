@@ -117,10 +117,10 @@ def ensure_sponsor(
             type="sponsor.created",
             slice="sponsors",
             operation="insert",
-            actor_id=actor_id,
-            target_id=s.ulid,
+            actor_ulid=actor_id,
+            target_ulid=s.ulid,
             request_id=request_id,
-            happened_at=now,
+            happened_at_utc=now_iso8601_ms(),
             refs={"entity_ulid": entity_ulid},
         )
     else:
@@ -208,10 +208,10 @@ def upsert_capabilities(
             type="sponsor.capability.added",
             slice="sponsors",
             operation="add",
-            actor_id=actor_id,
-            target_id=sponsor_ulid,
+            actor_ulid=actor_id,
+            target_ulid=sponsor_ulid,
             request_id=request_id,
-            happened_at=now,
+            happened_at_utc=now_iso8601_ms(),
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
         )
     for flat in removed:
@@ -220,10 +220,10 @@ def upsert_capabilities(
             type="sponsor.capability.removed",
             slice="sponsors",
             operation="remove",
-            actor_id=actor_id,
-            target_id=sponsor_ulid,
+            actor_ulid=actor_id,
+            target_ulid=sponsor_ulid,
             request_id=request_id,
-            happened_at=now,
+            happened_at_utc=now_iso8601_ms(),
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
         )
     return hist.ulid
@@ -310,10 +310,10 @@ def patch_capabilities(
             type="sponsor.capability.added",
             slice="sponsors",
             operation="add",
-            actor_id=actor_id,
-            target_id=sponsor_ulid,
+            actor_ulid=actor_id,
+            target_ulid=sponsor_ulid,
             request_id=request_id,
-            happened_at=now,
+            happened_at_utc=now_iso8601_ms(),
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
         )
     for flat in removed:
@@ -322,10 +322,10 @@ def patch_capabilities(
             type="sponsor.capability.removed",
             slice="sponsors",
             operation="remove",
-            actor_id=actor_id,
-            target_id=sponsor_ulid,
+            actor_ulid=actor_id,
+            target_ulid=sponsor_ulid,
             request_id=request_id,
-            happened_at=now,
+            happened_at_utc=now_iso8601_ms(),
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
         )
     return hist.ulid
@@ -358,10 +358,10 @@ def set_readiness_status(
         type="sponsor.readiness.updated",
         slice="sponsors",
         operation="update",
-        actor_id=actor_id,
-        target_id=sponsor_ulid,
+        actor_ulid=actor_id,
+        target_ulid=sponsor_ulid,
         request_id=request_id,
-        happened_at=now_iso8601_ms(),
+        happened_at_utc=now_iso8601_ms(),
         changed_fields={"readiness_status": status, "prev": prev},
     )
 
@@ -390,10 +390,10 @@ def set_mou_status(
         type="sponsor.mou.updated",
         slice="sponsors",
         operation="update",
-        actor_id=actor_id,
-        target_id=sponsor_ulid,
+        actor_ulid=actor_id,
+        target_ulid=sponsor_ulid,
         request_id=request_id,
-        happened_at=now_iso8601_ms(),
+        happened_at_utc=now_iso8601_ms(),
         changed_fields={"mou_status": status, "prev": prev},
     )
 
@@ -558,10 +558,10 @@ def upsert_pledge(
         type="sponsor.pledge.upserted",
         slice="sponsors",
         operation="upsert",
-        actor_id=actor_id,
-        target_id=sponsor_ulid,
+        actor_ulid=actor_id,
+        target_ulid=sponsor_ulid,
         request_id=request_id,
-        happened_at=now,
+        happened_at_utc=now_iso8601_ms(),
         refs={"pledge_ulid": pid, "version_ptr": hist.ulid},
     )
 
@@ -596,10 +596,10 @@ def set_pledge_status(
         type="sponsor.pledge.status.updated",
         slice="sponsors",
         operation="update",
-        actor_id=actor_id,
-        target_id=row.sponsor_ulid,
+        actor_ulid=actor_id,
+        target_ulid=row.sponsor_ulid,
         request_id=request_id,
-        happened_at=row.updated_at_utc,
+        happened_at_utc=row.updated_at_utc,
         refs={"pledge_ulid": pledge_ulid},
     )
 

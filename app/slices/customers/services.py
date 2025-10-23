@@ -126,10 +126,10 @@ def ensure_customer(
             type="customer.created",
             slice="customers",
             operation="insert",
-            actor_id=actor_id,
-            target_id=cust.ulid,
+            actor_ulid=actor_id,
+            target_ulid=cust.ulid,
             request_id=request_id,
-            happened_at=now,
+            happened_at_utc=now_iso8601_ms(),
             refs={"entity_ulid": entity_ulid},
         )
     else:
@@ -221,10 +221,10 @@ def update_needs_tier(
         type="customer.profile.updated",
         slice="customers",
         operation="update",
-        actor_id=actor_id,
-        target_id=customer_ulid,
+        actor_ulid=actor_id,
+        target_ulid=customer_ulid,
         request_id=request_id,
-        happened_at=now,
+        happened_at_utc=now_iso8601_ms(),
         changed_fields=["tierN"],
         refs={"section": section, "version_ptr": hist.ulid},
     )
@@ -246,7 +246,7 @@ def update_tier1(
         tier_key="tier1",
         payload=payload,
         request_id=request_id,
-        actor_id=actor_id,
+        actor_ulid=actor_id,
     )
 
 
@@ -262,7 +262,7 @@ def update_tier2(
         tier_key="tier2",
         payload=payload,
         request_id=request_id,
-        actor_id=actor_id,
+        actor_ulid=actor_id,
     )
 
 
@@ -278,7 +278,7 @@ def update_tier3(
         tier_key="tier3",
         payload=payload,
         request_id=request_id,
-        actor_id=actor_id,
+        actor_ulid=actor_id,
     )
 
 

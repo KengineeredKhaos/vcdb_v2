@@ -29,7 +29,7 @@ def ensure_customer():
         if not entity_ulid:
             return _err("entity_ulid is required", 400)
         customer_ulid = cust_svc.ensure_customer(
-            entity_ulid=entity_ulid, request_id=req, actor_id=actor
+            entity_ulid=entity_ulid, request_id=req, actor_ulid=actor
         )
         return _ok({"customer_ulid": customer_ulid})
     except Exception as e:
@@ -54,7 +54,7 @@ def update_tier1(customer_ulid: str):
             customer_ulid=customer_ulid,
             payload=payload,
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         dto = cust_svc.customer_view(customer_ulid)
         return _ok({"history_ulid": hist_ulid, "customer": dto})
@@ -72,7 +72,7 @@ def update_tier2(customer_ulid: str):
             customer_ulid=customer_ulid,
             payload=payload,
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         dto = cust_svc.customer_view(customer_ulid)
         return _ok({"history_ulid": hist_ulid, "customer": dto})
@@ -90,7 +90,7 @@ def update_tier3(customer_ulid: str):
             customer_ulid=customer_ulid,
             payload=payload,
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         dto = cust_svc.customer_view(customer_ulid)
         return _ok({"history_ulid": hist_ulid, "customer": dto})

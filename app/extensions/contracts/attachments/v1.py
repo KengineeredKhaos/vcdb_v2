@@ -25,7 +25,7 @@ def link(req: ContractRequest) -> ContractResponse:
         target_ulid=data["target_ulid"],
         note=data.get("note"),
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     return {
         "contract": "attachments.link.v2",
@@ -41,7 +41,7 @@ def unlink(req: ContractRequest) -> ContractResponse:
     att_svc.unlink_attachment(
         link_ulid=data["link_ulid"],
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     return {
         "contract": "attachments.unlink.v2",
@@ -58,7 +58,7 @@ def sign_url(req: ContractRequest) -> ContractResponse:
         attachment_ulid=data["attachment_ulid"],
         ttl_seconds=data.get("ttl_seconds", 300),
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     return {
         "contract": "attachments.sign_url.v2",

@@ -67,7 +67,7 @@ def inventory_receive(req: ContractRequest) -> ContractResponse:
         location_ulid=d["location_ulid"],
         source_entity_ulid=d.get("source_entity_ulid"),
         note=d.get("note"),
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     return {
         "contract": "logistics.inventory.receive.v2",
@@ -89,7 +89,7 @@ def inventory_issue(req: ContractRequest) -> ContractResponse:
         happened_at_utc=d["happened_at_utc"],
         target_ref_ulid=d.get("target_ref_ulid"),
         note=d.get("note"),
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     return {
         "contract": "logistics.inventory.issue.v2",
@@ -110,7 +110,7 @@ def inventory_transfer(req: ContractRequest) -> ContractResponse:
         location_from_ulid=d["location_from_ulid"],
         location_to_ulid=d["location_to_ulid"],
         note=d.get("note"),
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
         batch_ulid=d.get("batch_ulid"),
     )
     return {

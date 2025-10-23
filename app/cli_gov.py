@@ -97,6 +97,6 @@ def gov_seed():
     reqid = ulid()
     for k, v in seeds.items():
         gsvc.policy_set(
-            k, json.dumps(v), actor_id=actor, request_id=reqid, ptype="json"
+            k, json.dumps(v), actor_ulid=actor, request_id=reqid, ptype="json"
         )
     click.echo("Governance policies seeded.")

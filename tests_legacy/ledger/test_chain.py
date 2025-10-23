@@ -6,7 +6,7 @@ def test_ledger_append_and_verify(app):
     # append one event
     ulid = ledger.log_event(
         "auth.login.success",
-        happened_at=now_iso8601_ms(),
+        happened_at_utc=now_iso8601_ms(),
         actor_ulid="01ACTOR",
         subject_ulid="01USER",
         # all remaining fields are optional and default to None

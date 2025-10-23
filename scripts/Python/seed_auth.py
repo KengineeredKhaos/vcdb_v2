@@ -70,14 +70,14 @@ def seed_auth() -> Dict[str, str]:
             email="admin@example.local",
             entity_ulid=None,
             request_id=new_ulid(),
-            actor_id=None,
+            actor_ulid=None,
         )
         # idempotent role attach (returns False if already attached)
         auth.assign_role(
             user_ulid=admin_ulid,
             role_code="admin",
             request_id=new_ulid(),
-            actor_id=admin_ulid,
+            actor_ulid=admin_ulid,
         )
 
         staff_ulid = auth.create_user(
@@ -86,13 +86,13 @@ def seed_auth() -> Dict[str, str]:
             email="staff@example.local",
             entity_ulid=None,
             request_id=new_ulid(),
-            actor_id=admin_ulid,
+            actor_ulid=admin_ulid,
         )
         auth.assign_role(
             user_ulid=staff_ulid,
             role_code="user",
             request_id=new_ulid(),
-            actor_id=admin_ulid,
+            actor_ulid=admin_ulid,
         )
 
         auditor_ulid = auth.create_user(
@@ -101,13 +101,13 @@ def seed_auth() -> Dict[str, str]:
             email="auditor@example.local",
             entity_ulid=None,
             request_id=new_ulid(),
-            actor_id=admin_ulid,
+            actor_ulid=admin_ulid,
         )
         auth.assign_role(
             user_ulid=auditor_ulid,
             role_code="auditor",
             request_id=new_ulid(),
-            actor_id=admin_ulid,
+            actor_ulid=admin_ulid,
         )
 
         db.session.commit()
@@ -146,7 +146,7 @@ def seed_entities() -> Dict[str, str]:
             email="jane@example.org",
             phone="+15555550100",  # E.164-ish; aligns with your validators
             request_id=new_ulid(),
-            actor_id=None,
+            actor_ulid=None,
         )
         ent.upsert_address(
             entity_ulid=person_ulid,
@@ -158,7 +158,7 @@ def seed_entities() -> Dict[str, str]:
             state="NV",
             postal_code="89501",
             request_id=new_ulid(),
-            actor_id=None,
+            actor_ulid=None,
         )
 
         # Org: Helping Hands (resource)
@@ -167,7 +167,7 @@ def seed_entities() -> Dict[str, str]:
             dba_name=None,
             ein="12-3456789",
             request_id=new_ulid(),
-            actor_id=None,
+            actor_ulid=None,
         )
         ent.upsert_address(
             entity_ulid=resource_entity_ulid,
@@ -179,7 +179,7 @@ def seed_entities() -> Dict[str, str]:
             state="NV",
             postal_code="89502",
             request_id=new_ulid(),
-            actor_id=None,
+            actor_ulid=None,
         )
 
         # Org: Acme Foundation (sponsor)
@@ -188,7 +188,7 @@ def seed_entities() -> Dict[str, str]:
             dba_name="Acme Philanthropy",
             ein="98-7654321",
             request_id=new_ulid(),
-            actor_id=None,
+            actor_ulid=None,
         )
         ent.upsert_address(
             entity_ulid=sponsor_entity_ulid,
@@ -200,7 +200,7 @@ def seed_entities() -> Dict[str, str]:
             state="NV",
             postal_code="89503",
             request_id=new_ulid(),
-            actor_id=None,
+            actor_ulid=None,
         )
 
         # Attach domain roles (allowed by Governance)
@@ -208,19 +208,19 @@ def seed_entities() -> Dict[str, str]:
             entity_ulid=person_ulid,
             role="customer",
             request_id=new_ulid(),
-            actor_id=None,
+            actor_ulid=None,
         )
         ent.ensure_role(
             entity_ulid=resource_entity_ulid,
             role="resource",
             request_id=new_ulid(),
-            actor_id=None,
+            actor_ulid=None,
         )
         ent.ensure_role(
             entity_ulid=sponsor_entity_ulid,
             role="sponsor",
             request_id=new_ulid(),
-            actor_id=None,
+            actor_ulid=None,
         )
 
         db.session.commit()
@@ -248,7 +248,7 @@ def seed_customer(person_entity_ulid: str | None):
         from app.slices.customers import services as cust
 
         cust_ulid = cust.ensure_customer(
-            entity_ulid=person_entity_ulid, actor_id=None
+            entity_ulid=person_entity_ulid, actor_ulid=None
         )
 
         # A couple of history entries
@@ -261,7 +261,7 @@ def seed_customer(person_entity_ulid: str | None):
                 "housing": 2,
                 "clothing": 2,
             },
-            actor_id=None,
+            actor_ulid=None,
             happened_at_utc=utc_now(),
         )
         cust.update_tier2(
@@ -272,7 +272,7 @@ def seed_customer(person_entity_ulid: str | None):
                 "transportation": 2,
                 "education": 3,
             },
-            actor_id=None,
+            actor_ulid=None,
             happened_at_utc=utc_now(),
         )
         _say("✓ customer & needs history seeded")
@@ -290,7 +290,7 @@ def seed_resource(resource_entity_ulid: str | None):
         from app.slices.resources import services as res
 
         res_ulid = res.ensure_resource(
-            entity_ulid=resource_entity_ulid, actor_id=None
+            entity_ulid=resource_entity_ulid, actor_ulid=None
         )
 
         res.upsert_capabilities(
@@ -304,7 +304,7 @@ def seed_resource(resource_entity_ulid: str | None):
                 },
                 "meta": {"unclassified": {"has": False}},
             },
-            actor_id=None,
+            actor_ulid=None,
         )
         _say("✓ resource + capabilities seeded")
     except Exception as e:
@@ -323,7 +323,7 @@ def seed_sponsor(sponsor_entity_ulid: str | None):
     try:
         from app.slices.sponsors import services as sp
 
-        sp.ensure_sponsor(entity_ulid=sponsor_entity_ulid, actor_id=None)
+        sp.ensure_sponsor(entity_ulid=sponsor_entity_ulid, actor_ulid=None)
         _say("✓ sponsor seeded")
     except Exception as e:
         _say(f"• sponsor seeding skipped: {e}")

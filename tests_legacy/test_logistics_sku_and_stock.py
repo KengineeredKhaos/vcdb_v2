@@ -9,7 +9,7 @@ def test_item_ensure_with_sku_parts_and_stock_math(app):
         {"changed_fields": {"qty_on_hand": 10}},
         domain="logistics",
         actor_ulid="01TESTACTOR",
-        happened_at=now_iso8601_ms(),
+        happened_at_utc=now_iso8601_ms(),
         # optional:
         entity_ulid=None,
         subject_ulid=None,

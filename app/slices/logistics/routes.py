@@ -66,7 +66,7 @@ def receive():
             location_ulid=p["location_ulid"],
             source_entity_ulid=p.get("source_entity_ulid"),
             note=p.get("note"),
-            actor_id=get_actor_ulid(),
+            actor_ulid=get_actor_ulid(),
         )
         return _ok(out)
     except Exception as e:
@@ -86,7 +86,7 @@ def issue():
             happened_at_utc=p["happened_at_utc"],
             target_ref_ulid=p.get("target_ref_ulid"),
             note=p.get("note"),
-            actor_id=get_actor_ulid(),
+            actor_ulid=get_actor_ulid(),
         )
         return _ok({"movement_ulid": mid})
     except Exception as e:
@@ -105,7 +105,7 @@ def transfer():
             location_from_ulid=p["location_from_ulid"],
             location_to_ulid=p["location_to_ulid"],
             note=p.get("note"),
-            actor_id=get_actor_ulid(),
+            actor_ulid=get_actor_ulid(),
             batch_ulid=p.get("batch_ulid"),
         )
         return _ok(out)

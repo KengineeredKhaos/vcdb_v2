@@ -324,7 +324,7 @@ In `app/slices/ledger/services.py` implement:
 ```python
 def append_event(payload: dict) -> dict:
     """
-    - Coerce defaults: happened_at = utc_now() if missing
+    - Coerce defaults: happened_at_utc= utc_now() if missing
     - Generate event_ulid
     - Read tail -> prev_event_ulid, prev_hash
     - Compute event_hash = sha256(compacted_event_json + prev_hash)[:…]

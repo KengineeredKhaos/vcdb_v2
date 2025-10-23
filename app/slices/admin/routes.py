@@ -132,9 +132,9 @@ def cron_ack():
         slice="admin",
         operation="acknowledged",
         request_id=new_ulid(),
-        actor_id=None,
-        target_id=None,
-        happened_at=now_iso8601_ms(),
+        actor_ulid=None,
+        target_ulid=None,
+        happened_at_utc=now_iso8601_ms(),
         refs={"job_name": job},
     )
     db.session.execute(
@@ -162,9 +162,9 @@ def cron_run_now():
         slice="admin",
         operation="triggered",
         request_id=new_ulid(),
-        actor_id=None,
-        target_id=None,
-        happened_at=now_iso8601_ms(),
+        actor_ulid=None,
+        target_ulid=None,
+        happened_at_utc=now_iso8601_ms(),
         refs={"job_name": job},
     )
 

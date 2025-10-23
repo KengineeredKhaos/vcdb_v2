@@ -15,8 +15,8 @@ curl -sk -b "$jar" -c "$jar" -X POST "$BASE/auth/login" -d "email=admin@example.
 cat <<'SH'
 # In a Flask shell, run:
 # from app.slices.auth import services as authsvc
-# authsvc.assign_role(user_id=2, role_name="user", actor_id="ADM1NULIDEXAMPLE", request_id="req-assign-001")
-# authsvc.remove_role(user_id=2, role_name="user", actor_id="ADM1NULIDEXAMPLE", request_id="req-remove-001")
+# authsvc.assign_role(user_id=2, role_name="user", actor_ulid="ADM1NULIDEXAMPLE", request_id="req-assign-001")
+# authsvc.remove_role(user_id=2, role_name="user", actor_ulid="ADM1NULIDEXAMPLE", request_id="req-remove-001")
 # Then visit /transactions/ledger to see auth.user_role.* events
 SH
 

@@ -32,7 +32,7 @@ def _ledger_stub(
     return LedgerDTO(
         ok=True,
         event_type=event_type,
-        target_id=target_id,
+        target_ulid=target_id,
         request_id=request_id,
     )
 
@@ -67,7 +67,7 @@ def ensure_person(
         email=email,
         phone=phone,
         request_id=env.request_id,
-        actor_id=env.actor_id,
+        actor_ulid=env.actor_id,
     )
     # Event already emitted by service; return a ledger stub for contract shape
     return {
@@ -101,7 +101,7 @@ def ensure_org(
         dba_name=dba_name,
         ein=ein,
         request_id=env.request_id,
-        actor_id=env.actor_id,
+        actor_ulid=env.actor_id,
     )
     return {
         "ok": True,
@@ -125,7 +125,7 @@ def add_entity_role(
         entity_ulid=entity_ulid,
         role=role,
         request_id=env.request_id,
-        actor_id=env.actor_id,
+        actor_ulid=env.actor_id,
     )
     return {
         "ok": True,
@@ -149,7 +149,7 @@ def remove_entity_role(
         entity_ulid=entity_ulid,
         role=role,
         request_id=env.request_id,
-        actor_id=env.actor_id,
+        actor_ulid=env.actor_id,
     )
     return {
         "ok": True,

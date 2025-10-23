@@ -27,7 +27,7 @@ def ensure_resource():
         req = ensure_request_id()
         actor = get_actor_ulid()
         resource_ulid = res_svc.ensure_resource(
-            entity_ulid=entity_ulid, request_id=req, actor_id=actor
+            entity_ulid=entity_ulid, request_id=req, actor_ulid=actor
         )
         return _ok({"resource_ulid": resource_ulid})
     except Exception as e:
@@ -52,7 +52,7 @@ def upsert_capabilities(resource_ulid: str):
             resource_ulid=resource_ulid,
             payload=payload,
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
             idempotency_key=req,
         )
         dto = res_svc.resource_view(resource_ulid)
@@ -125,7 +125,7 @@ def set_readiness(resource_ulid: str):
             resource_ulid=resource_ulid,
             status=status,
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         return _ok({"readiness_status": status})
     except Exception as e:
@@ -145,7 +145,7 @@ def set_mou(resource_ulid: str):
             resource_ulid=resource_ulid,
             status=status,
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         return _ok({"mou_status": status})
     except Exception as e:
@@ -160,7 +160,7 @@ def rebuild_index(resource_ulid: str):
         from .services import rebuild_capability_index
 
         rows = rebuild_capability_index(
-            resource_ulid=resource_ulid, request_id=req, actor_id=actor
+            resource_ulid=resource_ulid, request_id=req, actor_ulid=actor
         )
         dto = res_svc.resource_view(resource_ulid)
         return _ok({"reindexed_rows": rows, "resource": dto})
@@ -176,7 +176,7 @@ def promote_if_clean(resource_ulid: str):
         from .services import promote_readiness_if_clean
 
         promoted = promote_readiness_if_clean(
-            resource_ulid=resource_ulid, request_id=req, actor_id=actor
+            resource_ulid=resource_ulid, request_id=req, actor_ulid=actor
         )
         dto = res_svc.resource_view(resource_ulid)
         return _ok({"promoted": promoted, "resource": dto})
@@ -196,7 +196,7 @@ def patch_capabilities(resource_ulid: str):
             resource_ulid=resource_ulid,
             payload=payload,
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         dto = res_svc.resource_view(resource_ulid)
         return _ok({"history_ulid": hist_ulid, "resource": dto})
@@ -214,7 +214,7 @@ def rebuild_all():
         from .services import rebuild_all_capability_indexes
 
         summary = rebuild_all_capability_indexes(
-            page=page, per=per, request_id=req, actor_id=actor
+            page=page, per=per, request_id=req, actor_ulid=actor
         )
         return _ok(summary)
     except Exception as e:

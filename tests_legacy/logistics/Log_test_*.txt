@@ -7,5 +7,5 @@ event_bus.emit(
     {"changed_fields": {"qty_on_hand": 10}},
     domain="logistics",
     actor_ulid="01TESTACTOR",
-    happened_at=now_iso8601_ms(),
+    happened_at_utc=now_iso8601_ms(),
 )

@@ -26,7 +26,7 @@ def ensure_sponsor(req: ContractRequest) -> ContractResponse:
     sid = sp_svc.ensure_sponsor(
         entity_ulid=data["entity_ulid"],
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     return {
         "contract": "sponsors.ensure_sponsor.v2",
@@ -43,7 +43,7 @@ def upsert_capabilities(req: ContractRequest) -> ContractResponse:
         sponsor_ulid=data["sponsor_ulid"],
         payload=data["capabilities"],
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     view = sp_svc.sponsor_view(data["sponsor_ulid"])
     return {
@@ -61,7 +61,7 @@ def patch_capabilities(req: ContractRequest) -> ContractResponse:
         sponsor_ulid=data["sponsor_ulid"],
         payload=data["capabilities"],
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     view = sp_svc.sponsor_view(data["sponsor_ulid"])
     return {
@@ -79,7 +79,7 @@ def pledge_upsert(req: ContractRequest) -> ContractResponse:
         sponsor_ulid=data["sponsor_ulid"],
         pledge=data["pledge"],
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     view = sp_svc.sponsor_view(data["sponsor_ulid"])
     return {
@@ -97,7 +97,7 @@ def pledge_set_status(req: ContractRequest) -> ContractResponse:
         pledge_ulid=data["pledge_ulid"],
         status=data["status"],
         request_id=req["request_id"],
-        actor_id=req.get("actor_ulid"),
+        actor_ulid=req.get("actor_ulid"),
     )
     return {
         "contract": "sponsors.pledge.set_status.v2",

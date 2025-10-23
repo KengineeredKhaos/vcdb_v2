@@ -27,7 +27,7 @@ def ensure_sponsor():
             return _err("entity_ulid is required", 400)
         req, actor = ensure_request_id(), get_actor_ulid()
         sponsor_ulid = sp_svc.ensure_sponsor(
-            entity_ulid=entity_ulid, request_id=req, actor_id=actor
+            entity_ulid=entity_ulid, request_id=req, actor_ulid=actor
         )
         return _ok({"sponsor_ulid": sponsor_ulid})
     except Exception as e:
@@ -49,7 +49,7 @@ def upsert_caps(sponsor_ulid: str):
             sponsor_ulid=sponsor_ulid,
             payload=payload,
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         return _ok(
             {
@@ -70,7 +70,7 @@ def patch_caps(sponsor_ulid: str):
             sponsor_ulid=sponsor_ulid,
             payload=payload,
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         return _ok(
             {
@@ -93,7 +93,7 @@ def set_readiness(sponsor_ulid: str):
             sponsor_ulid=sponsor_ulid,
             status=status,
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         return _ok({"readiness_status": status})
     except Exception as e:
@@ -111,7 +111,7 @@ def set_mou(sponsor_ulid: str):
             sponsor_ulid=sponsor_ulid,
             status=status,
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         return _ok({"mou_status": status})
     except Exception as e:
@@ -127,7 +127,7 @@ def upsert_pledge(sponsor_ulid: str):
             sponsor_ulid=sponsor_ulid,
             pledge=pledge,
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         return _ok(
             {"pledge_ulid": pid, "sponsor": sp_svc.sponsor_view(sponsor_ulid)}
@@ -147,7 +147,7 @@ def set_pledge_status(pledge_ulid: str):
             pledge_ulid=pledge_ulid,
             status=status,
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         return _ok({"pledge_ulid": pledge_ulid, "status": status})
     except Exception as e:

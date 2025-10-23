@@ -35,7 +35,7 @@ def upload():
             privacy_level=request.form.get("privacy_level", "A"),
             retention_policy_code=request.form.get("retention_policy_code"),
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         return _ok({"attachment_ulid": ulid})
     except Exception as e:
@@ -55,7 +55,7 @@ def link():
             target_ulid=payload["target_ulid"],
             note=payload.get("note"),
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         return _ok({"link_ulid": link_ulid})
     except Exception as e:
@@ -69,7 +69,7 @@ def unlink():
         req = ensure_request_id()
         actor = get_actor_ulid()
         att_svc.unlink_attachment(
-            link_ulid=payload["link_ulid"], request_id=req, actor_id=actor
+            link_ulid=payload["link_ulid"], request_id=req, actor_ulid=actor
         )
         return _ok()
     except Exception as e:
@@ -86,7 +86,7 @@ def sign_url():
             attachment_ulid=payload["attachment_ulid"],
             ttl_seconds=int(payload.get("ttl_seconds", 300)),
             request_id=req,
-            actor_id=actor,
+            actor_ulid=actor,
         )
         return _ok({"url": url})
     except Exception as e:

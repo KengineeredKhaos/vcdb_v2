@@ -187,7 +187,7 @@ def create():
     actor = current_actor_id()
 
     env = entity_contract.ContractEnvelope(
-        request_id=req_id, actor_id=actor, dry_run=False
+        request_id=req_id, actor_ulid=actor, dry_run=False
     )
 
     kind = (request.form.get("kind") or "person").strip().lower()

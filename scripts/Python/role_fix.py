@@ -24,6 +24,6 @@ with app.app_context():
             entity_id=pid,
             role_code="customer",
             request_id=f"req-backfill-customer-{ulid()}",
-            actor_id=None,
+            actor_ulid=None,
         )
     print("Done.")

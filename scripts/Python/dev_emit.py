@@ -99,9 +99,9 @@ def main():
                     type="auth.user_role.assigned",
                     slice="auth",
                     operation="assigned",
-                    happened_at=datetime.now(timezone.utc),
-                    actor_id=args.actor_id,
-                    target_id=str(uid),
+                    happened_at_utc=datetime.now(timezone.utc),
+                    actor_ulid=args.actor_id,
+                    target_ulid=str(uid),
                     entity_ids={"role": args.role_name},
                     request_id=req,
                 )
@@ -113,9 +113,9 @@ def main():
                         type="auth.user_role.assigned",
                         slice="auth",
                         operation="assigned",
-                        happened_at=datetime.now(timezone.utc),
-                        actor_id=args.actor_id,
-                        target_id=str(uid),
+                        happened_at_utc=datetime.now(timezone.utc),
+                        actor_ulid=args.actor_id,
+                        target_ulid=str(uid),
                         entity_ids={"role": args.role_name},
                         request_id=req,
                     )
@@ -155,9 +155,9 @@ def main():
                     type="auth.user_role.removed",
                     slice="auth",
                     operation="removed",
-                    happened_at=datetime.now(timezone.utc),
-                    actor_id=args.actor_id,
-                    target_id=str(args.user_id),
+                    happened_at_utc=datetime.now(timezone.utc),
+                    actor_ulid=args.actor_id,
+                    target_ulid=str(args.user_id),
                     entity_ids={"role": args.role_name},
                     request_id=req,
                 )
@@ -170,7 +170,7 @@ def main():
 
             req = args.request_id or uniq_req("req-policy")
             govsvc.policy_set(
-                args.key, args.value, actor_id=args.actor_id, request_id=req
+                args.key, args.value, actor_ulid=args.actor_id, request_id=req
             )
             print(f"OK policy-set {args.key}={args.value}, req={req}")
 

@@ -184,10 +184,10 @@ def ensure_resource(
             type="resource.created",
             slice="resources",
             operation="insert",
-            actor_id=actor_id,
-            target_id=r.ulid,
+            actor_ulid=actor_id,
+            target_ulid=r.ulid,
             request_id=request_id,
-            happened_at=now,
+            happened_at_utc=now_iso8601_ms(),
             refs={"entity_ulid": entity_ulid},
         )
     else:
@@ -300,10 +300,10 @@ def upsert_capabilities(
             type="resource.classification.added",
             slice="resources",
             operation="add",
-            actor_id=actor_id,
-            target_id=resource_ulid,
+            actor_ulid=actor_id,
+            target_ulid=resource_ulid,
             request_id=request_id,
-            happened_at=now,
+            happened_at_utc=now_iso8601_ms(),
             refs={"domain": domain, "key": key, "version_ptr": hist.ulid},
         )
     for flat in removed:
@@ -312,10 +312,10 @@ def upsert_capabilities(
             type="resource.classification.removed",
             slice="resources",
             operation="remove",
-            actor_id=actor_id,
-            target_id=resource_ulid,
+            actor_ulid=actor_id,
+            target_ulid=resource_ulid,
             request_id=request_id,
-            happened_at=now,
+            happened_at_utc=now_iso8601_ms(),
             refs={"domain": domain, "key": key, "version_ptr": hist.ulid},
         )
 
@@ -444,10 +444,10 @@ def set_readiness_status(
         type="resource.readiness.updated",
         slice="resources",
         operation="update",
-        actor_id=actor_id,
-        target_id=resource_ulid,
+        actor_ulid=actor_id,
+        target_ulid=resource_ulid,
         request_id=request_id,
-        happened_at=now_iso8601_ms(),
+        happened_at_utc=now_iso8601_ms(),
         changed_fields={"readiness_status": status, "prev": prev},
     )
 
@@ -477,10 +477,10 @@ def set_mou_status(
         type="resource.mou.updated",
         slice="resources",
         operation="update",
-        actor_id=actor_id,
-        target_id=resource_ulid,
+        actor_ulid=actor_id,
+        target_ulid=resource_ulid,
         request_id=request_id,
-        happened_at=now_iso8601_ms(),
+        happened_at_utc=now_iso8601_ms(),
         changed_fields={"mou_status": status, "prev": prev},
     )
 
@@ -529,10 +529,10 @@ def rebuild_capability_index(
         type="resource.capability.index_rebuilt",
         slice="resources",
         operation="rebuild",
-        actor_id=actor_id,
-        target_id=resource_ulid,
+        actor_ulid=actor_id,
+        target_ulid=resource_ulid,
         request_id=request_id,
-        happened_at=now,
+        happened_at_utc=now_iso8601_ms(),
         refs={"rows": count},
     )
     return count
@@ -559,7 +559,7 @@ def promote_readiness_if_clean(
             resource_ulid=resource_ulid,
             status="active",
             request_id=request_id,
-            actor_id=actor_id,
+            actor_ulid=actor_id,
         )
         return True
     return False
@@ -690,10 +690,10 @@ def patch_capabilities(
             type="resource.classification.added",
             slice="resources",
             operation="add",
-            actor_id=actor_id,
-            target_id=resource_ulid,
+            actor_ulid=actor_id,
+            target_ulid=resource_ulid,
             request_id=request_id,
-            happened_at=now,
+            happened_at_utc=now_iso8601_ms(),
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
         )
     for flat in removed:
@@ -702,10 +702,10 @@ def patch_capabilities(
             type="resource.classification.removed",
             slice="resources",
             operation="remove",
-            actor_id=actor_id,
-            target_id=resource_ulid,
+            actor_ulid=actor_id,
+            target_ulid=resource_ulid,
             request_id=request_id,
-            happened_at=now,
+            happened_at_utc=now_iso8601_ms(),
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
         )
 
@@ -736,7 +736,7 @@ def rebuild_all_capability_indexes(
     for rid in ids:
         total_rows += (
             rebuild_capability_index(
-                resource_ulid=rid, request_id=request_id, actor_id=actor_id
+                resource_ulid=rid, request_id=request_id, actor_ulid=actor_id
             )
             or 0
         )

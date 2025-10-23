@@ -229,7 +229,7 @@ def _post_demo_journal(period_key: str, lines: list[dict]) -> Journal:
         source="finance.cli.seed_demo",  # ← REQUIRED (NOT NULL)
         currency="USD",  # ← you can change default if needed
         period_key=period_key,  # ← REQUIRED
-        happened_at_utc=now,  # ← REQUIRED (NOT NULL)
+        happened_at_utc=now_iso8601_ms(),  # ← REQUIRED (NOT NULL)
         posted_at_utc=now,  # ← ok to set same for demo
         created_at_utc=now,  # ← set explicitly to avoid ORM inserting None
         memo="Seed demo journal",  # ← optional

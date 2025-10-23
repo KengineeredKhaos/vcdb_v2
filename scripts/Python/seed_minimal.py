@@ -43,7 +43,7 @@ def main():
             email=PERSON["email"],
             phone=PERSON["phone"],
             request_id=req_id,
-            actor_id=actor,
+            actor_ulid=actor,
         )
 
         # 2) Org (idempotent on EIN if provided)
@@ -52,7 +52,7 @@ def main():
             doing_business_as=ORG["doing_business_as"],
             ein=ORG["ein"],
             request_id=req_id,
-            actor_id=actor,
+            actor_ulid=actor,
         )
 
         # 3) Optional address on org (works for person too)
@@ -66,7 +66,7 @@ def main():
             postal=ADDRESS["postal"],
             tz=ADDRESS["tz"],
             request_id=req_id,
-            actor_id=actor,
+            actor_ulid=actor,
         )
 
         # 4) Roles (respect governance policy)
@@ -77,7 +77,7 @@ def main():
                     entity_id=person_id,
                     role_code=rc,
                     request_id=req_id,
-                    actor_id=actor,
+                    actor_ulid=actor,
                 )
 
         for rc in ORG["roles"]:
@@ -86,7 +86,7 @@ def main():
                     entity_id=org_id,
                     role_code=rc,
                     request_id=req_id,
-                    actor_id=actor,
+                    actor_ulid=actor,
                 )
 
         db.session.commit()

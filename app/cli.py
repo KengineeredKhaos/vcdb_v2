@@ -220,7 +220,7 @@ def register_cli(app):
     def entity_ensure_person(first, last, email, phone, dry_run):
         """Ensure person exists (idempotent). Dry-run shows normalization without writing."""
         env = entity.ContractEnvelope(
-            request_id=new_ulid(), actor_id=None, dry_run=dry_run
+            request_id=new_ulid(), actor_ulid=None, dry_run=dry_run
         )
         res = entity.ensure_person(
             env, first_name=first, last_name=last, email=email, phone=phone
@@ -235,7 +235,7 @@ def register_cli(app):
     def entity_ensure_org(legal_name, dba_name, ein, dry_run):
         """Ensure organization exists (idempotent)."""
         env = entity.ContractEnvelope(
-            request_id=new_ulid(), actor_id=None, dry_run=dry_run
+            request_id=new_ulid(), actor_ulid=None, dry_run=dry_run
         )
         res = entity.ensure_org(
             env, legal_name=legal_name, dba_name=dba_name, ein=ein
@@ -250,7 +250,7 @@ def register_cli(app):
     def entity_role_attach(entity_ulid, role_code):
         """Attach a role to an entity (idempotent)."""
         env = entity.ContractEnvelope(
-            request_id=new_ulid(), actor_id=None, dry_run=False
+            request_id=new_ulid(), actor_ulid=None, dry_run=False
         )
         res = entity.add_entity_role(env, entity_ulid, role_code)
         click.echo(res)
@@ -261,7 +261,7 @@ def register_cli(app):
     def entity_role_remove(entity_ulid, role_code):
         """Remove a role from an entity (idempotent)."""
         env = entity.ContractEnvelope(
-            request_id=new_ulid(), actor_id=None, dry_run=False
+            request_id=new_ulid(), actor_ulid=None, dry_run=False
         )
         res = entity.remove_entity_role(env, entity_ulid, role_code)
         click.echo(res)
