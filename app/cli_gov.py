@@ -9,7 +9,8 @@ from app.slices.governance import services as gsvc
 
 
 @click.group("gov")
-def gov_group(): ...
+def gov_group():
+    ...
 
 
 @gov_group.command("seed")

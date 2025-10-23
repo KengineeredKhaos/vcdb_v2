@@ -4,6 +4,7 @@ from __future__ import annotations
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    ForeignKey,
     Integer,
     String,
     UniqueConstraint,
@@ -40,6 +41,12 @@ class Account(db.Model, ULIDPK):
         onupdate=now_iso8601_ms,
         nullable=False,
     )
+    __table_args__ = (
+        CheckConstraint(
+            "type in ('asset','liability','net_assets','revenue','expense')",
+            name="ck_account_type",
+        ),
+    )
 
 
 class Fund(db.Model, ULIDPK):
@@ -64,6 +71,12 @@ class Fund(db.Model, ULIDPK):
         default=now_iso8601_ms,
         onupdate=now_iso8601_ms,
         nullable=False,
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "restriction in ('unrestricted','temp','perm')",
+            name="ck_fund_restriction",
+        ),
     )
 
 
@@ -105,6 +118,12 @@ class Period(db.Model, ULIDPK):
         onupdate=now_iso8601_ms,
         nullable=False,
     )
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('open','soft_closed','closed')",
+            name="ck_period_status",
+        ),
+    )
 
 
 # ---- Journals --------------------------------------------------------------
@@ -128,7 +147,7 @@ class Journal(db.Model, ULIDPK):
     )  # YYYY-MM
     happened_at_utc: Mapped[str] = mapped_column(String(30), nullable=False)
     posted_at_utc: Mapped[str] = mapped_column(
-        String(30), nullable=False, default=utcnow_naive
+        String(30), nullable=False, default=now_iso8601_ms
     )
 
     memo: Mapped[str | None] = mapped_column(String(160), nullable=True)
@@ -141,7 +160,10 @@ class Journal(db.Model, ULIDPK):
     )
 
     lines: Mapped[list["JournalLine"]] = relationship(
-        "JournalLine", back_populates="journal", cascade="all, delete-orphan"
+        "JournalLine",
+        back_populates="journal",
+        cascade="all, delete-orphan",
+        order_by="JournalLine.seq",
     )
 
 
@@ -149,7 +171,10 @@ class JournalLine(db.Model, ULIDPK):
     __tablename__ = "finance_journal_line"
 
     journal_ulid: Mapped[str] = mapped_column(
-        String(26), index=True, nullable=False
+        String(26),
+        ForeignKey("finance_journal.ulid"),
+        index=True,
+        nullable=False,
     )
     seq: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
@@ -178,6 +203,7 @@ class JournalLine(db.Model, ULIDPK):
 
     __table_args__ = (
         CheckConstraint("amount_cents != 0", name="ck_line_nonzero"),
+        UniqueConstraint("journal_ulid", "seq", name="uq_journalline_seq"),
     )
 
 

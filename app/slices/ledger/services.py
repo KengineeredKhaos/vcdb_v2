@@ -30,15 +30,6 @@ CANON_API = "ledger-core"
 CANON_VERSION = "1.0.0"
 
 
-def verify_chain(chain_key: str | None = None) -> dict:
-    """
-    Minimal integrity check for tests and the /ledger/verify route.
-    Replace later with full prev_hash/chain_key validation as needed.
-    """
-    count = db.session.query(LedgerEvent).count()
-    return {"ok": True, "count": count}
-
-
 def _json_safe(obj: Any) -> Any:
     """Recursively coerce to JSON-safe primitives."""
     if obj is None or isinstance(obj, (str, int, float, bool)):
@@ -103,52 +94,6 @@ def _digest(envelope: dict[str, Any]) -> bytes:
         envelope, sort_keys=True, separators=(",", ":"), ensure_ascii=True
     )
     return hashlib.sha256(s.encode("utf-8")).digest()
-
-
-def log_event(
-    *,
-    event_type: str,
-    domain: str,
-    operation: str,
-    actor_ulid: str,
-    happened_at_utc: str,
-    request_id: str,
-    subject_ulid: str | None = None,
-    entity_ulid: str | None = None,
-    changed_fields: dict | None = None,
-    meta: dict | None = None,
-) -> None:
-    # Build canonical, JSON-safe envelope first
-    env = _canonical_envelope(
-        event_type=event_type,
-        domain=domain,
-        operation=operation,
-        actor_ulid=actor_ulid,
-        happened_at_utc=happened_at_utc,
-        request_id=request_id,
-        subject_ulid=subject_ulid,
-        entity_ulid=entity_ulid,
-        changed_fields=changed_fields,
-        meta=meta,
-    )
-    digest = _digest(env)
-
-    row = LedgerEvent(
-        # NOTE: event_type maps to column "type" in the model
-        event_type=env["event_type"],
-        domain=env["domain"],
-        operation=env["operation"],
-        actor_ulid=env["actor_ulid"],
-        happened_at_utc=env["happened_at_utc"],
-        request_id=env["request_id"],
-        subject_ulid=env["subject_ulid"],
-        entity_ulid=env["entity_ulid"],
-        changed_fields=env["changed_fields"],  # JSON column, already safe
-        meta=env["meta"],  # JSON column, already safe
-        hash=digest,
-        # TODO: fill chain_key / prev_hash here if you’re chaining
-    )
-    db.session.add(row)
 
 
 def append_event(

@@ -1,0 +1,71 @@
+{% extends "layout/base.html" %}
+{% block title %}Statement of Activities — {{ period }}{% endblock %}
+{% block content %}
+  <div class="container">
+    <h1 class="h3">Statement of Activities <small class="text-muted">{{ period }}</small></h1>
+
+    <h2 class="h5 mt-4">By Restriction</h2>
+    <table class="table table-sm">
+      <thead>
+        <tr>
+          <th>Restriction</th>
+          <th class="text-end">Revenue</th>
+          <th class="text-end">Expense</th>
+          <th class="text-end">Change in Net Assets</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for key, row in report.by_restriction.items() %}
+          <tr>
+            <td>{{ key }}</td>
+            <td class="text-end">{{ (row.revenue_cents or 0) | currency }}</td>
+            <td class="text-end">{{ (row.expense_cents or 0) | currency }}</td>
+            <td class="text-end">{{ ((row.revenue_cents or 0) - (row.expense_cents or 0)) | currency }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h2 class="h5 mt-4">By Fund</h2>
+    <table class="table table-sm">
+      <thead>
+        <tr>
+          <th>Fund</th>
+          <th>Restriction</th>
+          <th class="text-end">Revenue</th>
+          <th class="text-end">Expense</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fid, row in report.by_fund.items() %}
+          <tr>
+            <td>{{ row.name }}</td>
+            <td>{{ row.restriction_type }}</td>
+            <td class="text-end">{{ (row.revenue_cents or 0) | currency }}</td>
+            <td class="text-end">{{ (row.expense_cents or 0) | currency }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h2 class="h5 mt-4">By Project</h2>
+    <table class="table table-sm">
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th class="text-end">Revenue</th>
+          <th class="text-end">Expense</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pid, row in report.by_project.items() %}
+          <tr>
+            <td>{{ row.name }}</td>
+            <td class="text-end">{{ (row.revenue_cents or 0) | currency }}</td>
+            <td class="text-end">{{ (row.expense_cents or 0) | currency }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

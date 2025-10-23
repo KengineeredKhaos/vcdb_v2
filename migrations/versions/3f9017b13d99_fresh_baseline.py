@@ -1,8 +1,8 @@
 """fresh baseline
 
-Revision ID: 765614321b98
+Revision ID: 3f9017b13d99
 Revises: 
-Create Date: 2025-10-19 20:19:32.945466
+Create Date: 2025-10-22 20:22:05.097633
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = "765614321b98"
+revision = "3f9017b13d99"
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -108,6 +108,203 @@ def upgrade():
         sa.CheckConstraint("length(ulid) = 26", name="ck_ulid_len_26"),
         sa.PrimaryKeyConstraint("ulid"),
     )
+    op.create_table(
+        "finance_account",
+        sa.Column("code", sa.String(length=24), nullable=False),
+        sa.Column("name", sa.String(length=120), nullable=False),
+        sa.Column("type", sa.String(length=16), nullable=False),
+        sa.Column("active", sa.Boolean(), nullable=False),
+        sa.Column("created_at_utc", sa.String(length=30), nullable=False),
+        sa.Column("updated_at_utc", sa.String(length=30), nullable=False),
+        sa.Column("ulid", sa.String(length=26), nullable=False),
+        sa.CheckConstraint(
+            "type in ('asset','liability','net_assets','revenue','expense')",
+            name="ck_account_type",
+        ),
+        sa.PrimaryKeyConstraint("ulid"),
+    )
+    with op.batch_alter_table("finance_account", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_finance_account_active"), ["active"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_account_code"), ["code"], unique=True
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_account_type"), ["type"], unique=False
+        )
+
+    op.create_table(
+        "finance_balance_monthly",
+        sa.Column("account_code", sa.String(length=24), nullable=False),
+        sa.Column("fund_code", sa.String(length=32), nullable=False),
+        sa.Column("project_ulid", sa.String(length=26), nullable=True),
+        sa.Column("period_key", sa.String(length=7), nullable=False),
+        sa.Column("debits_cents", sa.Integer(), nullable=False),
+        sa.Column("credits_cents", sa.Integer(), nullable=False),
+        sa.Column("net_cents", sa.Integer(), nullable=False),
+        sa.Column("updated_at_utc", sa.String(length=30), nullable=False),
+        sa.Column("ulid", sa.String(length=26), nullable=False),
+        sa.PrimaryKeyConstraint("ulid"),
+        sa.UniqueConstraint(
+            "account_code",
+            "fund_code",
+            "project_ulid",
+            "period_key",
+            name="uq_balance_key",
+        ),
+    )
+    with op.batch_alter_table(
+        "finance_balance_monthly", schema=None
+    ) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_finance_balance_monthly_account_code"),
+            ["account_code"],
+            unique=False,
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_balance_monthly_fund_code"),
+            ["fund_code"],
+            unique=False,
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_balance_monthly_period_key"),
+            ["period_key"],
+            unique=False,
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_balance_monthly_project_ulid"),
+            ["project_ulid"],
+            unique=False,
+        )
+
+    op.create_table(
+        "finance_fund",
+        sa.Column("code", sa.String(length=32), nullable=False),
+        sa.Column("name", sa.String(length=120), nullable=False),
+        sa.Column("restriction", sa.String(length=16), nullable=False),
+        sa.Column("active", sa.Boolean(), nullable=False),
+        sa.Column("created_at_utc", sa.String(length=30), nullable=False),
+        sa.Column("updated_at_utc", sa.String(length=30), nullable=False),
+        sa.Column("ulid", sa.String(length=26), nullable=False),
+        sa.CheckConstraint(
+            "restriction in ('unrestricted','temp','perm')",
+            name="ck_fund_restriction",
+        ),
+        sa.PrimaryKeyConstraint("ulid"),
+    )
+    with op.batch_alter_table("finance_fund", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_finance_fund_active"), ["active"], unique=False
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_fund_code"), ["code"], unique=True
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_fund_restriction"),
+            ["restriction"],
+            unique=False,
+        )
+
+    op.create_table(
+        "finance_journal",
+        sa.Column("source", sa.String(length=32), nullable=False),
+        sa.Column("external_ref_ulid", sa.String(length=26), nullable=True),
+        sa.Column("currency", sa.String(length=8), nullable=False),
+        sa.Column("period_key", sa.String(length=7), nullable=False),
+        sa.Column("happened_at_utc", sa.String(length=30), nullable=False),
+        sa.Column("posted_at_utc", sa.String(length=30), nullable=False),
+        sa.Column("memo", sa.String(length=160), nullable=True),
+        sa.Column("created_by_actor", sa.String(length=26), nullable=True),
+        sa.Column("created_at_utc", sa.String(length=30), nullable=False),
+        sa.Column("ulid", sa.String(length=26), nullable=False),
+        sa.CheckConstraint("length(ulid) = 26", name="ck_ulid_len_26"),
+        sa.PrimaryKeyConstraint("ulid"),
+    )
+    with op.batch_alter_table("finance_journal", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_finance_journal_external_ref_ulid"),
+            ["external_ref_ulid"],
+            unique=False,
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_journal_period_key"),
+            ["period_key"],
+            unique=False,
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_journal_source"), ["source"], unique=False
+        )
+
+    op.create_table(
+        "finance_period",
+        sa.Column("period_key", sa.String(length=7), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("created_at_utc", sa.String(length=30), nullable=False),
+        sa.Column("updated_at_utc", sa.String(length=30), nullable=False),
+        sa.Column("ulid", sa.String(length=26), nullable=False),
+        sa.CheckConstraint(
+            "status in ('open','soft_closed','closed')",
+            name="ck_period_status",
+        ),
+        sa.PrimaryKeyConstraint("ulid"),
+    )
+    with op.batch_alter_table("finance_period", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_finance_period_period_key"),
+            ["period_key"],
+            unique=True,
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_period_status"), ["status"], unique=False
+        )
+
+    op.create_table(
+        "finance_project",
+        sa.Column("name", sa.String(length=160), nullable=False),
+        sa.Column("active", sa.Boolean(), nullable=False),
+        sa.Column("created_at_utc", sa.String(length=30), nullable=False),
+        sa.Column("updated_at_utc", sa.String(length=30), nullable=False),
+        sa.Column("ulid", sa.String(length=26), nullable=False),
+        sa.CheckConstraint("length(ulid) = 26", name="ck_ulid_len_26"),
+        sa.PrimaryKeyConstraint("ulid"),
+    )
+    with op.batch_alter_table("finance_project", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_finance_project_active"), ["active"], unique=False
+        )
+
+    op.create_table(
+        "finance_stat_metric",
+        sa.Column("period_key", sa.String(length=7), nullable=False),
+        sa.Column("metric_code", sa.String(length=32), nullable=False),
+        sa.Column("quantity", sa.Integer(), nullable=False),
+        sa.Column("unit", sa.String(length=16), nullable=False),
+        sa.Column("source", sa.String(length=32), nullable=False),
+        sa.Column("source_ref_ulid", sa.String(length=26), nullable=True),
+        sa.Column("created_at_utc", sa.String(length=30), nullable=False),
+        sa.Column("ulid", sa.String(length=26), nullable=False),
+        sa.PrimaryKeyConstraint("ulid"),
+        sa.UniqueConstraint(
+            "period_key",
+            "metric_code",
+            "source",
+            "source_ref_ulid",
+            name="uq_stat_dedupe",
+        ),
+    )
+    with op.batch_alter_table("finance_stat_metric", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_finance_stat_metric_metric_code"),
+            ["metric_code"],
+            unique=False,
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_stat_metric_period_key"),
+            ["period_key"],
+            unique=False,
+        )
+
     op.create_table(
         "gov_canonical_state",
         sa.Column("code", sa.String(length=2), nullable=False),
@@ -583,6 +780,54 @@ def upgrade():
         )
         batch_op.create_index(
             batch_op.f("ix_entity_role_role"), ["role"], unique=False
+        )
+
+    op.create_table(
+        "finance_journal_line",
+        sa.Column("journal_ulid", sa.String(length=26), nullable=False),
+        sa.Column("seq", sa.Integer(), nullable=False),
+        sa.Column("account_code", sa.String(length=24), nullable=False),
+        sa.Column("fund_code", sa.String(length=32), nullable=False),
+        sa.Column("project_ulid", sa.String(length=26), nullable=True),
+        sa.Column("amount_cents", sa.Integer(), nullable=False),
+        sa.Column("memo", sa.String(length=160), nullable=True),
+        sa.Column("period_key", sa.String(length=7), nullable=False),
+        sa.Column("ulid", sa.String(length=26), nullable=False),
+        sa.CheckConstraint("amount_cents != 0", name="ck_line_nonzero"),
+        sa.ForeignKeyConstraint(
+            ["journal_ulid"],
+            ["finance_journal.ulid"],
+        ),
+        sa.PrimaryKeyConstraint("ulid"),
+        sa.UniqueConstraint("journal_ulid", "seq", name="uq_journalline_seq"),
+    )
+    with op.batch_alter_table(
+        "finance_journal_line", schema=None
+    ) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_finance_journal_line_account_code"),
+            ["account_code"],
+            unique=False,
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_journal_line_fund_code"),
+            ["fund_code"],
+            unique=False,
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_journal_line_journal_ulid"),
+            ["journal_ulid"],
+            unique=False,
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_journal_line_period_key"),
+            ["period_key"],
+            unique=False,
+        )
+        batch_op.create_index(
+            batch_op.f("ix_finance_journal_line_project_ulid"),
+            ["project_ulid"],
+            unique=False,
         )
 
     op.create_table(

@@ -181,14 +181,14 @@ def post_journal(
     db.session.commit()
 
     event_bus.emit(
-        type="finance.journal.posted",
-        slice="finance",
-        operation="insert",
-        actor_id=created_by_actor,
-        target_id=j.ulid,
-        request_id=j.ulid,  # safe stand-in if route/contract doesn’t pass request_id into services
-        happened_at=j.posted_at_utc,
+        domain="finance",
+        operation="journal.posted",
+        request_id=j.ulid,
+        actor_ulid=created_by_actor,
+        target_ulid=j.ulid,
+        happened_at_utc=j.posted_at_utc,
         refs={"lines_count": len(lines), "period_key": period_key},
+        chain_key="finance.journal",
     )
     return j.ulid
 
@@ -406,18 +406,18 @@ def rebuild_balances(*, period_from: str, period_to: str) -> dict:
 
     db.session.commit()
     event_bus.emit(
-        type="finance.balance.rebuilt",
-        slice="finance",
-        operation="rebuild",
-        actor_id=None,
-        target_id="-",
+        domain="finance",
+        operation="balance.rebuild",
         request_id="-",
-        happened_at=now_iso8601_ms(),
+        actor_ulid=None,
+        target_ulid="-",
+        happened_at_utc=now_iso8601_ms(),
         refs={
             "period_from": period_from,
             "period_to": period_to,
             "rows": len(lines),
         },
+        chain_key="finance.balance",
     )
     return {"rows": len(lines), "periods": len(buckets)}
 
@@ -439,14 +439,14 @@ def set_period_status(*, period_key: str, status: str) -> None:
         p.status = status
     db.session.commit()
     event_bus.emit(
-        type="finance.period.status_changed",
-        slice="finance",
-        operation="update",
-        actor_id=None,
-        target_id=period_key,
+        domain="finance",
+        operation="period.status_changed",
         request_id="-",
-        happened_at=now_iso8601_ms(),
+        actor_ulid=None,
+        target_ulid=period_key,
+        happened_at_utc=now_iso8601_ms(),
         refs={"status": status},
+        chain_key="finance.period",
     )
 
 
@@ -478,17 +478,18 @@ def record_stat_metric(
     db.session.add(m)
     db.session.commit()
     event_bus.emit(
-        type="finance.stat.recorded",
-        slice="finance",
-        operation="insert",
-        actor_id=None,
-        target_id=m.ulid,
+        domain="finance",
+        operation="stat.recorded",
         request_id="-",
-        happened_at=now_iso8601_ms(),
+        actor_ulid=None,
+        target_ulid=m.ulid,
+        happened_at_utc=now_iso8601_ms(),
         refs={
             "period_key": period_key,
             "metric_code": metric_code,
             "quantity": quantity,
         },
+        chain_key="finance.stat",
     )
+
     return m.ulid

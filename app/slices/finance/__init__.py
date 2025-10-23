@@ -1,4 +1,4 @@
-# app/slices/transactions/__init__.py
+# app/slices/finance/__init__.py
 from __future__ import annotations
 
 from flask import Blueprint
@@ -9,4 +9,6 @@ bp = Blueprint(
     template_folder="templates",
     url_prefix="/finance",
 )
+
+
 pass

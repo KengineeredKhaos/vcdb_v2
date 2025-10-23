@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json as _json
 
+from app.slices.finance.services_report import statement_of_activities as _soa
 from flask import (
     Response,
     jsonify,
@@ -33,4 +34,19 @@ def ledger_index():
         "layout/placeholder.html",
         title="Ledger",
         message="Ledger UI coming soon",
+    )
+
+
+@bp.get("/activities")
+def activities_report():
+    period = request.args.get("period")
+    if not period:
+        # naive default: current YYYY-MM from UTC now
+        from datetime import datetime, timezone
+
+        period = datetime.now(timezone.utc).strftime("%Y-%m")
+
+    report = _soa(period)
+    return render_template(
+        "finance/activities.html", report=report, period=period
     )
