@@ -181,9 +181,8 @@ def ensure_resource(
         db.session.commit()
 
         event_bus.emit(
-            type="resource.created",
-            slice="resources",
-            operation="insert",
+            domain="resources",
+            operation="created_insert",
             actor_ulid=actor_id,
             target_ulid=r.ulid,
             request_id=request_id,
@@ -297,9 +296,8 @@ def upsert_capabilities(
     for flat in added:
         domain, key = _split(flat)
         event_bus.emit(
-            type="resource.classification.added",
-            slice="resources",
-            operation="add",
+            domain="resources",
+            operation="capability_add",
             actor_ulid=actor_id,
             target_ulid=resource_ulid,
             request_id=request_id,
@@ -309,9 +307,8 @@ def upsert_capabilities(
     for flat in removed:
         domain, key = _split(flat)
         event_bus.emit(
-            type="resource.classification.removed",
-            slice="resources",
-            operation="remove",
+            domain="resources",
+            operation="capability_remove",
             actor_ulid=actor_id,
             target_ulid=resource_ulid,
             request_id=request_id,
@@ -441,9 +438,8 @@ def set_readiness_status(
     db.session.commit()
 
     event_bus.emit(
-        type="resource.readiness.updated",
-        slice="resources",
-        operation="update",
+        domain="resources",
+        operation="readiness_update",
         actor_ulid=actor_id,
         target_ulid=resource_ulid,
         request_id=request_id,
@@ -474,9 +470,8 @@ def set_mou_status(
     db.session.commit()
 
     event_bus.emit(
-        type="resource.mou.updated",
-        slice="resources",
-        operation="update",
+        domain="resources",
+        operation="mou_update",
         actor_ulid=actor_id,
         target_ulid=resource_ulid,
         request_id=request_id,
@@ -526,9 +521,8 @@ def rebuild_capability_index(
     db.session.commit()
 
     event_bus.emit(
-        type="resource.capability.index_rebuilt",
-        slice="resources",
-        operation="rebuild",
+        domain="resources",
+        operation="capability_rebuild",
         actor_ulid=actor_id,
         target_ulid=resource_ulid,
         request_id=request_id,
@@ -687,9 +681,8 @@ def patch_capabilities(
     for flat in added:
         d, k = _split(flat)
         event_bus.emit(
-            type="resource.classification.added",
-            slice="resources",
-            operation="add",
+            domain="resources",
+            operation="classification_add",
             actor_ulid=actor_id,
             target_ulid=resource_ulid,
             request_id=request_id,
@@ -699,9 +692,8 @@ def patch_capabilities(
     for flat in removed:
         d, k = _split(flat)
         event_bus.emit(
-            type="resource.classification.removed",
-            slice="resources",
-            operation="remove",
+            domain="resources",
+            operation="classification_remove",
             actor_ulid=actor_id,
             target_ulid=resource_ulid,
             request_id=request_id,
