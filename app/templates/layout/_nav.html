@@ -12,5 +12,6 @@
     {% for label, ep in slices %}
       <li><a href="{{ url_for(ep) }}">{{ label }}</a></li>
     {% endfor %}
+      <li><a href="{{ url_for('admin.index') }}">Admin</a></li>
   </ul>
 </nav>

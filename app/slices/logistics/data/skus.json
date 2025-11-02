@@ -1,0 +1,20 @@
+[
+  {
+    "sku": "UW-TP-DR-M-OD-V-001",
+    "name": "Uniform Top — Dress (Men, OD, Veteran)",
+    "classification_key": "basic_needs.clothing.top",
+    "unit": "each",
+    "default_cost_cents": 0,
+    "version": 1,
+    "active": true
+  },
+  {
+    "sku": "CG-SL-DR-NA-MX-U-001",
+    "name": "Sleeping Bag — Standard (mixed colors, not-sized)",
+    "classification_key": "housing.sleeping_gear.bag",
+    "unit": "kit",
+    "default_cost_cents": 0,
+    "version": 1,
+    "active": true
+  }
+]

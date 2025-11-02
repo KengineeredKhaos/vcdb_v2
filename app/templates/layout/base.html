@@ -79,6 +79,11 @@
         {% endif %}
       </div>
     </header>
+    {% if session.assumed_domain_roles %}
+    <div class="alert alert-warning text-xs py-1 px-2">
+      DEV MODE — assumed roles: {{ session.assumed_domain_roles|join(", ") }}
+    </div>
+    {% endif %}
 
     <!-- Flash messages -->
     <main class="container">

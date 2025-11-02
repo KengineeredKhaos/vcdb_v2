@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VCDB SKU Construction Constraints",
+  "type": "object",
+  "required": ["version", "rules"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["if", "then"],
+        "properties": {
+          "if": {
+            "type": "object",
+            "properties": {
+              "category": { "type": "string" },
+              "subcategory": { "type": "string" },
+              "source": { "type": "string" },
+              "size": { "type": "string" },
+              "color": { "type": "string" },
+              "issuance_class": { "type": "string" }
+            },
+            "additionalProperties": false
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "issuance_class": { "type": "string", "enum": ["V","H","D","U"] }
+            },
+            "required": ["issuance_class"],
+            "additionalProperties": false
+          },
+          "why": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

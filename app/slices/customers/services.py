@@ -1,17 +1,18 @@
 # app/slices/customers/services.py
 from __future__ import annotations
 
-from typing import Optional, Dict, Any, Tuple
 import json
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Tuple
 
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, select
 
 from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
 from app.slices.entity.models import Entity
 
-from .models import Customer, CustomerHistory
+from .models import Customer, CustomerEligibility, CustomerHistory
 
 # ---------------------------------------------------------------------------
 # Canonical tier/factor map per MVP (move to Governance later)
@@ -24,8 +25,23 @@ TIER_FACTORS: dict[str, tuple[str, ...]] = {
 
 ALLOWED_VALUES = {1, 2, 3, "unknown", "n/a", None}
 
+# -----------------
+# Snapshot framing
+# -----------------
 
-# ---- helpers ---------------------------------------------------------------
+
+@dataclass
+class EligibilitySnapshot:
+    is_veteran_verified: bool
+    is_homeless_verified: bool
+    tier1_min: int | None
+    tier2_min: int | None
+    tier3_min: int | None
+
+
+# -----------------
+# helpers
+# -----------------
 
 
 def _ensure_reqid(rid: Optional[str]) -> str:
@@ -123,9 +139,8 @@ def ensure_customer(
         db.session.add(cust)
         db.session.commit()
         event_bus.emit(
-            type="customer.created",
-            slice="customers",
-            operation="insert",
+            domain="customers",
+            operation="created_insert",
             actor_ulid=actor_id,
             target_ulid=cust.ulid,
             request_id=request_id,
@@ -218,9 +233,8 @@ def update_needs_tier(
 
     # Minimal ledger event; no values — only the section & pointer
     event_bus.emit(
-        type="customer.profile.updated",
-        slice="customers",
-        operation="update",
+        domain="customers",
+        operation="profile_update",
         actor_ulid=actor_id,
         target_ulid=customer_ulid,
         request_id=request_id,
@@ -282,7 +296,9 @@ def update_tier3(
     )
 
 
+# -----------------
 # dashboard-friendly view
+# -----------------
 
 
 def customer_view(customer_ulid: str) -> Optional[dict]:
@@ -307,3 +323,115 @@ def customer_view(customer_ulid: str) -> Optional[dict]:
         "created_at_utc": c.created_at_utc,
         "updated_at_utc": c.updated_at_utc,
     }
+
+
+# -----------------
+# Customer Eligibility
+# -----------------
+from typing import TYPE_CHECKING  # noqa: E402
+
+from sqlalchemy import select  # noqa: E402
+
+if TYPE_CHECKING:
+    # Type-only import (won't execute at runtime)
+    from app.extensions.contracts.customer_v2 import (
+        CustomerEligibilitySnapshot,
+    )
+
+
+def _row_to_snapshot(row: CustomerEligibility):
+    # Lazy import avoids contract ↔ provider circular imports
+    from app.extensions.contracts.customer_v2 import (
+        CustomerEligibilitySnapshot,
+    )
+
+    return CustomerEligibilitySnapshot(
+        customer_ulid=row.customer_ulid,
+        is_veteran_verified=bool(row.is_veteran_verified),
+        is_homeless_verified=bool(row.is_homeless_verified),
+        tier1_min=row.tier1_min,
+        tier2_min=row.tier2_min,
+        tier3_min=row.tier3_min,
+        as_of_iso=now_iso8601_ms(),
+    )
+
+
+def get_eligibility_snapshot(customer_ulid: str) -> EligibilitySnapshot:
+    """
+    Read-only snapshot for policy evaluation.
+    DO NOT create rows here; intake/update flows own writes.
+    """
+    row = db.session.execute(
+        select(CustomerEligibility).where(
+            CustomerEligibility.customer_ulid == customer_ulid
+        )
+    ).scalar_one_or_none()
+
+    if row is None:
+        # Ephemeral defaults for policy checks when no record exists yet.
+        # Keep this conservative and documented.
+        return EligibilitySnapshot(
+            is_veteran_verified=False,
+            is_homeless_verified=False,
+            tier1_min=None,
+            tier2_min=None,
+            tier3_min=None,
+        )
+
+    return EligibilitySnapshot(
+        is_veteran_verified=bool(row.is_veteran_verified),
+        is_homeless_verified=bool(row.is_homeless_verified),
+        tier1_min=row.tier1_min,
+        tier2_min=row.tier2_min,
+        tier3_min=row.tier3_min,
+    )
+
+
+def set_verification_flags(
+    customer_ulid: str,
+    *,
+    veteran: bool | None = None,
+    homeless: bool | None = None,
+) -> "CustomerEligibilitySnapshot":
+    row = db.session.execute(
+        select(CustomerEligibility).where(
+            CustomerEligibility.customer_ulid == customer_ulid
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        row = CustomerEligibility(customer_ulid=customer_ulid)
+        db.session.add(row)
+    if veteran is not None:
+        row.is_veteran_verified = bool(veteran)
+    if homeless is not None:
+        row.is_homeless_verified = bool(homeless)
+    db.session.commit()
+    return _row_to_snapshot(row)
+
+
+def set_tier_min(
+    customer_ulid: str,
+    *,
+    tier1: int | None = None,
+    tier2: int | None = None,
+    tier3: int | None = None,
+) -> "CustomerEligibilitySnapshot":
+    for name, val in (("tier1", tier1), ("tier2", tier2), ("tier3", tier3)):
+        if val is not None and val not in (1, 2, 3):
+            raise ValueError(f"{name} must be 1,2,3 or None")
+    row = db.session.execute(
+        select(CustomerEligibility).where(
+            CustomerEligibility.customer_ulid == customer_ulid
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        row = CustomerEligibility(customer_ulid=customer_ulid)
+        db.session.add(row)
+    if tier1 is not None:
+        row.tier1_min = tier1
+    if tier2 is not None:
+        row.tier2_min = tier2
+    if tier3 is not None:
+        row.tier3_min = tier3
+    db.session.commit()
+    return _row_to_snapshot(row)

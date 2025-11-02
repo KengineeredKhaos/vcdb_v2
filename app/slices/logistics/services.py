@@ -1,78 +1,88 @@
 # app/slices/logistics/services.py
+
 from __future__ import annotations
 
-from collections import defaultdict
-from typing import Dict, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
 from sqlalchemy import and_, func, select
 
-from app.extensions import db, event_bus
+from app.extensions import db
+from app.extensions.enforcers import enforcers  # calendar_blackout_ok
+from app.extensions.event_bus import emit as emit_event
 from app.lib.chrono import now_iso8601_ms
-from app.slices.logistics.models import (
+from app.lib.ids import new_ulid
+from app.lib.jsonutil import pretty_dumps
+from app.slices.governance import services as gov  # decide_issue
+from app.slices.logistics.sku import parse_sku, validate_sku
+
+from .models import (
     InventoryBatch,
     InventoryItem,
     InventoryMovement,
     InventoryStock,
+    Issue,
     Location,
 )
+from .sku import b36_to_int, int_to_b36
 
-from .sku import b36_to_int, format_sku, int_to_b36, parse_sku, validate_sku
-
-ALLOWED_SOURCES = {"drmo", "donation", "purchase", "transfer"}
 ALLOWED_UNITS = {"each", "lbs", "kits", "boxes", "packs"}
+ALLOWED_SOURCES = {"donation", "purchase", "transfer", "drmo"}
 
-# ---------- helpers ----------
-
-
-def _ensure(arg: str | None, name: str) -> str:
-    if not arg or not str(arg).strip():
-        raise ValueError(f"{name} required")
-    return str(arg).strip()
+# -----------------
+# Ensure Location Exists
+# upsert by code
+# -----------------
 
 
 def ensure_location(*, code: str, name: str) -> str:
-    code = _ensure(code, "code")
-    name = _ensure(name, "name")
+    """
+    Idempotently create or return a Location by code (upper-cased),
+    committing if a new row is inserted.
+    """
     row = db.session.execute(
         select(Location).where(Location.code == code)
     ).scalar_one_or_none()
     if row:
-        if not row.active:
-            row.active = True
-            row.name = name
-        db.session.commit()
         return row.ulid
-    row = Location(code=code, name=name, active=True)
+    row = Location(
+        ulid=new_ulid(), code=code.strip().upper(), name=name.strip()
+    )
     db.session.add(row)
     db.session.commit()
     return row.ulid
 
 
-# ---------- SKU sequencing ----------
+# -----------------
+# Next SKU Sequence
+# for Family (base36)
+# -----------------
 
 
-def _next_seq_for_family(
-    cat: str, sub: str, src: str, size: str, col: str, grade: str
-) -> str:
-    row = db.session.execute(
-        select(func.max(InventoryItem.sku_seq)).where(
-            and_(
-                InventoryItem.sku_cat == cat,
-                InventoryItem.sku_sub == sub,
-                InventoryItem.sku_src == src,
-                InventoryItem.sku_size == size,
-                InventoryItem.sku_color == col,
-                InventoryItem.sku_grade == grade,
-            )
+def _next_seq_for_family(parts: dict) -> str:
+    """
+    Compute the next base-36 sequence for the SKU family defined by parts
+    (cat/sub/src/size/col/issuance_class).
+    """
+    q = select(func.max(InventoryItem.sku_seq)).where(
+        and_(
+            InventoryItem.sku_cat == parts["cat"],
+            InventoryItem.sku_sub == parts["sub"],
+            InventoryItem.sku_src == parts["src"],
+            InventoryItem.sku_size == parts["size"],
+            InventoryItem.sku_color == parts["col"],
+            InventoryItem.sku_issuance_class == parts["issuance_class"],
         )
-    ).scalar_one_or_none()
-    nxt_int = 0 if row is None else int(row) + 1
-    if nxt_int > 36**3 - 1:
-        raise ValueError("SKU sequence exhausted for family")
-    return int_to_b36(nxt_int, 3)
+    )
+    mx = db.session.execute(q).scalar_one_or_none() or 0
+    return int_to_b36(mx + 1, 3)
 
 
-# ---------- items ----------
+# -----------------
+# Ensure/Upsert
+# InventoryItem
+# by SKU
+# -----------------
 
 
 def ensure_item(
@@ -80,180 +90,105 @@ def ensure_item(
     category: str,
     name: str,
     unit: str,
-    condition: str = "mixed",
+    condition: str,
     sku: str | None = None,
     sku_parts: dict | None = None,
-    sku_bin_location: str | None = None,
-    sku_nsx: str | None = None,
 ) -> str:
-    unit = unit.strip().lower()
+    """Idempotently create or return an InventoryItem for the given SKU
+    (or parts), validating and enforcing SKU constraints."""
     if unit not in ALLOWED_UNITS:
         raise ValueError("invalid unit")
 
-    # Decide SKU strategy
-    parts: dict | None = None
+    # Resolve SKU
     if sku:
         if not validate_sku(sku):
             raise ValueError("invalid SKU")
         parts = parse_sku(sku)
+        sku = sku.upper()
     elif sku_parts:
-        req = ("cat", "sub", "src", "size", "col", "grade")
-        if any(k not in sku_parts for k in req):
-            raise ValueError("missing sku_parts keys")
-        parts = {k: str(sku_parts[k]).upper() for k in req}
-        seq = (
-            sku_parts.get("seq")
-            or _next_seq_for_family(
-                parts["cat"],
-                parts["sub"],
-                parts["src"],
-                parts["size"],
-                parts["col"],
-                parts["grade"],
-            )
-        ).upper()
-        sku = format_sku(
-            parts["cat"],
-            parts["sub"],
-            parts["src"],
-            parts["size"],
-            parts["col"],
-            parts["grade"],
-            seq,
+        p = {
+            k: str(sku_parts[k]).upper()
+            for k in ("cat", "sub", "src", "size", "col", "issuance_class")
+        }
+        seq = str(sku_parts.get("seq") or _next_seq_for_family(p)).upper()
+        sku = (
+            f"{p['cat']}-{p['sub']}-{p['src']}-{p['size']}-{p['col']}-"
+            f"{p['issuance_class']}-{seq}"
         )
-        parts["seq"] = seq  # normalized
+        parts = {**p, "seq": seq}
+        if not validate_sku(sku):
+            raise ValueError("invalid SKU parts")
+    else:
+        raise ValueError("sku or sku_parts required")
 
+    # Enforce construction constraints (raises ValueError if violated)
+    from app.extensions.policy_semantics import assert_sku_constraints_ok
+
+    assert_sku_constraints_ok(parts)
+
+    # Upsert by SKU
+    row = db.session.execute(
+        select(InventoryItem).where(InventoryItem.sku == sku)
+    ).scalar_one_or_none()
+    if row:
+        return row.ulid
     row = InventoryItem(
-        category=_ensure(category, "category"),
-        name=_ensure(name, "name"),
+        ulid=new_ulid(),
+        category=category,
+        name=name,
         unit=unit,
-        condition=(condition or "mixed"),
-        sku=(sku or None),
-        sku_bin_location=(sku_bin_location or None),
-        sku_nsx=(sku_nsx or None),
-        active=True,
+        condition=condition,
+        sku=sku,
+        sku_cat=parts["cat"],
+        sku_sub=parts["sub"],
+        sku_src=parts["src"],
+        sku_size=parts["size"],
+        sku_color=parts["col"],
+        sku_issuance_class=parts["issuance_class"],
+        sku_seq=b36_to_int(parts["seq"]),
     )
-
-    if parts:
-        row.sku_cat = parts["cat"]
-        row.sku_sub = parts["sub"]
-        row.sku_src = parts["src"]
-        row.sku_size = parts["size"]
-        row.sku_color = parts["col"]
-        row.sku_grade = parts["grade"]
-        row.sku_seq = b36_to_int(parts["seq"])
-
     db.session.add(row)
     db.session.commit()
     return row.ulid
 
 
-def find_item_by_sku(sku: str) -> dict | None:
-    if not validate_sku(sku):
-        return None
-    row = db.session.execute(
-        select(InventoryItem).where(InventoryItem.sku == sku.upper())
-    ).scalar_one_or_none()
-    if not row:
-        return None
-    return {
-        "item_ulid": row.ulid,
-        "sku": row.sku,
-        "name": row.name,
-        "unit": row.unit,
-        "condition": row.condition,
-        "category": row.category,
-        "sku_parts": {
-            "cat": row.sku_cat,
-            "sub": row.sku_sub,
-            "src": row.sku_src,
-            "size": row.sku_size,
-            "col": row.sku_color,
-            "grade": row.sku_grade,
-            "seq": int_to_b36(row.sku_seq or 0),
-        },
-    }
-
-
-# ---------- stock math (projection) ----------
+# -----------------
+# Apply Stock Delta
+# (create row if missing)
+# (then += delta)
+# -----------------
 
 
 def _apply_stock_delta(
     *, item_ulid: str, location_ulid: str, unit: str, delta: int
-):
+) -> None:
+    """Ensure an InventoryStock row exists for
+    (item, location), then increment quantity
+    by delta (may be negative)."""
     rec = db.session.execute(
         select(InventoryStock).where(
-            InventoryStock.item_ulid == item_ulid,
-            InventoryStock.location_ulid == location_ulid,
+            and_(
+                InventoryStock.item_ulid == item_ulid,
+                InventoryStock.location_ulid == location_ulid,
+            )
         )
     ).scalar_one_or_none()
     if not rec:
         rec = InventoryStock(
+            ulid=new_ulid(),
             item_ulid=item_ulid,
             location_ulid=location_ulid,
             unit=unit,
-            qty_on_hand=0,
+            quantity=0,
         )
         db.session.add(rec)
-    rec.qty_on_hand = int(rec.qty_on_hand) + int(delta)
-    rec.updated_at_utc = now_iso8601_ms()
-    if rec.qty_on_hand < 0:
-        raise ValueError("stock underflow")
+    rec.quantity += delta
 
 
-def rebuild_stock(
-    *, item_ulid: Optional[str] = None, location_ulid: Optional[str] = None
-) -> dict:
-    q_del = db.session.query(InventoryStock)
-    if item_ulid:
-        q_del = q_del.filter(InventoryStock.item_ulid == item_ulid)
-    if location_ulid:
-        q_del = q_del.filter(InventoryStock.location_ulid == location_ulid)
-    deleted = q_del.delete()
-
-    deltas: dict[tuple[str, str, str], int] = defaultdict(int)
-    q = db.session.query(InventoryMovement)
-    if item_ulid:
-        q = q.filter(InventoryMovement.item_ulid == item_ulid)
-    if location_ulid:
-        q = q.filter(
-            (InventoryMovement.location_from_ulid == location_ulid)
-            | (InventoryMovement.location_to_ulid == location_ulid)
-        )
-    for m in q.all():
-        if m.kind == "receipt":
-            deltas[(m.item_ulid, m.location_to_ulid, m.unit)] += m.quantity
-        elif m.kind == "issue":
-            deltas[(m.item_ulid, m.location_from_ulid, m.unit)] -= m.quantity
-        elif m.kind == "transfer_out":
-            deltas[(m.item_ulid, m.location_from_ulid, m.unit)] -= m.quantity
-        elif m.kind == "transfer_in":
-            deltas[(m.item_ulid, m.location_to_ulid, m.unit)] += m.quantity
-        elif m.kind == "adjustment":
-            sign = 1 if m.location_to_ulid else -1
-            loc = m.location_to_ulid or m.location_from_ulid
-            deltas[(m.item_ulid, loc, m.unit)] += sign * m.quantity
-
-    for (item, loc, unit), delta in deltas.items():
-        _apply_stock_delta(
-            item_ulid=item, location_ulid=loc, unit=unit, delta=delta
-        )
-
-    db.session.commit()
-    event_bus.emit(
-        type="logistics.stock.rebuilt",
-        slice="logistics",
-        operation="rebuild",
-        actor_ulid=None,
-        target_ulid="-",
-        request_id="-",
-        happened_at_utc=now_iso8601_ms(),
-        refs={"deleted": deleted, "entries": len(deltas)},
-    )
-    return {"deleted": deleted, "entries": len(deltas)}
-
-
-# ---------- core flows ----------
+# -----------------
+# Receive Inventory
+# (batch + receipt movement + stock++)
+# -----------------
 
 
 def receive_inventory(
@@ -264,72 +199,55 @@ def receive_inventory(
     source: str,
     received_at_utc: str,
     location_ulid: str,
-    source_entity_ulid: Optional[str],
-    note: Optional[str],
-    actor_id: Optional[str],
+    note: str | None = None,
+    actor_id: str | None = None,
+    source_entity_ulid: str | None = None,
 ) -> dict:
-    if int(quantity) <= 0:
-        raise ValueError("quantity must be > 0")
-    unit = unit.strip().lower()
+    """Record a receipt: create batch, create 'receipt' movement,
+    and increase on-hand stock at the location."""
     if unit not in ALLOWED_UNITS:
         raise ValueError("invalid unit")
-    source = source.strip().lower()
     if source not in ALLOWED_SOURCES:
         raise ValueError("invalid source")
 
     b = InventoryBatch(
+        ulid=new_ulid(),
         item_ulid=item_ulid,
-        source=source,
-        source_entity_ulid=source_entity_ulid or None,
-        received_at_utc=received_at_utc,
-        note=note or None,
-        created_by_actor=actor_id,
+        location_ulid=location_ulid,
+        quantity=quantity,
+        unit=unit,
     )
-    db.session.add(b)
-    db.session.flush()
-
     m = InventoryMovement(
-        batch_ulid=b.ulid,
+        ulid=new_ulid(),
         item_ulid=item_ulid,
+        location_ulid=location_ulid,
+        batch_ulid=b.ulid,
         kind="receipt",
-        quantity=int(quantity),
+        quantity=quantity,
         unit=unit,
         happened_at_utc=received_at_utc,
-        location_from_ulid=None,
-        location_to_ulid=location_ulid,
+        source_ref_ulid=source_entity_ulid,
         target_ref_ulid=None,
-        note=note or None,
         created_by_actor=actor_id,
+        note=note,
     )
-    db.session.add(m)
-
+    db.session.add_all([b, m])
     _apply_stock_delta(
         item_ulid=item_ulid,
         location_ulid=location_ulid,
         unit=unit,
-        delta=int(quantity),
+        delta=quantity,
     )
     db.session.commit()
-
-    event_bus.emit(
-        type="inventory.received",
-        slice="logistics",
-        operation="insert",
-        actor_ulid=actor_id,
-        target_ulid=b.ulid,
-        request_id=b.ulid,
-        happened_at_utc=received_at_utc,
-        refs={
-            "item_ulid": item_ulid,
-            "qty": int(quantity),
-            "unit": unit,
-            "location_ulid": location_ulid,
-            "source": source,
-        },
-    )
     return {"batch_ulid": b.ulid, "movement_ulid": m.ulid}
 
 
+# ----------------------------
+# Issue (low-level):
+# create issue movement,
+# decrement stock,
+# insert Issue
+# ----------------------------
 def issue_inventory(
     *,
     batch_ulid: str,
@@ -338,188 +256,464 @@ def issue_inventory(
     unit: str,
     location_ulid: str,
     happened_at_utc: str,
-    target_ref_ulid: Optional[str],
-    note: Optional[str],
-    actor_id: Optional[str],
+    target_ref_ulid: str | None,
+    note: str | None,
+    actor_id: str | None,
 ) -> str:
-    if int(quantity) <= 0:
-        raise ValueError("quantity must be > 0")
-    unit = unit.strip().lower()
+    """Low-level issuance path that writes a movement, reduces stock,
+    and inserts the Issue row; returns movement_ulid."""
     if unit not in ALLOWED_UNITS:
         raise ValueError("invalid unit")
 
+    # Movement record
     m = InventoryMovement(
-        batch_ulid=batch_ulid,
+        ulid=new_ulid(),
         item_ulid=item_ulid,
+        location_ulid=location_ulid,
+        batch_ulid=batch_ulid,
         kind="issue",
-        quantity=int(quantity),
+        quantity=quantity,
         unit=unit,
         happened_at_utc=happened_at_utc,
-        location_from_ulid=location_ulid,
-        location_to_ulid=None,
-        target_ref_ulid=target_ref_ulid or None,
-        note=note or None,
+        source_ref_ulid=None,
+        target_ref_ulid=target_ref_ulid,
         created_by_actor=actor_id,
+        note=note,
     )
     db.session.add(m)
+
+    # Stock delta
     _apply_stock_delta(
         item_ulid=item_ulid,
         location_ulid=location_ulid,
         unit=unit,
-        delta=-int(quantity),
+        delta=-quantity,
     )
-    db.session.commit()
 
-    event_bus.emit(
-        type="inventory.issued",
-        slice="logistics",
-        operation="issue",
-        actor_ulid=actor_id,
-        target_ulid=m.ulid,
-        request_id=m.ulid,
-        happened_at_utc=happened_at_utc,
-        refs={
-            "item_ulid": item_ulid,
-            "qty": int(quantity),
-            "unit": unit,
-            "location_ulid": location_ulid,
-            "target_ref_ulid": target_ref_ulid,
-        },
+    # Issue row (no decision_json here; attach later)
+    it = db.session.execute(
+        select(InventoryItem.sku, InventoryItem.category).where(
+            InventoryItem.ulid == item_ulid
+        )
+    ).one()
+    sku_code, category = it
+
+    issue = Issue(
+        ulid=new_ulid(),
+        customer_ulid=target_ref_ulid,
+        classification_key=category,
+        sku_code=sku_code,
+        quantity=quantity,
+        issued_at=happened_at_utc,
+        project_ulid=None,
+        movement_ulid=m.ulid,
+        created_by_actor=actor_id,
     )
+    db.session.add(issue)
+
+    db.session.commit()
     return m.ulid
 
 
-def transfer_inventory(
+# ----------------------------
+# Context/DTO utilities
+# (used by enforcer/policy orchestration)
+# ----------------------------
+
+
+@dataclass(frozen=True)
+class IssueResult:
+    """
+    Lightweight result DTO for policy-only issuances and
+    CLI/reporting surfaces.
+    """
+
+    ok: bool
+    reason: str
+    issue_ulid: Optional[str] = None
+    decision: Optional[Dict[str, Any]] = None
+    meta: Optional[Dict[str, Any]] = None
+
+
+# -----------------
+# Context/DTO utilities
+# (used by enforcer/policy orchestration)
+# -----------------
+
+
+class _Ctx:
+    """
+    Minimal attribute carrier for enforcers/governance so callers don’t need
+    to import slice internals.
+    """
+
+    def __init__(
+        self,
+        *,
+        customer_ulid: str,
+        sku_code: Optional[str],
+        classification_key: Optional[str],
+        when_iso: str,
+        project_ulid: Optional[str],
+    ):
+        self.customer_ulid = customer_ulid
+        self.sku_code = sku_code
+        self.classification_key = classification_key
+        self.when_iso = when_iso
+        self.project_ulid = project_ulid
+
+
+# -----------------
+# Attach Decision Trace
+# Issue.decision_json
+# (issue decision text)
+# -----------------
+
+
+def attach_issue_decision(movement_ulid: str, decision: dict) -> None:
+    """
+    Find the Issue linked to the movement and persist
+    the serialized policy/enforcer decision trace to decision_json.
+    """
+    issue = db.session.execute(
+        select(Issue).where(Issue.movement_ulid == movement_ulid)
+    ).scalar_one_or_none()
+    if issue:
+        issue.decision_json = pretty_dumps(decision)
+        db.session.commit()
+
+
+# -----------------
+# Issue (high-level):
+# enforcer → policy → resolve batch → low-level issue → attach decision
+# -----------------
+
+
+def decide_and_issue_one(
     *,
-    item_ulid: str,
-    quantity: int,
-    unit: str,
-    happened_at_utc: str,
-    location_from_ulid: str,
-    location_to_ulid: str,
-    note: Optional[str],
-    actor_id: Optional[str],
-    batch_ulid: Optional[str] = None,
+    customer_ulid: str,
+    sku_code: str,
+    quantity: int = 1,
+    when_iso: str | None = None,
+    project_ulid: str | None = None,
+    actor_id: str | None = None,
+    location_ulid: str,  # where stock will be pulled from
+    batch_ulid: str | None = None,  # optional: choose a specific batch
 ) -> dict:
-    if int(quantity) <= 0:
-        raise ValueError("quantity must be > 0")
-    unit = unit.strip().lower()
-    if unit not in ALLOWED_UNITS:
-        raise ValueError("invalid unit")
+    """
+    End-to-end issuance that gates on blackout + policy,
+    locates stock, performs the low-level issue,
+    and stores the decision trace.
 
-    if not batch_ulid:
-        b = InventoryBatch(
-            item_ulid=item_ulid,
-            source="transfer",
-            source_entity_ulid=None,
-            received_at_utc=happened_at_utc,
-            note=note or None,
-            created_by_actor=actor_id,
+    High-level "one-shot" issuance:
+      - Calendar blackout (fast gate)
+      - Policy decision (Governance)
+      - Resolve item/batch
+      - Call low-level issue_inventory(...)
+      - Persist decision_json on Issue
+    Returns {movement_ulid, decision, ok, reason}
+    """
+    as_of = when_iso or now_iso8601_ms()
+
+    # derive classification key from SKU once
+    parts = parse_sku(sku_code)
+    classification_key = f"{parts['cat']}-{parts['sub']}"
+
+    # 1) Enforcer: calendar blackout quick gate
+    # (ckey not used here, but harmless to include)
+    ok, meta = enforcers.calendar_blackout_ok(
+        type(
+            "Ctx",
+            (),
+            {
+                "customer_ulid": customer_ulid,
+                "sku_code": sku_code,
+                "classification_key": classification_key,  # can be None
+                "sku_parts": parse_sku(sku_code),  # <-- add this
+                "when_iso": as_of,
+                "project_ulid": project_ulid,
+            },
         )
-        db.session.add(b)
-        db.session.flush()
-        batch_ulid = b.ulid
+    )
+    if not ok:
+        return {
+            "ok": False,
+            "reason": meta.get("reason", "calendar_blackout"),
+            "decision": {"enforcer": meta},
+        }
 
-    m_out = InventoryMovement(
-        batch_ulid=batch_ulid,
-        item_ulid=item_ulid,
-        kind="transfer_out",
-        quantity=int(quantity),
-        unit=unit,
-        happened_at_utc=happened_at_utc,
-        location_from_ulid=location_from_ulid,
-        location_to_ulid=None,
-        target_ref_ulid=None,
-        note=note or None,
-        created_by_actor=actor_id,
+    # 2) Governance decision (policy_issuance.json)
+    dec = gov.decide_issue(
+        type(
+            "Ctx",
+            (),
+            {
+                "customer_ulid": customer_ulid,
+                "sku_code": sku_code,
+                "classification_key": classification_key,  # can be None
+                "sku_parts": parse_sku(sku_code),  # <-- add this
+                "when_iso": as_of,
+                "project_ulid": project_ulid,
+            },
+        )
     )
-    m_in = InventoryMovement(
-        batch_ulid=batch_ulid,
-        item_ulid=item_ulid,
-        kind="transfer_in",
-        quantity=int(quantity),
-        unit=unit,
-        happened_at_utc=happened_at_utc,
-        location_from_ulid=None,
-        location_to_ulid=location_to_ulid,
-        target_ref_ulid=None,
-        note=note or None,
-        created_by_actor=actor_id,
-    )
-    db.session.add_all([m_out, m_in])
 
-    _apply_stock_delta(
-        item_ulid=item_ulid,
-        location_ulid=location_from_ulid,
-        unit=unit,
-        delta=-int(quantity),
+    decision = {
+        # Governance returns IssueDecision(allowed=...), not ".ok"
+        "ok": bool(getattr(dec, "allowed", getattr(dec, "ok", False))),
+        "reason": getattr(dec, "reason", None),
+        "approver_required": getattr(dec, "approver_required", None),
+        "limit_window_label": getattr(dec, "limit_window_label", None),
+        "next_eligible_at_iso": getattr(dec, "next_eligible_at_iso", None),
+    }
+    if not decision["ok"]:
+        return {
+            "ok": False,
+            "reason": decision["reason"] or "denied",
+            "decision": decision,
+        }
+
+    # 3) Resolve item + batch if batch_ulid not supplied
+    it_ulid = db.session.execute(
+        select(InventoryItem.ulid).where(InventoryItem.sku == sku_code)
+    ).scalar_one_or_none()
+    if not it_ulid:
+        return {"ok": False, "reason": "item_not_found", "decision": decision}
+
+    b_ulid = batch_ulid
+    if not b_ulid:
+        b_ulid = db.session.execute(
+            select(InventoryBatch.ulid)
+            .where(
+                InventoryBatch.item_ulid == it_ulid,
+                InventoryBatch.location_ulid == location_ulid,
+            )
+            .order_by(InventoryBatch.ulid.desc())
+        ).scalar_one_or_none()
+        if not b_ulid:
+            return {
+                "ok": False,
+                "reason": "no_batch_at_location",
+                "decision": decision,
+            }
+
+    # 4) Low-level issuance
+    mv_ulid = issue_inventory(
+        batch_ulid=b_ulid,
+        item_ulid=it_ulid,
+        quantity=quantity,
+        unit="each",
+        location_ulid=location_ulid,
+        happened_at_utc=as_of,
+        target_ref_ulid=customer_ulid,
+        note=None,
+        actor_id=actor_id,
     )
-    _apply_stock_delta(
-        item_ulid=item_ulid,
-        location_ulid=location_to_ulid,
-        unit=unit,
-        delta=int(quantity),
+
+    # 5) Attach decision trace to Issue
+    attach_issue_decision(mv_ulid, decision)
+
+    # 6) # Emit audit spine event (immutable)
+    emit_event(
+        domain="logistics",
+        operation="issue.created",
+        request_id=new_ulid(),  # correlation id
+        actor_ulid=actor_id,
+        target_ulid=customer_ulid,  # subject: the customer
+        refs={
+            "movement_ulid": mv_ulid,
+            "sku_code": sku_code,
+            "location_ulid": location_ulid,
+            "project_ulid": project_ulid,
+        },
+        changed={"quantity": quantity},
+        meta={"decision": decision},  # full decision trace mirrored here
+        happened_at_utc=as_of,
+        chain_key="logistics",
     )
+
+    return {
+        "ok": True,
+        "reason": "ok",
+        "decision": decision,
+        "movement_ulid": mv_ulid,
+    }
+
+
+# -----------------
+# Policy-only Issue:
+# evaluate enforcer+policy,
+# insert Issue (no stock/movement)
+# -----------------
+
+
+def issue_inventory_policy(
+    customer_ulid: str,
+    sku_code: Optional[str],
+    when_iso: Optional[str] = None,
+    project_ulid: Optional[str] = None,
+    *,
+    actor_ulid: Optional[str] = None,
+    quantity: int = 1,
+) -> IssueResult:
+    """
+    Policy-first path that records an Issue row after enforcer+policy OK,
+    without touching stock or creating a movement.
+    High-level issuance (policy-first) retained for CLI or other callers
+    that don't need to pick a specific batch/location themselves.
+
+    Steps:
+      1) SKU parse/validate (if provided)
+      2) Calendar blackout (enforcer)
+      3) Policy decision (governance -> decide_issue)
+      4) Persist Issue row (no stock math)
+      5) (Optional) emit ledger event externally
+    """
+    as_of = when_iso or now_iso8601_ms()
+
+    # 1) SKU parse/validate (optional flow supports classification-only issues)
+    classification_key: Optional[str] = None
+    if sku_code:
+        if not validate_sku(sku_code):
+            return IssueResult(ok=False, reason="invalid_sku")
+        parts = parse_sku(sku_code)
+        classification_key = f"{parts['cat']}-{parts['sub']}"
+    else:
+        parts = None
+
+    ctx = _Ctx(
+        customer_ulid=customer_ulid,
+        sku_code=sku_code,
+        classification_key=classification_key,
+        sku_parts=sku_parts,
+        when_iso=as_of,
+        project_ulid=project_ulid,
+    )
+
+    # 2) Calendar blackout
+    ok, meta = enforcers.calendar_blackout_ok(ctx)
+    if not ok:
+        return IssueResult(
+            ok=False,
+            reason=meta.get("reason", "calendar_blackout"),
+            decision={"enforcer": meta},
+        )
+
+    # 3) Policy decision
+    dec = gov.decide_issue(ctx)
+    decision_dict = {
+        "ok": bool(getattr(dec, "ok", False)),
+        "reason": getattr(dec, "reason", None),
+        "approver_required": getattr(dec, "approver_required", None),
+        "limit_window_label": getattr(dec, "limit_window_label", None),
+        "next_eligible_at_iso": getattr(dec, "next_eligible_at_iso", None),
+    }
+    if not decision_dict["ok"]:
+        return IssueResult(
+            ok=False,
+            reason=decision_dict["reason"] or "denied",
+            decision=decision_dict,
+        )
+
+    # 4) Persist Issue row (policy-only path; no movement/stock)
+    row = Issue(
+        customer_ulid=customer_ulid,
+        classification_key=classification_key,
+        sku_code=sku_code,
+        quantity=quantity,
+        issued_at=as_of,
+        project_ulid=project_ulid,
+        movement_ulid=None,
+        created_by_actor=actor_ulid,
+    )
+    row.decision_json = pretty_dumps(decision_dict)
+
+    db.session.add(row)
     db.session.commit()
 
-    event_bus.emit(
-        type="inventory.transferred",
-        slice="logistics",
-        operation="transfer",
-        actor_ulid=actor_id,
-        target_ulid=batch_ulid,
-        request_id=batch_ulid,
-        happened_at_utc=happened_at_utc,
-        refs={
-            "item_ulid": item_ulid,
-            "qty": int(quantity),
-            "unit": unit,
-            "from": location_from_ulid,
-            "to": location_to_ulid,
-        },
+    # 5) Caller can emit ledger via event_bus if desired
+    return IssueResult(
+        ok=True,
+        reason="ok",
+        issue_ulid=row.ulid,
+        decision=decision_dict,
+        meta={"policy_only": True},
     )
-    return {"movement_out_ulid": m_out.ulid, "movement_in_ulid": m_in.ulid}
 
 
-# ---------- views/search ----------
+# -----------------
+# Count Issues in Window
+# (filter by sku or classification)
+# -----------------
 
 
-def stock_view(
-    *, item_ulid: str | None = None, location_ulid: str | None = None
-) -> list[dict]:
-    q = db.session.query(InventoryStock)
-    if item_ulid:
-        q = q.filter(InventoryStock.item_ulid == item_ulid)
-    if location_ulid:
-        q = q.filter(InventoryStock.location_ulid == location_ulid)
-    rows = q.order_by(InventoryStock.updated_at_utc.desc()).all()
-    return [
-        {
-            "stock_ulid": r.ulid,
-            "item_ulid": r.item_ulid,
-            "location_ulid": r.location_ulid,
-            "unit": r.unit,
-            "qty_on_hand": r.qty_on_hand,
-            "updated_at_utc": r.updated_at_utc,
-        }
-        for r in rows
-    ]
+def count_issues_in_window(
+    customer_ulid: str,
+    classification_key: str | None = None,
+    sku_code: str | None = None,
+    window_start_iso: str | None = None,
+    as_of_iso: str | None = None,
+) -> int:
+    """
+    Count Issue rows for a customer within [window_start_iso, as_of_iso],
+    filtered by either classification_key OR sku_code.
+    If both given, sku_code wins.
+
+    Return the number of Issue rows for the customer within
+    [window_start, as_of], preferring sku_code filter over classification.
+    """
+    if not as_of_iso:
+        as_of_iso = now_iso8601_ms()
+
+    preds = [Issue.customer_ulid == customer_ulid]
+    if window_start_iso:
+        preds.append(Issue.issued_at >= window_start_iso)
+    if as_of_iso:
+        preds.append(Issue.issued_at <= as_of_iso)
+    if sku_code:
+        preds.append(Issue.sku_code == sku_code)
+    elif classification_key:
+        preds.append(Issue.classification_key == classification_key)
+
+    q = select(func.count()).select_from(Issue).where(and_(*preds))
+    return int(db.session.execute(q).scalar_one() or 0)
 
 
-def item_view(item_ulid: str) -> dict | None:
-    it = db.session.get(InventoryItem, item_ulid)
-    if not it:
-        return None
-    stock = stock_view(item_ulid=item_ulid)
-    return {
-        "item_ulid": it.ulid,
-        "category": it.category,
-        "sku": it.sku,
-        "name": it.name,
-        "unit": it.unit,
-        "condition": it.condition,
-        "active": it.active,
-        "stock": stock,
-        "created_at_utc": it.created_at_utc,
-        "updated_at_utc": it.updated_at_utc,
-    }
+# -----------------
+# List Allowed SKUs
+# for Customer at time T
+# (ask Governance per SKU)
+# -----------------
+
+
+def available_skus_for_customer(
+    customer_ulid: str,
+    as_of_iso: str,
+    project_ulid: str | None = None,
+    cost_cents: int | None = None,
+) -> list[str]:
+    """
+    Iterate known SKUs and include those Governance approves for the given
+    customer/time; Logistics defers all rules to Governance.
+    """
+    from app.slices.governance.services import decide_issue
+    from app.extensions.contracts import governance_v2 as govc
+
+    rows = db.session.execute(
+        select(InventoryItem.sku, InventoryItem.category)
+    ).all()
+
+    allowed: list[str] = []
+    for sku, category in rows:
+        ctx = govc.RestrictionContext(
+            customer_ulid=customer_ulid,
+            sku_code=sku,
+            classification_key=category,
+            as_of_iso=as_of_iso,
+            project_ulid=project_ulid,
+            cost_cents=cost_cents,
+        )
+        decision = decide_issue(ctx)
+        if getattr(decision, "ok", False):
+            allowed.append(sku)
+    return allowed

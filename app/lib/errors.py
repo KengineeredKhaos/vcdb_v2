@@ -128,3 +128,8 @@ class DataIntegrityError(AppError):
 class ExternalServiceError(AppError):
     code = "external_service_error"
     status = 502
+
+
+class PolicyError(AppError):
+    code = "policy_error"
+    status = 422

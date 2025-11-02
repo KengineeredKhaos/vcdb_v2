@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "projects": {
+    "01K8F...PROJECT": {
+      "blackout_rules": [
+        { "type": "weekday", "days": ["SAT","SUN"] },
+        { "type": "date_range", "start": "2025-12-24", "end": "2025-12-26" }
+      ]
+    }
+  }
+}

@@ -8,6 +8,7 @@ from sqlalchemy.orm import joinedload
 
 from app.extensions import current_actor_id, db, enforcers, event_bus, ulid
 from app.extensions.contracts.finance import v1 as finance
+from app.extensions.policies import GOV_DATA, _load_and_cache
 from app.lib.chrono import now_iso8601_ms
 
 from .models import Project
@@ -33,6 +34,18 @@ if TYPE_CHECKING:
     from app.slices.finance.models import Fund
 
     # not actually used in code paths
+
+
+def is_blackout(project_ulid: str, when_iso: str) -> bool:
+    pol = _load_and_cache(
+        GOV_DATA / "policy_calendar.json",
+        "policy_calendar",
+        "policy_calendar.schema.json",
+    )
+    # naive MVP: global blackout windows only
+    windows = pol.get("global_blackouts", [])
+    t = when_iso[:10]  # YYYY-MM-DD
+    return any(w["start"] <= t <= w["end"] for w in windows)
 
 
 def _resolve_fund_summary(

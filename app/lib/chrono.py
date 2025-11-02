@@ -108,26 +108,24 @@ def to_iso8601(dt: datetime) -> str:
     return z.isoformat().replace("+00:00", "Z")
 
 
-# -----------------
-# Back-compat aliases
-# (remove after migration)
-# -----------------
-utc_now = now_iso8601_ms  # legacy "string now"
-utcnow_aware = utcnow_aware
-utcnow_naive = utcnow_naive
-parse_iso8601 = parse_iso8601
+def add_years_utc(dt: datetime, years: int) -> datetime:
+    """Add years in UTC; Feb 29 → Feb 28 on non-leap years."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        return dt.replace(year=dt.year + years)
+    except ValueError:
+        # handle Feb 29 → Feb 28
+        return dt.replace(month=2, day=28, year=dt.year + years)
+
 
 __all__ = [
     "utcnow_aware",
     "utcnow_naive",
     "ensure_aware_utc",
     "as_naive_utc",
-    "now_iso8601_ms",
     "parse_iso8601",
     "to_iso8601",
-    # legacy aliases (remove when safe)
-    "utc_now",
-    "utcnow_aware",
-    "utcnow_naive",
-    "parse_iso8601",
+    "now_iso8601_ms",
+    "add_years_utc",
 ]

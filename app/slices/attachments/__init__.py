@@ -5,4 +5,4 @@ from flask import Blueprint
 
 bp = Blueprint("attachments", __name__, url_prefix="/attachments")
 
-from . import models, routes  # noqa: E402,F401
+from . import models  # noqa: E402,F401

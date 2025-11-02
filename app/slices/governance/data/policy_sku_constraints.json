@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "if": { "source": "DR" },
+      "then": { "issuance_class": "V" },
+      "why": "All DRMO items are veteran-only"
+    },
+    {
+      "if": { "category": "CG", "subcategory": "SL", "source": "LC" },
+      "then": { "issuance_class": "H" },
+      "why": "Commercial sleeping gear reserved for homeless issuance"
+    }
+  ]
+}

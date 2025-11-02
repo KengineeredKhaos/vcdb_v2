@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "projects": {
+    "01K8F...PROJECT": {
+      "allow_classifications": ["basic_needs.*", "housing.sleeping_gear.*"]
+    }
+  },
+  "sponsors": {
+    "01K8S...SPONSOR": {
+      "deny_classifications": ["electronics.*"]
+    }
+  }
+}

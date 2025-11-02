@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "machines": {
+    "logistics.item_lifecycle": {
+      "states": ["received", "inspected", "available", "issued", "returned"],
+      "transitions": {
+        "received": ["inspected"],
+        "inspected": ["available"],
+        "available": ["issued"],
+        "issued": ["returned"],
+        "returned": ["inspected"]
+      }
+    }
+  }
+}

@@ -11,7 +11,7 @@ bp = Blueprint(
     "auth", __name__, url_prefix="/auth", template_folder="templates"
 )
 
-from . import models, routes  # noqa: F401
+from . import models  # noqa: F401
 
 
 class SessionUser:

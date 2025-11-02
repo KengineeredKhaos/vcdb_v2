@@ -114,9 +114,8 @@ def ensure_sponsor(
         db.session.add(s)
         db.session.commit()
         event_bus.emit(
-            type="sponsor.created",
-            slice="sponsors",
-            operation="insert",
+            domain="sponsors",
+            operation="created_insert",
             actor_ulid=actor_id,
             target_ulid=s.ulid,
             request_id=request_id,
@@ -205,9 +204,8 @@ def upsert_capabilities(
     for flat in added:
         d, k = _split(flat)
         event_bus.emit(
-            type="sponsor.capability.added",
-            slice="sponsors",
-            operation="add",
+            domain="sponsors",
+            operation="capability_add",
             actor_ulid=actor_id,
             target_ulid=sponsor_ulid,
             request_id=request_id,
@@ -217,9 +215,8 @@ def upsert_capabilities(
     for flat in removed:
         d, k = _split(flat)
         event_bus.emit(
-            type="sponsor.capability.removed",
-            slice="sponsors",
-            operation="remove",
+            domain="sponsors",
+            operation="capability_remove",
             actor_ulid=actor_id,
             target_ulid=sponsor_ulid,
             request_id=request_id,
@@ -307,9 +304,8 @@ def patch_capabilities(
     for flat in added:
         d, k = _split(flat)
         event_bus.emit(
-            type="sponsor.capability.added",
-            slice="sponsors",
-            operation="add",
+            domain="sponsors",
+            operation="capablity_add",
             actor_ulid=actor_id,
             target_ulid=sponsor_ulid,
             request_id=request_id,
@@ -319,9 +315,8 @@ def patch_capabilities(
     for flat in removed:
         d, k = _split(flat)
         event_bus.emit(
-            type="sponsor.capability.removed",
-            slice="sponsors",
-            operation="remove",
+            domain="sponsors",
+            operation="capability_remove",
             actor_ulid=actor_id,
             target_ulid=sponsor_ulid,
             request_id=request_id,
@@ -355,9 +350,8 @@ def set_readiness_status(
     s.last_touch_utc = now_iso8601_ms()
     db.session.commit()
     event_bus.emit(
-        type="sponsor.readiness.updated",
-        slice="sponsors",
-        operation="update",
+        domain="sponsors",
+        operation="readiness_update",
         actor_ulid=actor_id,
         target_ulid=sponsor_ulid,
         request_id=request_id,
@@ -387,9 +381,8 @@ def set_mou_status(
     s.last_touch_utc = now_iso8601_ms()
     db.session.commit()
     event_bus.emit(
-        type="sponsor.mou.updated",
-        slice="sponsors",
-        operation="update",
+        domain="sponsors",
+        operation="mou_update",
         actor_ulid=actor_id,
         target_ulid=sponsor_ulid,
         request_id=request_id,
@@ -555,9 +548,8 @@ def upsert_pledge(
     db.session.commit()
 
     event_bus.emit(
-        type="sponsor.pledge.upserted",
-        slice="sponsors",
-        operation="upsert",
+        domain="sponsors",
+        operation="pledge_upsert",
         actor_ulid=actor_id,
         target_ulid=sponsor_ulid,
         request_id=request_id,
@@ -593,9 +585,8 @@ def set_pledge_status(
         s.last_touch_utc = row.updated_at_utc
     db.session.commit()
     event_bus.emit(
-        type="sponsor.pledge.status.updated",
-        slice="sponsors",
-        operation="update",
+        domain="sponsors",
+        operation="pleddge_update",
         actor_ulid=actor_id,
         target_ulid=row.sponsor_ulid,
         request_id=request_id,

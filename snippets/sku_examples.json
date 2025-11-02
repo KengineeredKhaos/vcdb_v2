@@ -1,0 +1,62 @@
+[
+  {
+    "sku": "UG-TP-DR-M-OD-V-0F7",
+    "category": "UG",
+    "subcategory": "TP",
+    "source": "DR",
+    "size": "M",
+    "color": "OD",
+    "issuance_class": "V",
+    "seq": "0F7",
+    "title": "Surplus wicking T-shirt (OD, M)",
+    "default_cost_cents": 0,
+    "classification_key": "basic_needs.clothing.top",
+    "version": 1
+  },
+  {
+    "sku": "CW-GL-DR-L-OD-V-01C",
+    "category": "CW",
+    "subcategory": "GL",
+    "source": "DR",
+    "size": "L",
+    "color": "OD",
+    "issuance_class": "V",
+    "seq": "01C",
+    "title": "Surplus fleece gloves (OD, L)",
+    "default_cost_cents": 0,
+    "classification_key": "basic_needs.cold_weather.gloves",
+    "version": 1
+  },
+  {
+    "sku": "CG-SL-LC-NA-TN-H-00K",
+    "category": "CG",
+    "subcategory": "SL",
+    "source": "LC",
+    "size": "NA",
+    "color": "TN",
+    "issuance_class": "H",
+    "seq": "00K",
+    "title": "Commercial sleeping bag (Tan)",
+    "default_cost_cents": 6500,
+    "classification_key": "housing.sleeping_gear.bag",
+    "version": 1
+  },
+  {
+    "sku": "CG-KT-LC-NA-MX-F-001",
+    "category": "CG",
+    "subcategory": "KT",
+    "source": "LC",
+    "size": "NA",
+    "color": "MX",
+    "issuance_class": "F",
+    "seq": "001",
+    "title": "Food bank mess kit bundle",
+    "bundle_components": [
+      "UG-SK-LC-NA-MX-U-00A",
+      "AC-BG-LC-NA-BK-U-00B"
+    ],
+    "default_cost_cents": 1200,
+    "classification_key": "basic_needs.kits.mess_kit",
+    "version": 1
+  }
+]

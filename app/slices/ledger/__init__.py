@@ -6,6 +6,6 @@ bp = Blueprint(
     "ledger", __name__, url_prefix="/ledger", template_folder="templates"
 )
 
-from . import routes  # noqa: E402,F401
+from . import models  # noqa: E402,F401
 
 __all__ = ["bp"]

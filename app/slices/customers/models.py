@@ -11,7 +11,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.chrono import now_iso8601_ms, utcnow_naive
+from app.lib.chrono import now_iso8601_ms
 from app.lib.models import ULIDFK, ULIDPK
 
 
@@ -112,4 +112,60 @@ class CustomerHistory(db.Model, ULIDPK):
 
     __table_args__ = (
         CheckConstraint("version >= 1", name="ck_history_version_pos"),
+    )
+
+
+class CustomerEligibility(db.Model, ULIDPK):
+    """
+    Non-PII eligibility/cadence qualifiers (1 row per Customer).
+    Matches Customers slice conventions: ULID PK + ISO8601-ms timestamps.
+    """
+
+    __tablename__ = "customer_eligibility"
+
+    # FK to Customer (not Entity) to stay within slice and align with your pattern
+    customer_ulid: Mapped[str] = ULIDFK("customer_customer", index=True)
+
+    # Verified qualifiers (coarse booleans)
+    is_veteran_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True
+    )
+    is_homeless_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True
+    )
+
+    # Coarse needs tiers (1=immediate, 2=marginal, 3=sufficient; None unknown)
+    tier1_min: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True
+    )
+    tier2_min: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True
+    )
+    tier3_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at_utc: Mapped[str] = mapped_column(
+        String(30), default=now_iso8601_ms, nullable=False
+    )
+    updated_at_utc: Mapped[str] = mapped_column(
+        String(30),
+        default=now_iso8601_ms,
+        onupdate=now_iso8601_ms,
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "customer_ulid", name="uq_customer_eligibility_customer"
+        ),
+        CheckConstraint(
+            "tier1_min IS NULL OR (tier1_min BETWEEN 1 AND 3)",
+            name="ck_el_tier1_range",
+        ),
+        CheckConstraint(
+            "tier2_min IS NULL OR (tier2_min BETWEEN 1 AND 3)",
+            name="ck_el_tier2_range",
+        ),
+        CheckConstraint(
+            "tier3_min IS NULL OR (tier3_min BETWEEN 1 AND 3)",
+            name="ck_el_tier3_range",
+        ),
     )

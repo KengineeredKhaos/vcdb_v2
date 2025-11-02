@@ -13,4 +13,4 @@ bp = Blueprint(
 
 
 # Ensure models import so metadata is registered
-from . import models, routes  # noqa: E402,F401
+from . import models  # noqa: E402,F401

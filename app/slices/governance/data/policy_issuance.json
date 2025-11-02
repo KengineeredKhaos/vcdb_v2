@@ -1,0 +1,86 @@
+{
+    "spending_staff_cap_cents": 20000,
+    "default_behavior": "allow",
+    "defaults": {
+        "cadence": {
+            "max_per_period": 1,
+            "period_days": 30,
+            "scope": "classification",
+            "label": "default-per-30"
+        }
+    },
+    "rules": [
+        {
+            "match": {
+                "sku_parts": {
+                    "source": "DR"
+                }
+            },
+            "qualifiers": {
+                "veteran_required": true
+            }
+        },
+        {
+            "match": {
+                "sku_parts": {
+                    "category": "CG",
+                    "subcategory": "SL",
+                    "source": "LC"
+                }
+            },
+            "qualifiers": {
+                "homeless_required": true
+            }
+        },
+        {
+            "match": {
+                "classification_key": "basic_needs.clothing.top"
+            },
+            "qualifiers": {
+                "veteran_required": true
+            },
+            "cadence_preset": "annual"
+        },
+        {
+            "match": {
+                "classification_key": "housing.sleeping_gear.bag"
+            },
+            "qualifiers": {
+                "veteran_required": false
+            },
+            "cadence_preset": "quarterly"
+        },
+        {
+            "match": {
+                "sku_parts": {
+                    "category": "CG",
+                    "subcategory": "SL",
+                    "source": "LC"
+                }
+            },
+            "qualifiers": {
+                "homeless_required": true
+            },
+            "cadence": {
+                "period_days": 90,
+                "max_per_period": 1,
+                "scope": "sku",
+                "label": "bag-per-90d"
+            }
+        },
+        {
+            "match": {
+                "classification_key": "welcome_home.kit"
+            },
+            "qualifiers": {
+                "veteran_required": true
+            },
+            "cadence": {
+                "period_days": 180,
+                "max_per_period": 1,
+                "scope": "classification",
+                "label": "WHK-per-90d"
+            }
+        }
+    ]
+}

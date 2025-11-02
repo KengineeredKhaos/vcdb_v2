@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "map": {
+    "veteran_required": "customer.is_veteran_verified",
+    "homeless_required": "customer.is_homeless_verified",
+    "tier1_any_of": "customer.tier1_min"
+  },
+  "defaults": {
+    "tier1_min": 0,
+    "tier2_min": 0,
+    "tier3_min": 0
+  }
+}

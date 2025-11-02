@@ -1,0 +1,25 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object",
+  "required":["roles","allowed_domain_roles","rbac_can_assign_domain","domain_disallows_rbac","forbidden_domain_pairs"],
+  "additionalProperties":false,
+  "properties":{
+    "roles":{"type":"array","items":{"type":"string"},"uniqueItems":true},
+    "allowed_domain_roles":{"type":"array","items":{"type":"string"},"uniqueItems":true},
+    "rbac_can_assign_domain":{
+      "type":"object",
+      "additionalProperties":{
+        "type":"array","items":{"type":"string"},"uniqueItems":true
+      }
+    },
+    "domain_disallows_rbac":{"type":"array","items":{"type":"string"},"uniqueItems":true},
+    "forbidden_domain_pairs":{
+      "type":"array",
+      "items":{
+        "type":"array",
+        "items":{"type":"string"},
+        "minItems":2,"maxItems":2
+      }
+    }
+  }
+}

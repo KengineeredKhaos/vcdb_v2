@@ -1,140 +1,84 @@
 # app/slices/logistics/models.py
-from __future__ import annotations
-
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
+    ForeignKey,
     Index,
     Integer,
     String,
-    UniqueConstraint,
+    Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.extensions import db
-from app.lib.chrono import now_iso8601_ms, utcnow_naive
-from app.lib.models import ULIDFK, ULIDPK
+from app.lib.chrono import now_iso8601_ms
+from app.lib.ids import ULIDFK, ULIDPK
 
 
 class Location(db.Model, ULIDPK):
     __tablename__ = "logi_location"
-
-    code: Mapped[str] = mapped_column(
-        String(48), unique=True, index=True, nullable=False
-    )
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    active: Mapped[bool] = mapped_column(
-        Boolean, default=True, nullable=False, index=True
-    )
-
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
+    code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
 
 
 class InventoryItem(db.Model, ULIDPK):
-    """
-    A catalog record for a tangible thing we track by quantity (no dollars).
-    SKU is a human/business code; ULID remains the immutable PK.
-    """
-
     __tablename__ = "logi_item"
-
-    # --- SKU & normalized parts ---
-    sku: Mapped[str | None] = mapped_column(
-        String(32), unique=True, index=True, nullable=True
-    )  # e.g., "UG-TP-DR-M-OD-B-0F7"
-    sku_cat: Mapped[str | None] = mapped_column(
-        String(2), nullable=True, index=True
-    )  # CAT
-    sku_sub: Mapped[str | None] = mapped_column(
-        String(3), nullable=True, index=True
-    )  # SUB
-    sku_src: Mapped[str | None] = mapped_column(
-        String(2), nullable=True, index=True
-    )  # SRC
-    sku_size: Mapped[str | None] = mapped_column(
-        String(3), nullable=True, index=True
-    )  # SZ
-    sku_color: Mapped[str | None] = mapped_column(
-        String(3), nullable=True, index=True
-    )  # COL
-    sku_grade: Mapped[str | None] = mapped_column(
-        String(1), nullable=True, index=True
-    )  # CND
-    sku_seq: Mapped[int | None] = mapped_column(
-        Integer, nullable=True, index=True
-    )  # base-36 sequence as int
-
-    # optional bin / external codes
-    sku_bin_location: Mapped[str | None] = mapped_column(
-        String(32), nullable=True, index=True
-    )
-    sku_nsx: Mapped[str | None] = mapped_column(
-        String(32), nullable=True
-    )  # NSN/UPC/etc.
-
-    # --- descriptive fields ---
+    # Human/category labeling
     category: Mapped[str] = mapped_column(
-        String(32), index=True, nullable=False
-    )  # e.g., 'food','hygiene','tools'
-    name: Mapped[str] = mapped_column(String(160), nullable=False)
+        String(64), index=True, nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
     unit: Mapped[str] = mapped_column(
         String(16), nullable=False
-    )  # 'each','lbs','kits','boxes','packs'
-    condition: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="mixed"
-    )  # 'new','used','mixed'
-    active: Mapped[bool] = mapped_column(
-        Boolean, default=True, index=True, nullable=False
+    )  # "each" etc.
+    condition: Mapped[str] = mapped_column(String(16), nullable=False)
+    # SKU + parsed parts (strict per schema)
+    sku: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, nullable=False
     )
-
+    sku_cat: Mapped[str] = mapped_column(
+        String(2), index=True, nullable=False
+    )
+    sku_sub: Mapped[str] = mapped_column(
+        String(3), index=True, nullable=False
+    )
+    sku_src: Mapped[str] = mapped_column(
+        String(2), index=True, nullable=False
+    )
+    sku_size: Mapped[str] = mapped_column(
+        String(3), index=True, nullable=False
+    )
+    sku_color: Mapped[str] = mapped_column(
+        String(3), index=True, nullable=False
+    )
+    sku_issuance_class: Mapped[str] = mapped_column(
+        String(1), index=True, nullable=False
+    )
+    sku_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at_utc: Mapped[str] = mapped_column(
         String(30), default=now_iso8601_ms, nullable=False
     )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
 
     __table_args__ = (
-        # speedy “family” scans for next sequence:
         Index(
-            "ix_logi_item_sku_family",
+            "ix_item_sku_family",
             "sku_cat",
             "sku_sub",
             "sku_src",
             "sku_size",
             "sku_color",
-            "sku_grade",
+            "sku_issuance_class",
         ),
     )
 
 
 class InventoryBatch(db.Model, ULIDPK):
     __tablename__ = "logi_batch"
-
-    item_ulid: Mapped[str] = ULIDFK("logi_item", index=True)
-    source: Mapped[str] = mapped_column(
-        String(24), nullable=False, index=True
-    )  # 'drmo','donation','purchase','transfer'
-    source_entity_ulid: Mapped[str | None] = mapped_column(
-        String(26), nullable=True
-    )  # optional provider EntityOrg
-    received_at_utc: Mapped[str] = mapped_column(String(30), nullable=False)
-
-    note: Mapped[str | None] = mapped_column(String(160), nullable=True)
-    created_by_actor: Mapped[str | None] = mapped_column(
-        String(26), nullable=True
+    item_ulid: Mapped[str] = ULIDFK("logi_item", nullable=False, index=True)
+    location_ulid: Mapped[str] = ULIDFK(
+        "logi_location", nullable=False, index=True
     )
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at_utc: Mapped[str] = mapped_column(
         String(30), default=now_iso8601_ms, nullable=False
     )
@@ -142,63 +86,69 @@ class InventoryBatch(db.Model, ULIDPK):
 
 class InventoryMovement(db.Model, ULIDPK):
     __tablename__ = "logi_movement"
-
-    batch_ulid: Mapped[str] = ULIDFK("logi_batch", index=True)
-    item_ulid: Mapped[str] = ULIDFK("logi_item", index=True)
-
+    item_ulid: Mapped[str] = ULIDFK("logi_item", nullable=False, index=True)
+    location_ulid: Mapped[str] = ULIDFK(
+        "logi_location", nullable=False, index=True
+    )
+    batch_ulid: Mapped[str | None] = ULIDFK(
+        "logi_batch", nullable=True, index=True
+    )
     kind: Mapped[str] = mapped_column(
-        String(16), nullable=False, index=True
-    )  # 'receipt','issue','transfer_out','transfer_in','adjustment'
-    quantity: Mapped[int] = mapped_column(
-        Integer, nullable=False
-    )  # always positive; sign implied by kind
-    unit: Mapped[str] = mapped_column(
         String(16), nullable=False
-    )  # duplicate for queries
+    )  # "receipt","issue","transfer_out","transfer_in"
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit: Mapped[str] = mapped_column(String(16), nullable=False)
     happened_at_utc: Mapped[str] = mapped_column(String(30), nullable=False)
-    location_from_ulid: Mapped[str | None] = mapped_column(
-        String(26), nullable=True, index=True
-    )
-    location_to_ulid: Mapped[str | None] = mapped_column(
-        String(26), nullable=True, index=True
-    )
-
-    target_ref_ulid: Mapped[str | None] = mapped_column(
-        String(26), nullable=True, index=True
-    )  # e.g., customer/event/program ULID (no PII)
-    note: Mapped[str | None] = mapped_column(String(160), nullable=True)
-
-    created_by_actor: Mapped[str | None] = mapped_column(
-        String(26), nullable=True
-    )
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-
-    __table_args__ = (
-        CheckConstraint("quantity > 0", name="ck_movement_pos_qty"),
-    )
+    source_ref_ulid: Mapped[str | None] = mapped_column(String(26))
+    target_ref_ulid: Mapped[str | None] = mapped_column(String(26))
+    created_by_actor: Mapped[str | None] = mapped_column(String(26))
+    note: Mapped[str | None] = mapped_column(String(160))
+    __table_args__ = (CheckConstraint("quantity>0", "ck_move_pos_qty"),)
 
 
 class InventoryStock(db.Model, ULIDPK):
     __tablename__ = "logi_stock"
-
-    item_ulid: Mapped[str] = ULIDFK("logi_item", index=True)
-    location_ulid: Mapped[str] = ULIDFK("logi_location", index=True)
+    item_ulid: Mapped[str] = ULIDFK("logi_item", nullable=False, index=True)
+    location_ulid: Mapped[str] = ULIDFK(
+        "logi_location", nullable=False, index=True
+    )
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     unit: Mapped[str] = mapped_column(String(16), nullable=False)
 
-    qty_on_hand: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
 
+class Issue(db.Model, ULIDPK):
+    __tablename__ = "logi_issue"
+    customer_ulid: Mapped[str] = mapped_column(
+        String(26), index=True, nullable=False
+    )
+    classification_key: Mapped[str | None] = mapped_column(
+        String(64), index=True
+    )
+    sku_code: Mapped[str | None] = mapped_column(String(64), index=True)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    issued_at: Mapped[str] = mapped_column(
+        String(30), nullable=False
+    )  # ISO UTC
+    project_ulid: Mapped[str | None] = mapped_column(String(26), index=True)
+    movement_ulid: Mapped[str | None] = ULIDFK("logi_movement", nullable=True)
+    created_by_actor: Mapped[str | None] = mapped_column(String(26))
+    created_at_utc: Mapped[str] = mapped_column(
+        String(30), default=now_iso8601_ms, nullable=False
+    )
+    decision_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     __table_args__ = (
-        UniqueConstraint(
-            "item_ulid", "location_ulid", name="uq_stock_item_location"
+        CheckConstraint("quantity>0", "ck_issue_pos_qty"),
+        Index("ix_issue_customer_issued_at", "customer_ulid", "issued_at"),
+        Index(
+            "ix_issue_customer_class_time",
+            "customer_ulid",
+            "classification_key",
+            "issued_at",
+        ),
+        Index(
+            "ix_issue_customer_sku_time",
+            "customer_ulid",
+            "sku_code",
+            "issued_at",
         ),
     )

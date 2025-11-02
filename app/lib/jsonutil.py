@@ -60,6 +60,21 @@ def stable_loads(s: str) -> Any:
     return json.loads(s)
 
 
+def loads_strict(s: str) -> Any:
+    # explicit “strict” name to pair with safe_loads
+    return json.loads(s)
+
+
+def is_valid_json(s: str | None) -> bool:
+    if s is None:
+        return False
+    try:
+        json.loads(s)
+        return True
+    except Exception:
+        return False
+
+
 # -----------------
 # Aliases used by canon ledger/services
 # (keep names stable)
@@ -189,3 +204,17 @@ def write_json_file(
     p.parent.mkdir(parents=True, exist_ok=True)
     txt = pretty_dumps(data) if pretty else stable_dumps(data)
     p.write_text(txt, encoding="utf-8")
+
+
+__all__ = [
+    "stable_dumps",
+    "pretty_dumps",
+    "dumps_compact",
+    "safe_loads",
+    "read_json_file",
+    "write_json_file",
+    "canonical_hash",
+    "json_merge_patch",
+    "loads_strict",
+    "is_valid_json",
+]

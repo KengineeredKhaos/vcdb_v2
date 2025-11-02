@@ -14,6 +14,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.sql.sqltypes import NullType
 from werkzeug.exceptions import HTTPException
 
+from app.cli import register_cli
 from app.lib.chrono import parse_iso8601, utcnow_aware
 from app.lib.logging import configure_logging
 
@@ -38,7 +39,8 @@ def _bind_contracts(app):
 # create the app framework and load object from config.py
 def create_app(config_object="config.DevConfig"):
     app = Flask(__name__, template_folder="templates")
-    app.config.from_object(config_object)
+    app.config["APP_MODE"] = os.getenv("APP_MODE", "development")
+    # prod|staging|development|test
 
     # --- DB defaults (must be before init_extensions) ---
     # Prefer explicit SQLALCHEMY_DATABASE_URI; otherwise derive from DATABASE,
@@ -92,6 +94,7 @@ def create_app(config_object="config.DevConfig"):
     from app.slices.auth import bp as auth_bp
     from app.slices.calendar import bp as calendar_bp
     from app.slices.customers import bp as customers_bp
+    from app.slices.devtools.routes import bp as devtools_bp
     from app.slices.entity import bp as entity_bp
     from app.slices.finance import bp as finance_bp
     from app.slices.governance import bp as governance_bp
@@ -112,6 +115,9 @@ def create_app(config_object="config.DevConfig"):
     app.register_blueprint(logistics_bp)
     app.register_blueprint(resources_bp)
     app.register_blueprint(sponsors_bp)
+
+    if app.config.get("APP_MODE") != "production":
+        app.register_blueprint(devtools_bp)
 
     # -------------
     # Globals Injection
@@ -264,7 +270,7 @@ def create_app(config_object="config.DevConfig"):
             app, limit=int(app.config.get("LEDGER_CHECK_LIMIT", 20))
         )
     """
-
+    register_cli(app)
     return app
 
 

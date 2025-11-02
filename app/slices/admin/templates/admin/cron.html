@@ -39,6 +39,28 @@
       {% endfor %}
     </tbody>
   </table>
+  <table class="table">
+  <tr><th>Job</th><th>Last Success</th><th>Last Error</th><th>Error Msg</th><th>Actions</th></tr>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.job_name }}</td>
+      <td>{{ r.last_success_utc or "—" }}</td>
+      <td>{{ r.last_error_utc or "—" }}</td>
+      <td style="max-width: 400px;">{{ r.last_error or "" }}</td>
+      <td>
+        <form method="post" action="{{ url_for('admin.cron_ack') }}" style="display:inline">
+          <input type="hidden" name="job_name" value="{{ r.job_name }}">
+          <button class="btn btn-sm btn-secondary">Acknowledge</button>
+        </form>
+        <form method="post" action="{{ url_for('admin.cron_run_now') }}" style="display:inline">
+          <input type="hidden" name="job_name" value="{{ r.job_name }}">
+          <button class="btn btn-sm btn-primary">Run Now</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </table>
+
 {% endif %}
 
 <p>

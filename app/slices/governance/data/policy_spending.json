@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "staff_cap_cents": 20000,
+  "class_caps": {
+    "basic_needs.clothing.top": { "cap_cents": 5000 }
+  },
+  "approvers": {
+    "level1": "Supervisor",
+    "level2": "Treasurer"
+  }
+}

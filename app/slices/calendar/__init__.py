@@ -11,4 +11,4 @@ bp = Blueprint(
     url_prefix="/calendar",
 )
 
-from . import models, routes  # noqa: E402, F401
+from . import models  # noqa: E402, F401

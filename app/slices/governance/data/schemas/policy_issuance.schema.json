@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VCDB Issuance Policy",
+  "type": "object",
+  "required": ["rules"],
+  "properties": {
+    "spending_staff_cap_cents": { "type": "integer", "minimum": 0 },
+    "default_behavior": {
+      "type": "string",
+      "enum": ["allow", "deny"],
+      "description": "Engine posture when no rule matches."
+    },
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "cadence": {
+          "type": "object",
+          "required": ["max_per_period", "period_days"],
+          "additionalProperties": false,
+          "properties": {
+            "max_per_period": { "type": "integer", "minimum": 1 },
+            "period_days": { "type": "integer", "minimum": 1 },
+            "label": { "type": "string" },
+            "scope": { "type": "string", "enum": ["classification","sku"], "default": "classification" }
+          },
+
+          "cadence_presets": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["max_per_period", "period_days"],
+              "additionalProperties": false,
+              "properties": {
+                "max_per_period": { "type": "integer", "minimum": 1 },
+                "period_days": { "type": "integer", "minimum": 1 },
+                "label": { "type": "string" },
+                "scope": { "type": "string", "enum": ["classification","sku"], "default": "classification" }
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["match"],
+        "properties": {
+          "match": {
+            "type": "object",
+            "properties": {
+              "classification_key": { "type": "string" },
+              "sku": { "type": "string", "description": "Exact SKU or glob-like with * segments, e.g., CG-SL-LC-*-*-H-*" },
+              "sku_parts": {
+                "type": "object",
+                "properties": {
+                  "category": { "type": "string" },
+                  "subcategory": { "type": "string" },
+                  "source": { "type": "string" },
+                  "size": { "type": "string" },
+                  "color": { "type": "string" },
+                  "issuance_class": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "qualifiers": {
+            "type": "object",
+            "properties": {
+              "veteran_required": { "type": "boolean" },
+              "homeless_required": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          },
+          "cadence": {
+            "type": "object",
+            "required": ["max_per_period", "period_days"],
+            "additionalProperties": false,
+            "properties": {
+              "max_per_period": { "type": "integer", "minimum": 1 },
+              "period_days": { "type": "integer", "minimum": 1 },
+              "label": { "type": "string" },
+              "scope": { "type": "string", "enum": ["classification","sku"], "default": "classification" }
+            }
+          },
+          "cadence_preset": { "type": "string", "enum": ["annual","semiannual","quarterly"] }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          { "if": { "required": ["cadence_preset"] },
+            "then": { "not": { "required": ["cadence"] } } }
+        ]
+      }
+    }
+  },
+  "additionalProperties": false
+}

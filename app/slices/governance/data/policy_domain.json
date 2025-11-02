@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "domain_roles": ["governor", "staff", "customer", "resource", "sponsor", "civilian"],
+  "assignment_rules": {
+    "rbac_can_assign": {
+      "admin":   ["governor", "staff", "customer", "resource", "sponsor", "civilian"],
+      "staff":   ["governor"],
+      "user":    ["customer", "resource", "sponsor", "civilian"],
+      "auditor": []
+    },
+    "must_include_when_rbac": {
+      "admin": ["governor"],
+      "staff": ["governor"]
+    },
+    "forbidden_pairs": [
+      ["civilian", "governor"]
+    ],
+    "domain_disallows_rbac": ["civilian"]
+  }
+}

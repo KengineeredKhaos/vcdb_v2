@@ -5,6 +5,7 @@
 # Purpose: Stable library primitive for VCDB.
 # Canon API: lib-core v1.0.0 (frozen)
 
+from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Optional
 
@@ -38,3 +39,40 @@ def set_actor_ulid(entity_ulid: Optional[str]) -> None:
 
 def get_actor_ulid() -> Optional[str]:
     return _actor_ulid.get()
+
+
+def reset_request_ctx() -> None:
+    _request_id.set("")
+    _actor_ulid.set(None)
+
+
+@contextmanager
+def use_request_ctx(request_id: str, actor_ulid: Optional[str] = None):
+    """Temporarily set request/actor context and restore on exit."""
+    prev_rid = _request_id.get()
+    prev_actor = _actor_ulid.get()
+    try:
+        set_request_id(request_id)
+        if actor_ulid is not None:
+            set_actor_ulid(actor_ulid)
+        yield
+    finally:
+        _request_id.set(prev_rid)
+        _actor_ulid.set(prev_actor)
+
+
+def as_dict() -> dict:
+    """Structured snapshot for logs/ledger emits."""
+    return {"request_id": get_request_id(), "actor_ulid": get_actor_ulid()}
+
+
+__all__ = [
+    "ensure_request_id",
+    "get_request_id",
+    "set_request_id",
+    "reset_request_ctx",
+    "get_actor_ulid",
+    "set_actor_ulid",
+    "use_request_ctx",
+    "as_dict",
+]
