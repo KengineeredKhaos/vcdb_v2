@@ -14,7 +14,11 @@ from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 from app.lib.jsonutil import pretty_dumps
 from app.slices.governance import services as gov  # decide_issue
-from app.slices.logistics.sku import parse_sku, validate_sku
+from app.slices.logistics.sku import (
+    classification_key_for,
+    parse_sku,
+    validate_sku,
+)
 
 from .models import (
     InventoryBatch,
@@ -26,8 +30,72 @@ from .models import (
 )
 from .sku import b36_to_int, int_to_b36
 
-ALLOWED_UNITS = {"each", "lbs", "kits", "boxes", "packs"}
+ALLOWED_UNITS = {"each", "lbs", "kit", "box", "pack"}
 ALLOWED_SOURCES = {"donation", "purchase", "transfer", "drmo"}
+
+
+# -----------------
+# _Ctx (canonical)
+# -----------------
+# Context/DTO utilities
+# used by enforcer &
+# policy orchestration
+# -----------------
+
+
+class _Ctx:
+    """
+    Minimal attribute carrier for enforcers/governance so callers don’t need
+    to import slice internals.
+    """
+
+    def __init__(
+        self,
+        *,
+        customer_ulid: str,
+        sku_code: Optional[str],
+        classification_key: Optional[str],
+        when_iso: str,
+        project_ulid: Optional[str],
+        sku_parts: Optional[dict] = None,
+        cost_cents: Optional[int] = None,
+    ):
+        self.customer_ulid = customer_ulid
+        self.sku_code = sku_code
+        self.classification_key = classification_key
+        self.when_iso = when_iso
+        self.project_ulid = project_ulid
+        self.sku_parts = sku_parts
+        self.cost_cents = cost_cents
+
+
+def issue_inventory(
+    customer_ulid: str,
+    sku_code: str,
+    *,
+    when_iso: str | None = None,
+    project_ulid: str | None = None,
+    quantity: int = 1,
+    actor_id: str | None = None,
+    location_ulid: str | None = None,
+    batch_ulid: str | None = None,
+) -> dict:
+    """
+    Canonical issuance surface.
+    Delegates to decide_and_issue_one and returns its dict:
+    {'ok', 'reason', 'movement_ulid'?, 'issue_ulid'?, 'decision': {...}, ...}
+    """
+    return decide_and_issue_one(
+        customer_ulid=customer_ulid,
+        sku_code=sku_code,
+        quantity=quantity,
+        when_iso=when_iso,
+        project_ulid=project_ulid,
+        actor_id=actor_id,
+        location_ulid=location_ulid,
+        batch_ulid=batch_ulid,
+    )
+
 
 # -----------------
 # Ensure Location Exists
@@ -248,7 +316,7 @@ def receive_inventory(
 # decrement stock,
 # insert Issue
 # ----------------------------
-def issue_inventory(
+def issue_inventory_lowlevel(
     *,
     batch_ulid: str,
     item_ulid: str,
@@ -336,34 +404,6 @@ class IssueResult:
 
 
 # -----------------
-# Context/DTO utilities
-# (used by enforcer/policy orchestration)
-# -----------------
-
-
-class _Ctx:
-    """
-    Minimal attribute carrier for enforcers/governance so callers don’t need
-    to import slice internals.
-    """
-
-    def __init__(
-        self,
-        *,
-        customer_ulid: str,
-        sku_code: Optional[str],
-        classification_key: Optional[str],
-        when_iso: str,
-        project_ulid: Optional[str],
-    ):
-        self.customer_ulid = customer_ulid
-        self.sku_code = sku_code
-        self.classification_key = classification_key
-        self.when_iso = when_iso
-        self.project_ulid = project_ulid
-
-
-# -----------------
 # Attach Decision Trace
 # Issue.decision_json
 # (issue decision text)
@@ -409,7 +449,7 @@ def decide_and_issue_one(
       - Calendar blackout (fast gate)
       - Policy decision (Governance)
       - Resolve item/batch
-      - Call low-level issue_inventory(...)
+      - Call low-level issue_inventory_lowlevel(...)
       - Persist decision_json on Issue
     Returns {movement_ulid, decision, ok, reason}
     """
@@ -417,24 +457,23 @@ def decide_and_issue_one(
 
     # derive classification key from SKU once
     parts = parse_sku(sku_code)
-    classification_key = f"{parts['cat']}-{parts['sub']}"
+    classification_key = classification_key_for(parts)
 
     # 1) Enforcer: calendar blackout quick gate
-    # (ckey not used here, but harmless to include)
-    ok, meta = enforcers.calendar_blackout_ok(
-        type(
-            "Ctx",
-            (),
-            {
-                "customer_ulid": customer_ulid,
-                "sku_code": sku_code,
-                "classification_key": classification_key,  # can be None
-                "sku_parts": parse_sku(sku_code),  # <-- add this
-                "when_iso": as_of,
-                "project_ulid": project_ulid,
-            },
-        )
+    # enforcer ctx
+    enforcer_ctx = type(
+        "Ctx",
+        (),
+        {
+            "customer_ulid": customer_ulid,
+            "sku_code": sku_code,
+            "classification_key": classification_key,
+            "sku_parts": parts,
+            "when_iso": as_of,
+            "project_ulid": project_ulid,
+        },
     )
+    ok, meta = enforcers.calendar_blackout_ok(enforcer_ctx)
     if not ok:
         return {
             "ok": False,
@@ -442,21 +481,20 @@ def decide_and_issue_one(
             "decision": {"enforcer": meta},
         }
 
-    # 2) Governance decision (policy_issuance.json)
-    dec = gov.decide_issue(
-        type(
-            "Ctx",
-            (),
-            {
-                "customer_ulid": customer_ulid,
-                "sku_code": sku_code,
-                "classification_key": classification_key,  # can be None
-                "sku_parts": parse_sku(sku_code),  # <-- add this
-                "when_iso": as_of,
-                "project_ulid": project_ulid,
-            },
-        )
+    # governance ctx
+    gov_ctx = type(
+        "Ctx",
+        (),
+        {
+            "customer_ulid": customer_ulid,
+            "sku_code": sku_code,
+            "classification_key": classification_key,
+            "sku_parts": parts,  # ✅ pass parts into governance
+            "when_iso": as_of,
+            "project_ulid": project_ulid,
+        },
     )
+    dec = gov.decide_issue(gov_ctx)
 
     decision = {
         # Governance returns IssueDecision(allowed=...), not ".ok"
@@ -498,7 +536,7 @@ def decide_and_issue_one(
             }
 
     # 4) Low-level issuance
-    mv_ulid = issue_inventory(
+    mv_ulid = issue_inventory_lowlevel(
         batch_ulid=b_ulid,
         item_ulid=it_ulid,
         quantity=quantity,
@@ -571,23 +609,21 @@ def issue_inventory_policy(
     """
     as_of = when_iso or now_iso8601_ms()
 
-    # 1) SKU parse/validate (optional flow supports classification-only issues)
     classification_key: Optional[str] = None
+    parts: Optional[dict] = None
     if sku_code:
         if not validate_sku(sku_code):
             return IssueResult(ok=False, reason="invalid_sku")
         parts = parse_sku(sku_code)
-        classification_key = f"{parts['cat']}-{parts['sub']}"
-    else:
-        parts = None
+        classification_key = classification_key_for(parts)
 
     ctx = _Ctx(
         customer_ulid=customer_ulid,
         sku_code=sku_code,
         classification_key=classification_key,
-        sku_parts=sku_parts,
         when_iso=as_of,
         project_ulid=project_ulid,
+        sku_parts=parts,
     )
 
     # 2) Calendar blackout
@@ -599,10 +635,10 @@ def issue_inventory_policy(
             decision={"enforcer": meta},
         )
 
-    # 3) Policy decision
+    # 3) Policy decision (Governance)
     dec = gov.decide_issue(ctx)
     decision_dict = {
-        "ok": bool(getattr(dec, "ok", False)),
+        "ok": bool(getattr(dec, "allowed", getattr(dec, "ok", False))),
         "reason": getattr(dec, "reason", None),
         "approver_required": getattr(dec, "approver_required", None),
         "limit_window_label": getattr(dec, "limit_window_label", None),
@@ -615,7 +651,7 @@ def issue_inventory_policy(
             decision=decision_dict,
         )
 
-    # 4) Persist Issue row (policy-only path; no movement/stock)
+    # 4) Persist Issue row (policy-only; no movement/stock)
     row = Issue(
         customer_ulid=customer_ulid,
         classification_key=classification_key,
@@ -631,7 +667,6 @@ def issue_inventory_policy(
     db.session.add(row)
     db.session.commit()
 
-    # 5) Caller can emit ledger via event_bus if desired
     return IssueResult(
         ok=True,
         reason="ok",

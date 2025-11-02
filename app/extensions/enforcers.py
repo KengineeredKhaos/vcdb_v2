@@ -2,9 +2,42 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Iterable, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
+from app.extensions.policies import load_policy_calendar
+from app.lib.chrono import now_iso8601_ms
 from app.lib.errors import PolicyError
+from app.lib.jsonutil import safe_loads
+
+
+def calendar_blackout_ok(ctx):
+    """
+    Gate: calendar blackout
+      Returns (ok: bool, meta: dict)
+      meta.reason in {"ok","calendar_blackout","calendar_unavailable"}
+      meta.label optional window label
+    """
+    # dev tripwire
+    if getattr(ctx, "force_blackout", False):
+        return False, {"reason": "calendar_blackout", "label": "dev-forced"}
+
+    # load policy (gracefully allow if unavailable)
+    try:
+        pol = load_policy_calendar() or {}
+    except Exception:
+        return True, {"reason": "calendar_unavailable"}
+
+    when_iso = getattr(ctx, "when_iso", None) or now_iso8601_ms()
+
+    # expect windows like [{"start":"...Z","end":"...Z","label":"..."}]
+    for w in pol.get("windows", []):
+        start, end = w.get("start"), w.get("end")
+        if start and end and (start <= when_iso <= end):
+            return False, {
+                "reason": "calendar_blackout",
+                "label": w.get("label"),
+            }
+    return True, {"reason": "ok"}
 
 
 class _Enforcers:
@@ -50,63 +83,8 @@ class _Enforcers:
 
 
 enforcers = _Enforcers()
-
-
-# -----------------
-# Calendar
-# blackout check
-# -----------------
-import importlib
-
-
-@enforcers.register("calendar_blackout_ok")
-def calendar_blackout_ok(ctx) -> Tuple[bool, Dict[str, Any]]:
-    """
-    Gate: calendar blackout
-      - If contract is unavailable: allow (soft) with reason="calendar_unavailable"
-      - If contract says blackout (True or (True, label)): deny with reason="calendar_blackout" and optional window
-      - If contract says no blackout (False): allow with reason="ok"
-    """
-    when_iso = getattr(ctx, "when_iso", None)
-    project_ulid = getattr(ctx, "project_ulid", None)
-
-    # Try to load the contract and function
-    try:
-        from app.extensions.contracts import calendar_v2  # type: ignore
-
-        is_blackout = getattr(calendar_v2, "is_blackout", None)
-    except Exception:
-        is_blackout = None
-
-    # Contract missing/unavailable -> soft-allow
-    if not callable(is_blackout):
-        return True, {"reason": "calendar_unavailable"}
-
-    # Ask the contract
-    try:
-        result = is_blackout(when_iso, project_ulid)
-    except Exception:
-        # Defensive: treat errors as deny with a clear reason
-        return False, {"reason": "calendar_error"}
-
-    # Normalize results
-    if result is False:
-        return True, {"reason": "ok"}
-
-    if result is True:
-        return False, {"reason": "calendar_blackout"}
-
-    if isinstance(result, tuple) and result and result[0] is True:
-        label = result[1] if len(result) > 1 else None
-        meta = {"reason": "calendar_blackout"}
-        if label:
-            meta["window"] = label
-        return False, meta
-
-    # Anything else: treat as allow
-    return True, {"reason": "ok"}
-
+enforcers.register("calendar_blackout_ok", calendar_blackout_ok)
 
 """Lightweight named hook registry for policy/runtime checks."""
 
-__all__ = ["enforcers", "_Enforcers"]
+__all__ = ["enforcers", "_Enforcers", "calendar_blackout_ok"]

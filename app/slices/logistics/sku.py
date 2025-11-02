@@ -191,6 +191,24 @@ def parse_sku(sku: str) -> Dict[str, str]:
     return m.groupdict()
 
 
+def classification_key_for(x, sep: str = "/") -> str:
+    """
+    Return the short classification key for a SKU (e.g., 'FW/HT').
+
+    Accepts either:
+      - a full SKU string like 'FW-HT-LC-NA-BK-U-00C', or
+      - a parsed parts dict from parse_sku(...) with keys 'cat' and 'sub'.
+
+    `sep` defaults to '/' so the key is 'CAT/SUB'. Change to '-' if you
+    need 'CAT-SUB' for a particular consumer.
+    """
+    if isinstance(x, str):
+        parts = parse_sku(x)
+    else:
+        parts = x
+    return f"{parts['cat']}{sep}{parts['sub']}"
+
+
 BASE36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
@@ -224,3 +242,6 @@ def family_key(p: Dict[str, str]) -> Tuple[str, ...]:
         p["col"],
         p["issuance_class"],
     )
+
+
+__all__ = ["classification_key_for", "parse_sku", "validate_sku"]

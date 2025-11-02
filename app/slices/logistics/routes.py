@@ -77,20 +77,32 @@ def receive():
 def issue():
     try:
         p = request.get_json(force=True)
-        mid = svc.issue_inventory(
-            batch_ulid=p["batch_ulid"],
-            item_ulid=p["item_ulid"],
-            quantity=p["quantity"],
-            unit=p["unit"],
-            location_ulid=p["location_ulid"],
-            happened_at_utc=p["happened_at_utc"],
-            target_ref_ulid=p.get("target_ref_ulid"),
-            note=p.get("note"),
-            actor_ulid=get_actor_ulid(),
+        res = svc.issue_inventory(
+            customer_ulid=customer_ulid,
+            sku_code=sku_code,
+            when_iso=when_iso,
+            project_ulid=project_ulid,
+            quantity=qty,
+            actor_id=actor_id,
+            location_ulid=location_ulid,
+            batch_ulid=batch_ulid,
         )
-        return _ok({"movement_ulid": mid})
-    except Exception as e:
-        return _err(e)
+        if not res.get("ok"):
+            # choose your web stack’s error style:
+            reason = res.get("reason") or "denied"
+            # Flask example:
+            return {"ok": False, "reason": reason, "decision": res.get("decision")}, 400
+
+        movement_ulid = res.get("movement_ulid")
+        issue_ulid = res.get("issue_ulid")
+
+        return {
+            "ok": True,
+            "movement_ulid": movement_ulid,
+            "issue_ulid": issue_ulid,
+            "decision": res.get("decision"),
+        }, 200
+
 
 
 @bp.post("/transfer")

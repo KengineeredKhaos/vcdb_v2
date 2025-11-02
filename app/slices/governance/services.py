@@ -51,6 +51,20 @@ class PolicyValidationError(ValueError):
     pass
 
 
+@dataclass
+class IssueDecision:
+    allowed: bool
+    reason: Optional[str] = None
+    approver_required: Optional[str] = None
+    limit_window_label: Optional[str] = None
+    next_eligible_at_iso: Optional[str] = None
+
+    # ✅ compatibility alias for older callers
+    @property
+    def ok(self) -> bool:
+        return self.allowed
+
+
 def _iso(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(
         timezone.utc

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vcdb.example.org/schemas/policy_funding.schema.json",
+  "title": "VCDB Funding Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "projects": {
+      "type": "object",
+      "description": "Project ULID → allow-list of classification patterns",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "allow_classifications": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["allow_classifications"]
+      }
+    },
+    "sponsors": {
+      "type": "object",
+      "description": "Sponsor ULID → deny-list of classification patterns",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "deny_classifications": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["deny_classifications"]
+      }
+    }
+  },
+  "required": ["version"]
+}

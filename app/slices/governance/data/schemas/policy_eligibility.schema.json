@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vcdb.example.org/schemas/policy_eligibility.schema.json",
+  "title": "VCDB Eligibility Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "map": {
+      "type": "object",
+      "description": "Policy-to-snapshot field mapping (string pointers)",
+      "additionalProperties": { "type": "string" }
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tier1_min": { "type": "integer", "minimum": 0 },
+        "tier2_min": { "type": "integer", "minimum": 0 },
+        "tier3_min": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "required": ["version", "map", "defaults"]
+}

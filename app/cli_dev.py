@@ -6,12 +6,14 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 import click
 
 # Optional: read APP_MODE so we can gate dangerous actions
 from flask import current_app
 from flask.cli import with_appcontext
+from sqlalchemy import select
 
 
 def register_cli(app):
@@ -36,6 +38,56 @@ except Exception:  # still useful even if semantics module not present yet
 def dev_group():
     """Developer / Ops helpers (policy health, wiring checks, seed shims)."""
     ...
+
+
+# -----------------
+# Generic Helpers
+# for dev_group
+# commands
+# -----------------
+
+
+def _print_json_error(e: Exception, fname: str) -> None:
+    """
+    Pretty-print JSON Schema validation errors with the instance path and schema path.
+    """
+    import click
+
+    try:
+        import jsonschema
+    except Exception:  # pragma: no cover
+        click.secho(f"ERR  — {fname}: {e!r}", fg="red")
+        return
+
+    if isinstance(e, jsonschema.ValidationError):
+        # JSON Pointer-ish path to the offending location in the instance
+        instance_path = (
+            "/" + "/".join(str(p) for p in e.absolute_path)
+            if e.absolute_path
+            else "$"
+        )
+        schema_path = (
+            "/" + "/".join(str(p) for p in e.absolute_schema_path)
+            if e.absolute_schema_path
+            else "$"
+        )
+
+        click.secho(f"FAIL — {fname}", fg="red")
+        click.echo(f"  at     : {instance_path}")
+        click.echo(f"  error  : {e.message}")
+        click.echo(f"  schema : {schema_path}")
+        # Show a tiny bit of context if available
+        if e.context:
+            click.echo("  details:")
+            for sub in e.context[:3]:
+                click.echo(f"    - {sub.message}")
+    else:
+        click.secho(f"ERR  — {fname}: {e!r}", fg="red")
+
+
+# -----------------
+# SKU Validation
+# -----------------
 
 
 @dev_group.command("validate-skus")
@@ -92,6 +144,11 @@ def dev_validate_skus(limit: int):
     if len(bad) > 50:
         click.echo(f"...and {len(bad) - 50} more")
     raise SystemExit(1)
+
+
+# -----------------
+# Policy Checks
+# -----------------
 
 
 @dev_group.command("policy-health")
@@ -166,6 +223,175 @@ def dev_policy_health(as_json: bool):
             )
     else:
         click.echo("  (no rules loaded)")
+
+
+# -----------------
+# Policy Linting
+# check for
+# Fat Finger errors
+# -----------------
+
+
+@dev_group.command("policy-lint")
+@with_appcontext
+@click.option(
+    "--which",
+    type=click.Choice(["issuance", "eligibility", "calendar", "all"]),
+    default="all",
+    show_default=True,
+)
+@click.option(
+    "--fix",
+    is_flag=True,
+    help="Rewrite file with canonical formatting (sorted keys, 2-space indent)",
+)
+@click.option(
+    "--base",
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+    help="Override the policies base directory (folder that contains the *.json policy files)",
+)
+@click.option(
+    "--schema-base",
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+    help="Override the schema base directory (folder that contains the *.schema.json files)",
+)
+@click.option("--print-paths", is_flag=True, help="Print resolved file paths")
+def dev_policy_lint(
+    which, fix, base: Path | None, schema_base: Path | None, print_paths: bool
+):
+    """
+    Validate governance policy JSON files against their schemas.
+    On --fix, pretty-print and sort keys so diffs stay clean.
+    """
+    import json
+
+    from flask import current_app
+    from jsonschema import Draft202012Validator
+
+    from app.extensions.validate import load_json, load_json_schema
+
+    # -------- resolve bases --------
+    app_root = Path(current_app.root_path)
+    policy_bases = (
+        [base]
+        if base
+        else [
+            app_root / "slices" / "governance" / "data",
+            app_root / "slices" / "governance",  # fallback
+            app_root / "slices" / "governance" / "policies",  # fallback
+        ]
+    )
+    resolved_base = next((p for p in policy_bases if p and p.exists()), None)
+    if not resolved_base:
+        click.secho(
+            "ERROR: could not find a policies base directory.", fg="red"
+        )
+        for p in policy_bases:
+            click.echo(f"  tried: {p}")
+        raise SystemExit(1)
+
+    if not schema_base:
+        # prefer <base>/schema, else try <base>, else <governance>/data/schema
+        candidates = [
+            resolved_base / "schema",
+            resolved_base,
+            app_root / "slices" / "governance" / "data" / "schema",
+        ]
+        schema_base = next(
+            (p for p in candidates if p.exists()), resolved_base
+        )
+
+    click.secho(f"[policy-lint] base={resolved_base}", fg="cyan")
+    click.secho(f"[policy-lint] schema_base={schema_base}", fg="cyan")
+
+    targets = {
+        "issuance": (
+            "policy_issuance.json",
+            "policy_issuance.schema.json",
+        ),
+        "eligibility": (
+            "policy_eligibility.json",
+            "policy_eligibility.schema.json",
+        ),
+        "calendar": (
+            "policy_calendar.json",
+            "policy_calendar.schema.json",
+        ),
+        "classification": (
+            "policy_classification.json",
+            "policy_classification.schema.json",
+        ),
+        "funding": (
+            "policy_funding.json",
+            "policy_funding.schema.json",
+        ),
+        "spending": (
+            "policy_spending.json",
+            "policy_spending.schema.json",
+        ),
+        "state_machine": (
+            "policy_state_machine.json",
+            "policy_state_machine.schema.json",
+        ),
+    }
+
+    todo = targets.items() if which == "all" else [(which, targets[which])]
+
+    def _find_schema(sname: str) -> Path | None:
+        # Try schema_base/sname, then resolved_base/sname, then recursive glob
+        direct = schema_base / sname
+        if direct.exists():
+            return direct
+        alt = resolved_base / sname
+        if alt.exists():
+            return alt
+        # final fallback: glob anywhere under schema_base or resolved_base
+        for root in [schema_base, resolved_base]:
+            hits = list(root.rglob(sname))
+            if hits:
+                return hits[0]
+        return None
+
+    had_error = False
+    for name, (fname, sname) in todo:
+        fpath = resolved_base / fname
+        spath = _find_schema(sname)
+
+        if print_paths:
+            click.echo(f"{name:11s} json   : {fpath}")
+            click.echo(
+                f"{'':11s} schema : {spath if spath else '(not found)'}"
+            )
+
+        missing = []
+        if not fpath.exists():
+            missing.append(str(fpath))
+        if not spath or not spath.exists():
+            missing.append(str(schema_base / sname))
+
+        if missing:
+            had_error = True
+            click.secho(f"FAIL — {name} files not found:", fg="red")
+            for m in missing:
+                click.echo(f"  - {m}")
+            continue
+
+        try:
+            payload = load_json(fpath)
+            schema = load_json_schema(spath)
+            Draft202012Validator(schema).validate(payload)
+            click.secho(f"OK — {name} valid: {fname}", fg="green")
+            if fix:
+                text = json.dumps(
+                    payload, indent=2, sort_keys=True, ensure_ascii=False
+                )
+                fpath.write_text(text + "\n", encoding="utf-8")
+        except Exception as e:
+            had_error = True
+            _print_json_error(e, fname)
+
+    if had_error:
+        raise SystemExit(1)
 
 
 # -----------------
@@ -273,69 +499,6 @@ def dev_issuance_debug(sku_code: str):
     print("decision =", dec)
 
 
-@dev_group.command("eligible")
-@with_appcontext
-@click.argument("customer_ulid")
-@click.option(
-    "--when",
-    "when_iso",
-    default=None,
-    help="ISO-8601 time (UTC). Defaults to now.",
-)
-@click.option(
-    "--json",
-    "as_json",
-    is_flag=True,
-    help="Emit a JSON object instead of text.",
-)
-@click.option(
-    "--limit", type=int, default=0, help="Limit number of SKUs shown."
-)
-def dev_eligible(
-    customer_ulid: str, when_iso: str | None, as_json: bool, limit: int
-):
-    """
-    Show the SKU codes currently eligible for a customer at a moment in time.
-    Uses Logistics → available_skus_for_customer(...) under the hood.
-    """
-    from app.lib.chrono import now_iso8601_ms
-    from app.slices.logistics.services import available_skus_for_customer
-
-    when = when_iso or now_iso8601_ms()
-
-    try:
-        skus = available_skus_for_customer(customer_ulid, when)
-    except Exception as e:
-        click.echo(f"ERROR: {e}", err=True)
-        raise SystemExit(1)
-
-    total = len(skus)
-    if limit and total > limit:
-        skus = skus[:limit]
-
-    if as_json:
-        payload = {
-            "customer_ulid": customer_ulid,
-            "as_of": when,
-            "count": total if not limit else len(skus),
-            "skus": skus,
-            "truncated": bool(limit and total > limit),
-        }
-        click.echo(json.dumps(payload, indent=2))
-        return
-
-    # human-friendly text
-    header = f"Eligible as of {when} (UTC) — {total} SKU(s)"
-    if limit and total > limit:
-        header += f" (showing first {limit})"
-    click.echo(header)
-    if not skus:
-        click.echo("(none)")
-        return
-    for code in skus:
-        click.echo(f" - {code}")
-
-
 # -----------------
 # hit all the
 # policy tripwires
@@ -390,6 +553,7 @@ def dev_issuance_tripwires(
     from app.slices.logistics.services import (
         ensure_item,
         ensure_location,
+        issue_inventory,
         receive_inventory,
     )
     from app.slices.logistics.sku import parse_sku, validate_sku
@@ -664,7 +828,7 @@ def dev_issuance_tripwires(
         if ok_allowed and loc_ulid:
             from app.slices.logistics.services import decide_and_issue_one
 
-            res = decide_and_issue_one(
+            res = issue_inventory(
                 customer_ulid=customer_ulid,
                 sku_code=sku_code,
                 quantity=1,
@@ -702,149 +866,79 @@ def dev_issuance_tripwires(
         )
 
 
-@dev_group.command("eligible-explain")
+# -----------------
+# decide-issue test
+# decision logic
+# tripwire triggers
+# USAGE:
+# flask dev decide-issue AC-GL-LC-L-LB-U-00B
+# flask dev decide-issue AC-GL-LC-L-LB-U-00B --force-blackout
+# -----------------
+
+
+@dev_group.command("decide-issue")
+@click.argument("sku_code")
+@click.option(
+    "--customer", "customer_ulid", default="TEST-CUST", show_default=True
+)
+@click.option(
+    "--when", "when_iso", default=None, help="ISO-8601 (default: now UTC)"
+)
+@click.option("--project-ulid", default=None)
+@click.option(
+    "--force-blackout", is_flag=True, help="Trip the blackout enforcer"
+)
 @with_appcontext
-@click.argument("customer_ulid")
-@click.option(
-    "--when", "when_iso", default=None, help="ISO-8601 UTC (defaults to now)."
-)
-@click.option(
-    "--match-class",
-    "match_class",
-    default=None,
-    help="Only test items where InventoryItem.category == this.",
-)
-@click.option(
-    "--limit",
-    type=int,
-    default=0,
-    help="Cap number of SKUs shown (after filtering).",
-)
-@click.option(
-    "--json", "as_json", is_flag=True, help="Emit JSON instead of text."
-)
-def dev_eligible_explain(
-    customer_ulid: str,
-    when_iso: str | None,
-    match_class: str | None,
-    limit: int,
-    as_json: bool,
+def dev_decide_issue(
+    sku_code, customer_ulid, when_iso, project_ulid, force_blackout
 ):
-    """Explain WHY each SKU is allowed or denied for a customer at a moment in time."""
-    import json as _json
+    """
+    Evaluate issuance policy for a SKU against a
+    (test) customer without writing.
+    """
+    from types import SimpleNamespace as NS
 
-    from sqlalchemy import select
-
-    from app.extensions import db
-    from app.extensions.contracts import governance_v2 as govc
     from app.lib.chrono import now_iso8601_ms
     from app.slices.governance.services import decide_issue
-    from app.slices.logistics.models import InventoryItem
-
-    when = when_iso or now_iso8601_ms()
-
-    q = select(InventoryItem.sku, InventoryItem.category)
-    if match_class:
-        q = q.where(InventoryItem.category == match_class)
-    rows = db.session.execute(q).all()
-
-    results = []
-    for sku, category in rows:
-        ctx = govc.RestrictionContext(
-            customer_ulid=customer_ulid,
-            sku_code=sku,
-            classification_key=category,
-            as_of_iso=when,
-            project_ulid=None,
-            cost_cents=None,
-        )
-        d = decide_issue(ctx)
-        results.append(
-            {
-                "sku": sku,
-                "classification": category,
-                "ok": bool(getattr(d, "ok", False)),
-                "reason": getattr(d, "reason", None),
-                "approver": getattr(d, "approver_required", None),
-                "window": getattr(d, "limit_window_label", None),
-                "next_eligible_at": getattr(d, "next_eligible_at_iso", None),
-            }
-        )
-
-    shown = results[:limit] if (limit and len(results) > limit) else results
-
-    if as_json:
-        out = {
-            "customer_ulid": customer_ulid,
-            "as_of": when,
-            "count": len(results),
-            "shown": len(shown),
-            "items": shown,
-        }
-        click.echo(_json.dumps(out, indent=2))
-        return
-
-    click.echo(
-        f"Eligibility explain — as of {when} (UTC)  |  tested={len(results)}"
-        + (
-            f"  showing={len(shown)} (limit {limit})"
-            if (limit and len(results) > limit)
-            else ""
-        )
+    from app.slices.logistics.sku import (
+        classification_key_for,
+        parse_sku,
+        validate_sku,
     )
 
-    if not shown:
-        click.echo("(no items found to evaluate)")
-        return
-
-    w_sku = max(3, *(len(r["sku"]) for r in shown))
-    w_cls = max(5, *(len(r["classification"] or "") for r in shown))
-    w_rs = max(
-        6,
-        *(
-            len(
-                r["reason"]
-                if r["reason"]
-                else ("allow" if r["ok"] else "denied")
-            )
-            for r in shown
-        ),
+    parts = parse_sku(sku_code)
+    ctx = NS(
+        customer_ulid=customer_ulid,
+        sku_code=sku_code,
+        sku_parts=parts,
+        classification_key=classification_key_for(parts),
+        when_iso=when_iso or now_iso8601_ms(),
+        project_ulid=project_ulid,
+        force_blackout=bool(force_blackout),
     )
 
-    w_win = max(6, *(len(r["window"] or "") for r in shown))
+    dec = decide_issue(ctx)
+    click.echo(f"allowed={dec.allowed} reason={dec.reason}")
+    # pretty JSON dump for debugging
+    import json
 
-    hdr = f"{'SKU':{w_sku}}  {'CLASS':{w_cls}}  {'ALLOW':5}  {'REASON':{w_rs}}  {'WINDOW':{w_win}}  APPROVER  NEXT"
-    sep = "-" * len(hdr)
-    click.echo(hdr)
-    click.echo(sep)
-    for r in shown:
-        allow = "yes" if r["ok"] else "no"
-        reason = (
-            r["reason"] if r["reason"] else ("allow" if r["ok"] else "denied")
-        )
-        window = r["window"] or ""
-        appr = r["approver"] or ""
-        nxt = r["next_eligible_at"] or ""
-        click.echo(
-            f"{r['sku']:{w_sku}}  {r['classification']:{w_cls}}  {allow:5}  {reason:{w_rs}}  {window:{w_win}}  {appr:8}  {nxt}"
-        )
-
-    total_allow = sum(1 for r in results if r["ok"])
-    total_deny = len(results) - total_allow
-    by_reason: dict[str, int] = {}
-    for r in results:
-        key = (
-            r["reason"] if r["reason"] else ("allow" if r["ok"] else "denied")
-        )
-        by_reason[key] = by_reason.get(key, 0) + 1
-    click.echo(sep)
-    click.echo(
-        f"Totals: allow={total_allow}  deny={total_deny}  (tested={len(results)})"
-    )
-    click.echo(
-        "By reason: "
-        + ", ".join(f"{k}={v}" for k, v in sorted(by_reason.items()))
-    )
+    payload = {
+        "allowed": dec.allowed,
+        "reason": dec.reason,
+        "approver_required": getattr(dec, "approver_required", None),
+        "limit_window_label": getattr(dec, "limit_window_label", None),
+        "next_eligible_at_iso": getattr(dec, "next_eligible_at_iso", None),
+        "ctx": {
+            "customer_ulid": ctx.customer_ulid,
+            "sku_code": ctx.sku_code,
+            "sku_parts": ctx.sku_parts,
+            "classification_key": ctx.classification_key,
+            "when_iso": ctx.when_iso,
+            "project_ulid": ctx.project_ulid,
+            "force_blackout": ctx.force_blackout,
+        },
+    }
+    click.echo(json.dumps(payload, indent=2))
 
 
 @dev_group.command("whoami")
@@ -856,670 +950,9 @@ def dev_whoami():
     click.echo(f"DB_URI={cfg.get('SQLALCHEMY_DATABASE_URI','?')}")
 
 
-@dev_group.command("backfill-issues")
-@with_appcontext
-@click.option("--limit", default=10000, help="Max movements to process")
-def dev_backfill_issues(limit: int):
-    """Create Issue rows from logi_movement(kind='issue') where target_ref_ulid is a Customer ULID."""
-    from sqlalchemy import select
-
-    from app.extensions import db
-    from app.slices.logistics.models import (
-        InventoryItem,
-        InventoryMovement,
-        Issue,
-    )
-
-    mvts = (
-        db.session.query(InventoryMovement)
-        .filter(InventoryMovement.kind == "issue")
-        .filter(InventoryMovement.target_ref_ulid.isnot(None))
-        .order_by(InventoryMovement.happened_at_utc.asc())
-        .limit(limit)
-        .all()
-    )
-
-    seen = 0
-    for m in mvts:
-        # Skip if an Issue already points to this movement
-        exists = db.session.execute(
-            select(Issue.ulid).where(Issue.movement_ulid == m.ulid)
-        ).scalar_one_or_none()
-        if exists:
-            continue
-
-        item = db.session.get(InventoryItem, m.item_ulid)
-        issue = Issue(
-            customer_ulid=m.target_ref_ulid,
-            classification_key=item.category if item else None,
-            sku_code=item.sku if item else None,
-            quantity=m.quantity,
-            issued_at=m.happened_at_utc,
-            project_ulid=None,
-            movement_ulid=m.ulid,
-            created_by_actor=m.created_by_actor,
-        )
-        db.session.add(issue)
-        seen += 1
-
-    db.session.commit()
-    click.echo(f"Backfilled {seen} Issue rows.")
-
-
-@dev_group.command("seed-logistics-min")
-@with_appcontext
-@click.option("--customer", required=True)
-@click.option("--class-key", "class_key", default="welcome_home.kit")
-@click.option("--qty", default=1, type=int)
-@click.option("--sku", default=None)
-@click.option("--sku-cat", "sku_cat", default=None)
-@click.option("--sku-sub", "sku_sub", default=None)
-@click.option("--sku-src", "sku_src", default=None)
-@click.option("--sku-size", "sku_size", default=None)
-@click.option("--sku-col", "sku_col", default=None)
-@click.option("--sku-qual", "sku_qual", default=None)
-def seed_logistics_min(
-    customer,
-    class_key,
-    qty,
-    sku,
-    sku_cat,
-    sku_sub,
-    sku_src,
-    sku_size,
-    sku_col,
-    sku_qual,
-):
-    from app.lib.chrono import now_iso8601_ms
-    from app.slices.logistics import services as logi
-
-    sku_parts = None
-    if not sku and all(
-        [sku_cat, sku_sub, sku_src, sku_size, sku_col, sku_qual]
-    ):
-        sku_parts = dict(
-            cat=sku_cat.upper(),
-            sub=sku_sub.upper(),
-            src=sku_src.upper(),
-            size=sku_size.upper(),
-            col=sku_col.upper(),
-            issuance_class=sku_qual.upper(),
-        )
-    item_ulid = logi.ensure_item(
-        category=class_key,
-        name="Seed Item",
-        unit="each",
-        condition="mixed",
-        sku=sku,
-        sku_parts=sku_parts,
-    )
-    loc_ulid = logi.ensure_location(code="MAIN", name="Main Warehouse")
-    now = now_iso8601_ms()
-    recv = logi.receive_inventory(
-        item_ulid=item_ulid,
-        quantity=max(5, qty),
-        unit="each",
-        source="donation",
-        received_at_utc=now,
-        location_ulid=loc_ulid,
-        note="seed",
-        actor_id=None,
-        source_entity_ulid=None,
-    )
-    logi.issue_inventory(
-        batch_ulid=recv["batch_ulid"],
-        item_ulid=item_ulid,
-        quantity=qty,
-        unit="each",
-        location_ulid=loc_ulid,
-        happened_at_utc=now_iso8601_ms(),
-        target_ref_ulid=customer,
-        note="seed-issue",
-        actor_id=None,
-    )
-    click.echo("Seeded and issued.")
-
-
-@dev_group.command("list-catalog-classes")
-@with_appcontext
-def dev_list_catalog_classes():
-    """Print distinct InventoryItem.category values
-    (what Governance rules must cover)."""
-    from sqlalchemy import distinct, select
-
-    from app.extensions import db
-    from app.slices.logistics.models import InventoryItem
-
-    rows = db.session.execute(select(distinct(InventoryItem.category))).all()
-    cats = sorted(c[0] for c in rows if c and c[0])
-    click.echo("Catalog classes:")
-    if not cats:
-        click.echo("  (none)")
-        return
-    for c in cats:
-        click.echo(f"  - {c}")
-
-
-@dev_group.command("issuance-coverage")
-@with_appcontext
-def dev_issuance_coverage():
-    """
-    For each issuance rule, count how many catalog items it would match
-    by classification_key.
-    Also list any catalog classes with no matching rule.
-    """
-    import json as _json
-
-    from sqlalchemy import distinct, select
-
-    from app.extensions import db
-    from app.extensions.policies import load_policy_issuance
-    from app.slices.logistics.models import InventoryItem
-
-    pol = load_policy_issuance()
-    rules = pol.get("rules") or []
-
-    cats = [
-        c[0]
-        for c in db.session.execute(
-            select(distinct(InventoryItem.category))
-        ).all()
-        if c and c[0]
-    ]
-    cats_set = set(cats)
-
-    def rule_key(r):
-        return (r.get("match") or {}).get("classification_key")
-
-    counts = []
-    covered = set()
-    for idx, r in enumerate(rules, start=1):
-        m = rule_key(r)
-        if not m:
-            counts.append(
-                {"rule_index": idx, "classification_key": None, "matches": 0}
-            )
-            continue
-        n = sum(1 for c in cats if c == m)
-        if n:
-            covered.add(m)
-        counts.append(
-            {"rule_index": idx, "classification_key": m, "matches": n}
-        )
-
-    uncovered = sorted(c for c in cats_set - covered)
-    click.echo(
-        _json.dumps(
-            {"counts": counts, "uncovered_classes": uncovered}, indent=2
-        )
-    )
-
-
-@dev_group.command("issuance-template-for-skus")
-@with_appcontext
-@click.option(
-    "--sku-like", required=True, help="fnmatch pattern, e.g. CG-SL-LC-*-*-*-*"
-)
-@click.option(
-    "--preset",
-    default="quarterly",
-    type=click.Choice(["annual", "semiannual", "quarterly"]),
-)
-def dev_issuance_template_for_skus(sku_like: str, preset: str):
-    import fnmatch
-    import json
-
-    from sqlalchemy import select
-
-    from app.extensions import db
-    from app.slices.logistics.models import InventoryItem
-
-    rows = db.session.execute(
-        select(InventoryItem.sku, InventoryItem.category)
-    ).all()
-    matches = [
-        {"sku": s, "classification": c}
-        for s, c in rows
-        if fnmatch.fnmatch(s, sku_like)
-    ]
-    rules = [
-        {
-            "match": {"sku": m["sku"]},
-            "qualifiers": {"veteran_required": False},
-            "cadence_preset": preset,
-        }
-        for m in matches
-    ]
-    click.echo(json.dumps({"rules": rules}, indent=2))
-
-
-@dev_group.command("seed-entity-min")
-@with_appcontext
-@click.option(
-    "--ulid", "entity_ulid", default=None, help="ULID to use (optional)."
-)
-@click.option("--namefirst", default="Test")
-@click.option("--namelast", default="User")
-def dev_seed_entity_min(
-    entity_ulid: str | None, namefirst: str, namelast: str
-):
-    """Create a minimal Entity row (core identity). Prints the entity ULID."""
-    from sqlalchemy import select
-    from app.extensions import db
-    from app.lib.ids import new_ulid
-    from app.lib.chrono import now_iso8601_ms
-
-    now = now_iso8601_ms()
-    try:
-        from app.slices.entity.models import (
-            Entity,
-        )  # adjust if your path differs
-    except Exception:
-        click.echo(
-            "ERROR: Entity model not found at app.slices.entity.models.Entity",
-            err=True,
-        )
-        raise SystemExit(1)
-
-    eu = entity_ulid or new_ulid()
-    exists = db.session.execute(
-        select(Entity.ulid).where(Entity.ulid == eu)
-    ).scalar_one_or_none()
-    if exists:
-        click.echo(eu)
-        return
-
-    row = Entity(ulid=eu)
-    if hasattr(row, "namefirst"):
-        row.namefirst = namefirst
-    if hasattr(row, "namelast"):
-        row.namelast = namelast
-    if hasattr(row, "kind") and getattr(row, "kind", None) is None:
-        row.kind = "person"  # or "organization" for orgs
-    if hasattr(row, "created_at_utc"):
-        row.created_at_utc = now
-    if hasattr(row, "updated_at_utc"):
-        row.updated_at_utc = now
-    db.session.add(row)
-    db.session.commit()  # ← ensure FK target exists
-    click.echo(eu)
-
-
-@dev_group.command("seed-customer-min")
-@with_appcontext
-@click.argument("customer_ulid")
-@click.option(
-    "--entity-ulid",
-    default=None,
-    help="Existing Entity ULID; if omitted, one is created.",
-)
-@click.option("--name", default="Test Customer")
-def dev_seed_customer_min(
-    customer_ulid: str, entity_ulid: str | None, name: str
-):
-    """Create a minimal Customer row (and its Entity if missing)."""
-    from sqlalchemy import select
-    from app.extensions import db
-    from app.lib.chrono import now_iso8601_ms
-    from app.lib.ids import new_ulid
-
-    now = now_iso8601_ms()
-    try:
-        from app.slices.customers.models import Customer
-    except Exception:
-        click.echo(
-            "ERROR: Customer model not found at app.slices.customers.models.Customer",
-            err=True,
-        )
-        raise SystemExit(1)
-    try:
-        from app.slices.entity.models import Entity
-    except Exception:
-        click.echo(
-            "ERROR: Entity model not found at app.slices.entity.models.Entity",
-            err=True,
-        )
-        raise SystemExit(1)
-
-    # If Customer already exists, bail out gracefully
-    exists = db.session.execute(
-        select(Customer.ulid).where(Customer.ulid == customer_ulid)
-    ).scalar_one_or_none()
-    if exists:
-        click.echo(f"Customer exists: {customer_ulid}")
-        return
-
-    # Ensure Entity (create + commit first so FK can pass)
-    ent_ulid = entity_ulid
-    if not ent_ulid:
-        ent_ulid = new_ulid()
-        ent = Entity(ulid=ent_ulid)
-        if hasattr(ent, "namefirst"):
-            ent.namefirst = name.split(" ", 1)[0]
-        if hasattr(ent, "namelast"):
-            ent.namelast = name.split(" ", 1)[1] if " " in name else "User"
-        if hasattr(ent, "kind") and getattr(ent, "kind", None) is None:
-            ent.kind = "person"
-        if hasattr(ent, "created_at_utc"):
-            ent.created_at_utc = now
-        if hasattr(ent, "updated_at_utc"):
-            ent.updated_at_utc = now
-        db.session.add(ent)
-        db.session.commit()  # ← commit Entity first
-
-    # Build Customer, set required FK
-    row = Customer(ulid=customer_ulid)
-    if not hasattr(row, "entity_ulid"):
-        click.echo(
-            "ERROR: Customer model has no entity_ulid field; cannot satisfy FK.",
-            err=True,
-        )
-        raise SystemExit(1)
-    row.entity_ulid = ent_ulid  # ← the FK you just created/verified
-    # Helpful echo
-    click.echo(
-        f"Using entity_ulid={ent_ulid} for customer_ulid={customer_ulid}"
-    )
-
-    # Optional common fields (only if present)
-    if hasattr(row, "status") and not getattr(row, "status", None):
-        row.status = "active"
-    if hasattr(row, "created_at_utc"):
-        row.created_at_utc = now
-    if hasattr(row, "updated_at_utc"):
-        row.updated_at_utc = now
-    if hasattr(row, "name") and not getattr(row, "name", None):
-        row.name = name
-    if hasattr(row, "namefirst") and not getattr(row, "namefirst", None):
-        row.namefirst = name.split(" ", 1)[0]
-    if hasattr(row, "namelast") and not getattr(row, "namelast", None):
-        row.namelast = name.split(" ", 1)[1] if " " in name else "User"
-
-    db.session.add(row)
-    db.session.commit()
-    click.echo(f"Created customer: {customer_ulid} (entity_ulid={ent_ulid})")
-
-
-@dev_group.command("inspect-entity-required")
-@with_appcontext
-def dev_inspect_entity_required():
-    from app.slices.entity.models import Entity
-
-    req = [
-        (c.name, c.nullable)
-        for c in Entity.__table__.columns
-        if not c.nullable
-    ]
-    click.echo("Entity required (NOT NULL) columns:")
-    for name, _ in req:
-        click.echo(f"  - {name}")
-
-
-@dev_group.command("inspect-customer-fks")
-@with_appcontext
-def dev_inspect_customer_fks():
-    """Print Customer table foreign key columns for quick debugging."""
-    from app.slices.customers.models import Customer
-
-    cols = []
-    for c in Customer.__table__.columns:
-        if c.foreign_keys:
-            refs = ", ".join(f"{fk.column}" for fk in c.foreign_keys)
-            cols.append((c.name, refs, c.nullable))
-    if not cols:
-        click.echo("(Customer has no FKs)")
-        return
-    click.echo("Customer FKs (column -> references, nullable):")
-    for name, refs, nullable in cols:
-        click.echo(f"  - {name} -> {refs}  nullable={nullable}")
-
-
-@dev_group.command("customer-snapshot")
-@with_appcontext
-@click.argument("customer_ulid")
-def dev_customer_snapshot(customer_ulid: str):
-    """Show the read-only eligibility snapshot used by policy rules."""
-    import json
-    from app.slices.customers.services import get_eligibility_snapshot
-
-    snap = get_eligibility_snapshot(customer_ulid)
-    click.echo(json.dumps(snap.__dict__, indent=2))
-
-
-@dev_group.command("set-eligibility-flags")
-@with_appcontext
-@click.argument("customer_ulid")
-@click.option("--vet", is_flag=True, help="Mark as veteran-verified (true).")
-@click.option(
-    "--homeless", is_flag=True, help="Mark as homeless-verified (true)."
-)
-def dev_set_eligibility_flags(customer_ulid: str, vet: bool, homeless: bool):
-    from sqlalchemy import select
-
-    from app.extensions import db
-    from app.lib.chrono import now_iso8601_ms
-    from app.lib.ids import new_ulid
-    from app.slices.customers.models import Customer, CustomerEligibility
-
-    # require the customer to exist to avoid FK explosions
-    exists = db.session.execute(
-        select(Customer.ulid).where(Customer.ulid == customer_ulid)
-    ).scalar_one_or_none()
-    if not exists:
-        click.echo(
-            "ERROR: customer ULID not found. Create the customer first (see: flask dev seed-customer-min).",
-            err=True,
-        )
-        raise SystemExit(1)
-
-    row = db.session.execute(
-        select(CustomerEligibility).where(
-            CustomerEligibility.customer_ulid == customer_ulid
-        )
-    ).scalar_one_or_none()
-
-    now = now_iso8601_ms()
-    if row is None:
-        row = CustomerEligibility(
-            ulid=new_ulid(),
-            customer_ulid=customer_ulid,
-            is_veteran_verified=bool(vet),
-            is_homeless_verified=bool(homeless),
-            tier1_min=None,
-            tier2_min=None,
-            tier3_min=None,
-            created_at_utc=now,
-            updated_at_utc=now,
-        )
-        db.session.add(row)
-    else:
-        if vet:
-            row.is_veteran_verified = True
-        if homeless:
-            row.is_homeless_verified = True
-        row.updated_at_utc = now
-    db.session.commit()
-    click.echo("Eligibility flags updated.")
-
-
-@dev_group.command("cadence-debug")
-@with_appcontext
-@click.argument("customer_ulid")
-@click.option("--class-key", default=None)
-@click.option("--sku", "sku_code", default=None)
-@click.option("--days", default=90, help="Period days")
-@click.option("--max", "max_per", default=1, help="Max per period")
-@click.option("--as-of", "as_of_iso", default=None)
-def dev_cadence_debug(
-    customer_ulid, class_key, sku_code, days, max_per, as_of_iso
-):
-    """Print cadence window and count for quick verification."""
-    from app.lib.chrono import now_iso8601_ms, as_naive_utc
-    from app.extensions.contracts import logistics_v2
-    from datetime import timedelta
-
-    as_of = as_of_iso or now_iso8601_ms()
-    as_dt = as_naive_utc(as_of)
-    start = (as_dt - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[
-        :-3
-    ] + "Z"
-
-    cnt = logistics_v2.count_issues_in_window(
-        customer_ulid=customer_ulid,
-        classification_key=class_key,
-        sku_code=sku_code,
-        window_start_iso=start,
-        as_of_iso=as_of,
-    )
-    click.echo(
-        f"Window: {start} → {as_of}  count={cnt}  limit={max_per}  -> {'OK' if cnt < max_per else 'LIMITED'}"
-    )
-
-
-#############################
-#     SEEDER & HELPERS
-#############################
-
-# --- helpers: load/validate ---------------------------------
-
-
-def _read_json(path: str) -> list[dict] | dict:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _validate_skus(items: list[dict], schema_path: str | None) -> None:
-    """Validate each row against sku.schema.json if provided."""
-    if not schema_path or not os.path.exists(schema_path):
-        click.echo("NOTE: schema file not found—skipping validation.")
-        return
-    try:
-        from app.lib.schema import load_json_schema, validate_json
-    except Exception:
-        click.echo("NOTE: app.lib.schema unavailable—skipping validation.")
-        return
-    schema = load_json_schema(schema_path)
-    for i, row in enumerate(items, 1):
-        ok, errs = validate_json(row, schema)
-        if not ok:
-            raise SystemExit(f"Invalid SKU row #{i}: {errs}")
-
-
-def _require_dev_mode():
-    mode = (current_app.config.get("APP_MODE") or "dev").lower()
-    if mode not in {"dev", "development", "local"}:
-        raise SystemExit("Refusing outside DEV. Set APP_MODE=dev to proceed.")
-
-
-# --- dev seeds ------------------------------------------------
-
-
-@dev_group.command("seed-logistics-baseline")
-@with_appcontext
-@click.option(
-    "--data-dir",
-    default="app/slices/logistics/data",
-    show_default=True,
-    help="Directory containing skus.json and sku.schema.json",
-)
-@click.option("--loc-code", default="LOC-MAIN", show_default=True)
-@click.option("--loc-name", default="Main Warehouse", show_default=True)
-@click.option(
-    "--per-sku",
-    type=int,
-    default=25,
-    show_default=True,
-    help="How many units to receive for each SKU",
-)
-@click.option("--unit", default="each", show_default=True)
-def seed_logistics_baseline(
-    data_dir: str, loc_code: str, loc_name: str, per_sku: int, unit: str
-):
-    """
-    Seed a predictable baseline:
-      - Ensure a single Location
-      - Load & validate SKUs
-      - Upsert InventoryItem rows
-      - Receive N units into the Location (creates batch, movement, stock)
-    """
-    _require_dev_mode()
-
-    # 0) paths
-    skus_path = os.path.join(data_dir, "skus.json")
-    schema_path = os.path.join(data_dir, "schemas/sku.schema.json")
-    if not os.path.exists(skus_path):
-        raise SystemExit(f"Cannot find {skus_path}")
-
-    # 1) read + validate
-    rows = _read_json(skus_path)
-    if not isinstance(rows, list):
-        raise SystemExit("skus.json must be a JSON array.")
-    # Used to was _validate_skus(rows, schema_path)
-    # strict validation: refuse to seed if any row is invalid
-    from app.lib.schema import load_json_schema, try_validate_json
-
-    if not os.path.exists(schema_path):
-        raise SystemExit(f"Missing schema: {schema_path}")
-    schema = load_json_schema(schema_path)
-    for i, row in enumerate(rows, 1):
-        ok, err = try_validate_json(schema, row)
-        if not ok:
-            raise SystemExit(
-                f"Invalid SKU row #{i} (sku={row.get('sku')}): {err}"
-            )
-
-    # 2) ensure Location
-    from app.lib.chrono import now_iso8601_ms
-    from app.slices.logistics.services import (
-        ensure_item,
-        ensure_location,
-        receive_inventory,
-    )
-
-    loc_ulid = ensure_location(code=loc_code, name=loc_name)
-
-    # 3) upsert items + receive stock
-    created = 0
-    received = 0
-    for row in rows:
-        sku = row["sku"]
-        name = row.get("name") or row.get("title") or "Unnamed"
-        unit_row = row.get("unit") or unit
-        # minimal categorization; keep it simple and consistent
-        category = row.get("classification_key") or "unclassified"
-        condition = "new"
-
-        item_ulid = ensure_item(
-            category=category,
-            name=name,
-            unit=unit_row,
-            condition=condition,
-            sku=sku,
-        )
-        created += 1
-
-        # receive per-sku quantity
-        recv = receive_inventory(
-            item_ulid=item_ulid,
-            quantity=per_sku,
-            unit=unit_row,
-            source="donation",
-            received_at_utc=now_iso8601_ms(),
-            location_ulid=loc_ulid,
-            note=f"seed:{os.path.basename(skus_path)}",
-            actor_id=None,
-            source_entity_ulid=None,
-        )
-        received += 1
-
-    click.echo(
-        f"OK — location={loc_code} ({loc_ulid}) items={created} batches/receipts={received}"
-    )
-    click.echo(
-        "Tip: run `flask dev list-stock --location {}` to view.".format(
-            loc_code
-        )
-    )
+# -----------------
+# dev seeds
+# -----------------
 
 
 @dev_group.command("list-stock")
@@ -1534,10 +967,11 @@ def seed_logistics_baseline(
 def dev_list_stock(loc_code: str, limit: int):
     """List on-hand quantities at a location."""
     from sqlalchemy import select
+
     from app.extensions import db
     from app.slices.logistics.models import (
-        InventoryStock,
         InventoryItem,
+        InventoryStock,
         Location,
     )
 
@@ -1608,7 +1042,7 @@ def dev_demo_issue(
         InventoryStock,
         Location,
     )
-    from app.slices.logistics.services import decide_and_issue_one
+    from app.slices.logistics.services import issue_inventory
 
     loc = db.session.execute(
         select(Location).where(Location.code == loc_code)
@@ -1666,7 +1100,7 @@ def dev_demo_issue(
 
     cust = customer_ulid or new_ulid()
 
-    res = decide_and_issue_one(
+    res = issue_inventory(
         customer_ulid=cust,
         sku_code=sku_code,
         quantity=quantity,
