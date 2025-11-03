@@ -13,7 +13,7 @@ from app.slices.entity import services as entity_svc
 @dataclass(frozen=True)
 class ContractEnvelope:
     request_id: str
-    actor_id: Optional[str] = None
+    actor_ulid: Optional[str] = None
     dry_run: bool = False
 
 
@@ -67,7 +67,7 @@ def ensure_person(
         email=email,
         phone=phone,
         request_id=env.request_id,
-        actor_ulid=env.actor_id,
+        actor_ulid=env.actor_ulid,
     )
     # Event already emitted by service; return a ledger stub for contract shape
     return {
@@ -101,7 +101,7 @@ def ensure_org(
         dba_name=dba_name,
         ein=ein,
         request_id=env.request_id,
-        actor_ulid=env.actor_id,
+        actor_ulid=env.actor_ulid,
     )
     return {
         "ok": True,
@@ -125,7 +125,7 @@ def add_entity_role(
         entity_ulid=entity_ulid,
         role=role,
         request_id=env.request_id,
-        actor_ulid=env.actor_id,
+        actor_ulid=env.actor_ulid,
     )
     return {
         "ok": True,
@@ -149,7 +149,7 @@ def remove_entity_role(
         entity_ulid=entity_ulid,
         role=role,
         request_id=env.request_id,
-        actor_ulid=env.actor_id,
+        actor_ulid=env.actor_ulid,
     )
     return {
         "ok": True,

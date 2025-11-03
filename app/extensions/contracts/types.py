@@ -34,7 +34,7 @@ class ContractResponse(TypedDict, total=False):
 @dataclass(frozen=True)
 class ContractEnvelope:
     request_id: str  # ULID
-    actor_id: Optional[str]  # entity ULID or None for system
+    actor_ulid: Optional[str]  # entity ULID or None for system
     dry_run: bool = False
 
 
@@ -51,7 +51,7 @@ class LedgerDTO:
     slice: str  # "auth" | "entity" | "governance" | ...
     operation: str  # "assigned" | "removed" | "updated"
     happened_at: datetime
-    actor_id: Optional[str]
+    actor_ulid: Optional[str]
     target_id: Optional[str]
     changed_fields: Dict[str, Any]
     refs: Dict[str, Any]

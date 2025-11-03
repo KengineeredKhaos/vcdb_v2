@@ -95,7 +95,7 @@ def ensure_person(
     email: Optional[str],
     phone: Optional[str],
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> str:
     """
     Idempotently ensure an 'Entity(kind=person)' exists with a Person row.
@@ -174,7 +174,7 @@ def ensure_person(
         domain="entity",
         operation="person.created" if created else "person.upserted",
         request_id=request_id,
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=ent.ulid,
         refs=None,
         changed={
@@ -196,7 +196,7 @@ def ensure_org(
     dba_name: Optional[str] = None,
     ein: Optional[str] = None,
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> str:
     """
     Create/update an organization entity.
@@ -259,7 +259,7 @@ def ensure_org(
         domain="entity",
         operation="org.created" if created else "org.upserted",
         request_id=request_id,
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=ent.ulid,
         refs=None,
         changed={
@@ -281,7 +281,7 @@ def upsert_contacts(
     email: Optional[str],
     phone: Optional[str],
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> None:
     """Upsert the single primary contact row for an entity; emits one event."""
     _ensure_reqid(request_id)
@@ -311,7 +311,7 @@ def upsert_contacts(
             domain="entity",
             operation="contact.upserted",
             request_id=request_id,
-            actor_ulid=actor_id,
+            actor_ulid=actor_ulid,
             target_ulid=entity_ulid,
             refs=None,
             changed={"fields": list(changed.keys())},
@@ -332,7 +332,7 @@ def upsert_address(
     state: str = "",
     postal_code: str = "",
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> str:
     """
     Create/update the single 'primary' address by (is_physical, is_postal) flags.
@@ -383,7 +383,7 @@ def upsert_address(
         domain="entity",
         operation="address.upserted",
         request_id=request_id,
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=entity_ulid,
         refs={"address_ulid": addr.ulid},
         changed={
@@ -403,7 +403,7 @@ def ensure_role(
     entity_ulid: str,
     role: str,
     request_id: str,
-    actor_id: Optional[str] | None,
+    actor_ulid: Optional[str] | None,
 ) -> bool:
     """
     Attach a role to an entity if allowed by Governance and not already attached.
@@ -433,7 +433,7 @@ def ensure_role(
         domain="entity",
         operation="role.attached",
         request_id=request_id,
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=entity_ulid,
         refs=None,
         changed={"fields": ["role"], "role": role},
@@ -446,7 +446,7 @@ def remove_role(
     entity_ulid: str,
     role: str,
     request_id: str,
-    actor_id: Optional[str] | None,
+    actor_ulid: Optional[str] | None,
 ) -> bool:
     """
     Remove a role from an entity (idempotent).
@@ -473,7 +473,7 @@ def remove_role(
         domain="entity",
         operation="role.removed",
         request_id=request_id,
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=entity_ulid,
         refs=None,
         changed={"fields": ["role"], "role": role},

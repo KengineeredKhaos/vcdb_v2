@@ -71,7 +71,7 @@ def role_repair(req: ContractRequest) -> ContractResponse:
         "domain": "governance",
         "operation": "update_roles",
         "happened_at_utc": _now(),
-        "actor_id": req.get("actor_ulid"),
+        "actor_ulid": req.get("actor_ulid"),
         "target_id": eid,
         "changed_fields_json": {
             "before": {"roles": current},

@@ -159,7 +159,7 @@ def _next_version(resource_ulid: str) -> int:
 
 
 def ensure_resource(
-    *, entity_ulid: str, request_id: str, actor_id: Optional[str]
+    *, entity_ulid: str, request_id: str, actor_ulid: Optional[str]
 ) -> str:
     """
     Idempotently ensure a Resource row exists for this entity.
@@ -183,7 +183,7 @@ def ensure_resource(
         event_bus.emit(
             domain="resources",
             operation="created_insert",
-            actor_ulid=actor_id,
+            actor_ulid=actor_ulid,
             target_ulid=r.ulid,
             request_id=request_id,
             happened_at_utc=now_iso8601_ms(),
@@ -200,7 +200,7 @@ def upsert_capabilities(
     resource_ulid: str,
     payload: Dict[str, Any],
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
     idempotency_key: Optional[str] = None,
 ) -> str:
     """
@@ -241,7 +241,7 @@ def upsert_capabilities(
         section=SECTION,
         version=version,
         data_json=stable_dumps(norm),
-        created_by_actor=actor_id,
+        created_by_actor=actor_ulid,
     )
     db.session.add(hist)
 
@@ -298,7 +298,7 @@ def upsert_capabilities(
         event_bus.emit(
             domain="resources",
             operation="capability_add",
-            actor_ulid=actor_id,
+            actor_ulid=actor_ulid,
             target_ulid=resource_ulid,
             request_id=request_id,
             happened_at_utc=now_iso8601_ms(),
@@ -309,7 +309,7 @@ def upsert_capabilities(
         event_bus.emit(
             domain="resources",
             operation="capability_remove",
-            actor_ulid=actor_id,
+            actor_ulid=actor_ulid,
             target_ulid=resource_ulid,
             request_id=request_id,
             happened_at_utc=now_iso8601_ms(),
@@ -417,7 +417,7 @@ MOU_ALLOWED = {"none", "pending", "active", "expired", "terminated"}
 
 
 def set_readiness_status(
-    *, resource_ulid: str, status: str, request_id: str, actor_id: str | None
+    *, resource_ulid: str, status: str, request_id: str, actor_ulid: str | None
 ) -> None:
     """Set readiness_status with validation and emit a names-only ledger event."""
     _ensure_reqid(request_id)
@@ -440,7 +440,7 @@ def set_readiness_status(
     event_bus.emit(
         domain="resources",
         operation="readiness_update",
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=resource_ulid,
         request_id=request_id,
         happened_at_utc=now_iso8601_ms(),
@@ -449,7 +449,7 @@ def set_readiness_status(
 
 
 def set_mou_status(
-    *, resource_ulid: str, status: str, request_id: str, actor_id: str | None
+    *, resource_ulid: str, status: str, request_id: str, actor_ulid: str | None
 ) -> None:
     """Set MOU status with validation and emit a names-only ledger event."""
     _ensure_reqid(request_id)
@@ -472,7 +472,7 @@ def set_mou_status(
     event_bus.emit(
         domain="resources",
         operation="mou_update",
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=resource_ulid,
         request_id=request_id,
         happened_at_utc=now_iso8601_ms(),
@@ -481,7 +481,7 @@ def set_mou_status(
 
 
 def rebuild_capability_index(
-    *, resource_ulid: str, request_id: str, actor_id: str | None
+    *, resource_ulid: str, request_id: str, actor_ulid: str | None
 ) -> int:
     """
     Rebuild the projection table from the latest History snapshot.
@@ -523,7 +523,7 @@ def rebuild_capability_index(
     event_bus.emit(
         domain="resources",
         operation="capability_rebuild",
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=resource_ulid,
         request_id=request_id,
         happened_at_utc=now_iso8601_ms(),
@@ -533,7 +533,7 @@ def rebuild_capability_index(
 
 
 def promote_readiness_if_clean(
-    *, resource_ulid: str, request_id: str, actor_id: str | None
+    *, resource_ulid: str, request_id: str, actor_ulid: str | None
 ) -> bool:
     """
     Convenience: if no 'meta.unclassified' and currently 'review', promote to 'active'.
@@ -553,7 +553,7 @@ def promote_readiness_if_clean(
             resource_ulid=resource_ulid,
             status="active",
             request_id=request_id,
-            actor_ulid=actor_id,
+            actor_ulid=actor_ulid,
         )
         return True
     return False
@@ -595,7 +595,7 @@ def patch_capabilities(
         str, dict
     ],  # subset of "domain.key": {"has"?: bool, "note"?: str|null}
     request_id: str,
-    actor_id: str | None,
+    actor_ulid: str | None,
 ) -> str | None:
     """
     PATCH semantics: update only provided keys; others remain as-is.
@@ -637,7 +637,7 @@ def patch_capabilities(
         section=SECTION,
         version=version,
         data_json=stable_dumps(merged),
-        created_by_actor=actor_id,
+        created_by_actor=actor_ulid,
     )
     db.session.add(hist)
 
@@ -683,7 +683,7 @@ def patch_capabilities(
         event_bus.emit(
             domain="resources",
             operation="classification_add",
-            actor_ulid=actor_id,
+            actor_ulid=actor_ulid,
             target_ulid=resource_ulid,
             request_id=request_id,
             happened_at_utc=now_iso8601_ms(),
@@ -694,7 +694,7 @@ def patch_capabilities(
         event_bus.emit(
             domain="resources",
             operation="classification_remove",
-            actor_ulid=actor_id,
+            actor_ulid=actor_ulid,
             target_ulid=resource_ulid,
             request_id=request_id,
             happened_at_utc=now_iso8601_ms(),
@@ -708,7 +708,7 @@ def patch_capabilities(
 
 
 def rebuild_all_capability_indexes(
-    *, page: int = 1, per: int = 200, request_id: str, actor_id: str | None
+    *, page: int = 1, per: int = 200, request_id: str, actor_ulid: str | None
 ) -> dict:
     """
     Rebuild the projection for a page of resources (safety-limited).
@@ -728,7 +728,7 @@ def rebuild_all_capability_indexes(
     for rid in ids:
         total_rows += (
             rebuild_capability_index(
-                resource_ulid=rid, request_id=request_id, actor_ulid=actor_id
+                resource_ulid=rid, request_id=request_id, actor_ulid=actor_ulid
             )
             or 0
         )

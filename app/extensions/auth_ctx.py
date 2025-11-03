@@ -10,11 +10,11 @@ from flask_login import current_user
 from app.lib.ids import new_ulid
 
 # -----------------------------------------
-# Auth context shim: current_actor_id (ULID)
+# Auth context shim: current_actor_ulid (ULID)
 # -----------------------------------------
 
 
-def current_actor_id() -> Optional[str]:
+def current_actor_ulid() -> Optional[str]:
     """
     Return a stable ULID for the *actor* in this session.
     In prod you might store an actor ULID on the user row;

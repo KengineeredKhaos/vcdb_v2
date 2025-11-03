@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, TypedDict
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
-from app.extensions import current_actor_id, db, enforcers, event_bus, ulid
+from app.extensions import current_actor_ulid, db, enforcers, event_bus, ulid
 from app.extensions.contracts.finance import v1 as finance
 from app.extensions.policies import GOV_DATA, _load_and_cache
 from app.lib.chrono import now_iso8601_ms

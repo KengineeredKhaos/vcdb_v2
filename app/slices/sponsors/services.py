@@ -98,7 +98,7 @@ def _next_version(sponsor_ulid: str, section: str) -> int:
 
 
 def ensure_sponsor(
-    *, entity_ulid: str, request_id: str, actor_id: Optional[str]
+    *, entity_ulid: str, request_id: str, actor_ulid: Optional[str]
 ) -> str:
     _ensure_reqid(request_id)
     s = db.session.query(Sponsor).filter_by(entity_ulid=entity_ulid).first()
@@ -116,7 +116,7 @@ def ensure_sponsor(
         event_bus.emit(
             domain="sponsors",
             operation="created_insert",
-            actor_ulid=actor_id,
+            actor_ulid=actor_ulid,
             target_ulid=s.ulid,
             request_id=request_id,
             happened_at_utc=now_iso8601_ms(),
@@ -136,7 +136,7 @@ def upsert_capabilities(
     sponsor_ulid: str,
     payload: Dict[str, Any],
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> str | None:
     _ensure_reqid(request_id)
     s = db.session.get(Sponsor, sponsor_ulid)
@@ -159,7 +159,7 @@ def upsert_capabilities(
         section=CAPS_SECTION,
         version=ver,
         data_json=stable_dumps(norm),
-        created_by_actor=actor_id,
+        created_by_actor=actor_ulid,
     )
     db.session.add(hist)
 
@@ -206,7 +206,7 @@ def upsert_capabilities(
         event_bus.emit(
             domain="sponsors",
             operation="capability_add",
-            actor_ulid=actor_id,
+            actor_ulid=actor_ulid,
             target_ulid=sponsor_ulid,
             request_id=request_id,
             happened_at_utc=now_iso8601_ms(),
@@ -217,7 +217,7 @@ def upsert_capabilities(
         event_bus.emit(
             domain="sponsors",
             operation="capability_remove",
-            actor_ulid=actor_id,
+            actor_ulid=actor_ulid,
             target_ulid=sponsor_ulid,
             request_id=request_id,
             happened_at_utc=now_iso8601_ms(),
@@ -231,7 +231,7 @@ def patch_capabilities(
     sponsor_ulid: str,
     payload: Dict[str, Any],
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> str | None:
     _ensure_reqid(request_id)
     s = db.session.get(Sponsor, sponsor_ulid)
@@ -266,7 +266,7 @@ def patch_capabilities(
         section=CAPS_SECTION,
         version=ver,
         data_json=stable_dumps(merged),
-        created_by_actor=actor_id,
+        created_by_actor=actor_ulid,
     )
     db.session.add(hist)
 
@@ -306,7 +306,7 @@ def patch_capabilities(
         event_bus.emit(
             domain="sponsors",
             operation="capablity_add",
-            actor_ulid=actor_id,
+            actor_ulid=actor_ulid,
             target_ulid=sponsor_ulid,
             request_id=request_id,
             happened_at_utc=now_iso8601_ms(),
@@ -317,7 +317,7 @@ def patch_capabilities(
         event_bus.emit(
             domain="sponsors",
             operation="capability_remove",
-            actor_ulid=actor_id,
+            actor_ulid=actor_ulid,
             target_ulid=sponsor_ulid,
             request_id=request_id,
             happened_at_utc=now_iso8601_ms(),
@@ -334,7 +334,7 @@ def set_readiness_status(
     sponsor_ulid: str,
     status: str,
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> None:
     _ensure_reqid(request_id)
     s = db.session.get(Sponsor, sponsor_ulid)
@@ -352,7 +352,7 @@ def set_readiness_status(
     event_bus.emit(
         domain="sponsors",
         operation="readiness_update",
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=sponsor_ulid,
         request_id=request_id,
         happened_at_utc=now_iso8601_ms(),
@@ -365,7 +365,7 @@ def set_mou_status(
     sponsor_ulid: str,
     status: str,
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> None:
     _ensure_reqid(request_id)
     s = db.session.get(Sponsor, sponsor_ulid)
@@ -383,7 +383,7 @@ def set_mou_status(
     event_bus.emit(
         domain="sponsors",
         operation="mou_update",
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=sponsor_ulid,
         request_id=request_id,
         happened_at_utc=now_iso8601_ms(),
@@ -475,7 +475,7 @@ def upsert_pledge(
     sponsor_ulid: str,
     pledge: dict,
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> str:
     """
     Create or update a pledge (by pledge_ulid) in History; update projection; emit names-only event.
@@ -502,7 +502,7 @@ def upsert_pledge(
         section=PLEDGE_SECTION,
         version=ver,
         data_json=stable_dumps(merged),
-        created_by_actor=actor_id,
+        created_by_actor=actor_ulid,
     )
     db.session.add(hist)
 
@@ -550,7 +550,7 @@ def upsert_pledge(
     event_bus.emit(
         domain="sponsors",
         operation="pledge_upsert",
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=sponsor_ulid,
         request_id=request_id,
         happened_at_utc=now_iso8601_ms(),
@@ -561,7 +561,7 @@ def upsert_pledge(
 
 
 def set_pledge_status(
-    *, pledge_ulid: str, status: str, request_id: str, actor_id: Optional[str]
+    *, pledge_ulid: str, status: str, request_id: str, actor_ulid: Optional[str]
 ) -> None:
     _ensure_reqid(request_id)
     status = (status or "").strip().lower()
@@ -587,7 +587,7 @@ def set_pledge_status(
     event_bus.emit(
         domain="sponsors",
         operation="pleddge_update",
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=row.sponsor_ulid,
         request_id=request_id,
         happened_at_utc=row.updated_at_utc,

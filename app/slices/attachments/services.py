@@ -81,7 +81,7 @@ def upload_register(
     privacy_level: str = "A",
     retention_policy_code: Optional[str] = None,
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> str:
     """
     Register (and store) a blob. Content-addressed, deduped by sha256.
@@ -111,7 +111,7 @@ def upload_register(
             privacy_level=(privacy_level or "A"),
             retention_policy_code=retention_policy_code or None,
             status="active",
-            created_by_actor=actor_id,
+            created_by_actor=actor_ulid,
         )
         db.session.add(att)
         db.session.commit()
@@ -124,7 +124,7 @@ def upload_register(
             type="attachment.uploaded",
             slice="attachments",
             operation="insert",
-            actor_ulid=actor_id,
+            actor_ulid=actor_ulid,
             target_ulid=att.ulid,
             request_id=request_id,
             happened_at_utc=now_iso8601_ms(),
@@ -156,7 +156,7 @@ def link_attachment(
     target_ulid: str,
     note: Optional[str],
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> str:
     """
     Link an existing attachment to a domain object.
@@ -187,7 +187,7 @@ def link_attachment(
         domain=domain,
         target_ulid=target_ulid,
         note=(note or None)[:120] if note else None,
-        created_by_actor=actor_id,
+        created_by_actor=actor_ulid,
     )
     db.session.add(link)
     db.session.commit()
@@ -196,7 +196,7 @@ def link_attachment(
         type="attachment.linked",
         slice="attachments",
         operation="link",
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=link.ulid,
         request_id=request_id,
         happened_at_utc=now_iso8601_ms(),
@@ -214,7 +214,7 @@ def unlink_attachment(
     *,
     link_ulid: str,
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> None:
     """Archive the link (do not delete blob)."""
     _ensure_reqid(request_id)
@@ -222,14 +222,14 @@ def unlink_attachment(
     if not link or link.archived_at_utc:
         return
     link.archived_at_utc = now_iso8601_ms()
-    link.archived_by_actor = actor_id
+    link.archived_by_actor = actor_ulid
     db.session.commit()
 
     event_bus.emit(
         type="attachment.unlinked",
         slice="attachments",
         operation="unlink",
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=link.ulid,
         request_id=request_id,
         happened_at_utc=link.archived_at_utc,
@@ -247,7 +247,7 @@ def sign_url(
     attachment_ulid: str,
     ttl_seconds: int = 300,
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> str:
     """
     Produce a short-lived URL to access the blob. In dev, returns file:// path.
@@ -261,7 +261,7 @@ def sign_url(
         type="attachment.url.signed",
         slice="attachments",
         operation="sign",
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=attachment_ulid,
         request_id=request_id,
         happened_at_utc=now_iso8601_ms(),

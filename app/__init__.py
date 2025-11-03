@@ -539,7 +539,7 @@ def _ledger_sanity(app, limit: int = 20) -> None:
             "domain": payload.get("domain"),
             "operation": payload.get("operation"),
             "request_id": payload.get("request_id"),
-            "actor_id": payload.get("actor_id"),
+            "actor_ulid": payload.get("actor_ulid"),
             "target_id": payload.get("target_id"),
             "entity_ids_json": payload.get("entity_ids_json"),
             "changed_fields_json": payload.get("changed_fields_json"),
@@ -560,7 +560,7 @@ def _ledger_sanity(app, limit: int = 20) -> None:
                     text(
                         f"""
                         SELECT id, happened_at_utc, prev_event_id, prev_hash, event_hash,
-                               type, domain, operation, request_id, actor_id, target_id,
+                               type, domain, operation, request_id, actor_ulid, target_id,
                                entity_ids_json, changed_fields_json, refs_json
                           FROM {tname}
                       ORDER BY happened_at_utc DESC, id DESC

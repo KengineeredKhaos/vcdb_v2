@@ -118,7 +118,7 @@ def _first_worst_factor_tier1(tier1: dict[str, Any]) -> Optional[str]:
 
 
 def ensure_customer(
-    *, entity_ulid: str, request_id: str, actor_id: Optional[str]
+    *, entity_ulid: str, request_id: str, actor_ulid: Optional[str]
 ) -> str:
     """Idempotently ensure a Customer record exists for the given Entity."""
     _ensure_reqid(request_id)
@@ -141,7 +141,7 @@ def ensure_customer(
         event_bus.emit(
             domain="customers",
             operation="created_insert",
-            actor_ulid=actor_id,
+            actor_ulid=actor_ulid,
             target_ulid=cust.ulid,
             request_id=request_id,
             happened_at_utc=now_iso8601_ms(),
@@ -161,7 +161,7 @@ def update_needs_tier(
     tier_key: str,  # "tier1" | "tier2" | "tier3"
     payload: Dict[str, Any],  # factor values for that tier
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> str:
     """
     Store a new Needs Assessment snapshot for a single tier (History-only values).
@@ -182,7 +182,7 @@ def update_needs_tier(
         section=section,
         version=version,
         data_json=stable_dumps(norm),
-        created_by_actor=actor_id,
+        created_by_actor=actor_ulid,
     )
     db.session.add(hist)
 
@@ -235,7 +235,7 @@ def update_needs_tier(
     event_bus.emit(
         domain="customers",
         operation="profile_update",
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=customer_ulid,
         request_id=request_id,
         happened_at_utc=now_iso8601_ms(),
@@ -253,14 +253,14 @@ def update_tier1(
     customer_ulid: str,
     payload: Dict[str, Any],
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> str:
     return update_needs_tier(
         customer_ulid=customer_ulid,
         tier_key="tier1",
         payload=payload,
         request_id=request_id,
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
     )
 
 
@@ -269,14 +269,14 @@ def update_tier2(
     customer_ulid: str,
     payload: Dict[str, Any],
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> str:
     return update_needs_tier(
         customer_ulid=customer_ulid,
         tier_key="tier2",
         payload=payload,
         request_id=request_id,
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
     )
 
 
@@ -285,14 +285,14 @@ def update_tier3(
     customer_ulid: str,
     payload: Dict[str, Any],
     request_id: str,
-    actor_id: Optional[str],
+    actor_ulid: Optional[str],
 ) -> str:
     return update_needs_tier(
         customer_ulid=customer_ulid,
         tier_key="tier3",
         payload=payload,
         request_id=request_id,
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
     )
 
 

@@ -503,6 +503,8 @@ def dev_issuance_debug(sku_code: str):
 # hit all the
 # policy tripwires
 # -----------------
+
+
 @dev_group.command("issuance-tripwires")
 @with_appcontext
 @click.option(
@@ -518,8 +520,30 @@ def dev_issuance_debug(sku_code: str):
     show_default=True,
     help="Units to receive per fabricated SKU.",
 )
+@click.option(
+    "--force-blackout/--no-force-blackout",
+    default=False,
+    show_default=True,
+    help="Trip the blackout enforcer",
+)
+@click.option(
+    "--show-json",
+    is_flag=True,
+    help="Dump per-gate decision payloads for debugging",
+)
+@click.option(
+    "--twice/--once",
+    default=False,
+    show_default=True,
+    help="In cadence step, create one policy-only Issue first, then re-check (often triggers cadence_limit).",
+)
 def dev_issuance_tripwires(
-    customer_ulid: str | None, location: str, per_sku: int
+    customer_ulid: str | None,
+    location: str,
+    per_sku: int,
+    force_blackout: bool,
+    show_json: bool,
+    twice: bool,
 ):
     """
     For each issuance policy rule:
@@ -541,6 +565,7 @@ def dev_issuance_tripwires(
         load_policy_issuance,
     )
     from app.lib.chrono import now_iso8601_ms
+    from app.lib.ids import new_ulid
     from app.slices.governance.services import _rule_matches, decide_issue
     from app.slices.logistics.models import InventoryItem
 
@@ -577,12 +602,12 @@ def dev_issuance_tripwires(
             email=None,
             phone=None,
             request_id=reqid,
-            actor_id=None,
+            actor_ulid=None,
         )
         customer_ulid = ensure_customer(
             entity_ulid=ent_ulid,
             request_id=new_ulid(),
-            actor_id=None,
+            actor_ulid=None,
         )
         click.echo(
             f"Created test person entity {ent_ulid} → customer {customer_ulid}"
@@ -685,7 +710,7 @@ def dev_issuance_tripwires(
             received_at_utc=now_iso8601_ms(),
             location_ulid=loc_ulid,
             note="seed:tripwire",
-            actor_id=None,
+            actor_ulid=None,
             source_entity_ulid=None,
         )
         db.session.commit()
@@ -808,7 +833,32 @@ def dev_issuance_tripwires(
 
         # 1) blackout
         set_flags(False, False)
-        dec_bl = eval_ctx(sku_code, blackout_when, force_blackout=True)
+
+        # blackout column
+        dec_bl = eval_ctx(
+            sku_code, blackout_when, force_blackout=force_blackout
+        )
+        if show_json:
+            click.echo(f"    blackout_decision={dec_bl!r}")
+
+        if force_blackout:
+            # when forcing, expect a calendar block; if allowed, show reason (usually "ok")
+            blackout = (
+                "calendar_blackout"
+                if (
+                    not dec_bl.allowed
+                    and dec_bl.reason == "calendar_blackout"
+                )
+                else (dec_bl.reason or "ok")
+            )
+        else:
+            # when not forcing, "ok" is the expected happy path
+            blackout = (
+                "ok"
+                if dec_bl.allowed
+                else (dec_bl.reason or "calendar_blackout")
+            )
+
         reason_bl = getattr(dec_bl, "reason", None)
         if getattr(dec_bl, "allowed", False):
             reason_bl = "unexpected_ok"
@@ -824,35 +874,51 @@ def dev_issuance_tripwires(
         reason_ok = getattr(dec_ok, "reason", None)
         ok_allowed = getattr(dec_ok, "allowed", False)
 
-        # 4) cadence trip (only if allowed in step 3)
-        if ok_allowed and loc_ulid:
-            from app.slices.logistics.services import decide_and_issue_one
+        # --- 4) cadence check (optionally force by writing one policy-only Issue)
+        dec_cad = eval_ctx(
+            sku_code, when_iso=now_iso8601_ms(), force_blackout=False
+        )
 
-            res = issue_inventory(
-                customer_ulid=customer_ulid,
-                sku_code=sku_code,
-                quantity=1,
-                when_iso=now_iso8601_ms(),
-                project_ulid=None,
-                actor_id=None,
-                location_ulid=loc_ulid,
-                batch_ulid=batch_ulid,
-            )
-            # immediate second attempt should hit cadence limit
-            dec_cad = eval_ctx(sku_code, now_iso8601_ms())
-            reason_cad = getattr(dec_cad, "reason", None)
-        else:
-            reason_cad = "skipped"
+        if twice and ok_allowed:
+            try:
+                from app.slices.logistics.services import (
+                    issue_inventory_policy,
+                )
 
+                # write a policy-only Issue, then re-check cadence
+                _ = issue_inventory_policy(
+                    customer_ulid=customer_ulid,
+                    sku_code=sku_code,
+                    when_iso=None,
+                    project_ulid=None,
+                    actor_ulid=None,
+                    quantity=1,
+                )
+                dec_cad = eval_ctx(
+                    sku_code, when_iso=now_iso8601_ms(), force_blackout=False
+                )
+            except Exception:
+                # keep original dec_cad if anything fails
+                pass
+
+        if show_json:
+            click.echo(f"    cadence_decision={dec_cad!r}")
+
+        # unify cadence label
+        cadence = dec_cad.reason or (
+            "ok" if getattr(dec_cad, "allowed", False) else "cadence_limit"
+        )
+
+        # --- build output row using the computed labels
         rows_out.append(
             (
                 idx,
                 json.dumps(selector),
                 sku_code,
-                reason_bl,
-                reason_qmiss,
-                "ok" if ok_allowed else "denied",
-                reason_cad,
+                blackout,  # computed above
+                (reason_qmiss or "ok"),  # qualifiers-missing column
+                ("ok" if ok_allowed else "denied"),  # allowed column
+                cadence,  # final cadence label
             )
         )
 
@@ -886,7 +952,10 @@ def dev_issuance_tripwires(
 )
 @click.option("--project-ulid", default=None)
 @click.option(
-    "--force-blackout", is_flag=True, help="Trip the blackout enforcer"
+    "--force-blackout/--no-force-blackout",
+    default=False,
+    show_default=True,
+    help="Trip the blackout enforcer",
 )
 @with_appcontext
 def dev_decide_issue(
@@ -1017,13 +1086,13 @@ def dev_list_stock(loc_code: str, limit: int):
     help="If omitted, picks the first available at location.",
 )
 @click.option("--location", "loc_code", default="LOC-MAIN", show_default=True)
-@click.option("--actor-id", default=None)
+@click.option("--actor-ulid", default=None)
 @click.option("--quantity", type=int, default=1, show_default=True)
 def dev_demo_issue(
     customer_ulid: str | None,
     sku_code: str | None,
     loc_code: str,
-    actor_id: str | None,
+    actor_ulid: str | None,
     quantity: int,
 ):
     """
@@ -1106,7 +1175,7 @@ def dev_demo_issue(
         quantity=quantity,
         when_iso=now_iso8601_ms(),
         project_ulid=None,
-        actor_id=actor_id,
+        actor_ulid=actor_ulid,
         location_ulid=loc.ulid,
         batch_ulid=batch_ulid,
     )
@@ -1362,7 +1431,7 @@ def dev_seed_logistics_canonical(
                 received_at_utc=now_iso8601_ms(),
                 location_ulid=loc_ulid,
                 note="seed:canonical",
-                actor_id=None,
+                actor_ulid=None,
                 source_entity_ulid=None,
             )
         except ValueError:

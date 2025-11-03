@@ -83,7 +83,7 @@ def issue():
             when_iso=when_iso,
             project_ulid=project_ulid,
             quantity=qty,
-            actor_id=actor_id,
+            actor_ulid=actor_ulid,
             location_ulid=location_ulid,
             batch_ulid=batch_ulid,
         )

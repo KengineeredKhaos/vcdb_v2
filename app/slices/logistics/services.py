@@ -59,6 +59,7 @@ class _Ctx:
         project_ulid: Optional[str],
         sku_parts: Optional[dict] = None,
         cost_cents: Optional[int] = None,
+        force_blackout: bool = False,  # harmless if not used
     ):
         self.customer_ulid = customer_ulid
         self.sku_code = sku_code
@@ -67,6 +68,7 @@ class _Ctx:
         self.project_ulid = project_ulid
         self.sku_parts = sku_parts
         self.cost_cents = cost_cents
+        self.force_blackout = force_blackout
 
 
 def issue_inventory(
@@ -76,7 +78,7 @@ def issue_inventory(
     when_iso: str | None = None,
     project_ulid: str | None = None,
     quantity: int = 1,
-    actor_id: str | None = None,
+    actor_ulid: str | None = None,
     location_ulid: str | None = None,
     batch_ulid: str | None = None,
 ) -> dict:
@@ -91,7 +93,7 @@ def issue_inventory(
         quantity=quantity,
         when_iso=when_iso,
         project_ulid=project_ulid,
-        actor_id=actor_id,
+        actor_ulid=actor_ulid,
         location_ulid=location_ulid,
         batch_ulid=batch_ulid,
     )
@@ -268,7 +270,7 @@ def receive_inventory(
     received_at_utc: str,
     location_ulid: str,
     note: str | None = None,
-    actor_id: str | None = None,
+    actor_ulid: str | None = None,
     source_entity_ulid: str | None = None,
 ) -> dict:
     """Record a receipt: create batch, create 'receipt' movement,
@@ -296,7 +298,7 @@ def receive_inventory(
         happened_at_utc=received_at_utc,
         source_ref_ulid=source_entity_ulid,
         target_ref_ulid=None,
-        created_by_actor=actor_id,
+        created_by_actor=actor_ulid,
         note=note,
     )
     db.session.add_all([b, m])
@@ -326,7 +328,7 @@ def issue_inventory_lowlevel(
     happened_at_utc: str,
     target_ref_ulid: str | None,
     note: str | None,
-    actor_id: str | None,
+    actor_ulid: str | None,
 ) -> str:
     """Low-level issuance path that writes a movement, reduces stock,
     and inserts the Issue row; returns movement_ulid."""
@@ -345,7 +347,7 @@ def issue_inventory_lowlevel(
         happened_at_utc=happened_at_utc,
         source_ref_ulid=None,
         target_ref_ulid=target_ref_ulid,
-        created_by_actor=actor_id,
+        created_by_actor=actor_ulid,
         note=note,
     )
     db.session.add(m)
@@ -375,7 +377,7 @@ def issue_inventory_lowlevel(
         issued_at=happened_at_utc,
         project_ulid=None,
         movement_ulid=m.ulid,
-        created_by_actor=actor_id,
+        created_by_actor=actor_ulid,
     )
     db.session.add(issue)
 
@@ -436,7 +438,7 @@ def decide_and_issue_one(
     quantity: int = 1,
     when_iso: str | None = None,
     project_ulid: str | None = None,
-    actor_id: str | None = None,
+    actor_ulid: str | None = None,
     location_ulid: str,  # where stock will be pulled from
     batch_ulid: str | None = None,  # optional: choose a specific batch
 ) -> dict:
@@ -545,7 +547,7 @@ def decide_and_issue_one(
         happened_at_utc=as_of,
         target_ref_ulid=customer_ulid,
         note=None,
-        actor_id=actor_id,
+        actor_ulid=actor_ulid,
     )
 
     # 5) Attach decision trace to Issue
@@ -556,7 +558,7 @@ def decide_and_issue_one(
         domain="logistics",
         operation="issue.created",
         request_id=new_ulid(),  # correlation id
-        actor_ulid=actor_id,
+        actor_ulid=actor_ulid,
         target_ulid=customer_ulid,  # subject: the customer
         refs={
             "movement_ulid": mv_ulid,
@@ -591,22 +593,19 @@ def issue_inventory_policy(
     when_iso: Optional[str] = None,
     project_ulid: Optional[str] = None,
     *,
-    actor_ulid: Optional[str] = None,
+    actor_ulid: Optional[str] = None,  # ← standardized
     quantity: int = 1,
 ) -> IssueResult:
     """
-    Policy-first path that records an Issue row after enforcer+policy OK,
-    without touching stock or creating a movement.
-    High-level issuance (policy-first) retained for CLI or other callers
-    that don't need to pick a specific batch/location themselves.
-
-    Steps:
-      1) SKU parse/validate (if provided)
-      2) Calendar blackout (enforcer)
-      3) Policy decision (governance -> decide_issue)
-      4) Persist Issue row (no stock math)
-      5) (Optional) emit ledger event externally
+    Policy-first issuance: enforcer + governance decision, then record an Issue
+    (no stock math / movement). Meant for CLI/testing or workflows that don't
+    pick a specific batch/location.
+    {ok, reason, issue_ulid?, decision, meta?}
     """
+    # 0) quick input guardrails
+    if quantity <= 0:
+        return IssueResult(ok=False, reason="invalid_quantity")
+
     as_of = when_iso or now_iso8601_ms()
 
     classification_key: Optional[str] = None
@@ -626,44 +625,93 @@ def issue_inventory_policy(
         sku_parts=parts,
     )
 
-    # 2) Calendar blackout
-    ok, meta = enforcers.calendar_blackout_ok(ctx)
+    # 1) Enforcer (calendar blackout)
+    ok, enf_meta = enforcers.calendar_blackout_ok(ctx)
     if not ok:
+        decision = {
+            "version": 1,
+            "ok": False,
+            "reason": enf_meta.get("reason", "calendar_blackout"),
+            "enforcer": enf_meta,
+            "policy": None,
+            "ctx": {
+                "customer_ulid": customer_ulid,
+                "sku_code": sku_code,
+                "classification_key": classification_key,
+                "sku_parts": parts,
+                "when_iso": as_of,
+                "project_ulid": project_ulid,
+                "quantity": quantity,
+                "actor_ulid": actor_ulid,
+            },
+        }
         return IssueResult(
-            ok=False,
-            reason=meta.get("reason", "calendar_blackout"),
-            decision={"enforcer": meta},
+            ok=False, reason=decision["reason"], decision=decision
         )
 
-    # 3) Policy decision (Governance)
+    # 2) Governance (policy decision)
     dec = gov.decide_issue(ctx)
-    decision_dict = {
-        "ok": bool(getattr(dec, "allowed", getattr(dec, "ok", False))),
+    policy_dec = {
+        "allowed": bool(getattr(dec, "allowed", getattr(dec, "ok", False))),
         "reason": getattr(dec, "reason", None),
         "approver_required": getattr(dec, "approver_required", None),
         "limit_window_label": getattr(dec, "limit_window_label", None),
         "next_eligible_at_iso": getattr(dec, "next_eligible_at_iso", None),
     }
-    if not decision_dict["ok"]:
+    if not policy_dec["allowed"]:
+        decision = {
+            "version": 1,
+            "ok": False,
+            "reason": policy_dec["reason"] or "denied",
+            "enforcer": {"reason": "ok"},
+            "policy": policy_dec,
+            "ctx": {
+                "customer_ulid": customer_ulid,
+                "sku_code": sku_code,
+                "classification_key": classification_key,
+                "sku_parts": parts,
+                "when_iso": as_of,
+                "project_ulid": project_ulid,
+                "quantity": quantity,
+                "actor_ulid": actor_ulid,
+            },
+        }
         return IssueResult(
-            ok=False,
-            reason=decision_dict["reason"] or "denied",
-            decision=decision_dict,
+            ok=False, reason=decision["reason"], decision=decision
         )
 
-    # 4) Persist Issue row (policy-only; no movement/stock)
+    # 3) Persist Issue row (policy-only)
+    #    (If Issue model lacks auto-ULID, uncomment ulid=new_ulid())
+    decision = {
+        "version": 1,
+        "ok": True,
+        "reason": policy_dec["reason"] or "ok",
+        "enforcer": {"reason": "ok"},
+        "policy": policy_dec,
+        "ctx": {
+            "customer_ulid": customer_ulid,
+            "sku_code": sku_code,
+            "classification_key": classification_key,
+            "sku_parts": parts,
+            "when_iso": as_of,
+            "project_ulid": project_ulid,
+            "quantity": quantity,
+            "actor_ulid": actor_ulid,
+        },
+    }
+
     row = Issue(
+        # ulid=new_ulid(),          # ← enable if your model doesn’t auto-ULID
         customer_ulid=customer_ulid,
         classification_key=classification_key,
         sku_code=sku_code,
         quantity=quantity,
-        issued_at=as_of,
+        issued_at=as_of,  # naive UTC ISO is fine if consistent everywhere
         project_ulid=project_ulid,
         movement_ulid=None,
         created_by_actor=actor_ulid,
+        decision_json=pretty_dumps(decision),  # richer, self-describing trace
     )
-    row.decision_json = pretty_dumps(decision_dict)
-
     db.session.add(row)
     db.session.commit()
 
@@ -671,7 +719,7 @@ def issue_inventory_policy(
         ok=True,
         reason="ok",
         issue_ulid=row.ulid,
-        decision=decision_dict,
+        decision=decision,
         meta={"policy_only": True},
     )
 

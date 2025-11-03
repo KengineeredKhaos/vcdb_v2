@@ -12,7 +12,7 @@ from flask_wtf import CSRFProtect
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
-from .auth_ctx import current_actor_id
+from .auth_ctx import current_actor_ulid
 from .entity_api import entity_api
 from .entity_read import entity_read
 
@@ -153,5 +153,5 @@ __all__ = [
     "init_extensions",
     "entity_api",
     "entity_read",
-    "current_actor_id",
+    "current_actor_ulid",
 ]

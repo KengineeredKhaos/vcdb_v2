@@ -8,7 +8,7 @@ from flask_login import login_required
 
 from app.extensions import (
     allowed_role_codes,
-    current_actor_id,
+    current_actor_ulid,
     entity_api,
 )
 from app.extensions.contracts.entity import v2 as entity_contract
@@ -184,7 +184,7 @@ def create():
     """
 
     req_id = new_ulid()
-    actor = current_actor_id()
+    actor = current_actor_ulid()
 
     env = entity_contract.ContractEnvelope(
         request_id=req_id, actor_ulid=actor, dry_run=False
