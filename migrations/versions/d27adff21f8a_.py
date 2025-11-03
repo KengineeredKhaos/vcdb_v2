@@ -1,8 +1,8 @@
-"""v2 clean logistics sku schema
+"""empty message
 
-Revision ID: 75d50de110e0
+Revision ID: d27adff21f8a
 Revises: 
-Create Date: 2025-10-27 22:58:02.324914
+Create Date: 2025-11-03 09:55:47.249030
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '75d50de110e0'
+revision = 'd27adff21f8a'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -580,6 +580,9 @@ def upgrade():
     op.create_table('customer_eligibility',
     sa.Column('customer_ulid', sa.String(length=26), nullable=False),
     sa.Column('is_veteran_verified', sa.Boolean(), nullable=False),
+    sa.Column('veteran_method', sa.String(length=32), nullable=True),
+    sa.Column('approved_by_ulid', sa.String(length=26), nullable=True),
+    sa.Column('approved_at_utc', sa.String(length=30), nullable=True),
     sa.Column('is_homeless_verified', sa.Boolean(), nullable=False),
     sa.Column('tier1_min', sa.Integer(), nullable=True),
     sa.Column('tier2_min', sa.Integer(), nullable=True),
@@ -587,6 +590,9 @@ def upgrade():
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.CheckConstraint("NOT (is_veteran_verified = 1 AND veteran_method = 'other' AND approved_by_ulid IS NULL)", name='ck_ce_other_requires_approval'),
+    sa.CheckConstraint("veteran_method IS NULL OR veteran_method IN ('dd214','va_id','state_dl_veteran','other')", name='ck_ce_veteran_method_enum'),
+    sa.CheckConstraint('NOT (is_veteran_verified = 0 AND (veteran_method IS NOT NULL OR approved_by_ulid IS NOT NULL OR approved_at_utc IS NOT NULL))', name='ck_ce_unverified_requires_nulls'),
     sa.CheckConstraint('tier1_min IS NULL OR (tier1_min BETWEEN 1 AND 3)', name='ck_el_tier1_range'),
     sa.CheckConstraint('tier2_min IS NULL OR (tier2_min BETWEEN 1 AND 3)', name='ck_el_tier2_range'),
     sa.CheckConstraint('tier3_min IS NULL OR (tier3_min BETWEEN 1 AND 3)', name='ck_el_tier3_range'),
@@ -807,6 +813,7 @@ def upgrade():
     sa.Column('movement_ulid', sa.String(length=26), nullable=True),
     sa.Column('created_by_actor', sa.String(length=26), nullable=True),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('decision_json', sa.Text(), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.CheckConstraint('quantity>0', name='ck_issue_pos_qty'),
     sa.ForeignKeyConstraint(['movement_ulid'], ['logi_movement.ulid'], ondelete='RESTRICT'),

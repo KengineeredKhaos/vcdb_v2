@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "policy_customer_needs.schema.json",
+  "type": "object",
+  "required": ["tiers", "veteran_verification_methods"],
+  "properties": {
+    "veteran_verification_methods": {
+      "type": "array",
+      "items": { "enum": ["dd214", "va_id", "state_dl_veteran", "other"] },
+      "minItems": 4,
+      "uniqueItems": true
+    },
+    "tiers": {
+      "type": "object",
+      "required": ["tier1", "tier2", "tier3"],
+      "properties": {
+        "tier1": { "$ref": "#/$defs/tierFactors" },
+        "tier2": { "$ref": "#/$defs/tierFactors" },
+        "tier3": { "$ref": "#/$defs/tierFactors" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "tierFactors": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 2, "maxLength": 24 },
+      "uniqueItems": true,
+      "minItems": 1
+    }
+  }
+}

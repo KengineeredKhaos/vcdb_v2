@@ -6,6 +6,13 @@
 - git commit -m "checkpoint: new chat ses entity in db"
 - git tag -a v2-freeze-new_ses-entity_in_db
 
+## If you want to "pseudo-rebase" a branch to the new main
+
+- git log   # make sure you're on the right branch and commit is current
+- git branch -f main HEAD   # make your branch the new main HEAD
+- git switch main       # switch to the main so you're working on main
+- git status        # check to see where you are...
+
 
 Here’s a tight, copy-pasteable cheatsheet you can drop into your notes.
 it covers creating a safe branch for UI work, staging/committing,

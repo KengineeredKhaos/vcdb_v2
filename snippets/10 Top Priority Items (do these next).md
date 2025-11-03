@@ -81,6 +81,8 @@ Love it. Here’s a crisp “what’s still hanging” punch-list, grouped by sl
   
   - Add web form to load/edit/save any policy under `slices/governance/data/` with **pre-save schema+semantics validation** and friendly error surfacing.
   
+  - Admin “20-questions” policy editor with JSON linting
+  
   - Add a read-only Policy Index page listing all policy files + last modified.
 
 - **Quick check:** manually edit + save a known-bad file → expect validation error toast/log.

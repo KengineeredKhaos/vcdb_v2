@@ -1,9 +1,9 @@
-# app/slices/customers/services.py
+# app/slices/customer/services.py
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 from sqlalchemy import desc, func, select
 
@@ -14,29 +14,78 @@ from app.slices.entity.models import Entity
 
 from .models import Customer, CustomerEligibility, CustomerHistory
 
-# ---------------------------------------------------------------------------
-# Canonical tier/factor map per MVP (move to Governance later)
-# ---------------------------------------------------------------------------
+"""
+Homelessness is derived strictly from Tier-1 housing == 1,
+and we sync that into CustomerEligibility automatically on every tier write.
+
+record_needs_tier() is your single writer for tier data (History only)
+and the denormalized cues; the three update_tierN() helpers wrap it.
+
+Veteran verification is enforced: other requires a governor;
+we never store images/PII—just the method and approver ULID for audit.
+
+DashboardView is a single, cheap read that always reflects the latest rows;
+it’s safe for UI and for quick CLI inspection.
+
+Every write emits a minimal ledger event with only names/refs (no values),
+matching Ledger ethos.
+"""
+
+# -----------------
+# Canonical values
+# -----------------
+
 TIER_FACTORS: dict[str, tuple[str, ...]] = {
     "tier1": ("food", "hygiene", "health", "housing", "clothing"),
     "tier2": ("income", "employment", "transportation", "education"),
     "tier3": ("family", "peergroup", "tech"),
 }
-
 ALLOWED_VALUES = {1, 2, 3, "unknown", "n/a", None}
+ALLOWED_METHODS = {"dd214", "va_id", "state_dl_veteran", "other"}
 
 # -----------------
-# Snapshot framing
+# Snapshots
 # -----------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class EligibilitySnapshot:
+    customer_ulid: str
     is_veteran_verified: bool
     is_homeless_verified: bool
     tier1_min: int | None
     tier2_min: int | None
     tier3_min: int | None
+    as_of_iso: str
+
+
+@dataclass(frozen=True)
+class DashboardView:
+    # core ids
+    customer_ulid: str
+    entity_ulid: str
+    # coarse needs
+    tier1_min: int | None
+    tier2_min: int | None
+    tier3_min: int | None
+    # flags/cues
+    flag_tier1_immediate: bool
+    flag_reason: str | None
+    watchlist: bool
+    watchlist_since_utc: str | None
+    # qualifiers
+    is_veteran_verified: bool
+    veteran_method: str | None
+    is_homeless_verified: bool
+    # latest factor maps (denormalized for quick view; values are non-PII enums/ints)
+    tier_factors: Mapping[str, Mapping[str, object]]
+    # ops/status
+    status: str
+    first_seen_utc: str | None
+    last_touch_utc: str | None
+    last_needs_update_utc: str | None
+    last_needs_tier_updated: str | None
+    as_of_iso: str
 
 
 # -----------------
@@ -91,22 +140,7 @@ def _compute_operational_cues(
     return t1_min, t2_min, t3_min, flag_t1, watch
 
 
-def _next_version(customer_ulid: str, section: str) -> int:
-    cur = (
-        db.session.query(func.max(CustomerHistory.version))
-        .filter_by(customer_ulid=customer_ulid, section=section)
-        .scalar()
-    )
-    return int(cur or 0) + 1
-
-
 def _first_worst_factor_tier1(tier1: dict[str, Any]) -> Optional[str]:
-    """
-    Deterministic reason for flag: first factor in canonical order that equals 1.
-    Returns e.g. 'food=1' or None.
-    """
-    if not tier1:
-        return None
     for f in TIER_FACTORS["tier1"]:
         v = tier1.get(f)
         if isinstance(v, int) and v == 1:
@@ -114,13 +148,51 @@ def _first_worst_factor_tier1(tier1: dict[str, Any]) -> Optional[str]:
     return None
 
 
-# ---- core API --------------------------------------------------------------
+def _latest_tier_map(customer_ulid: str, tier_key: str) -> dict[str, object]:
+    row = (
+        db.session.query(CustomerHistory)
+        .filter_by(
+            customer_ulid=customer_ulid, section=f"profile:needs:{tier_key}"
+        )
+        .order_by(desc(CustomerHistory.version))
+        .first()
+    )
+    return json.loads(row.data_json) if row else {}
+
+
+def _elig_row(customer_ulid: str) -> CustomerEligibility:
+    row = (
+        db.session.query(CustomerEligibility)
+        .filter_by(customer_ulid=customer_ulid)
+        .first()
+    )
+    if not row:
+        row = CustomerEligibility(customer_ulid=customer_ulid)
+        db.session.add(row)
+    return row
+
+
+def _row_to_snapshot(row: CustomerEligibility) -> EligibilitySnapshot:
+    return EligibilitySnapshot(
+        customer_ulid=row.customer_ulid,
+        is_veteran_verified=bool(row.is_veteran_verified),
+        is_homeless_verified=bool(row.is_homeless_verified),
+        tier1_min=row.tier1_min,
+        tier2_min=row.tier2_min,
+        tier3_min=row.tier3_min,
+        as_of_iso=now_iso8601_ms(),
+    )
+
+
+# -----------------
+# Public API (writes emit ledger)
+# -----------------
 
 
 def ensure_customer(
     *, entity_ulid: str, request_id: str, actor_ulid: Optional[str]
 ) -> str:
-    """Idempotently ensure a Customer record exists for the given Entity."""
+    """Idempotently ensure a Customer row exists for the given Entity; emit ledger on first create."""
     _ensure_reqid(request_id)
 
     if not db.session.get(Entity, entity_ulid):
@@ -132,15 +204,13 @@ def ensure_customer(
     if not cust:
         now = now_iso8601_ms()
         cust = Customer(
-            entity_ulid=entity_ulid,
-            first_seen_utc=now,
-            last_touch_utc=now,
+            entity_ulid=entity_ulid, first_seen_utc=now, last_touch_utc=now
         )
         db.session.add(cust)
         db.session.commit()
         event_bus.emit(
             domain="customers",
-            operation="created_insert",
+            operation="profile_update",
             actor_ulid=actor_ulid,
             target_ulid=cust.ulid,
             request_id=request_id,
@@ -148,14 +218,13 @@ def ensure_customer(
             refs={"entity_ulid": entity_ulid},
         )
     else:
-        # touch on ensure to mark activity if desired
         cust.last_touch_utc = now_iso8601_ms()
         db.session.commit()
 
     return cust.ulid
 
 
-def update_needs_tier(
+def record_needs_tier(
     *,
     customer_ulid: str,
     tier_key: str,  # "tier1" | "tier2" | "tier3"
@@ -164,8 +233,9 @@ def update_needs_tier(
     actor_ulid: Optional[str],
 ) -> str:
     """
-    Store a new Needs Assessment snapshot for a single tier (History-only values).
-    Updates denormalized cues + ops fields; emits minimal ledger event.
+    Store a new Needs snapshot for a single tier (values live ONLY in History).
+    Updates Customer denormalized cues + Eligibility coarse mins & homeless flag.
+    Emits a ledger event (no values).
     """
     _ensure_reqid(request_id)
 
@@ -176,7 +246,13 @@ def update_needs_tier(
     norm = _validate_tier_payload(tier_key, payload)
 
     section = f"profile:needs:{tier_key}"
-    version = _next_version(customer_ulid, section)
+    cur_max = (
+        db.session.query(func.max(CustomerHistory.version))
+        .filter_by(customer_ulid=customer_ulid, section=section)
+        .scalar()
+    )
+    version = int(cur_max or 0) + 1
+
     hist = CustomerHistory(
         customer_ulid=customer_ulid,
         section=section,
@@ -186,52 +262,65 @@ def update_needs_tier(
     )
     db.session.add(hist)
 
-    # recompute cues from latest per tier
-    latest: dict[str, dict] = {}
-    for tk in ("tier1", "tier2", "tier3"):
-        h = (
-            db.session.query(CustomerHistory)
-            .filter_by(
-                customer_ulid=customer_ulid, section=f"profile:needs:{tk}"
-            )
-            .order_by(desc(CustomerHistory.version))
-            .first()
-        )
-        latest[tk] = json.loads(h.data_json) if h else {}
+    # recompute latest maps for all tiers
+    latest_t1 = (
+        _latest_tier_map(customer_ulid, "tier1")
+        if tier_key != "tier1"
+        else norm
+    )
+    latest_t2 = (
+        _latest_tier_map(customer_ulid, "tier2")
+        if tier_key != "tier2"
+        else norm
+    )
+    latest_t3 = (
+        _latest_tier_map(customer_ulid, "tier3")
+        if tier_key != "tier3"
+        else norm
+    )
+    if tier_key == "tier1":
+        latest_t1 = norm
+    elif tier_key == "tier2":
+        latest_t2 = norm
+    else:
+        latest_t3 = norm
 
+    # compute cues
     t1_min, t2_min, t3_min, flag_t1, watch = _compute_operational_cues(
-        latest.get("tier1"), latest.get("tier2"), latest.get("tier3")
+        latest_t1, latest_t2, latest_t3
     )
 
+    # update Customer cues
+    now = now_iso8601_ms()
+    prev_watch = bool(cust.watchlist)
     cust.tier1_min = t1_min
     cust.tier2_min = t2_min
     cust.tier3_min = t3_min
-
-    # watchlist_since_utc management
-    prev_watch = bool(cust.watchlist)
+    cust.flag_tier1_immediate = flag_t1
+    cust.flag_reason = (
+        _first_worst_factor_tier1(latest_t1 or {}) if flag_t1 else None
+    )
     cust.watchlist = watch
-    now = now_iso8601_ms()
     if watch and not prev_watch and not cust.watchlist_since_utc:
         cust.watchlist_since_utc = now
     if not watch and prev_watch:
         cust.watchlist_since_utc = None
-
-    # flag management + reason (Tier1 only)
-    cust.flag_tier1_immediate = flag_t1
-    cust.flag_reason = (
-        _first_worst_factor_tier1(latest.get("tier1") or {})
-        if flag_t1
-        else None
-    )
-
-    # ops helpers
     cust.last_needs_update_utc = now
     cust.last_needs_tier_updated = tier_key
     cust.last_touch_utc = now
 
+    # update Eligibility (coarse mins + homeless derivation)
+    elig = _elig_row(customer_ulid)
+    elig.tier1_min, elig.tier2_min, elig.tier3_min = t1_min, t2_min, t3_min
+    housing = (
+        latest_t1.get("housing") if isinstance(latest_t1, dict) else None
+    )
+    elig.is_homeless_verified = bool(
+        isinstance(housing, int) and housing == 1
+    )
+
     db.session.commit()
 
-    # Minimal ledger event; no values — only the section & pointer
     event_bus.emit(
         domain="customers",
         operation="profile_update",
@@ -239,13 +328,10 @@ def update_needs_tier(
         target_ulid=customer_ulid,
         request_id=request_id,
         happened_at_utc=now_iso8601_ms(),
-        changed_fields=["tierN"],
         refs={"section": section, "version_ptr": hist.ulid},
+        changed={"fields": [tier_key]},
     )
     return hist.ulid
-
-
-# convenience wrappers
 
 
 def update_tier1(
@@ -255,7 +341,7 @@ def update_tier1(
     request_id: str,
     actor_ulid: Optional[str],
 ) -> str:
-    return update_needs_tier(
+    return record_needs_tier(
         customer_ulid=customer_ulid,
         tier_key="tier1",
         payload=payload,
@@ -271,7 +357,7 @@ def update_tier2(
     request_id: str,
     actor_ulid: Optional[str],
 ) -> str:
-    return update_needs_tier(
+    return record_needs_tier(
         customer_ulid=customer_ulid,
         tier_key="tier2",
         payload=payload,
@@ -287,7 +373,7 @@ def update_tier3(
     request_id: str,
     actor_ulid: Optional[str],
 ) -> str:
-    return update_needs_tier(
+    return record_needs_tier(
         customer_ulid=customer_ulid,
         tier_key="tier3",
         payload=payload,
@@ -296,70 +382,69 @@ def update_tier3(
     )
 
 
-# -----------------
-# dashboard-friendly view
-# -----------------
+def set_veteran_verification(
+    *,
+    customer_ulid: str,
+    method: str,
+    verified: bool,
+    actor_ulid: str | None,
+    actor_has_governor: bool,  # Governance check result
+    request_id: str,
+) -> EligibilitySnapshot:
+    """
+    Set/clear veteran verification and record method.
+    Rule: method='other' requires actor with Domain role 'governor'.
+    Emits ledger 'verification_updated'.
+    """
+    _ensure_reqid(request_id)
+    method = (method or "").lower().strip()
 
+    if verified and method not in ALLOWED_METHODS:
+        raise ValueError(f"invalid method: {method!r}")
+    if verified and method == "other" and not actor_has_governor:
+        raise PermissionError("governor override required for method='other'")
 
-def customer_view(customer_ulid: str) -> Optional[dict]:
-    c = db.session.get(Customer, customer_ulid)
-    if not c:
-        return None
-    return {
-        "customer_ulid": c.ulid,
-        "entity_ulid": c.entity_ulid,
-        "tier1_min": c.tier1_min,
-        "tier2_min": c.tier2_min,
-        "tier3_min": c.tier3_min,
-        "flag_tier1_immediate": c.flag_tier1_immediate,
-        "flag_reason": c.flag_reason,
-        "watchlist": c.watchlist,
-        "watchlist_since_utc": c.watchlist_since_utc,
-        "status": c.status,
-        "first_seen_utc": c.first_seen_utc,
-        "last_touch_utc": c.last_touch_utc,
-        "last_needs_update_utc": c.last_needs_update_utc,
-        "last_needs_tier_updated": c.last_needs_tier_updated,
-        "created_at_utc": c.created_at_utc,
-        "updated_at_utc": c.updated_at_utc,
-    }
+    if not db.session.get(Customer, customer_ulid):
+        raise ValueError("customer not found")
 
+    row = _elig_row(customer_ulid)
+    row.is_veteran_verified = bool(verified)
+    if verified:
+        row.veteran_method = method
+        if method == "other":
+            row.approved_by_ulid = actor_ulid
+            row.approved_at_utc = now_iso8601_ms()
+        else:
+            row.approved_by_ulid = None
+            row.approved_at_utc = None
+    else:
+        row.veteran_method = None
+        row.approved_by_ulid = None
+        row.approved_at_utc = None
 
-# -----------------
-# Customer Eligibility
-# -----------------
-from typing import TYPE_CHECKING  # noqa: E402
+    db.session.commit()
 
-from sqlalchemy import select  # noqa: E402
-
-if TYPE_CHECKING:
-    # Type-only import (won't execute at runtime)
-    from app.extensions.contracts.customer_v2 import (
-        CustomerEligibilitySnapshot,
+    event_bus.emit(
+        domain="customers",
+        operation="profile_update",
+        actor_ulid=actor_ulid,
+        target_ulid=customer_ulid,
+        request_id=request_id,
+        happened_at_utc=now_iso8601_ms(),
+        changed={"fields": ["is_veteran_verified", "veteran_method"]},
     )
+    return _row_to_snapshot(row)
 
 
-def _row_to_snapshot(row: CustomerEligibility):
-    # Lazy import avoids contract ↔ provider circular imports
-    from app.extensions.contracts.customer_v2 import (
-        CustomerEligibilitySnapshot,
-    )
-
-    return CustomerEligibilitySnapshot(
-        customer_ulid=row.customer_ulid,
-        is_veteran_verified=bool(row.is_veteran_verified),
-        is_homeless_verified=bool(row.is_homeless_verified),
-        tier1_min=row.tier1_min,
-        tier2_min=row.tier2_min,
-        tier3_min=row.tier3_min,
-        as_of_iso=now_iso8601_ms(),
-    )
+# -----------------
+# Public API (reads)
+# -----------------
 
 
 def get_eligibility_snapshot(customer_ulid: str) -> EligibilitySnapshot:
     """
-    Read-only snapshot for policy evaluation.
-    DO NOT create rows here; intake/update flows own writes.
+    Read-only coarse snapshot for Governance evaluation.
+    Returns conservative defaults if row not created yet.
     """
     row = db.session.execute(
         select(CustomerEligibility).where(
@@ -368,70 +453,60 @@ def get_eligibility_snapshot(customer_ulid: str) -> EligibilitySnapshot:
     ).scalar_one_or_none()
 
     if row is None:
-        # Ephemeral defaults for policy checks when no record exists yet.
-        # Keep this conservative and documented.
         return EligibilitySnapshot(
+            customer_ulid=customer_ulid,
             is_veteran_verified=False,
             is_homeless_verified=False,
             tier1_min=None,
             tier2_min=None,
             tier3_min=None,
+            as_of_iso=now_iso8601_ms(),
         )
+    return _row_to_snapshot(row)
 
-    return EligibilitySnapshot(
-        is_veteran_verified=bool(row.is_veteran_verified),
-        is_homeless_verified=bool(row.is_homeless_verified),
-        tier1_min=row.tier1_min,
-        tier2_min=row.tier2_min,
-        tier3_min=row.tier3_min,
+
+def get_dashboard_view(customer_ulid: str) -> DashboardView | None:
+    """
+    Fast, get-only dashboard view composed from:
+    - Customer (cues/ops)
+    - CustomerEligibility (coarse qualifiers)
+    - Latest tier factor maps from History
+    """
+    c = db.session.get(Customer, customer_ulid)
+    if not c:
+        return None
+
+    elig = (
+        db.session.query(CustomerEligibility)
+        .filter_by(customer_ulid=customer_ulid)
+        .first()
     )
 
+    # Pull latest factor maps for each tier
+    t1 = _latest_tier_map(customer_ulid, "tier1")
+    t2 = _latest_tier_map(customer_ulid, "tier2")
+    t3 = _latest_tier_map(customer_ulid, "tier3")
 
-def set_verification_flags(
-    customer_ulid: str,
-    *,
-    veteran: bool | None = None,
-    homeless: bool | None = None,
-) -> "CustomerEligibilitySnapshot":
-    row = db.session.execute(
-        select(CustomerEligibility).where(
-            CustomerEligibility.customer_ulid == customer_ulid
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        row = CustomerEligibility(customer_ulid=customer_ulid)
-        db.session.add(row)
-    if veteran is not None:
-        row.is_veteran_verified = bool(veteran)
-    if homeless is not None:
-        row.is_homeless_verified = bool(homeless)
-    db.session.commit()
-    return _row_to_snapshot(row)
-
-
-def set_tier_min(
-    customer_ulid: str,
-    *,
-    tier1: int | None = None,
-    tier2: int | None = None,
-    tier3: int | None = None,
-) -> "CustomerEligibilitySnapshot":
-    for name, val in (("tier1", tier1), ("tier2", tier2), ("tier3", tier3)):
-        if val is not None and val not in (1, 2, 3):
-            raise ValueError(f"{name} must be 1,2,3 or None")
-    row = db.session.execute(
-        select(CustomerEligibility).where(
-            CustomerEligibility.customer_ulid == customer_ulid
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        row = CustomerEligibility(customer_ulid=customer_ulid)
-        db.session.add(row)
-    if tier1 is not None:
-        row.tier1_min = tier1
-    if tier2 is not None:
-        row.tier2_min = tier2
-    if tier3 is not None:
-        row.tier3_min = tier3
-    db.session.commit()
-    return _row_to_snapshot(row)
+    return DashboardView(
+        customer_ulid=c.ulid,
+        entity_ulid=c.entity_ulid,
+        tier1_min=c.tier1_min,
+        tier2_min=c.tier2_min,
+        tier3_min=c.tier3_min,
+        flag_tier1_immediate=c.flag_tier1_immediate,
+        flag_reason=c.flag_reason,
+        watchlist=c.watchlist,
+        watchlist_since_utc=c.watchlist_since_utc,
+        is_veteran_verified=bool(elig.is_veteran_verified) if elig else False,
+        veteran_method=elig.veteran_method if elig else None,
+        is_homeless_verified=bool(elig.is_homeless_verified)
+        if elig
+        else False,
+        tier_factors={"tier1": t1, "tier2": t2, "tier3": t3},
+        status=c.status,
+        first_seen_utc=c.first_seen_utc,
+        last_touch_utc=c.last_touch_utc,
+        last_needs_update_utc=c.last_needs_update_utc,
+        last_needs_tier_updated=c.last_needs_tier_updated,
+        as_of_iso=now_iso8601_ms(),
+    )

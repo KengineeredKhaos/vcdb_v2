@@ -130,6 +130,15 @@ class CustomerEligibility(db.Model, ULIDPK):
     is_veteran_verified: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, index=True
     )
+    veteran_method: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )  # dd214|va_id|state_dl_veteran|other
+    approved_by_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+    approved_at_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )
     is_homeless_verified: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, index=True
     )
@@ -167,5 +176,22 @@ class CustomerEligibility(db.Model, ULIDPK):
         CheckConstraint(
             "tier3_min IS NULL OR (tier3_min BETWEEN 1 AND 3)",
             name="ck_el_tier3_range",
+        ),
+        # enum guard
+        CheckConstraint(
+            "veteran_method IS NULL OR veteran_method IN "
+            "('dd214','va_id','state_dl_veteran','other')",
+            name="ck_ce_veteran_method_enum",
+        ),
+        # if not verified → all method/approval fields must be NULL
+        CheckConstraint(
+            "NOT (is_veteran_verified = 0 AND "
+            "(veteran_method IS NOT NULL OR approved_by_ulid IS NOT NULL OR approved_at_utc IS NOT NULL))",
+            name="ck_ce_unverified_requires_nulls",
+        ),
+        # if method='other' and verified → approved_by_ulid must be present
+        CheckConstraint(
+            "NOT (is_veteran_verified = 1 AND veteran_method = 'other' AND approved_by_ulid IS NULL)",
+            name="ck_ce_other_requires_approval",
         ),
     )
