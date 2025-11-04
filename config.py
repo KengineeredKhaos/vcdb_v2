@@ -47,13 +47,17 @@ class BaseConfig:
         os.environ.get("VCDB_LEDGER_CHECK_ON_BOOT", "true").lower() == "true"
     )
     # Attachment Storage
-    # ATTACHMENTS_ROOT = (env var) → default var/data/attachments
+    # ATTACHMENTS_ROOT = (env) var → default var/data/attachment
 
 
 # ---------- Development ----------
 class DevConfig(BaseConfig):
     ENV = "development"
     DEBUG = True
+    SECRET_KEY = b"dev-not-secret"
+    LOG_DIR = "app/logs"
+    LOG_BACKUPS = 14
+    LOG_MAX_BYTES = 5 * 1024 * 1024  # 5MB
 
     # Local sqlite file in repo /var/app-instance/dev.db
     DATABASE = str(BaseConfig.BASE_DIR / "var" / "app-instance" / "dev.db")

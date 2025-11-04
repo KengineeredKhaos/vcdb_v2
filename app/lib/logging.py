@@ -1,102 +1,140 @@
 # app/lib/logging.py
 # -*- coding: utf-8 -*-
-# VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
-# File: <relative path>
-# Purpose: Stable library primitive for VCDB.
-# Canon API: lib-core v1.0.0 (frozen)
+from __future__ import annotations
 
+import gzip
 import json
 import logging
+import shutil
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Optional
 
-from .chrono import now_iso8601_ms, parse_iso8601, to_iso8601
-
-"""
-What to move into app/lib/logging.py
-
-JSON formatter (your JSONLineFormatter).
-
-Handler factory (file vs stdout).
-
-Idempotent reset (remove duplicate handlers on repeated app inits).
-
-Environment policy (dev → files; else → stdout).
-
-3rd-party tuning (Werkzeug/Jinja levels).
-
-Domain loggers wiring (vcdb.app, vcdb.audit, vcdb.jobs, vcdb.export).
-
-Optional: a small adapter to inject common fields
-(e.g., request_id) into all log records.
-
-centralize all logging setup in app/__init__.py using inside "create_app"
-    "configure_logging(app)"
-then initstantiate the rest: db, blueprints, error handlers, etc.
-"""
-
-
-class ISOFormatter(logging.Formatter):
-    def format(self, record):
-        try:
-            ts = now_iso8601_ms()  # already like '2025-10-12T19:23:45Z'
-        except Exception:
-            ts = "0000-00-00T00:00:00Z"
-        record.msg = f"[{ts}] {record.msg}"
-        return super().format(record)
+# ----- JSON line formatter ----------------------------------------------------
 
 
 class JSONLineFormatter(logging.Formatter):
-    """One JSON object per line, UTC timestamp."""
-
     def format(self, record: logging.LogRecord) -> str:
-        ts = now_iso8601_ms()
-        base = {
-            "ts": ts.replace("+00:00", "Z"),  # show explicit UTC
+        payload = {
+            "ts": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
             "lvl": record.levelname,
             "logger": record.name,
         }
-        # rest unchanged...
-        if isinstance(record.msg, dict):
-            base.update(record.msg)
-        else:
-            base["msg"] = record.getMessage()
+        # If message is already a dict-like JSON string, try to keep it
+        try:
+            msg_obj = json.loads(record.getMessage())
+            if isinstance(msg_obj, dict):
+                payload.update(msg_obj)
+            else:
+                payload["msg"] = record.getMessage()
+        except Exception:
+            payload["msg"] = record.getMessage()
         if record.exc_info:
-            base["exc_info"] = self.formatException(record.exc_info)
-        return json.dumps(base, ensure_ascii=False)
+            payload["exc_info"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
+
+
+# ----- helpers ----------------------------------------------------------------
 
 
 def _reset_logger(lg: logging.Logger) -> None:
     for h in list(lg.handlers):
         lg.removeHandler(h)
+    lg.setLevel(logging.NOTSET)
+    lg.propagate = False
+
+
+def _archiving_rotating_handler(
+    base_dir: Path, filename: str, backups: int, max_bytes: int
+) -> logging.Handler:
+    """
+    Live log at base_dir/filename.
+    On rollover: move rotated file to base_dir/archive/<stem>-YYYYMMDD-HHMMSS.log.gz
+    """
+    base_dir.mkdir(parents=True, exist_ok=True)
+    archive_dir = base_dir / "archive"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    live_path = base_dir / filename
+    h = RotatingFileHandler(
+        live_path,
+        maxBytes=max_bytes,
+        backupCount=backups,
+        encoding="utf-8",
+        delay=False,
+    )
+
+    def namer(default_name: str) -> str:
+        stem = Path(filename).stem  # "app"
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        return f"{stem}-{ts}.log"  # basename; rotator will place it
+
+    def rotator(source: str, dest: str) -> None:
+        src = Path(source)
+        final = archive_dir / Path(namer("ignored")).name
+        shutil.move(str(src), str(final))
+        gz_path = str(final) + ".gz"
+        with open(final, "rb") as f_in, gzip.open(
+            gz_path, "wb", compresslevel=6
+        ) as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        final.unlink(missing_ok=True)
+
+    h.namer = namer
+    h.rotator = rotator
+    return h
+
+
+# ----- main entry -------------------------------------------------------------
 
 
 def configure_logging(app) -> None:
-    """Single, idempotent logging setup. Call once per app instance."""
-    is_dev = app.config.get("ENV") == "development" and not app.testing
+    is_dev = not app.testing and (
+        bool(getattr(app, "debug", False))
+        or app.config.get("ENV") in {"dev", "development"}
+        or bool(app.config.get("LOG_DIR"))
+    )
+
+    # Reset common loggers to avoid dupes / stale handlers
+    for name in (
+        "",
+        "flask.app",
+        "werkzeug",
+        "jinja2",
+        "app",
+        "vcdb.app",
+        "vcdb.audit",
+        "vcdb.jobs",
+        "vcdb.export",
+    ):
+        _reset_logger(logging.getLogger(name))
+
+    log_dir = Path(app.config.get("LOG_DIR") or "app/logs")
 
     if is_dev:
-        log_dir = Path(app.config.get("LOG_DIR", "app/logs"))
-        log_dir.mkdir(parents=True, exist_ok=True)
+        backups = int(app.config.get("LOG_BACKUPS", 14))
+        max_bytes = int(app.config.get("LOG_MAX_BYTES", 10 * 1024 * 1024))
 
-        def fh(filename: str) -> logging.Handler:
-            h = logging.FileHandler(log_dir / filename, encoding="utf-8")
-            h.setFormatter(JSONLineFormatter())
-            h.setLevel(logging.INFO)
-            return h
+        main_h = _archiving_rotating_handler(
+            log_dir, "app.log", backups, max_bytes
+        )
+        main_h.setFormatter(JSONLineFormatter())
+        main_h.setLevel(logging.INFO)
 
-        # Flask app logger + framework loggers
-        _reset_logger(app.logger)
-        app.logger.setLevel(logging.INFO)
-        app.logger.addHandler(fh("app.log"))
+        # 1) Attach to ROOT — guarantees we catch any logger name
+        root = logging.getLogger()
+        root.addHandler(main_h)
+        root.setLevel(logging.INFO)
+        root.propagate = False
 
-        for name in ("werkzeug", "jinja2"):
+        # 2) Also attach explicitly to the usual suspects (mirrors into app.log)
+        for name in ("flask.app", "werkzeug", "jinja2", "app"):
             lg = logging.getLogger(name)
-            _reset_logger(lg)
-            lg.addHandler(fh("app.log"))
-            lg.setLevel(logging.INFO if name == "werkzeug" else logging.ERROR)
+            lg.setLevel(logging.INFO)
+            lg.addHandler(main_h)
+            lg.propagate = False
 
-        # Domain loggers
+        # 3) Domain-specific files (optional)
         for name, file in (
             ("vcdb.app", "app.log"),
             ("vcdb.audit", "audit.log"),
@@ -104,22 +142,18 @@ def configure_logging(app) -> None:
             ("vcdb.export", "export.log"),
         ):
             lg = logging.getLogger(name)
-            _reset_logger(lg)
             lg.setLevel(logging.INFO)
-            lg.addHandler(fh(file))
+            h = _archiving_rotating_handler(log_dir, file, backups, max_bytes)
+            h.setFormatter(JSONLineFormatter())
+            h.setLevel(logging.INFO)
+            lg.addHandler(h)
             lg.propagate = False
+
     else:
-        root = logging.getLogger()
-        _reset_logger(root)
         sh = logging.StreamHandler()
         sh.setFormatter(JSONLineFormatter())
         sh.setLevel(logging.INFO)
+        root = logging.getLogger()
         root.addHandler(sh)
         root.setLevel(logging.INFO)
-        logging.getLogger("werkzeug").setLevel(logging.WARNING)
-        logging.getLogger("jinja2").setLevel(logging.ERROR)
-
-
-def audit_logger() -> logging.Logger:
-    """Convenience accessor for the audit channel."""
-    return logging.getLogger("vcdb.audit")
+        root.propagate = False

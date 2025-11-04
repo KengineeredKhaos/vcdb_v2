@@ -110,9 +110,9 @@ def create_app():
     register_cli(app)
 
     # Optional: print a short banner once when using CLI (suppressed by default)
-    # is_main = os.environ.get("WERKZEUG_RUN_MAIN") in (None, "true")
-    # if is_main or not debug:
-    #     print_banner(env, "CLI", 0, cfg_object, app)
+    is_main = os.environ.get("WERKZEUG_RUN_MAIN") in (None, "true")
+    if is_main or not debug:
+        print_banner(env, "CLI", 0, cfg_object, app)
 
     return app
 

@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import json
-import logging
+import logging  # for log testing
 import os
+import pathlib  # for log testing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -39,7 +40,9 @@ def _bind_contracts(app):
 # create the app framework and load object from config.py
 def create_app(config_object="config.DevConfig"):
     app = Flask(__name__, template_folder="templates")
+    app.config.from_object(config_object)
     app.config["APP_MODE"] = os.getenv("APP_MODE", "development")
+
     # prod|staging|development|test
 
     # --- DB defaults (must be before init_extensions) ---
@@ -57,9 +60,22 @@ def create_app(config_object="config.DevConfig"):
     app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
 
     # Configure logging first
-    from app.lib.logging import JSONLineFormatter
-
     configure_logging(app)
+
+    # -----------------
+    # testing logging
+    # -----------------
+
+    hnames = [type(h).__name__ for h in logging.getLogger().handlers]
+    logging.getLogger("app").info(
+        {
+            "event": "boot_handlers",
+            "root_handlers": hnames,
+            "cwd": str(pathlib.Path(".").resolve()),
+            "log_dir": app.config.get("LOG_DIR"),
+        }
+    )
+    # ---   end test   ---
 
     # init extensions first
     init_extensions(app)
