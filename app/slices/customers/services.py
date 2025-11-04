@@ -190,36 +190,32 @@ def _row_to_snapshot(row: CustomerEligibility) -> EligibilitySnapshot:
 
 
 def ensure_customer(
-    *, entity_ulid: str, request_id: str, actor_ulid: Optional[str]
+    *, entity_ulid: str, request_id: str, actor_ulid: str | None
 ) -> str:
-    """Idempotently ensure a Customer row exists for the given Entity; emit ledger on first create."""
-    _ensure_reqid(request_id)
-
-    if not db.session.get(Entity, entity_ulid):
-        raise ValueError("entity not found")
-
-    cust = (
-        db.session.query(Customer).filter_by(entity_ulid=entity_ulid).first()
-    )
-    if not cust:
-        now = now_iso8601_ms()
-        cust = Customer(
-            entity_ulid=entity_ulid, first_seen_utc=now, last_touch_utc=now
-        )
-        db.session.add(cust)
-        db.session.commit()
-        event_bus.emit(
-            domain="customers",
-            operation="profile_update",
-            actor_ulid=actor_ulid,
-            target_ulid=cust.ulid,
-            request_id=request_id,
-            happened_at_utc=now_iso8601_ms(),
-            refs={"entity_ulid": entity_ulid},
-        )
-    else:
+    cust = db.session.get(Customer, entity_ulid)
+    if cust:
+        # update last_touch, commit, return
         cust.last_touch_utc = now_iso8601_ms()
         db.session.commit()
+        return cust.ulid
+
+    # create
+    cust = Customer(ulid=entity_ulid, entity_ulid=entity_ulid)
+    cust.first_seen_utc = now_iso8601_ms()
+    cust.last_touch_utc = cust.first_seen_utc
+    db.session.add(cust)
+    db.session.commit()
+
+    # 🔹 emit creation event (once)
+    event_bus.emit(
+        domain="customers",
+        operation="created_insert",
+        actor_ulid=actor_ulid,
+        target_ulid=cust.ulid,
+        request_id=request_id,
+        happened_at_utc=now_iso8601_ms(),
+        refs={"entity_ulid": entity_ulid},
+    )
 
     return cust.ulid
 
@@ -426,7 +422,7 @@ def set_veteran_verification(
 
     event_bus.emit(
         domain="customers",
-        operation="profile_update",
+        operation="verification_updated",
         actor_ulid=actor_ulid,
         target_ulid=customer_ulid,
         request_id=request_id,
