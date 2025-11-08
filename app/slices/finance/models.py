@@ -13,12 +13,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
 from app.lib.chrono import now_iso8601_ms
-from app.lib.models import ULIDPK
+from app.lib.models import ULIDPK, IsoTimestamps
 
 # ---- Reference tables ------------------------------------------------------
 
 
-class Account(db.Model, ULIDPK):
+class Account(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "finance_account"
 
     code: Mapped[str] = mapped_column(
@@ -32,15 +32,6 @@ class Account(db.Model, ULIDPK):
         Boolean, default=True, nullable=False, index=True
     )
 
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
     __table_args__ = (
         CheckConstraint(
             "type in ('asset','liability','net_assets','revenue','expense')",
@@ -49,7 +40,7 @@ class Account(db.Model, ULIDPK):
     )
 
 
-class Fund(db.Model, ULIDPK):
+class Fund(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "finance_fund"
 
     code: Mapped[str] = mapped_column(
@@ -63,15 +54,6 @@ class Fund(db.Model, ULIDPK):
         Boolean, default=True, nullable=False, index=True
     )
 
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
     __table_args__ = (
         CheckConstraint(
             "restriction in ('unrestricted','temp','perm')",
@@ -80,7 +62,7 @@ class Fund(db.Model, ULIDPK):
     )
 
 
-class Project(db.Model, ULIDPK):
+class Project(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "finance_project"
 
     name: Mapped[str] = mapped_column(String(160), nullable=False)
@@ -88,18 +70,8 @@ class Project(db.Model, ULIDPK):
         Boolean, default=True, nullable=False, index=True
     )
 
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
 
-
-class Period(db.Model, ULIDPK):
+class Period(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "finance_period"
 
     period_key: Mapped[str] = mapped_column(
@@ -109,15 +81,6 @@ class Period(db.Model, ULIDPK):
         String(16), nullable=False, index=True, default="open"
     )  # open|soft_closed|closed
 
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
     __table_args__ = (
         CheckConstraint(
             "status in ('open','soft_closed','closed')",
@@ -129,7 +92,7 @@ class Period(db.Model, ULIDPK):
 # ---- Journals --------------------------------------------------------------
 
 
-class Journal(db.Model, ULIDPK):
+class Journal(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "finance_journal"
 
     source: Mapped[str] = mapped_column(
@@ -154,9 +117,6 @@ class Journal(db.Model, ULIDPK):
 
     created_by_actor: Mapped[str | None] = mapped_column(
         String(26), nullable=True
-    )
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
     )
 
     lines: Mapped[list["JournalLine"]] = relationship(
@@ -234,13 +194,6 @@ class BalanceMonthly(db.Model, ULIDPK):
     )
     net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
-
     __table_args__ = (
         UniqueConstraint(
             "account_code",
@@ -255,7 +208,7 @@ class BalanceMonthly(db.Model, ULIDPK):
 # ---- Optional: Statistical metrics (non-monetary) --------------------------
 
 
-class StatMetric(db.Model, ULIDPK):
+class StatMetric(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "finance_stat_metric"
 
     period_key: Mapped[str] = mapped_column(
@@ -275,10 +228,6 @@ class StatMetric(db.Model, ULIDPK):
     )  # logistics|resources
     source_ref_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True
-    )
-
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
     )
 
     __table_args__ = (

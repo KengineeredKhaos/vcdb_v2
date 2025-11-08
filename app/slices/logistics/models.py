@@ -11,7 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.extensions import db
 from app.lib.chrono import now_iso8601_ms
-from app.lib.ids import ULIDFK, ULIDPK
+from app.lib.models import ULIDFK, ULIDPK, IsoTimestamps
 
 
 class Location(db.Model, ULIDPK):
@@ -54,9 +54,7 @@ class InventoryItem(db.Model, ULIDPK):
         String(1), index=True, nullable=False
     )
     sku_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
+
 
     __table_args__ = (
         Index(
@@ -71,7 +69,7 @@ class InventoryItem(db.Model, ULIDPK):
     )
 
 
-class InventoryBatch(db.Model, ULIDPK):
+class InventoryBatch(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "logi_batch"
     item_ulid: Mapped[str] = ULIDFK("logi_item", nullable=False, index=True)
     location_ulid: Mapped[str] = ULIDFK(
@@ -79,9 +77,6 @@ class InventoryBatch(db.Model, ULIDPK):
     )
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     unit: Mapped[str] = mapped_column(String(16), nullable=False)
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
 
 
 class InventoryMovement(db.Model, ULIDPK):
@@ -132,9 +127,6 @@ class Issue(db.Model, ULIDPK):
     project_ulid: Mapped[str | None] = mapped_column(String(26), index=True)
     movement_ulid: Mapped[str | None] = ULIDFK("logi_movement", nullable=True)
     created_by_actor: Mapped[str | None] = mapped_column(String(26))
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
     decision_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     __table_args__ = (
         CheckConstraint("quantity>0", "ck_issue_pos_qty"),

@@ -1,0 +1,6 @@
+Requirement already satisfied: pytest-randomly in ./lib/python3.12/site-packages (4.0.1)
+Requirement already satisfied: pytest in ./lib/python3.12/site-packages (from pytest-randomly) (8.4.2)
+Requirement already satisfied: iniconfig>=1 in ./lib/python3.12/site-packages (from pytest->pytest-randomly) (2.1.0)
+Requirement already satisfied: packaging>=20 in ./lib/python3.12/site-packages (from pytest->pytest-randomly) (25.0)
+Requirement already satisfied: pluggy<2,>=1.5 in ./lib/python3.12/site-packages (from pytest->pytest-randomly) (1.6.0)
+Requirement already satisfied: pygments>=2.7.2 in ./lib/python3.12/site-packages (from pytest->pytest-randomly) (2.19.2)

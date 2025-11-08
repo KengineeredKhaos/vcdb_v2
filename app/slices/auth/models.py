@@ -11,11 +11,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.chrono import now_iso8601_ms
-from app.lib.models import ULIDFK, ULIDPK
+from app.lib.models import ULIDFK, ULIDPK, IsoTimestamps
 
 
-class User(db.Model, ULIDPK):
+class User(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "auth_user"
 
     entity_ulid: Mapped[str | None] = mapped_column(
@@ -34,16 +33,6 @@ class User(db.Model, ULIDPK):
         String(30), nullable=True
     )
 
-    created_at_utc: Mapped[str | None] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str | None] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
-
     # relationship via association table
     roles = relationship(
         "Role",
@@ -53,7 +42,7 @@ class User(db.Model, ULIDPK):
     )
 
 
-class Role(db.Model, ULIDPK):
+class Role(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "auth_role"
 
     code: Mapped[str] = mapped_column(
@@ -61,16 +50,6 @@ class Role(db.Model, ULIDPK):
     )  # e.g., "user", "auditor", "admin"
     description: Mapped[str | None] = mapped_column(String(200), default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-
-    created_at_utc: Mapped[str | None] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str | None] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
 
     users = relationship(
         "User", secondary="auth_user_role", back_populates="roles"

@@ -12,45 +12,27 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.extensions import db
-from app.lib.chrono import now_iso8601_ms, utcnow_naive
-from app.lib.models import ULIDPK
+from app.lib.models import ULIDPK, IsoTimestamps
 
 
-class CanonicalState(db.Model, ULIDPK):
+class CanonicalState(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "gov_canonical_state"
     code: Mapped[str] = mapped_column(String(2), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(64))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at_utc: Mapped[str | None] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str | None] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
 
 
-class ServiceClassification(db.Model, ULIDPK):
+class ServiceClassification(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "gov_service_class"
     code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     label: Mapped[str] = mapped_column(String(128))
     sort: Mapped[int] = mapped_column(Integer, default=100)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at_utc: Mapped[str | None] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str | None] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
+
     __table_args__ = (Index("ix_gov_service_class_sort", "sort"),)
 
 
-class RoleCode(db.Model, ULIDPK):
+class RoleCode(db.Model, ULIDPK, IsoTimestamps):
     """
     Canonical list of allowed RBAC role codes (read-only for other slices).
     Auth slice still owns actual assignments; this just publishes the vocabulary.
@@ -60,18 +42,9 @@ class RoleCode(db.Model, ULIDPK):
     code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     description: Mapped[str] = mapped_column(String(200), default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at_utc: Mapped[str | None] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str | None] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
 
 
-class Policy(db.Model, ULIDPK):
+class Policy(db.Model, ULIDPK, IsoTimestamps):
     """
     Versioned governance policies.
     NOTE: timestamps are stored as ISO-8601 strings
@@ -95,16 +68,6 @@ class Policy(db.Model, ULIDPK):
         String(26), nullable=True
     )
 
-    # Store as ISO-8601 strings (VARCHAR(30)) to match your migration history
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
 
     __table_args__ = (
         UniqueConstraint(

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, TypedDict
 
 from app.extensions import event_bus
-from app.extensions.contracts import customer_v2
+from app.extensions.contracts import customers_v2
 from app.lib.chrono import now_iso8601_ms
 from app.slices.governance.services import decide_issue
 
@@ -21,6 +21,26 @@ __all__ = [
 # -----------------
 # DTO's
 # -----------------
+
+
+class SpendingLimitsDTO(TypedDict):
+    staff_limit_cents: int
+    admin_over_cents: int
+
+class ConstraintFlagsDTO(TypedDict):
+    veteran_only: bool
+    homeless_only: bool
+
+__schema__ = {
+    "get_spending_limits": {
+        "requires": [],
+        "returns_keys": ["staff_limit_cents", "admin_over_cents"],
+    },
+    "get_constraints": {
+        "requires": [],
+        "returns_keys": ["veteran_only", "homeless_only"],
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -63,13 +83,20 @@ class DecisionDTO:
 # -----------------
 
 
+def get_spending_limits() -> SpendingLimitsDTO:
+    return {"staff_limit_cents": 20000, "admin_over_cents": 20000}
+
+def get_constraints() -> ConstraintFlagsDTO:
+    return {"veteran_only": False, "homeless_only": False}
+
+
 def evaluate_customer(
     customer_ulid: str, *, request_id: str, actor_ulid: str | None
 ) -> DecisionDTO:
     """
     Read-only evaluation. Emits governance.decision_made.
     """
-    prof = customer_v2.get_needs_profile(customer_ulid)
+    prof = customers_v2.get_needs_profile(customer_ulid)
 
     attention_required = prof.tier1_min == 1
     watchlist = prof.tier2_min == 1

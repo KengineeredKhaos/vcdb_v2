@@ -1,0 +1,11 @@
+# BASH shell alias shortcuts
+
+# alias to start a python virtual environment from the current directory
+
+alias vact='source bin/activate'
+
+# aliases specifically for VCDB-V2 environment start up
+
+alias vcdb-dev='source ~/Documents/App_Dev/vcdb-v2/scripts/env.dev.sh'
+
+alias vcdb-test='source ~/Documents/App_Dev/vcdb-v2/scripts/env.test.sh'

@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import desc, func
 
 from app.extensions import db, event_bus
-from app.lib.chrono import now_iso8601_ms
+from app.lib.chrono import now_iso8601_ms, utcnow_naive
 from app.lib.jsonutil import stable_dumps
 
 from .models import (
@@ -561,7 +562,11 @@ def upsert_pledge(
 
 
 def set_pledge_status(
-    *, pledge_ulid: str, status: str, request_id: str, actor_ulid: Optional[str]
+    *,
+    pledge_ulid: str,
+    status: str,
+    request_id: str,
+    actor_ulid: Optional[str],
 ) -> None:
     _ensure_reqid(request_id)
     status = (status or "").strip().lower()

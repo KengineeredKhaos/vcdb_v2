@@ -1,0 +1,7 @@
+
+
+def test_get_profile_smoke(app, db_session, customer_ids):
+    _, customer_ulid = customer_ids
+    from app.extensions.contracts import customers_v2
+    dto = customers_v2.get_profile(customer_ulid=customer_ulid)
+    assert "flags" in dto and "tier1" in dto

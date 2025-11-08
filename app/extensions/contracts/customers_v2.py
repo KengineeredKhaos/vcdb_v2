@@ -1,7 +1,7 @@
-# app/extensions/contracts/customer_v2.py
+# app/extensions/contracts/customers_v2.py
 # -*- coding: utf-8 -*-
 """
-customer_v2 — Stable read/write contract for the Customer slice.
+customers_v2 — Stable read/write contract for the Customer slice.
 
 Ethos:
 - PII-free. DTOs expose ULIDs, booleans, enums/ints,
@@ -26,7 +26,7 @@ Raises (contract-scoped):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping, Optional
+from typing import Mapping, Optional, TypedDict
 
 from app.extensions import db
 from app.lib.chrono import now_iso8601_ms
@@ -56,6 +56,20 @@ class PermissionDenied(ContractError):
 # ---------------------------
 # DTOs
 # ---------------------------
+
+class CustomerProfileDTO(TypedDict):
+    customer_ulid: str
+    is_veteran_verified: bool
+    veteran_method: str
+    flags: dict
+    tier1: dict
+
+__schema__ = {
+    "get_profile": {
+        "requires": ["customer_ulid"],
+        "returns_keys": ["customer_ulid", "is_veteran_verified", "veteran_method", "flags", "tier1"],
+    }
+}
 
 
 @dataclass(frozen=True)
@@ -129,6 +143,17 @@ def _map_service_error(e: Exception) -> ContractError:
 # ---------------------------
 # READ CONTRACT
 # ---------------------------
+
+
+def get_profile(customer_ulid: str) -> CustomerProfileDTO:
+    # stub; replace with real read-path later
+    return {
+        "customer_ulid": customer_ulid,
+        "is_veteran_verified": False,
+        "veteran_method": "self_attested",
+        "flags": {"is_homeless": False},
+        "tier1": {"housing": 0, "food": 0, "clothing": 0},
+    }
 
 
 def get_needs_profile(customer_ulid: str) -> NeedsProfileDTO:

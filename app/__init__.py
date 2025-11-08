@@ -1,35 +1,27 @@
 # app/__init__.py
 from __future__ import annotations
 
-import json
-import logging  # for log testing
+import logging
 import os
-import pathlib  # for log testing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any, Union
 
 from flask import Flask, jsonify, request
 from flask_login import current_user
 from jinja2 import StrictUndefined
-from sqlalchemy import inspect, text
-from sqlalchemy.sql.sqltypes import NullType
+from sqlalchemy import text
 from werkzeug.exceptions import HTTPException
 
 from app.cli import register_cli
 from app.lib.chrono import parse_iso8601, utcnow_aware
 from app.lib.logging import configure_logging
-
 from .extensions import init_extensions
 from .web import bp as web_bp
 
 
-def _bind_contracts(app):
-    """
-    Placeholder to load/initialize contract modules.
-    Keep it minimal for now; upgrade later if you add auto-discovery.
-    """
-    # If you want to eagerly import contract modules so any module-level
-    # registration runs, do it here (safe, best-effort):
+def _bind_contracts(app: Flask) -> None:
+    # Intentionally empty; contracts are imported on demand by slices.
     pass
     # Nothing else required for boot; specific bind calls happen below.
 
@@ -38,16 +30,18 @@ def _bind_contracts(app):
 # ---   CREATE APP   ---   (Time to make the donuts)
 # -----------------
 # create the app framework and load object from config.py
-def create_app(config_object="config.DevConfig"):
+def create_app(config_object: Union[str, type[Any]] = "config.DevConfig") -> Flask:
+    """Single app factory. Boring, deterministic, test-friendly."""
     app = Flask(__name__, template_folder="templates")
     app.config.from_object(config_object)
     app.config["APP_MODE"] = os.getenv("APP_MODE", "development")
 
-    # prod|staging|development|test
+    # prod | staging | development | test
 
     # --- DB defaults (must be before init_extensions) ---
     # Prefer explicit SQLALCHEMY_DATABASE_URI; otherwise derive from DATABASE,
     # otherwise fall back to instance/dev.db.
+    # Resolve DB URI once, predictably.
     if not app.config.get("SQLALCHEMY_DATABASE_URI"):
         db_path = app.config.get("DATABASE")
         if not db_path:
@@ -56,8 +50,11 @@ def create_app(config_object="config.DevConfig"):
             app.config["DATABASE"] = str(db_path)
         app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
 
+
     # Always good to disable this noise
     app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
+
+
 
     # Configure logging first
     configure_logging(app)
@@ -66,16 +63,17 @@ def create_app(config_object="config.DevConfig"):
     # testing logging
     # -----------------
 
-    hnames = [type(h).__name__ for h in logging.getLogger().handlers]
-    logging.getLogger("app").info(
-        {
-            "event": "boot_handlers",
-            "root_handlers": hnames,
-            "cwd": str(pathlib.Path(".").resolve()),
-            "log_dir": app.config.get("LOG_DIR"),
-        }
-    )
-    # ---   end test   ---
+    # Configure logging before extensions/blueprints
+    configure_logging(app)
+    if not app.testing and (app.debug or app.config.get("ENV") in {"dev", "development"}):
+        hnames = [type(h).__name__ for h in logging.getLogger().handlers]
+        logging.getLogger("app").info(
+            {
+                "event": "boot_handlers",
+                "root_handlers": hnames,
+                "log_dir": app.config.get("LOG_DIR"),
+            }
+        )
 
     # init extensions first
     init_extensions(app)
@@ -104,7 +102,7 @@ def create_app(config_object="config.DevConfig"):
     # register web first (no prefix)
     app.register_blueprint(web_bp)
 
-    # Register blueprints (slices)
+    # Register blueprints (slices) -- after CSRF / Jinja are set
     from app.slices.admin import bp as admin_bp
     from app.slices.attachments import bp as attachments_bp
     from app.slices.auth import bp as auth_bp
@@ -137,6 +135,7 @@ def create_app(config_object="config.DevConfig"):
 
     # -------------
     # Globals Injection
+    # compact, side-effect-free
     # -------------
 
     @app.context_processor
@@ -178,20 +177,18 @@ def create_app(config_object="config.DevConfig"):
 
     @app.context_processor
     def admin_alerts():
+        """Lightweight admin banner fed from admin_cron_status, tolerant to absence."""
         from app.extensions import db
-
-        # Only show alerts to admins
         if not _user_is_admin():
             return {"admin_alerts": []}
-
         try:
             rows = (
                 db.session.execute(
                     text(
                         """
                         SELECT job_name, last_success_utc, last_error_utc, last_error
-                        FROM admin_cron_status
-                        ORDER BY job_name
+                          FROM admin_cron_status
+                      ORDER BY job_name
                         """
                     )
                 )
@@ -199,13 +196,10 @@ def create_app(config_object="config.DevConfig"):
                 .all()
             )
         except Exception:
-            rows = []
+            return {"admin_alerts": []}
 
-        # parse ISO → dt, and get dt now (UTC)
-
-        alerts = []
+        alerts: list[str] = []
         cutoff_dt = utcnow_aware() - timedelta(hours=6)
-
         for r in rows:
             last_err = r.get("last_error")
             if last_err:
@@ -213,34 +207,28 @@ def create_app(config_object="config.DevConfig"):
                     f"Job {r['job_name']} error at {r.get('last_error_utc')}: {last_err}"
                 )
                 continue
-
             last_ok_iso = r.get("last_success_utc")
             if not last_ok_iso:
-                alerts.append(
-                    f"Job {r['job_name']} is stale; never succeeded."
-                )
+                alerts.append(f"Job {r['job_name']} is stale; never succeeded.")
                 continue
-
             try:
-                last_ok_dt = parse_iso8601(last_ok_iso)  # datetime aware UTC
-                if last_ok_dt < cutoff_dt:
+                if parse_iso8601(last_ok_iso) < cutoff_dt:
                     alerts.append(
                         f"Job {r['job_name']} is stale; no success in 6h (last: {last_ok_iso})."
                     )
             except Exception:
-                alerts.append(
-                    f"Job {r['job_name']} has unreadable timestamp: {last_ok_iso}"
-                )
-
+                alerts.append(f"Job {r['job_name']} has unreadable timestamp: {last_ok_iso}")
         return {"admin_alerts": alerts}
+
 
     @app.context_processor
     def macro_ctx():
-        from flask import current_app
-
-        # Preload the macro file as a template and expose a module-like object
-        tmpl = current_app.jinja_env.get_template("_macros.html")
-        return {"_macros": tmpl.module}
+        """Expose `_macros` template module if present; tolerate absence in test."""
+        try:
+            tmpl = app.jinja_env.get_template("_macros.html")
+            return {"_macros": tmpl.module}
+        except Exception:
+            return {"_macros": None}
 
     # Global error handler (logs all exceptions once, honors debugger in dev)
     @app.errorhandler(Exception)
@@ -290,9 +278,18 @@ def create_app(config_object="config.DevConfig"):
     return app
 
 
-# --------------
+#####################################################
+##                                                 ##
+##      Application Instantiation Complete         ##
+##    everything below is strickly diagnositic     ##
+##  and called directly above (see block comment)  ##
+##                                                 ##
+#####################################################
+
+
+# -----------------
 # a little route map dump (debug only)
-# -------------
+# -----------------
 
 
 def _boot_sanity(app):

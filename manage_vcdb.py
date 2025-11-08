@@ -60,9 +60,9 @@ def pick_attachments_root(env: str) -> str:
     return base
 
 
-def print_banner(env: str, host: str, port: int, cfg_obj: Any, app: Any):
+def print_banner(env: str, host: str, port: int, cfg_obj: Any, flask_app: Any) ->  None:
     """Pretty banner showing key runtime info. Call once in the main process."""
-    db_uri = app.config.get("SQLALCHEMY_DATABASE_URI", "<unset>")
+    db_uri = flask_app.config.get("SQLALCHEMY_DATABASE_URI", "<unset>")
     att_root = os.environ.get("ATTACHMENTS_ROOT", "<unset>")
     log_dir = os.environ.get("VCDB_LOG_DIR", "app/logs")
     print("\n=== VCDB v2 — launcher ===")
@@ -82,10 +82,7 @@ def print_banner(env: str, host: str, port: int, cfg_obj: Any, app: Any):
 
 
 def create_app():
-    """
-    Flask CLI entrypoint. Builds the app with a sensible default env and
-    registers custom CLI commands.
-    """
+
     # Prefer VCDB_ENV, then FLASK_ENV, default 'dev'
     env = os.environ.get("VCDB_ENV") or os.environ.get("FLASK_ENV") or "dev"
     debug = env == "dev"
@@ -102,19 +99,17 @@ def create_app():
         create_app as _create_flask_app,
     )  # import here to avoid cycles
 
-    app = _create_flask_app(config_object=cfg_object)
+    flask_app = _create_flask_app(config_object=cfg_object)
 
-    # Register custom CLI commands on this app instance
-    from app.cli import register_cli
 
-    register_cli(app)
+    # CLI commands already registered by the factory
 
     # Optional: print a short banner once when using CLI (suppressed by default)
     is_main = os.environ.get("WERKZEUG_RUN_MAIN") in (None, "true")
     if is_main or not debug:
-        print_banner(env, "CLI", 0, cfg_object, app)
+        print_banner(env, "CLI", 0, cfg_object, flask_app)
 
-    return app
+    return flask_app
 
 
 # -----------------

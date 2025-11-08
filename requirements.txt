@@ -34,6 +34,7 @@ pluggy==1.6.0
 Pygments==2.19.2
 pyright==1.1.405
 pytest==8.4.2
+pytest-randomly==4.0.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
 python-ulid==1.1.0

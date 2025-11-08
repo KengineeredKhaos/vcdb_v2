@@ -9,6 +9,7 @@ import shutil
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from app.lib.chrono import now_iso8601_ms
 
 # ----- JSON line formatter ----------------------------------------------------
 
@@ -16,7 +17,7 @@ from pathlib import Path
 class JSONLineFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload = {
-            "ts": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "ts": now_iso8601_ms(),
             "lvl": record.levelname,
             "logger": record.name,
         }
@@ -31,7 +32,7 @@ class JSONLineFormatter(logging.Formatter):
             payload["msg"] = record.getMessage()
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
-        return json.dumps(payload, ensure_ascii=False)
+        return json.dumps(payload, ensure_ascii=False, default=str)
 
 
 # ----- helpers ----------------------------------------------------------------
@@ -88,11 +89,14 @@ def _archiving_rotating_handler(
 # ----- main entry -------------------------------------------------------------
 
 
-def configure_logging(app) -> None:
-    is_dev = not app.testing and (
-        bool(getattr(app, "debug", False))
-        or app.config.get("ENV") in {"dev", "development"}
-        or bool(app.config.get("LOG_DIR"))
+def configure_logging(flask_app) -> None:
+    # Be robust even if someone accidentally passes the 'app' *module*.
+    cfg = getattr(flask_app, "config", {}) or {}
+    is_testing = bool(getattr(flask_app, "testing", cfg.get("TESTING", False)))
+    is_dev = (not is_testing) and (
+        bool(getattr(flask_app, "debug", False))
+        or cfg.get("ENV") in {"dev", "development"}
+        or bool(cfg.get("LOG_DIR"))
     )
 
     # Reset common loggers to avoid dupes / stale handlers
@@ -109,11 +113,11 @@ def configure_logging(app) -> None:
     ):
         _reset_logger(logging.getLogger(name))
 
-    log_dir = Path(app.config.get("LOG_DIR") or "app/logs")
+    log_dir = Path(cfg.get("LOG_DIR") or "app/logs")
 
     if is_dev:
-        backups = int(app.config.get("LOG_BACKUPS", 14))
-        max_bytes = int(app.config.get("LOG_MAX_BYTES", 10 * 1024 * 1024))
+        backups = int(cfg.get("LOG_BACKUPS", 14))
+        max_bytes = int(cfg.get("LOG_MAX_BYTES", 10 * 1024 * 1024))
 
         main_h = _archiving_rotating_handler(
             log_dir, "app.log", backups, max_bytes

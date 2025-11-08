@@ -14,7 +14,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.extensions import db
 from app.lib.chrono import now_iso8601_ms
-from app.lib.models import ULIDPK
+from app.lib.models import ULIDPK, IsoTimestamps
 
 # -*- coding: utf-8 -*-
 # VCDB Canon — DO NOT MODIFY WITHOUT GOVERNANCE APPROVAL
@@ -22,7 +22,7 @@ CANON_API = "ledger-core"
 CANON_VERSION = "1.0.0"
 
 
-class LedgerEvent(db.Model, ULIDPK):
+class LedgerEvent(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "ledger_event"
 
     # Chain partition (default: domain); helps verify subsets independently
@@ -42,10 +42,7 @@ class LedgerEvent(db.Model, ULIDPK):
 
     # ISO timestamps as strings for consistency
     happened_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
+        String(30), nullable=True
     )
 
     # JSON payloads (compact/normalized)

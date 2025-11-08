@@ -155,6 +155,18 @@ def _next_version(resource_ulid: str) -> int:
     return int(cur or 0) + 1
 
 
+def allowed_capabilities() -> list[str]:
+    """
+    Returns canonical capability keys like 'basic_needs.food_pantry'.
+    Useful for seeds/tools; read-only, PII-free.
+    """
+    return sorted(
+        f"{domain}.{key}"
+        for domain, keys in CLASSIFICATIONS.items()
+        for key in keys
+    )
+
+
 # ------------- core API ------------------
 
 
@@ -417,7 +429,11 @@ MOU_ALLOWED = {"none", "pending", "active", "expired", "terminated"}
 
 
 def set_readiness_status(
-    *, resource_ulid: str, status: str, request_id: str, actor_ulid: str | None
+    *,
+    resource_ulid: str,
+    status: str,
+    request_id: str,
+    actor_ulid: str | None,
 ) -> None:
     """Set readiness_status with validation and emit a names-only ledger event."""
     _ensure_reqid(request_id)
@@ -444,12 +460,17 @@ def set_readiness_status(
         target_ulid=resource_ulid,
         request_id=request_id,
         happened_at_utc=now_iso8601_ms(),
-        changed_fields={"readiness_status": status, "prev": prev},
+        refs={"prev": prev, "value": status, "section": "profile:readiness"},
+        changed={"readiness_status": status, "prev": prev},
     )
 
 
 def set_mou_status(
-    *, resource_ulid: str, status: str, request_id: str, actor_ulid: str | None
+    *,
+    resource_ulid: str,
+    status: str,
+    request_id: str,
+    actor_ulid: str | None,
 ) -> None:
     """Set MOU status with validation and emit a names-only ledger event."""
     _ensure_reqid(request_id)
@@ -476,7 +497,8 @@ def set_mou_status(
         target_ulid=resource_ulid,
         request_id=request_id,
         happened_at_utc=now_iso8601_ms(),
-        changed_fields={"mou_status": status, "prev": prev},
+        refs={"prev": prev, "value": status, "section": "profile:mou"},
+        changed={"fields": ["mou_status"]},
     )
 
 
@@ -682,7 +704,7 @@ def patch_capabilities(
         d, k = _split(flat)
         event_bus.emit(
             domain="resources",
-            operation="classification_add",
+            operation="capability_add",
             actor_ulid=actor_ulid,
             target_ulid=resource_ulid,
             request_id=request_id,
@@ -693,7 +715,7 @@ def patch_capabilities(
         d, k = _split(flat)
         event_bus.emit(
             domain="resources",
-            operation="classification_remove",
+            operation="capability_remove",
             actor_ulid=actor_ulid,
             target_ulid=resource_ulid,
             request_id=request_id,
@@ -728,7 +750,9 @@ def rebuild_all_capability_indexes(
     for rid in ids:
         total_rows += (
             rebuild_capability_index(
-                resource_ulid=rid, request_id=request_id, actor_ulid=actor_ulid
+                resource_ulid=rid,
+                request_id=request_id,
+                actor_ulid=actor_ulid,
             )
             or 0
         )

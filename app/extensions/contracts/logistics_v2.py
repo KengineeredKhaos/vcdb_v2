@@ -2,7 +2,26 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional, TypedDict
+
+
+class CadenceGateDTO(TypedDict, total=False):
+    eligible: bool
+    next_eligible_at_iso: Optional[str]
+    rule_id: str
+    label: str
+
+__schema__ = {
+    "get_sku_cadence": {
+        "requires": ["customer_ulid", "sku"],
+        "returns_keys": ["eligible", "next_eligible_at_iso", "rule_id", "label"],
+    }
+}
+
+
+def get_sku_cadence(customer_ulid: str, sku: str) -> CadenceGateDTO:
+    return {"eligible": True, "next_eligible_at_iso": None, "rule_id": "stub", "label": "stub"}
+
 
 __all__ = [
     "available_skus_for_customer",

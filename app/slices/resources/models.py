@@ -11,11 +11,11 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.chrono import now_iso8601_ms, utcnow_naive
-from app.lib.models import ULIDFK, ULIDPK
+
+from app.lib.models import ULIDFK, ULIDPK, IsoTimestamps
 
 
-class Resource(db.Model, ULIDPK):
+class Resource(db.Model, ULIDPK, IsoTimestamps):
     """
     A Resource is a service-providing organization (backed by EntityOrg).
     One Resource row per Entity (entity_ulid).
@@ -51,16 +51,6 @@ class Resource(db.Model, ULIDPK):
         String(30), nullable=True
     )
 
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
-
     histories: Mapped[list["ResourceHistory"]] = relationship(
         "ResourceHistory",
         back_populates="resource",
@@ -73,7 +63,7 @@ class Resource(db.Model, ULIDPK):
     )
 
 
-class ResourceHistory(db.Model, ULIDPK):
+class ResourceHistory(db.Model, ULIDPK, IsoTimestamps):
     """
     Privacy A (strict): capability snapshot values (booleans & notes)
     live ONLY here. Section fixed to 'resource:capability:v1' for now.
@@ -90,9 +80,6 @@ class ResourceHistory(db.Model, ULIDPK):
         String, nullable=False
     )  # flattened key -> {has: bool, note?: str}
 
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
     created_by_actor: Mapped[str | None] = mapped_column(
         String(26), nullable=True
     )
@@ -106,7 +93,7 @@ class ResourceHistory(db.Model, ULIDPK):
     )
 
 
-class ResourceCapabilityIndex(db.Model, ULIDPK):
+class ResourceCapabilityIndex(db.Model, ULIDPK, IsoTimestamps):
     """
     Materialized 'current state' index for fast search/filter.
     Names only; NO NOTES here. Rebuilt on each capability upsert.
@@ -121,13 +108,6 @@ class ResourceCapabilityIndex(db.Model, ULIDPK):
     key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     active: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, index=True
-    )
-
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
     )
 
     resource: Mapped["Resource"] = relationship(

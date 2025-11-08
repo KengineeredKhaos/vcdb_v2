@@ -12,10 +12,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
 from app.lib.chrono import now_iso8601_ms, utcnow_naive
-from app.lib.models import ULIDFK, ULIDPK
+from app.lib.models import ULIDFK, ULIDPK, IsoTimestamps
 
 
-class Sponsor(db.Model, ULIDPK):
+class Sponsor(db.Model, ULIDPK, IsoTimestamps):
     """
     A Sponsor is an org (EntityOrg) that provides cash, in-kind, or services.
     One Sponsor per Entity.
@@ -51,16 +51,6 @@ class Sponsor(db.Model, ULIDPK):
         String(30), nullable=True
     )
 
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
-
     histories: Mapped[list["SponsorHistory"]] = relationship(
         "SponsorHistory",
         back_populates="sponsor",
@@ -78,7 +68,7 @@ class Sponsor(db.Model, ULIDPK):
     )
 
 
-class SponsorHistory(db.Model, ULIDPK):
+class SponsorHistory(db.Model, ULIDPK, IsoTimestamps):
     """
     Privacy A (strict). Stores snapshots for:
       - section='sponsor:capability:v1' : flattened "domain.key" -> {has:bool,note?:str}
@@ -94,9 +84,6 @@ class SponsorHistory(db.Model, ULIDPK):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     data_json: Mapped[str] = mapped_column(String, nullable=False)
 
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
     created_by_actor: Mapped[str | None] = mapped_column(
         String(26), nullable=True
     )
@@ -110,7 +97,7 @@ class SponsorHistory(db.Model, ULIDPK):
     )
 
 
-class SponsorCapabilityIndex(db.Model, ULIDPK):
+class SponsorCapabilityIndex(db.Model, ULIDPK, IsoTimestamps):
     """
     Projection for fast capability queries (names only, no notes).
     """
@@ -126,13 +113,6 @@ class SponsorCapabilityIndex(db.Model, ULIDPK):
         Boolean, default=False, nullable=False, index=True
     )
 
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
-
     sponsor: Mapped["Sponsor"] = relationship(
         "Sponsor", back_populates="capabilities"
     )
@@ -144,7 +124,7 @@ class SponsorCapabilityIndex(db.Model, ULIDPK):
     )
 
 
-class SponsorPledgeIndex(db.Model, ULIDPK):
+class SponsorPledgeIndex(db.Model, ULIDPK, IsoTimestamps):
     """
     Projection summary for pledges (no sensitive notes; minimal numbers for dashboards).
     """
@@ -173,13 +153,47 @@ class SponsorPledgeIndex(db.Model, ULIDPK):
         String(8), nullable=True
     )  # USD etc.
 
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
-
     sponsor: Mapped["Sponsor"] = relationship(
         "Sponsor", back_populates="pledges"
+    )
+
+
+class Allocation(db.Model, ULIDPK, IsoTimestamps):
+    """
+    Sponsor allocation to a Customer.
+    PII-free. ISO-8601 Z string timestamps via IsoTimestamps.
+    """
+
+    __tablename__ = "sponsor_allocation"
+
+    sponsor_ulid: Mapped[str] = ULIDFK(
+        "sponsor_sponsor", index=True, nullable=False
+    )
+    customer_ulid: Mapped[str] = ULIDFK(
+        "entity_entity", index=True, nullable=False
+    )
+
+    state: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="committed", index=True
+    )
+    # cents, non-negative
+    amount_authorized_cents: Mapped[int] = mapped_column(
+        nullable=False, default=0
+    )
+    approved_by_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+
+    # keep expiry as ISO string to stay consistent with the rest of the slice
+    expires_on_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )
+
+    # relationships (optional, for convenience)
+    sponsor = relationship("Sponsor", backref="allocations")
+
+    __table_args__ = (
+        CheckConstraint(
+            "amount_authorized_cents >= 0", name="ck_alloc_amount_nonneg"
+        ),
     )

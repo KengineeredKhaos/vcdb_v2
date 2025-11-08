@@ -1,7 +1,6 @@
 # .gitignore
 
 # --- Dev, MVP docs, IDE environment and Tests
-/tests/*
 /MVP_docs/*
 pyproject.toml
 pyrightconfig.json

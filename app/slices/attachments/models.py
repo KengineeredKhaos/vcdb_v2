@@ -5,11 +5,11 @@ from sqlalchemy import Boolean, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.chrono import now_iso8601_ms, utcnow_naive
-from app.lib.models import ULIDFK, ULIDPK
+from app.lib.models import ULIDPK, ULIDFK, IsoTimestamps
 
 
-class Attachment(db.Model, ULIDPK):
+
+class Attachment(db.Model, ULIDPK, IsoTimestamps):
     """
     Immutable blob metadata. Content-addressed by sha256.
     Storage is external (S3/minio/local); storage_key points to it.
@@ -44,9 +44,6 @@ class Attachment(db.Model, ULIDPK):
         String(16), nullable=False, default="active"
     )  # active|quarantined|archived
 
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
     created_by_actor: Mapped[str | None] = mapped_column(
         String(26), nullable=True
     )
@@ -59,7 +56,7 @@ class Attachment(db.Model, ULIDPK):
     )
 
 
-class AttachmentLink(db.Model, ULIDPK):
+class AttachmentLink(db.Model, ULIDPK, IsoTimestamps):
     """
     Links an attachment to any domain object (by ULID) in any slice.
     Multiple links per attachment are allowed; links can be archived (soft-delete).
@@ -82,9 +79,6 @@ class AttachmentLink(db.Model, ULIDPK):
 
     note: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
     created_by_actor: Mapped[str | None] = mapped_column(
         String(26), nullable=True
     )

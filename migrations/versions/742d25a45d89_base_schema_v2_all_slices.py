@@ -1,8 +1,8 @@
-"""empty message
+"""Base schema v2 (all slices)
 
-Revision ID: d27adff21f8a
+Revision ID: 742d25a45d89
 Revises: 
-Create Date: 2025-11-03 09:55:47.249030
+Create Date: 2025-11-05 22:10:10.571821
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'd27adff21f8a'
+revision = '742d25a45d89'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -34,9 +34,10 @@ def upgrade():
     sa.Column('privacy_level', sa.String(length=1), nullable=False),
     sa.Column('retention_policy_code', sa.String(length=32), nullable=True),
     sa.Column('status', sa.String(length=16), nullable=False),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('created_by_actor', sa.String(length=26), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.CheckConstraint('length(ulid) = 26', name='ck_ulid_len_26'),
     sa.PrimaryKeyConstraint('ulid')
     )
@@ -47,9 +48,9 @@ def upgrade():
     sa.Column('code', sa.String(length=32), nullable=False),
     sa.Column('description', sa.String(length=200), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.CheckConstraint('length(ulid) = 26', name='ck_ulid_len_26'),
     sa.PrimaryKeyConstraint('ulid')
     )
@@ -65,9 +66,9 @@ def upgrade():
     sa.Column('is_locked', sa.Boolean(), nullable=False),
     sa.Column('failed_login_attempts', sa.Integer(), nullable=False),
     sa.Column('last_login_at_utc', sa.String(length=30), nullable=True),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.CheckConstraint('length(ulid) = 26', name='ck_ulid_len_26'),
     sa.PrimaryKeyConstraint('ulid')
     )
@@ -78,10 +79,10 @@ def upgrade():
 
     op.create_table('entity_entity',
     sa.Column('kind', sa.String(length=16), nullable=False),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.Column('archived_at', sa.String(length=30), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.CheckConstraint('length(ulid) = 26', name='ck_ulid_len_26'),
     sa.PrimaryKeyConstraint('ulid')
     )
@@ -90,9 +91,9 @@ def upgrade():
     sa.Column('name', sa.String(length=120), nullable=False),
     sa.Column('type', sa.String(length=16), nullable=False),
     sa.Column('active', sa.Boolean(), nullable=False),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.CheckConstraint("type in ('asset','liability','net_assets','revenue','expense')", name='ck_account_type'),
     sa.PrimaryKeyConstraint('ulid')
     )
@@ -109,7 +110,6 @@ def upgrade():
     sa.Column('debits_cents', sa.Integer(), nullable=False),
     sa.Column('credits_cents', sa.Integer(), nullable=False),
     sa.Column('net_cents', sa.Integer(), nullable=False),
-    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.PrimaryKeyConstraint('ulid'),
     sa.UniqueConstraint('account_code', 'fund_code', 'project_ulid', 'period_key', name='uq_balance_key')
@@ -125,9 +125,9 @@ def upgrade():
     sa.Column('name', sa.String(length=120), nullable=False),
     sa.Column('restriction', sa.String(length=16), nullable=False),
     sa.Column('active', sa.Boolean(), nullable=False),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.CheckConstraint("restriction in ('unrestricted','temp','perm')", name='ck_fund_restriction'),
     sa.PrimaryKeyConstraint('ulid')
     )
@@ -145,8 +145,9 @@ def upgrade():
     sa.Column('posted_at_utc', sa.String(length=30), nullable=False),
     sa.Column('memo', sa.String(length=160), nullable=True),
     sa.Column('created_by_actor', sa.String(length=26), nullable=True),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.CheckConstraint('length(ulid) = 26', name='ck_ulid_len_26'),
     sa.PrimaryKeyConstraint('ulid')
     )
@@ -158,9 +159,9 @@ def upgrade():
     op.create_table('finance_period',
     sa.Column('period_key', sa.String(length=7), nullable=False),
     sa.Column('status', sa.String(length=16), nullable=False),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.CheckConstraint("status in ('open','soft_closed','closed')", name='ck_period_status'),
     sa.PrimaryKeyConstraint('ulid')
     )
@@ -171,9 +172,9 @@ def upgrade():
     op.create_table('finance_project',
     sa.Column('name', sa.String(length=160), nullable=False),
     sa.Column('active', sa.Boolean(), nullable=False),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.CheckConstraint('length(ulid) = 26', name='ck_ulid_len_26'),
     sa.PrimaryKeyConstraint('ulid')
     )
@@ -187,8 +188,9 @@ def upgrade():
     sa.Column('unit', sa.String(length=16), nullable=False),
     sa.Column('source', sa.String(length=32), nullable=False),
     sa.Column('source_ref_ulid', sa.String(length=26), nullable=True),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.PrimaryKeyConstraint('ulid'),
     sa.UniqueConstraint('period_key', 'metric_code', 'source', 'source_ref_ulid', name='uq_stat_dedupe')
     )
@@ -200,9 +202,9 @@ def upgrade():
     sa.Column('code', sa.String(length=2), nullable=False),
     sa.Column('name', sa.String(length=64), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.CheckConstraint('length(ulid) = 26', name='ck_ulid_len_26'),
     sa.PrimaryKeyConstraint('ulid')
     )
@@ -213,9 +215,9 @@ def upgrade():
     sa.Column('code', sa.String(length=32), nullable=False),
     sa.Column('description', sa.String(length=200), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.CheckConstraint('length(ulid) = 26', name='ck_ulid_len_26'),
     sa.PrimaryKeyConstraint('ulid')
     )
@@ -227,9 +229,9 @@ def upgrade():
     sa.Column('label', sa.String(length=128), nullable=False),
     sa.Column('sort', sa.Integer(), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.PrimaryKeyConstraint('ulid')
     )
     with op.batch_alter_table('gov_service_class', schema=None) as batch_op:
@@ -244,9 +246,9 @@ def upgrade():
     sa.Column('schema_json', sa.String(), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('updated_by_actor_ulid', sa.String(length=26), nullable=True),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.PrimaryKeyConstraint('ulid'),
     sa.UniqueConstraint('namespace', 'key', 'version', name='uq_governance_policy_version')
     )
@@ -264,14 +266,15 @@ def upgrade():
     sa.Column('actor_ulid', sa.String(length=26), nullable=True),
     sa.Column('target_ulid', sa.String(length=26), nullable=True),
     sa.Column('request_id', sa.String(length=26), nullable=False),
-    sa.Column('happened_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('happened_at_utc', sa.String(length=30), nullable=True),
     sa.Column('refs_json', sa.Text(), nullable=True),
     sa.Column('changed_json', sa.Text(), nullable=True),
     sa.Column('meta_json', sa.Text(), nullable=True),
     sa.Column('prev_hash_hex', sa.String(length=64), nullable=True),
     sa.Column('curr_hash_hex', sa.String(length=64), nullable=False),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.PrimaryKeyConstraint('ulid')
     )
     with op.batch_alter_table('ledger_event', schema=None) as batch_op:
@@ -292,7 +295,6 @@ def upgrade():
     sa.Column('sku_color', sa.String(length=3), nullable=False),
     sa.Column('sku_issuance_class', sa.String(length=1), nullable=False),
     sa.Column('sku_seq', sa.Integer(), nullable=False),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.PrimaryKeyConstraint('ulid')
     )
@@ -311,6 +313,7 @@ def upgrade():
     sa.Column('code', sa.String(length=16), nullable=False),
     sa.Column('name', sa.String(length=80), nullable=False),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.CheckConstraint('length(ulid) = 26', name='ck_ulid_len_26'),
     sa.PrimaryKeyConstraint('ulid'),
     sa.UniqueConstraint('code')
     )
@@ -320,11 +323,12 @@ def upgrade():
     sa.Column('domain', sa.String(length=32), nullable=False),
     sa.Column('target_ulid', sa.String(length=26), nullable=False),
     sa.Column('note', sa.String(length=120), nullable=True),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('created_by_actor', sa.String(length=26), nullable=True),
     sa.Column('archived_at_utc', sa.String(length=30), nullable=True),
     sa.Column('archived_by_actor', sa.String(length=26), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.ForeignKeyConstraint(['attachment_ulid'], ['attachment_attachment.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid'),
     sa.UniqueConstraint('attachment_ulid', 'slice', 'domain', 'target_ulid', 'archived_at_utc', name='uq_active_link')
@@ -365,9 +369,9 @@ def upgrade():
     sa.Column('last_needs_tier_updated', sa.String(length=8), nullable=True),
     sa.Column('flag_reason', sa.String(length=120), nullable=True),
     sa.Column('watchlist_since_utc', sa.String(length=30), nullable=True),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid'),
     sa.UniqueConstraint('entity_ulid', name='uq_customer_entity')
@@ -389,10 +393,10 @@ def upgrade():
     sa.Column('city', sa.String(length=60), nullable=False),
     sa.Column('state', sa.String(length=2), nullable=False),
     sa.Column('postal_code', sa.String(length=10), nullable=False),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.Column('archived_at', sa.String(length=30), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.CheckConstraint('length(state) = 2', name='ck_state_len_2'),
     sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid')
@@ -405,10 +409,10 @@ def upgrade():
     sa.Column('email', sa.String(length=254), nullable=True),
     sa.Column('phone', sa.String(length=32), nullable=True),
     sa.Column('is_primary', sa.Boolean(), nullable=False),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.Column('archived_at', sa.String(length=30), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.CheckConstraint('length(ulid) = 26', name='ck_ulid_len_26'),
     sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid')
@@ -421,10 +425,10 @@ def upgrade():
     sa.Column('legal_name', sa.String(length=120), nullable=False),
     sa.Column('dba_name', sa.String(length=120), nullable=True),
     sa.Column('ein', sa.String(length=9), nullable=True),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.Column('archived_at', sa.String(length=30), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid'),
     sa.UniqueConstraint('ein', name='uq_org_ein'),
@@ -438,10 +442,10 @@ def upgrade():
     sa.Column('first_name', sa.String(length=40), nullable=False),
     sa.Column('last_name', sa.String(length=60), nullable=False),
     sa.Column('preferred_name', sa.String(length=60), nullable=True),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.Column('archived_at', sa.String(length=30), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid'),
     sa.UniqueConstraint('entity_ulid', name='uq_person_entity')
@@ -452,10 +456,10 @@ def upgrade():
     op.create_table('entity_role',
     sa.Column('entity_ulid', sa.String(length=26), nullable=False),
     sa.Column('role', sa.String(length=50), nullable=False),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.Column('archived_at', sa.String(length=30), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid'),
     sa.UniqueConstraint('entity_ulid', 'role', name='uq_entity_role_pair')
@@ -491,8 +495,10 @@ def upgrade():
     sa.Column('location_ulid', sa.String(length=26), nullable=False),
     sa.Column('quantity', sa.Integer(), nullable=False),
     sa.Column('unit', sa.String(length=16), nullable=False),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
+    sa.CheckConstraint('length(ulid) = 26', name='ck_ulid_len_26'),
     sa.ForeignKeyConstraint(['item_ulid'], ['logi_item.ulid'], ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['location_ulid'], ['logi_location.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid')
@@ -507,6 +513,7 @@ def upgrade():
     sa.Column('quantity', sa.Integer(), nullable=False),
     sa.Column('unit', sa.String(length=16), nullable=False),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.CheckConstraint('length(ulid) = 26', name='ck_ulid_len_26'),
     sa.ForeignKeyConstraint(['item_ulid'], ['logi_item.ulid'], ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['location_ulid'], ['logi_location.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid')
@@ -542,9 +549,9 @@ def upgrade():
     sa.Column('first_seen_utc', sa.String(length=30), nullable=True),
     sa.Column('last_touch_utc', sa.String(length=30), nullable=True),
     sa.Column('capability_last_update_utc', sa.String(length=30), nullable=True),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid'),
     sa.UniqueConstraint('entity_ulid', name='uq_resource_entity')
@@ -564,9 +571,9 @@ def upgrade():
     sa.Column('last_touch_utc', sa.String(length=30), nullable=True),
     sa.Column('capability_last_update_utc', sa.String(length=30), nullable=True),
     sa.Column('pledge_last_update_utc', sa.String(length=30), nullable=True),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid'),
     sa.UniqueConstraint('entity_ulid', name='uq_sponsor_entity')
@@ -587,9 +594,9 @@ def upgrade():
     sa.Column('tier1_min', sa.Integer(), nullable=True),
     sa.Column('tier2_min', sa.Integer(), nullable=True),
     sa.Column('tier3_min', sa.Integer(), nullable=True),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.CheckConstraint("NOT (is_veteran_verified = 1 AND veteran_method = 'other' AND approved_by_ulid IS NULL)", name='ck_ce_other_requires_approval'),
     sa.CheckConstraint("veteran_method IS NULL OR veteran_method IN ('dd214','va_id','state_dl_veteran','other')", name='ck_ce_veteran_method_enum'),
     sa.CheckConstraint('NOT (is_veteran_verified = 0 AND (veteran_method IS NOT NULL OR approved_by_ulid IS NOT NULL OR approved_at_utc IS NOT NULL))', name='ck_ce_unverified_requires_nulls'),
@@ -612,9 +619,10 @@ def upgrade():
     sa.Column('section', sa.String(length=64), nullable=False),
     sa.Column('version', sa.Integer(), nullable=False),
     sa.Column('data_json', sa.String(), nullable=False),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('created_by_actor', sa.String(length=26), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.CheckConstraint('version >= 1', name='ck_history_version_pos'),
     sa.ForeignKeyConstraint(['customer_ulid'], ['customer_customer.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid')
@@ -675,8 +683,9 @@ def upgrade():
     sa.Column('domain', sa.String(length=48), nullable=False),
     sa.Column('key', sa.String(length=64), nullable=False),
     sa.Column('active', sa.Boolean(), nullable=False),
-    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.ForeignKeyConstraint(['resource_ulid'], ['resource_resource.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid'),
     sa.UniqueConstraint('resource_ulid', 'domain', 'key', name='uq_res_cap_idx_triplet')
@@ -692,9 +701,10 @@ def upgrade():
     sa.Column('section', sa.String(length=64), nullable=False),
     sa.Column('version', sa.Integer(), nullable=False),
     sa.Column('data_json', sa.String(), nullable=False),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('created_by_actor', sa.String(length=26), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.CheckConstraint('version >= 1', name='ck_res_history_version_pos'),
     sa.ForeignKeyConstraint(['resource_ulid'], ['resource_resource.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid')
@@ -703,13 +713,35 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_resource_history_resource_ulid'), ['resource_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_resource_history_section'), ['section'], unique=False)
 
+    op.create_table('sponsor_allocation',
+    sa.Column('sponsor_ulid', sa.String(length=26), nullable=False),
+    sa.Column('customer_ulid', sa.String(length=26), nullable=False),
+    sa.Column('state', sa.String(length=16), nullable=False),
+    sa.Column('amount_authorized_cents', sa.Integer(), nullable=False),
+    sa.Column('approved_by_ulid', sa.String(length=26), nullable=True),
+    sa.Column('expires_on_utc', sa.String(length=30), nullable=True),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
+    sa.CheckConstraint('amount_authorized_cents >= 0', name='ck_alloc_amount_nonneg'),
+    sa.ForeignKeyConstraint(['customer_ulid'], ['entity_entity.ulid'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['sponsor_ulid'], ['sponsor_sponsor.ulid'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('ulid')
+    )
+    with op.batch_alter_table('sponsor_allocation', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_sponsor_allocation_approved_by_ulid'), ['approved_by_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_sponsor_allocation_customer_ulid'), ['customer_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_sponsor_allocation_sponsor_ulid'), ['sponsor_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_sponsor_allocation_state'), ['state'], unique=False)
+
     op.create_table('sponsor_capability_index',
     sa.Column('sponsor_ulid', sa.String(length=26), nullable=False),
     sa.Column('domain', sa.String(length=48), nullable=False),
     sa.Column('key', sa.String(length=64), nullable=False),
     sa.Column('active', sa.Boolean(), nullable=False),
-    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.ForeignKeyConstraint(['sponsor_ulid'], ['sponsor_sponsor.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid'),
     sa.UniqueConstraint('sponsor_ulid', 'domain', 'key', name='uq_sponsor_cap_idx_triplet')
@@ -725,9 +757,10 @@ def upgrade():
     sa.Column('section', sa.String(length=64), nullable=False),
     sa.Column('version', sa.Integer(), nullable=False),
     sa.Column('data_json', sa.String(), nullable=False),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('created_by_actor', sa.String(length=26), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.CheckConstraint('version >= 1', name='ck_sponsor_hist_version_pos'),
     sa.ForeignKeyConstraint(['sponsor_ulid'], ['sponsor_sponsor.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid')
@@ -744,8 +777,9 @@ def upgrade():
     sa.Column('has_restriction', sa.Boolean(), nullable=False),
     sa.Column('est_value_number', sa.Integer(), nullable=True),
     sa.Column('currency', sa.String(length=8), nullable=True),
-    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.CheckConstraint('length(ulid) = 26', name='ck_ulid_len_26'),
     sa.ForeignKeyConstraint(['sponsor_ulid'], ['sponsor_sponsor.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid')
@@ -812,7 +846,6 @@ def upgrade():
     sa.Column('project_ulid', sa.String(length=26), nullable=True),
     sa.Column('movement_ulid', sa.String(length=26), nullable=True),
     sa.Column('created_by_actor', sa.String(length=26), nullable=True),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('decision_json', sa.Text(), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.CheckConstraint('quantity>0', name='ck_issue_pos_qty'),
@@ -825,6 +858,7 @@ def upgrade():
         batch_op.create_index('ix_issue_customer_sku_time', ['customer_ulid', 'sku_code', 'issued_at'], unique=False)
         batch_op.create_index(batch_op.f('ix_logi_issue_classification_key'), ['classification_key'], unique=False)
         batch_op.create_index(batch_op.f('ix_logi_issue_customer_ulid'), ['customer_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_logi_issue_movement_ulid'), ['movement_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_logi_issue_project_ulid'), ['project_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_logi_issue_sku_code'), ['sku_code'], unique=False)
 
@@ -836,6 +870,7 @@ def downgrade():
     with op.batch_alter_table('logi_issue', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_logi_issue_sku_code'))
         batch_op.drop_index(batch_op.f('ix_logi_issue_project_ulid'))
+        batch_op.drop_index(batch_op.f('ix_logi_issue_movement_ulid'))
         batch_op.drop_index(batch_op.f('ix_logi_issue_customer_ulid'))
         batch_op.drop_index(batch_op.f('ix_logi_issue_classification_key'))
         batch_op.drop_index('ix_issue_customer_sku_time')
@@ -876,6 +911,13 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_sponsor_capability_index_active'))
 
     op.drop_table('sponsor_capability_index')
+    with op.batch_alter_table('sponsor_allocation', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_sponsor_allocation_state'))
+        batch_op.drop_index(batch_op.f('ix_sponsor_allocation_sponsor_ulid'))
+        batch_op.drop_index(batch_op.f('ix_sponsor_allocation_customer_ulid'))
+        batch_op.drop_index(batch_op.f('ix_sponsor_allocation_approved_by_ulid'))
+
+    op.drop_table('sponsor_allocation')
     with op.batch_alter_table('resource_history', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_resource_history_section'))
         batch_op.drop_index(batch_op.f('ix_resource_history_resource_ulid'))

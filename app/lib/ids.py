@@ -10,6 +10,7 @@ from typing import Final
 
 from ulid import ULID  # python-ulid
 
+
 # -----------------
 # ULID generation
 # -----------------
@@ -85,30 +86,6 @@ except Exception:  # pragma: no cover
     String = None  # type: ignore
 
 
-@declarative_mixin
-class ULIDPK:
-    """Adds a 26-char ULID primary key column named 'ulid'."""
-
-    ulid: Mapped[str] = mapped_column(
-        String(26),
-        primary_key=True,
-        default=new_ulid,  # Python-side default for INSERTs
-    )
-
-
-def ULIDFK(
-    target_table: str,
-    *,
-    ondelete: str = "RESTRICT",
-    nullable: bool | None = None,
-    index: bool | None = None,
-    name: str | None = None,
-):
-    """Convenience factory for a 26-char ULID foreign key column."""
-    fk = ForeignKey(f"{target_table}.ulid", ondelete=ondelete, name=name)
-    return mapped_column(String(26), fk, nullable=nullable, index=index)
-
-
 # -----------------
 # Strict validation
 # & helpers
@@ -137,11 +114,13 @@ def ulid_ts_ms(s: str) -> int:
     return int(dt.timestamp() * 1000)
 
 
+from app.lib.models import ULIDFK, ULIDPK
+
 __all__ = [
     "new_ulid",
     "is_ulid",
     "ulid_min_for",
     "ulid_max_for",
-    "ULIDPK",
-    "ULIDFK",
+    "ULIDPK",  # from lib.models - exported here as a shim
+    "ULIDFK",  # from lib.models - exported here as a shim
 ]

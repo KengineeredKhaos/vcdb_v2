@@ -6,27 +6,18 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
 from app.lib.chrono import now_iso8601_ms, utcnow_naive
-from app.lib.models import ULIDPK, ULIDFK
+from app.lib.models import ULIDPK, ULIDFK, IsoTimestamps
 
 
 # -------------------------
 # Core "Entity"
 # -------------------------
-class Entity(db.Model, ULIDPK):
+class Entity(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "entity_entity"
 
     # PK 'ulid' comes from ULIDPK (String(26), default=new_ulid)
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
 
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
     archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
     # One-to-ones
     person: Mapped["EntityPerson"] = relationship(
@@ -51,7 +42,7 @@ class Entity(db.Model, ULIDPK):
 # -------------------------
 # Entity Person (1:1 with Entity)
 # -------------------------
-class EntityPerson(db.Model, ULIDPK):
+class EntityPerson(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "entity_person"
 
     entity_ulid: Mapped[str] = ULIDFK("entity_entity")
@@ -63,15 +54,6 @@ class EntityPerson(db.Model, ULIDPK):
         String(60), nullable=True
     )
 
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
     archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
     # enforce 1:1 with Entity
     __table_args__ = (
@@ -82,7 +64,7 @@ class EntityPerson(db.Model, ULIDPK):
 # -------------------------
 # Entity Organization (1:1 with Entity)
 # -------------------------
-class EntityOrg(db.Model, ULIDPK):
+class EntityOrg(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "entity_org"
 
     entity_ulid: Mapped[str] = ULIDFK("entity_entity")
@@ -94,15 +76,6 @@ class EntityOrg(db.Model, ULIDPK):
         String(9), nullable=True
     )  # normalized/validated in service
 
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
     archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
     __table_args__ = (
         UniqueConstraint("entity_ulid", name="uq_org_entity"),  # enforce 1:1
@@ -114,7 +87,7 @@ class EntityOrg(db.Model, ULIDPK):
 # -------------------------
 # Entity Role (N:1 with Entity)
 # -------------------------
-class EntityRole(db.Model, ULIDPK):
+class EntityRole(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "entity_role"
 
     entity_ulid: Mapped[str] = ULIDFK("entity_entity")
@@ -122,15 +95,7 @@ class EntityRole(db.Model, ULIDPK):
 
     role: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
 
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
+
     archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
     __table_args__ = (
         # Governance enforces allowed values;
@@ -142,7 +107,7 @@ class EntityRole(db.Model, ULIDPK):
 # -------------------------
 # Entity Contact (N:1 with Entity)
 # -------------------------
-class EntityContact(db.Model, ULIDPK):
+class EntityContact(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "entity_contact"
 
     entity_ulid: Mapped[str] = ULIDFK("entity_entity")
@@ -157,23 +122,13 @@ class EntityContact(db.Model, ULIDPK):
     is_primary: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
-
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
     archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
 
 # -------------------------
 # Entity Address (N:1 with Entity)
 # -------------------------
-class EntityAddress(db.Model, ULIDPK):
+class EntityAddress(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "entity_address"
 
     entity_ulid: Mapped[str] = ULIDFK("entity_entity")
@@ -195,16 +150,6 @@ class EntityAddress(db.Model, ULIDPK):
         String(2), nullable=False
     )  # two-letter code; validate in service
     postal_code: Mapped[str] = mapped_column(String(10), nullable=False)
-
-    created_at_utc: Mapped[str] = mapped_column(
-        String(30), default=now_iso8601_ms, nullable=False
-    )
-    updated_at_utc: Mapped[str] = mapped_column(
-        String(30),
-        default=now_iso8601_ms,
-        onupdate=now_iso8601_ms,
-        nullable=False,
-    )
     archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
     __table_args__ = (

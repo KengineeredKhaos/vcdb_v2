@@ -279,6 +279,9 @@ ASSUME_KEY = "assumed_domain_roles"
 
 
 def _dev_assumption_enabled(user) -> bool:
+
+    from flask import current_app
+
     if current_app.config.get("APP_MODE") == "production":
         return False
     has_dev = "dev" in getattr(user, "rbac_roles", [])
