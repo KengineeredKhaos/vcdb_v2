@@ -1,157 +1,165 @@
 # app/extensions/__init__.py
 from __future__ import annotations
 
-import json
 import sqlite3
-from typing import Any
+from typing import Optional
 
+from flask import Flask
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
-from flask_wtf import CSRFProtect
 from sqlalchemy import event
-from sqlalchemy.engine import Engine
 
-from .auth_ctx import current_actor_ulid
-from .entity_api import entity_api
-from .entity_read import entity_read
+from flask_wtf import CSRFProtect
+from flask_wtf.csrf import CSRFError, generate_csrf
+from jinja2 import StrictUndefined
 
-# -----------------------
-# Core singletons
-# -----------------------
+# -----------------
+# Singletons
+# (imported everywhere)
+# -----------------
+
+db = SQLAlchemy(session_options={"autoflush": False, "expire_on_commit": False})
+migrate = Migrate(compare_type=True)  # keep compare_type for SQLite dev
 login_manager = LoginManager()
 csrf = CSRFProtect()
-db = SQLAlchemy()
-migrate = Migrate()
+
+# -----------------
+# init extensions
+# -----------------
+
+def init_extensions(flask_app: Flask) -> None:
+    # Bind extensions
+    db.init_app(flask_app)
+    migrate.init_app(flask_app, db)
+    login_manager.init_app(flask_app)
+    login_manager.login_view = "auth.login"
+    csrf.init_app(flask_app)  # <-- enable CSRF
+
+    # Jinja: strict mode
+    flask_app.jinja_env.undefined = StrictUndefined
+
+    # Make {{ csrf_token() }} available to ALL templates safely
+    @flask_app.context_processor
+    def _inject_csrf_token():
+        # generate_csrf() needs an app/request ctx; returns "" in testing when disabled
+        return {"csrf_token": generate_csrf}
+
+    # Nice error for CSRF failures (programmatic registration avoids decorator binding issues)
+    def _handle_csrf_error(e: CSRFError):
+        return {
+            "error": "csrf_failed",
+            "description": getattr(e, "description", "CSRF validation failed."),
+        }, 400
+
+    flask_app.register_error_handler(CSRFError, _handle_csrf_error)
+
 
 
 # -----------------
-# JSON / CSV Handler
-# commented out
-# until we determine
-# suitability
+# Engine tuning
+# (SQLite)
 # -----------------
-"""
-def _cast_json_or_iter(v):
-    if v is None:
-        return ()
-    if isinstance(v, (list, tuple, set)):
-        return tuple(v)
-    s = str(v).strip()
-    if s.startswith("[") or s.startswith("{"):
+
+def _tune_sqlite_connection(dbapi_conn: sqlite3.Connection) -> None:
+    """
+    Apply conservative, production-safe PRAGMAs for SQLite.
+    - foreign_keys=ON protects referential integrity (tests rely on this).
+    - journal_mode=WAL + synchronous=NORMAL is safe for file-backed DBs.
+      (In-memory DB will ignore WAL and that's fine.)
+    """
+    cur = dbapi_conn.cursor()
+    try:
+        cur.execute("PRAGMA foreign_keys=ON;")
+    except Exception:
+        pass
+    # These are best-effort; ignore if not supported (e.g., :memory:)
+    for pragma in (
+        "PRAGMA journal_mode=WAL;",
+        "PRAGMA synchronous=NORMAL;",   # safe + faster than FULL
+        "PRAGMA temp_store=MEMORY;",
+    ):
         try:
-            parsed = json.loads(s)
-            if isinstance(parsed, list):
-                return tuple(parsed)
+            cur.execute(pragma)
         except Exception:
             pass
-    # fallback: CSV
-    return tuple(p.strip() for p in s.split(",") if p.strip())
-"""
-
-# -----------------
-# Bootstrap Initialization
-# -----------------
-
-# -- module init guard
-_INIT: bool = False
+    cur.close()
 
 
-def ensure_initialized() -> None:
+def _install_sqlite_listeners_once(app: Flask) -> None:
     """
-    Idempotent no-op for now; keep as a hook if you later add bootstraps.
+    Install connect-listener on the current engine only once.
+    This guards against test reboots / factory re-use and dev auto-reload.
     """
-    global _INIT
-    if _INIT:
+    eng = db.engine  # requires an app context (factory already has one)
+
+    # Idempotence flag attached to the engine object.
+    if getattr(eng, "_vcdb_sqlite_listeners_installed", False):
         return
-    _INIT = True  # <<< set on first call
+
+    @event.listens_for(eng, "connect")
+    def _on_connect(dbapi_conn, _rec) -> None:
+        if isinstance(dbapi_conn, sqlite3.Connection):
+            _tune_sqlite_connection(dbapi_conn)
+
+    eng._vcdb_sqlite_listeners_installed = True
 
 
 # -----------------
-# Role codes helper
+# Init entrypoint
 # -----------------
-def _cast_csv_or_iter(v) -> tuple[str, ...]:
-    if isinstance(v, (list, tuple, set)):
-        return tuple(v)
-    if v is None:
-        return ()
-    return tuple(s.strip() for s in str(v).split(",") if s.strip())
 
-
-def allowed_role_codes() -> tuple[str, ...]:
+def init_extensions(flask_app: Flask) -> None:
     """
-    Domain roles are owned by Governance.
-    Read via the public contract (no DB here).
+    Bind extensions to the Flask app, then (inside app context) finalize DB engine hooks.
+    Safe to call from tests and dev reloads; everything is idempotent.
     """
-    try:
-        from app.extensions.contracts import governance_v2 as gov
+    # Bind Flask extensions
+    db.init_app(flask_app)
+    migrate.init_app(flask_app, db)
+    login_manager.init_app(flask_app)
+    login_manager.login_view = "auth.login"  # endpoint string; adjust if needed
 
-        roles = gov.get_domain_roles()  # returns objects with .code
+    # Register models with metadata before Alembic / reflection
+    # (keeps imports localized to avoid cycles and import-time config reads)
+    with flask_app.app_context():
+        # Ensure all models are imported exactly once so db.metadata is complete
+        import app.extensions.models_registry  # noqa: F401
+        _install_sqlite_listeners_once(flask_app)
 
-    except Exception:
-        try:
-            # fallback to older v1, if present
-            from app.extensions.contracts.governance import (
-                v1 as gov,  # type: ignore
-            )
+    # Idempotence guard so we don't double-register handlers on reloads
+    if getattr(flask_app, "_vcdb_teardowns_installed", False):
+        return
 
-            roles = gov.get_domain_roles()
-        except Exception:
-            return ("customer", "resource", "sponsor", "governor")
+    # Request lifecycle hygiene: never commit implicitly.
+    # Roll back on errors; always remove the Session at end of request/appctx.
 
-    codes = [r.code for r in roles if getattr(r, "code", None)]
-    return (
-        tuple(codes)
-        if codes
-        else ("customer", "resource", "sponsor", "governor")
-    )
-
-
-# -----------------------
-# App init
-# -----------------------
-
-
-def init_extensions(app):
-    # Flask-Login
-    login_manager.init_app(app)
-    login_manager.login_view = "auth.login"
-    login_manager.session_protection = "strong"
-
-    # CSRF
-    csrf.init_app(app)
-
-    # SQLAlchemy
-    db.init_app(app)
-
-    # Global listener: fires for any SQLAlchemy Engine
-    # (only applies if DBAPI is sqlite3)
-    @event.listens_for(Engine, "connect")
-    def _set_sqlite_pragma(dbapi_connection, connection_record):
-        if isinstance(dbapi_connection, sqlite3.Connection):
-            cursor = dbapi_connection.cursor()
+    def _teardown_request(exc: Optional[BaseException]) -> None:  # type: ignore[override]
+        if exc is not None:
             try:
-                cursor.execute("PRAGMA foreign_keys=ON")
-            finally:
-                cursor.close()
+                db.session.rollback()
+            except Exception:
+                pass
+        # We do not auto-commit on success here;
+        # commits must be explicit in services.
+        # Always dispose the scoped session
+        try:
+            db.session.remove()
+        except Exception:
+            pass
 
-    # Alembic/Migrations
-    migrate.init_app(app, db)
 
-    return app
+    def _teardown_appcontext(exc: Optional[BaseException]) -> None:
+        # Safety net at appctx teardown
+        try:
+            db.session.remove()
+        except Exception:
+            pass
 
+    # Register handlers programmatically
+    # to avoid any decorator name resolution
+    flask_app.teardown_request(_teardown_request)
+    flask_app.teardown_appcontext(_teardown_appcontext)
 
-# -----------------
-# Export Hygiene
-# -----------------
+    flask_app._vcdb_teardowns_installed = True
 
-__all__ = [
-    "login_manager",
-    "csrf",
-    "db",
-    "migrate",
-    "init_extensions",
-    "entity_api",
-    "entity_read",
-    "current_actor_ulid",
-]

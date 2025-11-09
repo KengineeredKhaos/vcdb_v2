@@ -1,265 +1,167 @@
 # tests/conftest.py
+from __future__ import annotations
+
 import contextlib
-import logging
 import os
-import pathlib
+import tempfile
+from pathlib import Path
+from typing import Iterator
+
 import pytest
-import sys
+from sqlalchemy import event, text
+from sqlalchemy.engine import Engine
 
-from flask_migrate import upgrade as fm_upgrade
-from sqlalchemy.orm import sessionmaker, scoped_session
-from sqlalchemy.pool import NullPool
-from sqlalchemy import event
+# IMPORTANT: import the app factory and db after env vars are set
+os.environ.setdefault("FLASK_ENV", "testing")
+os.environ.setdefault("APP_MODE", "testing")
 
-from app import create_app
-from app.extensions import db
-from app.lib.ids import new_ulid
+from app import create_app  # noqa: E402
+from app.extensions import db  # noqa: E402
+from flask import Flask  # noqa: E402
+from flask_migrate import upgrade  # noqa: E402
 
-from tests.seeds import seed_minimal_party_triplet as _seed_triplet
-from tests.support import with_readonly_session
+# --------------------------------------------------------------------------------------
+# Session-scoped app + database setup
+#   - Uses a single temp-file SQLite DB for the whole test session (stable across conns)
+#   - Runs Alembic upgrade ONCE, then seeds canonical minimal data
+#   - Provides a request/app context for tests that need current_app
+# --------------------------------------------------------------------------------------
 
-
-_root = pathlib.Path(__file__).resolve().parents[1]
-# prune in-repo venv paths from sys.path for collection/imports
-for p in list(sys.path):
-    if (("lib/python" in p or "site-packages" in p) and str(_root) in p):
-        sys.path.remove(p)
-
-@pytest.fixture()
-def cfg(app):
-    """Convenience handle for the active Flask config."""
-    return app.config
-
-
-@pytest.fixture()
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture
-def app_ctx(app):
-    """Alias so tests that expect `app_ctx` keep working."""
-    return app
-
-
-@pytest.fixture()
-def seed_party_triplet(db_session):
-    """
-    Returns (entity_ulid, customer_ulid, resource_ulid, sponsor_ulid)
-    """
-    return _seed_triplet(db_session)
-
-
-# ------------------------------------------------------------------------------
-# Session-wide DB file location (authoritative)
-# ------------------------------------------------------------------------------
-
-@pytest.fixture(scope="session", autouse=True)
-def _set_writable_sqlite_uri(tmp_path_factory):
-    """
-    Point tests at a writable sqlite file in a temp dir.
-    Session-scoped and does NOT use monkeypatch (so no scope clash).
-    """
-    dbdir = tmp_path_factory.mktemp("db")
-    dbfile = dbdir / "test.sqlite"
-    uri = f"sqlite:///{dbfile}"
+@pytest.fixture(scope="session")
+def _sqlite_uri_file(tmp_path_factory) -> str:
+    tmp_dir = tmp_path_factory.mktemp("db")
+    uri = f"sqlite:///{tmp_dir}/test.sqlite"
     os.environ["SQLALCHEMY_DATABASE_URI"] = uri
-    os.environ.setdefault("DATABASE_URL", uri)
-    return str(dbfile)
+    return uri
 
-
-@pytest.fixture(scope="session", autouse=True)
-def _fresh_sqlite_before_migrations(_set_writable_sqlite_uri):
-    """
-    Ensure the sqlite file does not exist before Alembic upgrade runs.
-    Depends on _set_writable_sqlite_uri to enforce correct ordering.
-    """
-    p = pathlib.Path(_set_writable_sqlite_uri)
-    if p.exists():
-        p.unlink()
-
-
-# ------------------------------------------------------------------------------
-# Session-wide app + migration
-# ------------------------------------------------------------------------------
 
 @pytest.fixture(scope="session")
-def app():
-    os.environ["FLASK_ENV"] = "testing"
+def app(_sqlite_uri_file) -> Flask:
     flask_app = create_app("config.TestConfig")
+    # force the same URI we put in env
+    flask_app.config["SQLALCHEMY_DATABASE_URI"] = os.environ["SQLALCHEMY_DATABASE_URI"]
 
-    # Use an in-memory DB but migrate it once for the whole session
-    flask_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    with flask_app.app_context():
-        import app.extensions.models_registry  # ensure models are imported
-        from flask_migrate import upgrade
-        upgrade()
-
-    return flask_app
-
-@pytest.fixture(scope="session")
-def engine(app):
-    # Use the same engine the app uses
-    eng = db.engine
-
-    # Keep ONLY foreign_keys pragma globally (safe & helpful)
-    @event.listens_for(eng, "connect")
+    # Foreign keys ON for every SQLite connection (safe & helpful)
+    @event.listens_for(db.engine, "connect")  # type: ignore[arg-type]
     def _fk_on(dbapi_conn, _):
         try:
             dbapi_conn.execute("PRAGMA foreign_keys=ON;")
         except Exception:
             pass
 
-    return eng
+    with flask_app.app_context():
+        # Make sure all models are imported before migrate sees them
+        import app.extensions.models_registry  # noqa: F401
 
+        # Run migrations once per session
+        upgrade()
 
-# -----------------
-# session context
-# -----------------
+        # sanity check core tables
+        from sqlalchemy import inspect
+        tables = set(inspect(db.engine).get_table_names())
+        required = {
+            "gov_canonical_state",
+            "auth_user",
+            "ledger_event",
+        }
+        missing = required - tables
+        if missing:
+            raise RuntimeError(f"Missing tables after upgrade: {sorted(missing)}")
 
-@pytest.fixture(scope="session", autouse=True)
-def _session_app_context(app):
-    """
-    Push a Flask app context for the ENTIRE test session.
-    This prevents 'working outside of app context' from imports or other
-    session-scoped fixtures that touch current_app/db before tests run.
-    """
-    ctx = app.app_context()
-    ctx.push()
-    try:
-        yield
-    finally:
-        ctx.pop()
-
-
-# ------------------------------------------------------------------------------
-# Per-test DB isolation (SAVEPOINT)
-# ------------------------------------------------------------------------------
-
-@pytest.fixture()
-def db_session(app, engine):
-    """Give each test a clean SQLAlchemy session wrapped in a SAVEPOINT."""
-    with app.app_context():
-        conn = engine.connect()
-        trans = conn.begin()  # outer transaction
-        # New session bound to this connection
-        Session = db.sessionmaker(bind=conn)
-        sess = Session()
-
-        # Make db.session point to ours during the test
-        old = db.session
-        db.session = sess
+        # Seed minimal canon data (same code your CLI uses)
         try:
-            yield sess
-        finally:
-            # Teardown: close session, rollback, and restore global
-            sess.close()
-            trans.rollback()
-            conn.close()
-            db.session = old
+            from app.seeds.core import seed_canon_minimal
+            seed_canon_minimal()
+        except Exception:
+            # keep seeds optional if not wired yet
+            pass
+
+    return flask_app
 
 
-# -----------------
-# Readonly opt-in
-# -----------------
-
-@contextlib.contextmanager
-def readonly_connection(engine):
-    """Context manager that sets PRAGMA query_only=ON for this ONE connection."""
-    conn = engine.connect()
-    try:
-        conn.exec_driver_sql("PRAGMA query_only=ON;")
-        yield conn
-    finally:
-        conn.close()
-
-@pytest.fixture()
-def ro_conn(engine):
-    """A single read-only connection you can use inside a test."""
-    with readonly_connection(engine) as conn:
-        yield conn
+@pytest.fixture(scope="session")
+def engine(app: Flask) -> Engine:
+    # Use the app's engine; do NOT put query_only here (that leaks across tests)
+    return db.engine
 
 
-# ------------------------------------------------------------------------------
-# Clean logging / binds between tests
-# ------------------------------------------------------------------------------
-
+# --------------------------------------------------------------------------------------
+# Function-scoped DB session fixture
+#   - Each test runs in its own SAVEPOINT and is rolled back automatically
+#   - No need to wrap every test; this is opt-out clean
+# --------------------------------------------------------------------------------------
 @pytest.fixture(autouse=True)
-def _clean_between_tests():
-    root = logging.getLogger()
-    before = list(root.handlers)
-    lvl = root.level
-    with contextlib.suppress(Exception):
-        db.session.rollback()
-    with contextlib.suppress(Exception):
-        db.session.bind = None
-    yield
-    for h in list(root.handlers):
-        if h not in before:
-            root.removeHandler(h)
-    root.setLevel(lvl)
-    with contextlib.suppress(Exception):
-        db.session.bind = None
+def db_session(app: Flask) -> Iterator[None]:
+    """Wrap every test in a transaction+savepoint and roll it back."""
+    connection = db.engine.connect()
+    trans = connection.begin()
+    session = db.create_scoped_session(options={"bind": connection, "binds": {}})
+
+    old_session = db.session
+    db.session = session  # type: ignore[assignment]
+
+    try:
+        yield
+        # no commit; tests should assert effects, not persist them
+    finally:
+        session.remove()
+        db.session = old_session  # type: ignore[assignment]
+        trans.rollback()
+        connection.close()
 
 
-
-# ------------------------------------------------------------------------------
-# Small helpers & stable toggles
-# ------------------------------------------------------------------------------
-
-@pytest.fixture()
-def customer_ids(app, db_session):
-    return seed_minimal_customer()
-
-
-@pytest.fixture(autouse=True, scope="session")
-def policy_env():
-    p = pathlib.Path("app/slices/governance/data/policy_issuance.json").resolve()
-    os.environ["VCDB_POLICY_ISSUANCE"] = str(p)
-    yield
-    os.environ.pop("VCDB_POLICY_ISSUANCE", None)
-
-
+# --------------------------------------------------------------------------------------
+# Read-only / Writable context managers for specific test sections
+#   - Use with_readonly_session() for pure-GET contract smoke checks
+#   - Use with_writable_session() to temporarily allow commits (e.g., seeds in-test)
+# --------------------------------------------------------------------------------------
 @contextlib.contextmanager
-def with_readonly_session():
-    """
-    Use a *temporary* scoped session bound to a fresh read-only SQLite connection.
-    Restores the original db.session object after the block (even on error).
-    """
-    # 1) fresh connection + PRAGMAs
-    conn = db.engine.connect()
-    conn.exec_driver_sql("PRAGMA foreign_keys = ON;")
-
-
-    # 2) new scoped session bound to this read-only connection
-    RO_Session = scoped_session(
-        sessionmaker(bind=conn, autoflush=False, expire_on_commit=False)
-    )
-
-    # 3) swap the *session object* (not just its bind)
-    from typing import cast
-    from flask_sqlalchemy import SQLAlchemy
-    _db = cast(SQLAlchemy, db)
-    old_session = _db.session
-    _db.session = RO_Session  # type: ignore[assignment]
+def _sqlite_query_only_on(conn):
+    conn.exec_driver_sql("PRAGMA query_only = ON;")
     try:
         yield
     finally:
-        # Always clean up, even on exceptions
-        with contextlib.suppress(Exception):
-            db.session.rollback()
-        with contextlib.suppress(Exception):
-            _db.session.remove()      # type: ignore[call-arg]
-        _db.session = old_session     # type: ignore[assignment]
-        with contextlib.suppress(Exception):
-            conn.close()
+        conn.exec_driver_sql("PRAGMA query_only = OFF;")
 
 
-@pytest.fixture(autouse=True)
-def reset_feature_flags(app):
-    """Ensure feature flags are stable each test."""
-    app.config.update({
-        "CALENDAR_DEV_BLACKOUT_TRIPWIRE": False,
-        "ALLOW_DEV_ASSUME_ROLES": True,
-    })
-    yield
+@pytest.fixture
+def with_readonly_session(engine: Engine):
+    """Context manager factory: per-connection read-only mode (SQLite)."""
+    @contextlib.contextmanager
+    def _ctx():
+        with engine.connect() as conn:
+            with _sqlite_query_only_on(conn):
+                yield
+    return _ctx
+
+
+@pytest.fixture
+def with_writable_session(engine: Engine):
+    """Context manager factory: explicit writable window (use sparingly)."""
+    @contextlib.contextmanager
+    def _ctx():
+        with engine.connect() as conn:
+            # ensure writable
+            conn.exec_driver_sql("PRAGMA query_only = OFF;")
+            yield
+    return _ctx
+
+
+# --------------------------------------------------------------------------------------
+# Optional: test marks to auto-enforce read-only for a test
+#   - @pytest.mark.readonly will run the whole test body under PRAGMA query_only=ON
+# --------------------------------------------------------------------------------------
+def pytest_runtest_call(item):
+    if "readonly" in item.keywords:
+        engine = item.funcargs.get("engine")
+        if engine is None:
+            return  # engine not requested; skip auto wrapper
+        # wrap the actual call to the test function
+        orig_func = item.obj
+
+        def _wrapped(*args, **kwargs):
+            with engine.connect() as conn:
+                with _sqlite_query_only_on(conn):
+                    return orig_func(*args, **kwargs)
+
+        item.obj = _wrapped  # type: ignore[attr-defined]

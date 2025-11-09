@@ -30,11 +30,11 @@ def _bind_contracts(app: Flask) -> None:
 # ---   CREATE APP   ---   (Time to make the donuts)
 # -----------------
 # create the app framework and load object from config.py
-def create_app(config_object: Union[str, type[Any]] = "config.DevConfig") -> Flask:
+def create_app(config_object="config.DevConfig"):
     """Single app factory. Boring, deterministic, test-friendly."""
-    app = Flask(__name__, template_folder="templates")
-    app.config.from_object(config_object)
-    app.config["APP_MODE"] = os.getenv("APP_MODE", "development")
+    flask_app = Flask(__name__, template_folder="templates", instance_relative_config=True)
+    flask_app.config.from_object(config_object)
+
 
     # prod | staging | development | test
 
@@ -42,65 +42,72 @@ def create_app(config_object: Union[str, type[Any]] = "config.DevConfig") -> Fla
     # Prefer explicit SQLALCHEMY_DATABASE_URI; otherwise derive from DATABASE,
     # otherwise fall back to instance/dev.db.
     # Resolve DB URI once, predictably.
-    if not app.config.get("SQLALCHEMY_DATABASE_URI"):
-        db_path = app.config.get("DATABASE")
+    if not flask_app.config.get("SQLALCHEMY_DATABASE_URI"):
+        db_path = flask_app.config.get("DATABASE")
         if not db_path:
-            Path(app.instance_path).mkdir(parents=True, exist_ok=True)
-            db_path = Path(app.instance_path) / "dev.db"
-            app.config["DATABASE"] = str(db_path)
-        app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
+            Path(flask_app.instance_path).mkdir(parents=True, exist_ok=True)
+            db_path = Path(flask_app.instance_path) / "dev.db"
+            flask_app.config["DATABASE"] = str(db_path)
+        flask_app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
 
 
     # Always good to disable this noise
-    app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
+    flask_app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
 
 
 
     # Configure logging first
-    configure_logging(app)
+    configure_logging(flask_app)
 
     # -----------------
     # testing logging
     # -----------------
 
     # Configure logging before extensions/blueprints
-    configure_logging(app)
-    if not app.testing and (app.debug or app.config.get("ENV") in {"dev", "development"}):
+    configure_logging(flask_app)
+    if not flask_app.testing and (flask_app.debug or flask_app.config.get("ENV") in {"dev", "development"}):
         hnames = [type(h).__name__ for h in logging.getLogger().handlers]
         logging.getLogger("app").info(
             {
                 "event": "boot_handlers",
                 "root_handlers": hnames,
-                "log_dir": app.config.get("LOG_DIR"),
+                "log_dir": flask_app.config.get("LOG_DIR"),
             }
         )
 
     # init extensions first
-    init_extensions(app)
+    init_extensions(flask_app)
 
-    from flask_wtf.csrf import CSRFError, generate_csrf
+    # --- CSRF + Jinja (after extensions, before blueprints) ---
+    try:
+        from flask_wtf.csrf import CSRFError, generate_csrf
+    except Exception:  # allow tests/envs without Flask-WTF
+        CSRFError = None
+        generate_csrf = lambda: ""
 
     # Make {{ csrf_token() }} available in templates
-    app.jinja_env.globals["csrf_token"] = generate_csrf
+    flask_app.jinja_env.globals["csrf_token"] = generate_csrf
 
-    # Nice error for CSRF failures
-    @app.errorhandler(CSRFError)
-    def handle_csrf_error(e):
-        return (
-            {
-                "error": "csrf_failed",
-                "description": getattr(
-                    e, "description", "CSRF validation failed."
-                ),
-            },
-            400,
-        )
+    if CSRFError is not None:
+        @flask_app.errorhandler(CSRFError)
+        def handle_csrf_error(e):
+            return (
+                {
+                    "error": "csrf_failed",
+                    "description": getattr(
+                        e,
+                        "description",
+                        "CSRF validation failed.",
+                    ),
+                },
+                400,
+            )
 
     # jinja strict mode (keep)
-    app.jinja_env.undefined = StrictUndefined
+    flask_app.jinja_env.undefined = StrictUndefined
 
     # register web first (no prefix)
-    app.register_blueprint(web_bp)
+    flask_app.register_blueprint(web_bp)
 
     # Register blueprints (slices) -- after CSRF / Jinja are set
     from app.slices.admin import bp as admin_bp
@@ -117,28 +124,28 @@ def create_app(config_object: Union[str, type[Any]] = "config.DevConfig") -> Fla
     from app.slices.resources import bp as resources_bp
     from app.slices.sponsors import bp as sponsors_bp
 
-    app.register_blueprint(admin_bp)
-    app.register_blueprint(attachments_bp)
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(calendar_bp)
-    app.register_blueprint(customers_bp)
-    app.register_blueprint(entity_bp)
-    app.register_blueprint(finance_bp)
-    app.register_blueprint(governance_bp)
-    app.register_blueprint(ledger_bp)
-    app.register_blueprint(logistics_bp)
-    app.register_blueprint(resources_bp)
-    app.register_blueprint(sponsors_bp)
+    flask_app.register_blueprint(admin_bp)
+    flask_app.register_blueprint(attachments_bp)
+    flask_app.register_blueprint(auth_bp)
+    flask_app.register_blueprint(calendar_bp)
+    flask_app.register_blueprint(customers_bp)
+    flask_app.register_blueprint(entity_bp)
+    flask_app.register_blueprint(finance_bp)
+    flask_app.register_blueprint(governance_bp)
+    flask_app.register_blueprint(ledger_bp)
+    flask_app.register_blueprint(logistics_bp)
+    flask_app.register_blueprint(resources_bp)
+    flask_app.register_blueprint(sponsors_bp)
 
-    if app.config.get("APP_MODE") != "production":
-        app.register_blueprint(devtools_bp)
+    if flask_app.config.get("APP_MODE") != "production":
+        flask_app.register_blueprint(devtools_bp)
 
     # -------------
     # Globals Injection
     # compact, side-effect-free
     # -------------
 
-    @app.context_processor
+    @flask_app.context_processor
     def inject_globals():
         from flask import current_app
         from flask_login import current_user
@@ -162,7 +169,7 @@ def create_app(config_object: Union[str, type[Any]] = "config.DevConfig") -> Fla
             "user_is_admin": user_is_admin,
         }
 
-    @app.context_processor
+    @flask_app.context_processor
     def _user_is_admin() -> bool:
         try:
             # Flexible: supports either boolean flag or a roles list/tuple
@@ -175,7 +182,7 @@ def create_app(config_object: Union[str, type[Any]] = "config.DevConfig") -> Fla
         except Exception:
             return False
 
-    @app.context_processor
+    @flask_app.context_processor
     def admin_alerts():
         """Lightweight admin banner fed from admin_cron_status, tolerant to absence."""
         from app.extensions import db
@@ -221,20 +228,20 @@ def create_app(config_object: Union[str, type[Any]] = "config.DevConfig") -> Fla
         return {"admin_alerts": alerts}
 
 
-    @app.context_processor
+    @flask_app.context_processor
     def macro_ctx():
         """Expose `_macros` template module if present; tolerate absence in test."""
         try:
-            tmpl = app.jinja_env.get_template("_macros.html")
+            tmpl = flask_app.jinja_env.get_template("_macros.html")
             return {"_macros": tmpl.module}
         except Exception:
             return {"_macros": None}
 
     # Global error handler (logs all exceptions once, honors debugger in dev)
-    @app.errorhandler(Exception)
+    @flask_app.errorhandler(Exception)
     def _handle_any_exception(e: Exception):
         if isinstance(e, HTTPException):
-            app.logger.warning(
+            flask_app.logger.warning(
                 {
                     "event": "http_exception",
                     "status": e.code,
@@ -244,7 +251,7 @@ def create_app(config_object: Union[str, type[Any]] = "config.DevConfig") -> Fla
                 }
             )
             return e
-        app.logger.exception(
+        flask_app.logger.exception(
             {
                 "event": "unhandled_exception",
                 "error": str(e),
@@ -252,7 +259,7 @@ def create_app(config_object: Union[str, type[Any]] = "config.DevConfig") -> Fla
                 "path": getattr(request, "path", None),
             }
         )
-        if app.debug:
+        if flask_app.debug:
             raise
         return jsonify({"error": "internal_error"}), 500
 
@@ -274,8 +281,8 @@ def create_app(config_object: Union[str, type[Any]] = "config.DevConfig") -> Fla
             app, limit=int(app.config.get("LEDGER_CHECK_LIMIT", 20))
         )
     """
-    register_cli(app)
-    return app
+    register_cli(flask_app)
+    return flask_app
 
 
 #####################################################

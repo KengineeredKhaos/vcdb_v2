@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Final
 
 from ulid import ULID  # python-ulid
 
@@ -64,29 +63,6 @@ def is_ulid(s: str) -> bool:
 
 
 # -----------------
-# SQLAlchemy helpers
-# (SQLAlchemy 2.x)
-# -----------------
-
-try:
-    from sqlalchemy import ForeignKey, String
-    from sqlalchemy.orm import Mapped, declarative_mixin, mapped_column
-except Exception:  # pragma: no cover
-    Mapped = object  # type: ignore
-
-    def mapped_column(*args, **kwargs):  # type: ignore
-        raise RuntimeError("SQLAlchemy not available")
-
-    def ForeignKey(*args, **kwargs):  # type: ignore
-        raise RuntimeError("SQLAlchemy not available")
-
-    def declarative_mixin(cls):  # type: ignore
-        return cls
-
-    String = None  # type: ignore
-
-
-# -----------------
 # Strict validation
 # & helpers
 # -----------------
@@ -114,13 +90,10 @@ def ulid_ts_ms(s: str) -> int:
     return int(dt.timestamp() * 1000)
 
 
-from app.lib.models import ULIDFK, ULIDPK
-
 __all__ = [
     "new_ulid",
     "is_ulid",
     "ulid_min_for",
     "ulid_max_for",
-    "ULIDPK",  # from lib.models - exported here as a shim
-    "ULIDFK",  # from lib.models - exported here as a shim
+
 ]

@@ -1,39 +1,60 @@
 # tests/support.py
+from __future__ import annotations
 import contextlib
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.engine import Connection
 from app.extensions import db
+
+
+@contextlib.contextmanager
+def with_write_session():
+    """
+    Yield the current (function-scoped) db.session as-is for write tests.
+    """
+    yield db.session
+
 
 @contextlib.contextmanager
 def with_readonly_session():
     """
-    Temporarily bind db.session to a fresh connection intended for read-only use.
-    (We do not turn PRAGMA query_only=ON here to avoid “readonly” errors
-    when contracts legitimately touch temp objects; this is just an isolation shim.)
+    Switch the CURRENT TEST'S bound connection to read-only (SQLite PRAGMA).
+    Restored after the block. Does not affect other tests or other connections.
     """
-    conn = db.engine.connect()
+    sess = db.session
+    bind = sess.get_bind()
+    if bind is None:
+        # Should not happen if conftest's session fixture is used
+        raise RuntimeError("No bind on db.session; ensure test uses the `session` fixture.")
+
+    # We need the actual DBAPI connection
+    conn: Connection = bind
+    raw = conn.connection  # DBAPI connection
+
+    # Flip to read-only
     try:
-        # Helpful safety: keep FK checks on
-        conn.exec_driver_sql("PRAGMA foreign_keys = ON;")
+        raw.execute("PRAGMA query_only=ON;")
+    except Exception:
+        # Non-SQLite DBs may not support this PRAGMA; if that happens
+        # it's still useful for SQLite, and harmless elsewhere.
+        pass
 
-        RO_Session = scoped_session(
-            sessionmaker(bind=conn, autoflush=False, expire_on_commit=False)
-        )
-
-        # Swap the *session object* in a type-safe way
-        from typing import cast
-        from flask_sqlalchemy import SQLAlchemy
-        _db = cast(SQLAlchemy, db)
-
-        old_session = _db.session
-        _db.session = RO_Session  # type: ignore[assignment]
-        try:
-            yield
-        finally:
-            with contextlib.suppress(Exception):
-                _db.session.rollback()
-            with contextlib.suppress(Exception):
-                RO_Session.remove()  # type: ignore[call-arg]
-            _db.session = old_session  # type: ignore[assignment]
+    try:
+        yield sess
     finally:
-        with contextlib.suppress(Exception):
-            conn.close()
+        try:
+            raw.execute("PRAGMA query_only=OFF;")
+        except Exception:
+            pass
+
+"""
+Usage:
+
+For GET-only purity checks:
+
+from tests.support import with_readonly_session
+with with_readonly_session():
+    dto = contracts_v2.get_something(...)
+
+
+For write tests, you don’t need any wrapper
+(or you can use with_write_session() for clarity).
+"""
