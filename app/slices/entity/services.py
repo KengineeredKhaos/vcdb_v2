@@ -6,11 +6,8 @@ from typing import List, Optional, Tuple
 from sqlalchemy import asc
 from sqlalchemy.orm import joinedload, selectinload
 
-from app.extensions import (
-    allowed_role_codes,
-    db,
-    event_bus,
-)
+from app.extensions import db
+from app.extensions import event_bus
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 from app.lib.utils import (
@@ -641,3 +638,43 @@ def _upsert_primary_contact(
         c.email = email
     if phone is not None:
         c.phone = phone
+
+
+# -----------------
+# Test Fixtures
+# -----------------
+
+def _validate_entity_shape(e: Entity) -> None:
+    """Hard guard: exactly one child matching kind."""
+    if e.kind == "person":
+        if e.person is None or e.org is not None:
+            raise ValueError("kind='person' requires person child and forbids org child")
+    elif e.kind == "org":
+        if e.org is None or e.person is not None:
+            raise ValueError("kind='org' requires org child and forbids person child")
+    else:
+        raise ValueError("Entity.kind must be 'person' or 'org'")
+
+def create_person_entity(*, first_name: str, last_name: str, preferred_name: str | None = None) -> Entity:
+    e = Entity(kind="person")
+    e.person = EntityPerson(
+        first_name=first_name,
+        last_name=last_name,
+        preferred_name=preferred_name,
+    )
+    _validate_entity_shape(e)
+    db.session.add(e)
+    db.session.flush()   # assigns ULIDs and timestamps
+    return e
+
+def create_org_entity(*, legal_name: str, dba_name: str | None = None, ein: str | None = None) -> Entity:
+    e = Entity(kind="org")
+    e.org = EntityOrg(
+        legal_name=legal_name,
+        dba_name=dba_name,
+        ein=ein,
+    )
+    _validate_entity_shape(e)
+    db.session.add(e)
+    db.session.flush()
+    return e

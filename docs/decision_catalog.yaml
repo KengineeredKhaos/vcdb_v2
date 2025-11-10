@@ -1,0 +1,33 @@
+- id: customer.eligibility
+  requires:
+    - customers_v2.get_profile
+  outputs:
+    - eligible_veteran_only
+    - eligible_homeless_only
+
+- id: resource.match
+  requires:
+    - customers_v2.get_profile
+    - resources_v2.get_profile
+  outputs:
+    - recommended_resources
+
+- id: sponsor.allocation.preview
+  requires:
+    - governance_v2.get_spending_limits
+    - governance_v2.get_constraints
+    - sponsors_v2.get_policy
+    - customers_v2.get_profile
+  outputs:
+    - ok
+    - requires_admin
+    - reason
+
+- id: logistics.draw.preview
+  requires:
+    - logistics_v2.get_sku_cadence
+    - calendar_v2.blackout_ok
+  outputs:
+    - eligible
+    - next_eligible_at_iso
+    - blackout_label

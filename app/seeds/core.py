@@ -1,11 +1,54 @@
 # app/seeds/core.py
 from __future__ import annotations
 from dataclasses import dataclass
+from pathlib import Path
+import json
 from typing import Optional, Dict, Any, Iterable
 
 from app.extensions import db
 from app.lib.ids import new_ulid
 from app.lib.chrono import now_iso8601_ms
+
+
+# Adjust these to your actual model names
+from app.slices.auth.models import Role          # table: auth_role
+from app.slices.customers.models import Customer
+from app.slices.governance.models import RoleCode  # table: gov_domain_role
+
+
+BASE = Path(__file__).resolve().parents[1]
+
+# -------- Seed Role Codes ---------------
+
+def _load_json(p: Path) -> dict:
+    return json.loads(p.read_text(encoding="utf-8"))
+
+def seed_rbac_from_policy() -> int:
+    """Idempotently seed RBAC role codes from auth policy JSON."""
+    policy = _load_json(BASE / "slices" / "auth" / "data" / "policy_rbac.json")
+    codes: Iterable[str] = policy.get("rbac_roles", [])
+    count = 0
+    for code in codes:
+        # upsert-ish: try get or create
+        obj = Role.query.filter_by(code=code).one_or_none()
+        if not obj:
+            db.session.add(Role(code=code))
+            count += 1
+    db.session.commit()
+    return count
+
+def seed_domain_from_policy() -> int:
+    """Idempotently seed Domain role codes from governance policy JSON."""
+    policy = _load_json(BASE / "slices" / "governance" / "data" / "policy_domain.json")
+    codes: Iterable[str] = policy.get("domain_roles", [])
+    count = 0
+    for code in codes:
+        obj = RoleCode.query.filter_by(code=code).one_or_none()
+        if not obj:
+            db.session.add(RoleCode(code=code))
+            count += 1
+    db.session.commit()
+    return count
 
 # -------- Entity (minimal org + person) ----------
 from app.slices.entity.models import Entity
@@ -75,51 +118,73 @@ class SeedSponsorResult:
     sponsor_ulid: str
     code: str
 
-def _ensure_org_entity(*, org_name: str = "Seeded Org", entity_ulid: Optional[str] = None) -> str:
-    e_ulid = entity_ulid or new_ulid()
-    now = _iso_now()
 
-    if not db.session.get(Entity, e_ulid):
-        e = Entity(ulid=e_ulid, kind="org")
-        if hasattr(e, "created_at_utc"): e.created_at_utc = now
-        if hasattr(e, "updated_at_utc"): e.updated_at_utc = now
-        db.session.add(e)
-        db.session.flush()
+def _apply_org_label(entity_org_obj, label: str) -> None:
+    for attr in ("name", "display_name", "legal_name", "org_name"):
+        if hasattr(entity_org_obj, attr):
+            setattr(entity_org_obj, attr, label)
+            return
+    raise RuntimeError(
+        "EntityOrg has no recognizable name column (tried: name, display_name, legal_name, org_name)."
+    )
 
-    if EntityOrg is not None:
-        org = db.session.query(EntityOrg).filter_by(entity_ulid=e_ulid).one_or_none()
-        if org is None:
-            org = EntityOrg(entity_ulid=e_ulid, org_name=org_name)
-            if hasattr(org, "created_at_utc"): org.created_at_utc = now
-            if hasattr(org, "updated_at_utc"): org.updated_at_utc = now
-            db.session.add(org)
-            db.session.flush()
 
-    return e_ulid
 
-def seed_minimal_customer(*, first: str = "TEST", last: str = "USER") -> SeedCustomerResult:
+def _ensure_org_entity(*, entity_ulid: str | None, org_name: str) -> str:
     """
-    Canon: named Person required before Customer.
+    Ensure an Entity(kind='org') with an EntityOrg row exists.
+    Returns the entity ULID.
     """
-    assert EntityPerson is not None and Customer is not None, "EntityPerson/Customer models required"
-    now = _iso_now()
-    e_ulid, c_ulid = new_ulid(), new_ulid()
+    ts = now_iso8601_ms()
+    ent = None
+    if entity_ulid:
+        # try to load existing entity
+        ent = db.session.get(Entity, entity_ulid)
+    if ent is None:
+        ent = Entity(kind="org", created_at_utc=ts, updated_at_utc=ts)
+        db.session.add(ent)
+        db.session.flush()  # ent.ulid available
+    # ensure org row is present & labeled
+    if ent.org is None:
+        ent.org = EntityOrg(created_at_utc=ts, updated_at_utc=ts)
+    _apply_org_label(ent.org, org_name)
+    db.session.flush()
+    return ent.ulid
 
-    e = Entity(ulid=e_ulid, kind="person")
-    if hasattr(e, "created_at_utc"): e.created_at_utc = now
-    if hasattr(e, "updated_at_utc"): e.updated_at_utc = now
 
-    p = EntityPerson(entity_ulid=e_ulid, first_name=first, last_name=last)
-    if hasattr(p, "created_at_utc"): p.created_at_utc = now
-    if hasattr(p, "updated_at_utc"): p.updated_at_utc = now
 
-    c = Customer(ulid=c_ulid, entity_ulid=e_ulid)
-    if hasattr(c, "created_at_utc"): c.created_at_utc = now
-    if hasattr(c, "updated_at_utc"): c.updated_at_utc = now
+def seed_minimal_customer(*, first: str, last: str, preferred: str | None = None) -> dict:
+    """
+    Minimal happy-path customer: create Entity(kind='person') + EntityPerson,
+    then Customer referencing that Entity. No commit here.
+    """
+    ts = now_iso8601_ms()
 
-    db.session.add_all([e, p, c])
-    db.session.commit()
-    return SeedCustomerResult(entity_ulid=e_ulid, customer_ulid=c_ulid)
+    # Parent: Entity(kind='person') with person row
+    ent = Entity(kind="person", created_at_utc=ts, updated_at_utc=ts)
+    # attach related person via relationship (preferred) so FK wiring is automatic
+    ent.person = EntityPerson(
+        first_name=first,
+        last_name=last,
+        preferred_name=preferred,
+        created_at_utc=ts,
+        updated_at_utc=ts,
+    )
+    db.session.add(ent)
+    db.session.flush()  # ent.ulid assigned here
+
+    # Child: Customer referencing real parent ULID
+    cust = Customer(
+        entity_ulid=ent.ulid,
+        status="active",
+        created_at_utc=ts,
+        updated_at_utc=ts,
+    )
+    db.session.add(cust)
+    db.session.flush()  # cust.ulid assigned here
+
+    # no commit here — caller owns transaction
+    return {"entity_ulid": ent.ulid, "customer_ulid": cust.ulid}
 
 def seed_active_resource(
     *,
@@ -243,5 +308,5 @@ def seed_sponsor_with_policy(
         if hasattr(pl, "updated_at_utc"): pl.updated_at_utc = now
         db.session.add(pl)
 
-    db.session.commit()
+    # DO NOT COMMIT HERE — caller (CLI/tests) owns the transaction boundary
     return SeedSponsorResult(entity_ulid=e_ulid, sponsor_ulid=s_ulid, code=code)

@@ -18,7 +18,9 @@ def register_cli(app) -> None:
     from app.cli_gov import governance_group
     from app.cli_finance import finance_group
     from app.cli_dev import dev_group  # ← new
+    from app.cli_seed import dev_cmd
 
     app.cli.add_command(governance_group)
     app.cli.add_command(finance_group)
     app.cli.add_command(dev_group)
+    app.cli.add_command(dev_cmd)

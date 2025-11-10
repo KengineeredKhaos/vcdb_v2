@@ -1,60 +1,32 @@
 # tests/support.py
 from __future__ import annotations
 import contextlib
-from sqlalchemy.engine import Connection
+from sqlalchemy import text
 from app.extensions import db
-
-
-@contextlib.contextmanager
-def with_write_session():
-    """
-    Yield the current (function-scoped) db.session as-is for write tests.
-    """
-    yield db.session
-
 
 @contextlib.contextmanager
 def with_readonly_session():
     """
-    Switch the CURRENT TEST'S bound connection to read-only (SQLite PRAGMA).
-    Restored after the block. Does not affect other tests or other connections.
+    Open a dedicated SQLAlchemy connection in SQLite read-only (query_only) mode,
+    then bind a fresh session to it for the duration of the block.
+
+    Usage:
+        from tests.support import with_readonly_session
+        with with_readonly_session():
+            # call GET-only contracts here
+            ...
     """
-    sess = db.session
-    bind = sess.get_bind()
-    if bind is None:
-        # Should not happen if conftest's session fixture is used
-        raise RuntimeError("No bind on db.session; ensure test uses the `session` fixture.")
-
-    # We need the actual DBAPI connection
-    conn: Connection = bind
-    raw = conn.connection  # DBAPI connection
-
-    # Flip to read-only
+    conn = db.engine.connect()
+    # SQLite: forbid writes on this connection
+    conn.exec_driver_sql("PRAGMA query_only = ON;")
+    trans = conn.begin()
+    bind_before = db.session.get_bind()
     try:
-        raw.execute("PRAGMA query_only=ON;")
-    except Exception:
-        # Non-SQLite DBs may not support this PRAGMA; if that happens
-        # it's still useful for SQLite, and harmless elsewhere.
-        pass
-
-    try:
-        yield sess
+        db.session.bind = conn  # temporarily bind session to this read-only connection
+        yield
     finally:
+        db.session.bind = bind_before
         try:
-            raw.execute("PRAGMA query_only=OFF;")
-        except Exception:
-            pass
-
-"""
-Usage:
-
-For GET-only purity checks:
-
-from tests.support import with_readonly_session
-with with_readonly_session():
-    dto = contracts_v2.get_something(...)
-
-
-For write tests, you don’t need any wrapper
-(or you can use with_write_session() for clarity).
-"""
+            trans.rollback()
+        finally:
+            conn.close()
