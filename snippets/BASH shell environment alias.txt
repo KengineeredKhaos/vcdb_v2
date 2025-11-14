@@ -2,10 +2,26 @@
 
 # alias to start a python virtual environment from the current directory
 
-alias vact='source bin/activate'
 
-# aliases specifically for VCDB-V2 environment start up
+# Launch vcdb (cd, activate venv, run app)
+vcdb() {
+  local proj="$HOME/Documents/App_Dev/vcdb-v2"
+  local env="dev"          # default env
+  local port=""            # no default; use app default unless provided
+  local env_set=""
 
-alias vcdb-dev='source ~/Documents/App_Dev/vcdb-v2/scripts/env.dev.sh'
+  # --- parse args ---
+  # Supports:
+  #   vcdb                 -> env=dev, no --port
+  #   vcdb test            -> env=test
+  #   vcdb test 5001       -> env=test, port=5001
+  #   vcdb --env test --port 5001
+  #   vcdb -e test -p 5001
 
-alias vcdb-test='source ~/Documents/App_Dev/vcdb-v2/scripts/env.test.sh'
+
+# launch a VCDB test environment without starting a server
+
+# examples:
+# vcdbt shell
+# vcdbt seed seed-foundation
+# vcdbt dev policy-health

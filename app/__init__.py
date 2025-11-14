@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Union
 
-from flask import Flask, jsonify, request
-from flask_login import current_user
+from flask import Flask, g, jsonify, request
+from flask_login import current_user, login_user, UserMixin, AnonymousUserMixin
 from jinja2 import StrictUndefined
 from sqlalchemy import text
 from werkzeug.exceptions import HTTPException
@@ -17,7 +18,7 @@ from app.cli import register_cli
 from app.lib.chrono import parse_iso8601, utcnow_aware
 from app.lib.logging import configure_logging
 from .extensions import init_extensions
-from .web import bp as web_bp
+#from .web import bp as web_bp
 
 
 def _bind_contracts(app: Flask) -> None:
@@ -103,19 +104,122 @@ def create_app(config_object="config.DevConfig"):
                 400,
             )
 
+
     # jinja strict mode (keep)
     flask_app.jinja_env.undefined = StrictUndefined
 
-    # register web first (no prefix)
-    flask_app.register_blueprint(web_bp)
 
-    # Register blueprints (slices) -- after CSRF / Jinja are set
+    # -------------
+    # Stub auth
+    # (dev/testing only)
+    # -------------
+    @dataclass
+    class StubUser(UserMixin):
+        id: str = "stub-user"
+        roles: list[str] = field(default_factory=list)
+        domain_roles: list[str] = field(default_factory=list)
+
+        @property
+        def is_active(self) -> bool:  # flask-login expects this
+            return True
+
+        @property
+        def is_authenticated(self) -> bool:
+            return True
+
+        @property
+        def is_admin(self) -> bool:
+            return "admin" in [r.lower() for r in (self.roles or [])]
+
+    @flask_app.before_request
+    def _apply_stub_auth():
+        """Enable header-based or auto-admin stub auth in dev/testing."""
+        cfg = flask_app.config
+        if cfg.get("AUTH_MODE") != "stub":
+            return  # real auth path
+
+        roles: list[str] = []
+        domains: list[str] = []
+
+        # 1) Header stubs (take precedence if present)
+        if cfg.get("ALLOW_HEADER_AUTH", True):
+            x_rbac = request.headers.get("X-Auth-Stub")
+            x_domain = request.headers.get("X-Domain-Stub")
+            if x_rbac:
+                roles = [x_rbac.lower()]
+            if x_domain:
+                domains = [x_domain.lower()]
+
+        # 2) Auto-admin if allowed and nothing set by headers
+        if not roles and cfg.get("AUTO_LOGIN_ADMIN", False):
+            roles = ["admin"]
+
+        if roles:
+            user = StubUser(
+                id=f"stub:{roles[0]}",
+                roles=roles,
+                domain_roles=domains,
+            )
+            # Log the user in for this request (sessionless; fine for dev)
+            try:
+                login_user(user, remember=False, force=True, fresh=True)
+            except Exception:
+                # If flask-login isn't fully configured, still expose via g
+                pass
+            g.current_user = user  # allow code that prefers g.current_user
+
+    # -------------
+    # import & register
+    # a temporary root
+    # landing page for
+    # browser &
+    # Development Server
+    # -------------
+
+    from app.slices.devtools.routes_smoke import bp as dev_smoke_bp
+    flask_app.register_blueprint(dev_smoke_bp)
+
+    # for Testing server
+    # from .web import bp as web_bp
+    # flask_app.register_blueprint(web_bp)
+
+    # -------------
+    # Conditionally
+    # import & register
+    # devtools blueprints
+    # for both @bp & @bp_api
+    # routes
+    # -------------
+
+    env = (flask_app.config.get("ENV") or "").lower()
+    # Always ok to mount in dev/testing; harmless if also mounted in dev
+    if env in {"dev", "development", "test", "testing"}:
+        from app.slices.devtools.routes import (
+            bp as devtools_bp,
+            bp_api as devtools_api_bp,
+            bp_api_v2 as devtools_api_v2_bp,
+            bp_api_public as devtools_api_public_bp,
+        )
+        flask_app.register_blueprint(devtools_bp)      # /dev/...
+        flask_app.register_blueprint(devtools_api_bp)  # /api/dev/...
+        flask_app.register_blueprint(devtools_api_v2_bp)  # /api/v2/...
+        flask_app.register_blueprint(devtools_api_public_bp)  # /api/...
+
+
+
+    # -------------
+    # Register remaining
+    # <slice> blueprints
+    # after  CSRF/Jinja
+    # are set & loaded
+    # -------------
+
+    # ---- Imports and aliases ----
     from app.slices.admin import bp as admin_bp
     from app.slices.attachments import bp as attachments_bp
     from app.slices.auth import bp as auth_bp
     from app.slices.calendar import bp as calendar_bp
     from app.slices.customers import bp as customers_bp
-    from app.slices.devtools.routes import bp as devtools_bp
     from app.slices.entity import bp as entity_bp
     from app.slices.finance import bp as finance_bp
     from app.slices.governance import bp as governance_bp
@@ -124,6 +228,7 @@ def create_app(config_object="config.DevConfig"):
     from app.slices.resources import bp as resources_bp
     from app.slices.sponsors import bp as sponsors_bp
 
+    # ---- Registration ----
     flask_app.register_blueprint(admin_bp)
     flask_app.register_blueprint(attachments_bp)
     flask_app.register_blueprint(auth_bp)
@@ -137,8 +242,7 @@ def create_app(config_object="config.DevConfig"):
     flask_app.register_blueprint(resources_bp)
     flask_app.register_blueprint(sponsors_bp)
 
-    if flask_app.config.get("APP_MODE") != "production":
-        flask_app.register_blueprint(devtools_bp)
+
 
     # -------------
     # Globals Injection
@@ -169,15 +273,12 @@ def create_app(config_object="config.DevConfig"):
             "user_is_admin": user_is_admin,
         }
 
-    @flask_app.context_processor
-    def _user_is_admin() -> bool:
+    # Helper (not a context processor): use inside server-side functions
+    def _is_admin_user() -> bool:
         try:
-            # Flexible: supports either boolean flag or a roles list/tuple
-            return bool(
-                getattr(current_user, "is_authenticated", False)
-            ) and (
+            return bool(getattr(current_user, "is_authenticated", False)) and (
                 getattr(current_user, "is_admin", False)
-                or ("admin" in getattr(current_user, "roles", []))
+                or ("admin" in ((getattr(current_user, "roles", []) or [])))
             )
         except Exception:
             return False
@@ -186,7 +287,7 @@ def create_app(config_object="config.DevConfig"):
     def admin_alerts():
         """Lightweight admin banner fed from admin_cron_status, tolerant to absence."""
         from app.extensions import db
-        if not _user_is_admin():
+        if not _is_admin_user():
             return {"admin_alerts": []}
         try:
             rows = (
@@ -262,6 +363,12 @@ def create_app(config_object="config.DevConfig"):
         if flask_app.debug:
             raise
         return jsonify({"error": "internal_error"}), 500
+
+    @flask_app.context_processor
+    def _stub_banner():
+        return {"_stub_auth_active": app.config.get("AUTH_MODE") == "stub"}
+
+
 
     # -------------
     # dev Dbase schema check, Route dump, Sanity check

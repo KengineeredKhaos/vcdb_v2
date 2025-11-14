@@ -143,3 +143,19 @@ def evaluate_customer(
         eligible_homeless_only=eligible_homeless_only,
         as_of_iso=prof.as_of_iso,
     )
+
+
+def describe():
+    """
+    Returns the governance catalogs used by guardrails:
+      - domain_roles: list[str]
+      - rbac_to_domain: { rbac_role: [domain_role, ...] }
+      - calendar_policies: minimal descriptors (no PII)
+    """
+    from app.slices.governance.services import load_policy_bundle
+    bundle = load_policy_bundle()  # reads JSON files under slices/governance/data/
+    return {
+        "domain_roles": bundle["domain"]["roles"],
+        "rbac_to_domain": bundle["domain"]["rbac_to_domain"],
+        "calendar": {"blackout": bundle["calendar"]["blackout_summary"]},
+    }

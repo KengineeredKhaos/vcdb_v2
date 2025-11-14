@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 import click
 from flask.cli import with_appcontext
 from sqlalchemy.exc import IntegrityError
-
+from app.cli import echo_db_banner
 from app.extensions import db
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
@@ -286,6 +286,7 @@ def seed_demo(
     period_key: str | None, fund_ulid: str | None, project_ulid: str | None
 ):
     """Seed a tiny ULID-based dataset so /finance/reports/activities renders."""
+    echo_db_banner("seed-demo")
     period_key = period_key or _period_key_now()
 
     # reference COA (these are account CODES; OK to keep codes in COA)
@@ -372,6 +373,7 @@ def _period_ident_field() -> Optional[str]:
 def close_period(period_key: str):
     """Mark a period closed (uses service if available; otherwise falls back)."""
     # Try service if present and compatible
+    echo_db_banner("close-period")
     if _svc_set_period_status:
         try:
             sig = signature(_svc_set_period_status)
@@ -423,6 +425,7 @@ def close_period(period_key: str):
 @with_appcontext
 def rebuild_balances_cmd(period_from: str, period_to: str):
     """Rebuild monthly balances projection for a range (uses service if available; otherwise no-op)."""
+    echo_db_banner("rebuild-balances")
     if _svc_rebuild_balances:
         try:
             # Prefer explicit kwargs; many services use this exact signature

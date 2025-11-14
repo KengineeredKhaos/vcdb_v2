@@ -15,7 +15,7 @@ export FLASK_RUN_FROM_CLI="true"
 
 # dev DB (file-backed)
 mkdir -p "$VCDB_ROOT/instance" "$VCDB_ROOT/app/logs"
-export SQLALCHEMY_DATABASE_URI="sqlite:///$VCDB_ROOT/instance/dev.db"
+export SQLALCHEMY_DATABASE_URI="sqlite:///$VCDB_ROOT/var/app-instance/dev.db"
 export FLASK_ENV="development"
 export VCDB_ENV="dev"
 

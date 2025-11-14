@@ -21,8 +21,12 @@ def app() -> Flask:
     Also points SQLALCHEMY_DATABASE_URI at a temp sqlite file unless
     already set by env (e.g., your vcdb-test alias).
     """
-    # Default to a file-based temp DB so SQLite doesn't flip to "readonly" mid-run.
-    os.environ.setdefault("SQLALCHEMY_DATABASE_URI", "sqlite:///./.pytest.sqlite")
+    # Default to a file-backed DB at app/instance/test.db for inspection + determinism.
+    inst_dir = os.path.abspath(os.path.join("app", "instance"))
+    os.makedirs(inst_dir, exist_ok=True)
+    test_db_path = os.path.join(inst_dir, "test.db")
+    os.environ.setdefault("SQLALCHEMY_DATABASE_URI", f"sqlite:///{test_db_path}")
+    os.environ.setdefault("VCDB_ENV", "testing")
 
     flask_app = create_app("config.TestConfig")
     # Force it so tests & app agree:

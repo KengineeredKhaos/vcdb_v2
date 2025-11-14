@@ -67,14 +67,15 @@ class DevConfig(BaseConfig):
 
     # Dev ergonomics
     AUTH_MODE = "stub"  # 'real' or 'stub' if iterating quickly on UI
-    ALLOW_HEADER_AUTH = (
-        os.environ.get("VCDB_ALLOW_HEADER_AUTH", "false").lower() == "true"
-    )
+    SESSION_COOKIE_NAME = "vcdb_dev_session"
+    REMEMBER_COOKIE_NAME = "vcdb_dev_remember"
+    ALLOW_HEADER_AUTH = True  # convenience; makes curl stubs easy
     AUTO_LOGIN_ADMIN = True
     AUDIT_LOG_LEVEL = "DEBUG"
     PERMISSIONS_MAP = {
         "governance:policy:edit": {"admin"},
         "ledger:read": {"admin", "auditor"},
+
     }
 
 
@@ -83,15 +84,20 @@ class TestConfig(BaseConfig):
     ENV = "testing"
     TESTING = True
 
-    _fd, _path = tempfile.mkstemp(prefix="vcdb-test-", suffix=".db")
-    os.close(_fd)
-    SQLALCHEMY_DATABASE_URI = f"sqlite:///{_path}"
-    # <-- use the file-backed DB
+    # Default to a repo-local, file-backed DB for easy inspection + determinism.
+    # Overridable via VCDB_DB if you need a custom path/driver.
+    TEST_DB = BaseConfig.BASE_DIR / "app" / "instance" / "test.db"
+    SQLALCHEMY_DATABASE_URI = os.environ.get(
+        "VCDB_DB", f"sqlite:///{TEST_DB}"
+    )
+
     AUTH_MODE = "stub"
+    AUTO_LOGIN_ADMIN = False     # test shouldn’t silently auto-admin
     WTF_CSRF_ENABLED = False
     LEDGER_CHECK_ON_BOOT = False
     ALLOW_HEADER_AUTH = True
-
+    SESSION_COOKIE_NAME = "vcdb_test_session"
+    REMEMBER_COOKIE_NAME = "vcdb_test_remember"
 
 # ---------- Production ----------
 class ProdConfig(BaseConfig):
@@ -107,7 +113,9 @@ class ProdConfig(BaseConfig):
     )
 
     AUTH_MODE = "real"
-    ALLOW_HEADER_AUTH = False
+    SESSION_COOKIE_NAME = "vcdb_test_session"
+    REMEMBER_COOKIE_NAME = "vcdb_test_remember"
+    ALLOW_HEADER_AUTH = True
     AUDIT_LOG_LEVEL = os.environ.get("VCDB_AUDIT_LEVEL", "INFO")
 
     @classmethod

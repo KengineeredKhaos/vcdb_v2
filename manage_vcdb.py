@@ -93,6 +93,14 @@ def create_app():
     os.environ["ATTACHMENTS_ROOT"] = abs_att
     ensure_dir(os.environ.get("VCDB_LOG_DIR", "app/logs"))
 
+    # When running in testing via CLI/Flask CLI,
+    # default DB to app/instance/test.db
+    if env in ("test", "testing") and "SQLALCHEMY_DATABASE_URI" not in os.environ:
+        inst_dir = ensure_dir(os.path.join("app", "instance"))
+        test_db_path = os.path.abspath(os.path.join(inst_dir, "test.db"))
+        os.environ["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{test_db_path}"
+    os.environ["VCDB_ENV"] = env
+
     # Build the Flask app with the selected config
     cfg_object = _config_for(env)
     from app import (
@@ -118,15 +126,27 @@ def create_app():
 # -----------------
 
 
-def run(env: str, host: str, port: int, debug_flag: bool | None):
+def run(env: str, host: str, port: int | None, debug_flag: bool | None):
+
     # Decide debug FIRST
     debug = (env == "dev") if debug_flag is None else bool(debug_flag)
+
+    # Choose a sensible default port per environment, overrideable by VCDB_PORT/--port
+    default_port = 5001 if env in ("test", "testing") else 5000
+    port = int(os.environ.get("VCDB_PORT", port or default_port))
 
     # Ensure expected directories / env
     att_root = pick_attachments_root(env)
     abs_att = ensure_dir(att_root)
     os.environ["ATTACHMENTS_ROOT"] = abs_att
     ensure_dir(os.environ.get("VCDB_LOG_DIR", "app/logs"))
+
+    # When running the testing server, default DB to app/instance/test.db
+    if env in ("test", "testing") and "SQLALCHEMY_DATABASE_URI" not in os.environ:
+        inst_dir = ensure_dir(os.path.join("app", "instance"))
+        test_db_path = os.path.abspath(os.path.join(inst_dir, "test.db"))
+        os.environ["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{test_db_path}"
+    os.environ["VCDB_ENV"] = env
 
     # Build app
     cfg_object = _config_for(env)

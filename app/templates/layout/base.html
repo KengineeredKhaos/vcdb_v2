@@ -79,9 +79,10 @@
         {% endif %}
       </div>
     </header>
-    {% if session.assumed_domain_roles %}
+    {% set assumed_roles = session.get('assumed_domain_roles') or [] %}
+    {% if assumed_roles %}
     <div class="alert alert-warning text-xs py-1 px-2">
-      DEV MODE — assumed roles: {{ session.assumed_domain_roles|join(", ") }}
+      DEV MODE — assumed roles: {{ (session.get('assumed_domain_roles') or []) | join(', ') }}
     </div>
     {% endif %}
 

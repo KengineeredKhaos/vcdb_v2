@@ -14,6 +14,7 @@ import click
 from flask import current_app
 from flask.cli import with_appcontext
 from sqlalchemy import select
+from app.cli import echo_db_banner
 
 
 
@@ -53,6 +54,7 @@ def dev_group():
 @click.command("seed-demo")
 @with_appcontext
 def seed_demo():
+    echo_db_banner("seed-demo")
     from app.seeds.demo import seed_demo_dataset
     seed_demo_dataset()
     click.echo("✓ demo data seeded")
@@ -108,6 +110,7 @@ def dev_validate_skus(limit: int):
     """
     Scan InventoryItem + Issue for invalid SKUs and report the first few problems.
     """
+    echo_db_banner("validate-skus")
     from app.extensions import db
     from app.slices.logistics.models import InventoryItem, Issue
     from app.slices.logistics.sku import parse_sku, validate_sku
@@ -177,6 +180,7 @@ def dev_policy_health(as_json: bool):
       0 = OK with warnings (we print WARN lines)
       1 = Fatal policy error (invalid/unsatisfied invariants)
     """
+    echo_db_banner("policy-health")
     try:
         warns, infos = policy_health_report()
     except PolicyError as e:
@@ -274,6 +278,7 @@ def dev_policy_lint(
     Validate governance policy JSON files against their schemas.
     On --fix, pretty-print and sort keys so diffs stay clean.
     """
+    echo_db_banner("policy-lint")
     import json
 
     from flask import current_app
@@ -482,6 +487,7 @@ def dev_issuance_debug(sku_code: str):
     Print gate-by-gate decision for one SKU using default_behavior
     & current policies.
     """
+    echo_db_banner("issuance-debug")
     from types import SimpleNamespace as NS
 
     from app.extensions.policies import load_policy_issuance
@@ -565,6 +571,7 @@ def dev_issuance_tripwires(
     NOTE/TODO: Later, standardize issuance service signatures across Logistics
     so all callers use the same kwargs surface.
     """
+    echo_db_banner("issuance-tripwires")
     import json
     from types import SimpleNamespace as NS
 
@@ -976,6 +983,7 @@ def dev_decide_issue(
     Evaluate issuance policy for a SKU against a
     (test) customer without writing.
     """
+    echo_db_banner("decide-issue")
     from types import SimpleNamespace as NS
 
     from app.lib.chrono import now_iso8601_ms
@@ -1046,6 +1054,7 @@ def dev_whoami():
 @click.option("--limit", type=int, default=50, show_default=True)
 def dev_list_stock(loc_code: str, limit: int):
     """List on-hand quantities at a location."""
+    echo_db_banner("list-stock")
     from sqlalchemy import select
 
     from app.extensions import db
@@ -1111,6 +1120,7 @@ def dev_demo_issue(
       - picks first SKU at the location if --sku omitted
       - uses a throwaway ULID for the customer if none provided
     """
+    echo_db_banner("demo-issue")
     from sqlalchemy import select
 
     from app.extensions import db
@@ -1210,6 +1220,7 @@ def dev_lint_skus(data_dir: str):
     """Validate skus.json against sku.schema.json.
     Fails fast with row/field errors. No DB writes.
     """
+    echo_db_banner("lint-skus")
     import json
     import os
 
@@ -1256,6 +1267,7 @@ def dev_purge_seed_items():
     Delete legacy Logistics rows for items named 'Seed Item'
     in FK-safe order: issues → movements → stock → batches → items.
     """
+    echo_db_banner("purge-seed-items")
     from sqlalchemy import delete, select
 
     from app.extensions import db
@@ -1362,6 +1374,7 @@ def dev_seed_logistics_canonical(
     Seed a clean, predictable canonical set of SKUs (no kits),
     mostly issuance_class=U.
     """
+    echo_db_banner("seed-logistics-canonical")
     import random
 
     from app.extensions import db
@@ -1481,12 +1494,13 @@ def dev_seed_demo_customers(prefix: str):
       C) non-veteran                         → not eligible for veteran-only
       D) tier2_income crisis (watchlist)     → watchlist
     """
+    echo_db_banner("seed-demo-customers")
     from app.extensions import db
     from app.lib.ids import new_ulid
     from app.lib.chrono import now_iso8601_ms
     from app.slices.entity import services as ent_svc
     from app.slices.customers import services as cust_svc
-    from app.extensions.contracts import customer_v2 as custx
+    from app.extensions.contracts import customers_v2 as custx
     from app.extensions.contracts import governance_v2 as govx
 
     def _mk_person(label: str) -> str:
@@ -1628,6 +1642,7 @@ def dev_seed_demo_customers(prefix: str):
 @click.option("--prefix", default="DemoOrg", show_default=True)
 def dev_seed_demo_resources(prefix: str):
     """Seed a couple of resources with valid capabilities/readiness/MOU + ledger emits."""
+    echo_db_banner("seed-demo-resources")
     from app.lib.ids import new_ulid
     from app.slices.entity import services as ent_svc
     from app.slices.resources import services as res_svc
@@ -1750,6 +1765,7 @@ def dev_seed_demo_resources(prefix: str):
 @with_appcontext
 def dev_list_capabilities():
     """Print canonical resource capability keys."""
+    echo_db_banner("list-capabilities")
     from app.slices.resources import services as res_svc
 
     for k in res_svc.allowed_capabilities():
@@ -1772,6 +1788,7 @@ def dev_seed_demo_sponsors(prefix: str):
     Create a couple of Sponsor orgs, attach canonical capabilities,
     and add a sample cash pledge to one of them. Uses sponsors_v2.
     """
+    echo_db_banner("seed-demo-sponsors")
     import click
     from app.lib.ids import new_ulid
     from app.slices.entity import services as ent_svc
@@ -1866,6 +1883,7 @@ def dev_seed_demo_sponsors(prefix: str):
 @with_appcontext
 def dev_list_sponsor_capabilities():
     """Print canonical Sponsor capability keys if exposed by the services layer."""
+    echo_db_banner("list-sponsor-capabilities")
     import click
 
     try:

@@ -21,7 +21,7 @@ class ContractEnvelope:
 class LedgerDTO:
     ok: bool
     event_type: str
-    target_id: str
+    target_ulid: str
     request_id: str
 
 
@@ -32,7 +32,7 @@ def _ledger_stub(
     return LedgerDTO(
         ok=True,
         event_type=event_type,
-        target_ulid=target_id,
+        target_ulid=target_ulid,
         request_id=request_id,
     )
 
@@ -45,6 +45,7 @@ def ensure_person(
     *,
     first_name: str,
     last_name: str,
+    preferred_name: Optional[str] = None,
     email: Optional[str] = None,
     phone: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -64,11 +65,12 @@ def ensure_person(
     ent_ulid = entity_svc.ensure_person(
         first_name=first_name,
         last_name=last_name,
-        email=email,
-        phone=phone,
+        email=email,               # <-- pass through
+        phone=phone,               # <-- pass through
         request_id=env.request_id,
         actor_ulid=env.actor_ulid,
     )
+
     # Event already emitted by service; return a ledger stub for contract shape
     return {
         "ok": True,

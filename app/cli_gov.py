@@ -7,6 +7,8 @@ import json
 import click
 from flask import current_app
 from flask.cli import with_appcontext
+from pathlib import Path
+from app.cli import echo_db_banner
 
 # event bus (services will usually emit; CLI only passes actor/request ids down)
 from app.extensions import event_bus
@@ -314,6 +316,7 @@ def seed_cmd(
     Seed Governance catalogs, policies, and state machines.
     Idempotent: writes only when there is a real diff; emits exactly one event per changed section.
     """
+    echo_db_banner("seed-governance-policy")
     # default to all sections if --only not given
     sections = (
         set(only)
@@ -516,6 +519,7 @@ def officers_group():
 def officers_assign_cmd(
     office_code, subject_ulid, elected_on, term_years, actor_ulid, dry_run
 ):
+    echo_db_banner("seed-officer-assignment")
     actor = actor_ulid or current_app.config.get(
         "SYSTEM_ACTOR_ULID", "00000000000000000000000000"
     )
@@ -548,6 +552,7 @@ def officers_assign_cmd(
     help="Preview without writing or emitting events.",
 )
 def officers_revoke_cmd(grant_ulid, reason, actor_ulid, dry_run):
+    echo_db_banner("seed-officer-revoke")
     actor = actor_ulid or current_app.config.get(
         "SYSTEM_ACTOR_ULID", "00000000000000000000000000"
     )
@@ -605,6 +610,7 @@ def protem_group():
 def protem_assign_cmd(
     office_code, subject_ulid, start_on, end_on, actor_ulid, dry_run
 ):
+    echo_db_banner("seed-protem-assignment")
     actor = actor_ulid or current_app.config.get(
         "SYSTEM_ACTOR_ULID", "00000000000000000000000000"
     )
@@ -637,6 +643,7 @@ def protem_assign_cmd(
     help="Preview without writing or emitting events.",
 )
 def protem_revoke_cmd(grant_ulid, reason, actor_ulid, dry_run):
+    echo_db_banner("seed-protem-revoke")
     actor = actor_ulid or current_app.config.get(
         "SYSTEM_ACTOR_ULID", "00000000000000000000000000"
     )
@@ -647,6 +654,46 @@ def protem_revoke_cmd(grant_ulid, reason, actor_ulid, dry_run):
         dry_run=dry_run,
     )
     click.echo(result)
+
+
+# -----------------
+# Policy Linting
+# -----------------
+
+@governance_group.command("lint")
+@click.option("--strict/--no-strict", default=False, help="Exit non-zero if any schema fails.")
+def governance_lint(strict):
+    """Validate governance policies against their schemas."""
+    from app import create_app
+    app = create_app()  # or respect env vars/flags as you already do
+    with app.app_context():
+        data_dir = Path(current_app.root_path) / "slices" / "governance" / "data"
+        from jsonschema import Draft202012Validator  # assume installed for CLI
+        errors = 0
+        for p in sorted(data_dir.glob("*.json")):
+            if p.name.endswith(".schema.json") or p.parent.name == "schemas":
+                continue
+            schema = data_dir / "schemas" / f"{p.stem}.schema.json"
+            obj = json.loads(p.read_text("utf-8"))
+            if not schema.exists():
+                click.echo(f"[NO-SCHEMA] {p.name}")
+                continue
+            sch = json.loads(schema.read_text("utf-8"))
+            Draft202012Validator.check_schema(sch)
+            v = Draft202012Validator(sch)
+            errs = list(v.iter_errors(obj))
+            if errs:
+                errors += 1
+                click.echo(f"[INVALID]  {p.name}")
+                for e in errs[:5]:
+                    loc = ".".join(map(str, e.path)) or "(root)"
+                    click.echo(f"  - {loc}: {e.message}")
+                if len(errs) > 5:
+                    click.echo(f"  … and {len(errs)-5} more")
+            else:
+                click.echo(f"[OK]       {p.name}")
+        if strict and errors:
+            raise SystemExit(2)
 
 
 # Register with Flask CLI (import in your manage_vcdb.py or

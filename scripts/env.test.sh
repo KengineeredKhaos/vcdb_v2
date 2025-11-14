@@ -15,7 +15,7 @@ export FLASK_RUN_FROM_CLI="true"
 
 # test DB (in-memory; switch to instance/test.db if you prefer)
 mkdir -p "$VCDB_ROOT/instance" "$VCDB_ROOT/app/logs"
-export SQLALCHEMY_DATABASE_URI="sqlite:///:memory:"
+export SQLALCHEMY_DATABASE_URI="sqlite:///$VCDB_ROOT/app/instance/test.db"
 export FLASK_ENV="testing"
 export VCDB_ENV="test"
 

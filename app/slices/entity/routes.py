@@ -6,11 +6,6 @@ import time
 from flask import flash, jsonify, redirect, render_template, request, url_for
 from flask_login import login_required
 
-from app.extensions import (
-    allowed_role_codes,
-    current_actor_ulid,
-    entity_api,
-)
 from app.extensions.contracts.entity import v2 as entity_contract
 from app.lib.geo import us_states
 from app.lib.ids import new_ulid
@@ -18,6 +13,8 @@ from app.lib.security import require_permission, require_roles_any
 
 from . import bp
 from . import services as svc
+from .models import EntityPerson
+
 
 
 @bp.get("/hello")
@@ -161,6 +158,9 @@ def list_orgs():
 @login_required
 def create_form():
     """Render the new-entity form with dropdown choices."""
+    # derive 2-letter choices list once (if you keep this template var)
+    us_state_choices = [s["code"] for s in us_states]
+    # or however your helper exposes it
     return render_template(
         "entity/create.html",
         role_codes=allowed_role_codes(),

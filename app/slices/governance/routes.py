@@ -4,9 +4,9 @@ from flask import Blueprint, request, jsonify
 
 from app.lib.request_ctx import get_actor_ulid
 from . import services as svc
+from app.extensions.contracts import governance_v2
 
 bp = Blueprint("governance", __name__, url_prefix="/governance")
-
 
 def _ok(data=None, **extra):
     return jsonify({"ok": True, "data": data, **extra}), 200
@@ -51,3 +51,9 @@ def canonicals():
             "role_codes": svc.list_role_codes(),
         }
     )
+
+
+@bp.get("/roles")
+def roles():
+    d = governance_v2.describe()
+    return jsonify({"domain_roles": d["domain_roles"], "rbac_to_domain": d["rbac_to_domain"]})

@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 from sqlalchemy import asc
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import joinedload, selectinload, Session
 
 from app.extensions import db
 from app.extensions import event_bus
@@ -655,7 +655,14 @@ def _validate_entity_shape(e: Entity) -> None:
     else:
         raise ValueError("Entity.kind must be 'person' or 'org'")
 
-def create_person_entity(*, first_name: str, last_name: str, preferred_name: str | None = None) -> Entity:
+def create_person_entity(
+    *,
+    first_name: str,
+    last_name: str,
+    preferred_name: str | None = None,
+    session: Session | None = None,
+) -> Entity:
+    s = session or db.session
     e = Entity(kind="person")
     e.person = EntityPerson(
         first_name=first_name,
@@ -663,11 +670,18 @@ def create_person_entity(*, first_name: str, last_name: str, preferred_name: str
         preferred_name=preferred_name,
     )
     _validate_entity_shape(e)
-    db.session.add(e)
-    db.session.flush()   # assigns ULIDs and timestamps
+    s.add(e)
+    s.flush()   # assigns ULIDs and timestamps
     return e
 
-def create_org_entity(*, legal_name: str, dba_name: str | None = None, ein: str | None = None) -> Entity:
+def create_org_entity(
+    *,
+    legal_name: str,
+    dba_name: str | None = None,
+    ein: str | None = None,
+    session: Session | None = None,
+) -> Entity:
+    s = session or db.session
     e = Entity(kind="org")
     e.org = EntityOrg(
         legal_name=legal_name,
@@ -675,6 +689,6 @@ def create_org_entity(*, legal_name: str, dba_name: str | None = None, ein: str 
         ein=ein,
     )
     _validate_entity_shape(e)
-    db.session.add(e)
-    db.session.flush()
+    s.add(e)
+    s.flush()
     return e

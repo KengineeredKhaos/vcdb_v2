@@ -4,6 +4,7 @@ import random
 import click
 
 from flask import current_app
+from app.cli import echo_db_banner
 from app.extensions import db
 from app.lib.ids import new_ulid
 from app.lib.chrono import now_iso8601_ms
@@ -51,13 +52,13 @@ def _ensure_org_poc_pair(*, org_entity_ulid: str, label: str) -> list[str]:
     return ulids
 
 
-@click.group("dev")
-def dev_cmd() -> None:
+@click.group("seed")
+def seed_cmd() -> None:
     """Developer seeding utilities (idempotent where noted)."""
     pass
 
 
-@dev_cmd.command("seed-role-codes")
+@seed_cmd.command("seed-role-codes")
 def seed_role_codes() -> None:
     """Seed RBAC & Domain role codes from policy JSON (idempotent)."""
     n_rbac = seed_rbac_from_policy()
@@ -65,7 +66,7 @@ def seed_role_codes() -> None:
     click.echo(f"RBAC: +{n_rbac} (idempotent); Domain: +{n_domain} (idempotent)")
 
 
-@dev_cmd.command("seed-foundation")
+@seed_cmd.command("seed-foundation")
 @click.option("--customers", type=int, default=5)
 @click.option("--resources", type=int, default=3)
 @click.option("--sponsors", type=int, default=3)
@@ -73,6 +74,7 @@ def seed_foundation(customers: int, resources: int, sponsors: int):
     # IMPORTANT: one transaction **per iteration** to avoid keeping a “closed”
     # session around when a single seed fails. Helpers do NOT commit/rollback.
     # Also, explicitly close/expire between iterations.
+    echo_db_banner("seed-foundation")
 
     # Resources
     for i in range(resources):
@@ -108,14 +110,15 @@ def seed_foundation(customers: int, resources: int, sponsors: int):
 
 
 # Optional: tiny “smoke” set for really fast local runs
-# @dev_cmd.command("seed-smoke")
-# def seed_smoke() -> None:
-#     seed_rbac_from_policy()
-#     seed_domain_from_policy()
-#     r = seed_active_resource(label="Smoke Resource")
-#     s = seed_sponsor_with_policy(name="Smoke Sponsor")
-#     _ensure_org_poc_pair(org_entity_ulid=r.entity_ulid, label="Smoke Resource")
-#     _ensure_org_poc_pair(org_entity_ulid=s.entity_ulid, label="Smoke Sponsor")
-#     seed_minimal_customer(first="Smoke", last="User")
-#     db.session.commit()
-#     click.echo("Smoke seed OK")
+@seed_cmd.command("seed-smoke")
+def seed_smoke() -> None:
+    echo_db_banner("seed-smoke")
+    seed_rbac_from_policy()
+    seed_domain_from_policy()
+    r = seed_active_resource(label="Smoke Resource")
+    s = seed_sponsor_with_policy(name="Smoke Sponsor")
+    _ensure_org_poc_pair(org_entity_ulid=r.entity_ulid, label="Smoke Resource")
+    _ensure_org_poc_pair(org_entity_ulid=s.entity_ulid, label="Smoke Sponsor")
+    seed_minimal_customer(first="Smoke", last="User")
+    db.session.commit()
+    click.echo("Smoke seed OK")
