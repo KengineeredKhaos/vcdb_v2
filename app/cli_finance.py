@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from inspect import signature, Parameter
+from inspect import Parameter, signature
 from typing import Any, Dict, Optional
 
 import click
 from flask.cli import with_appcontext
 from sqlalchemy.exc import IntegrityError
+
 from app.cli import echo_db_banner
 from app.extensions import db
 from app.lib.chrono import now_iso8601_ms
@@ -48,7 +49,7 @@ def _unique_code(model_cls, prefix: str, max_tries: int = 8) -> str:
         code = _gen_code(prefix, length)
         exists = db.session.execute(
             select(model_cls)
-            .where(getattr(model_cls, "code") == code)
+            .where(model_cls.code == code)
             .limit(1)
         ).first()
         if not exists:

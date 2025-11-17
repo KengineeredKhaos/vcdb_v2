@@ -1,9 +1,7 @@
 # tests/test_foundation_roles.py
-import pytest
 
-from app.extensions.contracts.auth import v2 as auth_v2
 from app.extensions.contracts import governance_v2
-
+from app.extensions.contracts.auth import v2 as auth_v2
 
 
 def test_rbac_roles_exposed_readonly(app):

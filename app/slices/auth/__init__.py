@@ -47,7 +47,6 @@ def _load_user(user_ulid: str):
 
 @bp.before_app_request
 def _dev_auto_login():
-    from flask import current_app
 
     if not current_app.debug:
         return
@@ -85,7 +84,7 @@ def dev_impersonate():
     This lets you test ledger:read as auditor without changing code.
     """
 
-    from flask import current_app, redirect, request, url_for
+    from flask import redirect, request, url_for
 
     if not current_app.debug:
         return ("Not available", 404)

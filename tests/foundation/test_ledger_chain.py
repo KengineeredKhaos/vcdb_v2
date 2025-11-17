@@ -1,12 +1,13 @@
 # tests/foundation/test_ledger_chain.py
-import json
 import hashlib
+import json
+
 import pytest
 
-from app.extensions import db
-from app.extensions import event_bus
+from app.extensions import db, event_bus
 from app.slices.ledger.models import LedgerEvent
 from app.slices.ledger.services import verify_chain as verify_ledger
+
 
 # tiny, stable json-compact helper (matches your services.dumps_compact output)
 def _compact(d):

@@ -268,7 +268,7 @@ def dev_assume():
 from __future__ import annotations
 
 from functools import wraps
-from typing import Any, Iterable, List, Set
+from typing import Iterable, Set
 
 from flask import abort, current_app, session
 from flask_login import current_user
@@ -280,7 +280,6 @@ ASSUME_KEY = "assumed_domain_roles"
 
 def _dev_assumption_enabled(user) -> bool:
 
-    from flask import current_app
 
     if current_app.config.get("APP_MODE") == "production":
         return False
@@ -320,7 +319,7 @@ def _current_user_roles() -> list[str]:
     fall back to the Auth contract.
     """
     if getattr(current_user, "roles", None):
-        return sorted(_norm(getattr(current_user, "roles")))
+        return sorted(_norm(current_user.roles))
     uid = _current_user_ulid()
     if not uid:
         return []
@@ -502,7 +501,6 @@ def require_feature(flag_name: str):
     Gate a route behind a simple app.config feature flag (truthy).
     Keeps unfinished admin pages tucked away without RBAC churn.
     """
-    from flask import current_app
 
     def deco(view):
         @wraps(view)
@@ -533,7 +531,6 @@ def _permission_roles_map() -> dict[str, set[str]]:
           "ledger:read": {"admin","auditor"},
       }
     """
-    from flask import current_app
 
     raw = current_app.config.get("PERMISSIONS_MAP", {}) or {}
     return {str(p).lower(): _norm(roles) for p, roles in raw.items()}

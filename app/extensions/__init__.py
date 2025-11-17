@@ -8,11 +8,10 @@ from flask import Flask
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import event
-
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import CSRFError, generate_csrf
 from jinja2 import StrictUndefined
+from sqlalchemy import event
 
 # -----------------
 # Singletons

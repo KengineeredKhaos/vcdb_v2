@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # vcdb-v2/tools/fix_drop_type_kwarg.py
-import re, sys, pathlib
+import pathlib
+import re
+import sys
 
 SKIP_DIRS = {
     ".git",

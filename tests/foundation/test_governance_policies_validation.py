@@ -9,12 +9,17 @@ def test_governance_policies_validation_smoke(client):
 
     # Every item has the validation keys (either None / [] when not applicable)
     for item in d["policies"]:
-        assert {"key","filename","domains","focus","has_schema"}.issubset(item.keys())
+        assert {"key", "filename", "domains", "focus", "has_schema"}.issubset(
+            item.keys()
+        )
         assert "schema_valid" in item  # can be True|False|None
-        assert "schema_errors" in item # list
+        assert "schema_errors" in item  # list
         if item["has_schema"] and item["schema_valid"] is False:
             # if invalid, we should have at least one error message
-            assert isinstance(item["schema_errors"], list) and item["schema_errors"]
+            assert (
+                isinstance(item["schema_errors"], list)
+                and item["schema_errors"]
+            )
 
     # If at least one policy exists, check the detail endpoint
     if d["policies"]:

@@ -1,20 +1,19 @@
 # app/seeds/core.py
 from __future__ import annotations
+
+import json
 from dataclasses import dataclass
 from pathlib import Path
-import json
-from typing import Optional, Dict, Any, Iterable
+from typing import Any, Dict, Iterable, Optional
 
 from app.extensions import db
-from app.lib.ids import new_ulid
 from app.lib.chrono import now_iso8601_ms
-
+from app.lib.ids import new_ulid
 
 # Adjust these to your actual model names
-from app.slices.auth.models import Role          # table: auth_role
+from app.slices.auth.models import Role  # table: auth_role
 from app.slices.customers.models import Customer
 from app.slices.governance.models import RoleCode  # table: gov_domain_role
-
 
 BASE = Path(__file__).resolve().parents[1]
 
@@ -52,6 +51,7 @@ def seed_domain_from_policy() -> int:
 
 # -------- Entity (minimal org + person) ----------
 from app.slices.entity.models import Entity
+
 try:
     from app.slices.entity.models import EntityOrg  # if present
 except Exception:  # pragma: no cover
@@ -82,6 +82,7 @@ from app.slices.sponsors.models import (
     SponsorHistory,
     SponsorPledgeIndex,
 )
+
 
 # ---------------- Utils ----------------
 def _iso_now():

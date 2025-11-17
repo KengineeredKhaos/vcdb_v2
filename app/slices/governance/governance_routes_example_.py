@@ -1,8 +1,9 @@
 # slices/governance/routes.py (example)
-from flask import Blueprint, request, jsonify
-from app.slices.auth.decorators import rbac
+from flask import Blueprint, jsonify, request
+
+from app.extensions.policies import GOV_DATA, save_policy
 from app.lib.security import require_domain_roles_any
-from app.extensions.policies import save_policy, GOV_DATA
+from app.slices.auth.decorators import rbac
 
 bp = Blueprint("governance_policies", __name__)
 

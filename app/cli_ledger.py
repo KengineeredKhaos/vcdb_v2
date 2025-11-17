@@ -1,7 +1,9 @@
 # app/cli_ledger.py
 import click
+
 from app.cli import echo_db_banner
 from app.slices.ledger.services import verify_chain
+
 
 @click.group("ledger")
 def ledger_group():

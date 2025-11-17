@@ -1,15 +1,13 @@
 # app/slices/entity/services.py
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
 from sqlalchemy import asc
-from sqlalchemy.orm import joinedload, selectinload, Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.extensions import db
-from app.extensions import event_bus
-from app.lib.chrono import now_iso8601_ms
-from app.lib.ids import new_ulid
+from app.extensions import db, event_bus
+from app.extensions.contracts.governance_v2 import get_role_catalogs
 from app.lib.utils import (
     normalize_ein,
     normalize_email,
@@ -27,6 +25,30 @@ from .models import (
     EntityPerson,
     EntityRole,
 )
+
+# -----------------
+# Allowed Role Codes
+# -----------------
+
+# Prefer the governance_v2 contract; fall back to policy file in dev/test
+try:
+    from app.extensions.contracts.governance_v2 import (
+        role_catalogs as _gov_role_catalogs,
+    )
+except Exception:
+    _gov_role_catalogs = (
+        None  # contract not wired yet (dev/test fallback path)
+    )
+
+
+def allowed_role_codes(session=None) -> Set[str]:
+    """
+    Return the canonical set of domain role codes allowed by Governance policy.
+    This is a read-only call through the v2 contract (no DB writes here).
+    """
+    cats = get_role_catalogs()
+    roles = cats.get("roles") or []
+    return set(str(r) for r in roles)
 
 
 # -----------------
@@ -644,16 +666,22 @@ def _upsert_primary_contact(
 # Test Fixtures
 # -----------------
 
+
 def _validate_entity_shape(e: Entity) -> None:
     """Hard guard: exactly one child matching kind."""
     if e.kind == "person":
         if e.person is None or e.org is not None:
-            raise ValueError("kind='person' requires person child and forbids org child")
+            raise ValueError(
+                "kind='person' requires person child and forbids org child"
+            )
     elif e.kind == "org":
         if e.org is None or e.person is not None:
-            raise ValueError("kind='org' requires org child and forbids person child")
+            raise ValueError(
+                "kind='org' requires org child and forbids person child"
+            )
     else:
         raise ValueError("Entity.kind must be 'person' or 'org'")
+
 
 def create_person_entity(
     *,
@@ -671,8 +699,9 @@ def create_person_entity(
     )
     _validate_entity_shape(e)
     s.add(e)
-    s.flush()   # assigns ULIDs and timestamps
+    s.flush()  # assigns ULIDs and timestamps
     return e
+
 
 def create_org_entity(
     *,

@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Any, Union
 
 from flask import Flask, g, jsonify, request
-from flask_login import current_user, login_user, UserMixin, AnonymousUserMixin
+from flask_login import (
+    AnonymousUserMixin,
+    UserMixin,
+    current_user,
+    login_user,
+)
 from jinja2 import StrictUndefined
 from sqlalchemy import text
 from werkzeug.exceptions import HTTPException
@@ -17,8 +22,10 @@ from werkzeug.exceptions import HTTPException
 from app.cli import register_cli
 from app.lib.chrono import parse_iso8601, utcnow_aware
 from app.lib.logging import configure_logging
+
 from .extensions import init_extensions
-#from .web import bp as web_bp
+
+# from .web import bp as web_bp
 
 
 def _bind_contracts(app: Flask) -> None:
@@ -33,9 +40,10 @@ def _bind_contracts(app: Flask) -> None:
 # create the app framework and load object from config.py
 def create_app(config_object="config.DevConfig"):
     """Single app factory. Boring, deterministic, test-friendly."""
-    flask_app = Flask(__name__, template_folder="templates", instance_relative_config=True)
+    flask_app = Flask(
+        __name__, template_folder="templates", instance_relative_config=True
+    )
     flask_app.config.from_object(config_object)
-
 
     # prod | staging | development | test
 
@@ -51,11 +59,8 @@ def create_app(config_object="config.DevConfig"):
             flask_app.config["DATABASE"] = str(db_path)
         flask_app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
 
-
     # Always good to disable this noise
     flask_app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
-
-
 
     # Configure logging first
     configure_logging(flask_app)
@@ -66,7 +71,10 @@ def create_app(config_object="config.DevConfig"):
 
     # Configure logging before extensions/blueprints
     configure_logging(flask_app)
-    if not flask_app.testing and (flask_app.debug or flask_app.config.get("ENV") in {"dev", "development"}):
+    if not flask_app.testing and (
+        flask_app.debug
+        or flask_app.config.get("ENV") in {"dev", "development"}
+    ):
         hnames = [type(h).__name__ for h in logging.getLogger().handlers]
         logging.getLogger("app").info(
             {
@@ -90,6 +98,7 @@ def create_app(config_object="config.DevConfig"):
     flask_app.jinja_env.globals["csrf_token"] = generate_csrf
 
     if CSRFError is not None:
+
         @flask_app.errorhandler(CSRFError)
         def handle_csrf_error(e):
             return (
@@ -104,10 +113,8 @@ def create_app(config_object="config.DevConfig"):
                 400,
             )
 
-
     # jinja strict mode (keep)
     flask_app.jinja_env.undefined = StrictUndefined
-
 
     # -------------
     # Stub auth
@@ -177,6 +184,7 @@ def create_app(config_object="config.DevConfig"):
     # -------------
 
     from app.slices.devtools.routes_smoke import bp as dev_smoke_bp
+
     flask_app.register_blueprint(dev_smoke_bp)
 
     # for Testing server
@@ -196,16 +204,21 @@ def create_app(config_object="config.DevConfig"):
     if env in {"dev", "development", "test", "testing"}:
         from app.slices.devtools.routes import (
             bp as devtools_bp,
+        )
+        from app.slices.devtools.routes import (
             bp_api as devtools_api_bp,
-            bp_api_v2 as devtools_api_v2_bp,
+        )
+        from app.slices.devtools.routes import (
             bp_api_public as devtools_api_public_bp,
         )
-        flask_app.register_blueprint(devtools_bp)      # /dev/...
+        from app.slices.devtools.routes import (
+            bp_api_v2 as devtools_api_v2_bp,
+        )
+
+        flask_app.register_blueprint(devtools_bp)  # /dev/...
         flask_app.register_blueprint(devtools_api_bp)  # /api/dev/...
-        flask_app.register_blueprint(devtools_api_v2_bp)  # /api/v2/...
         flask_app.register_blueprint(devtools_api_public_bp)  # /api/...
-
-
+        flask_app.register_blueprint(devtools_api_v2_bp)
 
     # -------------
     # Register remaining
@@ -242,8 +255,6 @@ def create_app(config_object="config.DevConfig"):
     flask_app.register_blueprint(resources_bp)
     flask_app.register_blueprint(sponsors_bp)
 
-
-
     # -------------
     # Globals Injection
     # compact, side-effect-free
@@ -276,7 +287,9 @@ def create_app(config_object="config.DevConfig"):
     # Helper (not a context processor): use inside server-side functions
     def _is_admin_user() -> bool:
         try:
-            return bool(getattr(current_user, "is_authenticated", False)) and (
+            return bool(
+                getattr(current_user, "is_authenticated", False)
+            ) and (
                 getattr(current_user, "is_admin", False)
                 or ("admin" in ((getattr(current_user, "roles", []) or [])))
             )
@@ -287,6 +300,7 @@ def create_app(config_object="config.DevConfig"):
     def admin_alerts():
         """Lightweight admin banner fed from admin_cron_status, tolerant to absence."""
         from app.extensions import db
+
         if not _is_admin_user():
             return {"admin_alerts": []}
         try:
@@ -317,7 +331,9 @@ def create_app(config_object="config.DevConfig"):
                 continue
             last_ok_iso = r.get("last_success_utc")
             if not last_ok_iso:
-                alerts.append(f"Job {r['job_name']} is stale; never succeeded.")
+                alerts.append(
+                    f"Job {r['job_name']} is stale; never succeeded."
+                )
                 continue
             try:
                 if parse_iso8601(last_ok_iso) < cutoff_dt:
@@ -325,9 +341,10 @@ def create_app(config_object="config.DevConfig"):
                         f"Job {r['job_name']} is stale; no success in 6h (last: {last_ok_iso})."
                     )
             except Exception:
-                alerts.append(f"Job {r['job_name']} has unreadable timestamp: {last_ok_iso}")
+                alerts.append(
+                    f"Job {r['job_name']} has unreadable timestamp: {last_ok_iso}"
+                )
         return {"admin_alerts": alerts}
-
 
     @flask_app.context_processor
     def macro_ctx():
@@ -368,26 +385,24 @@ def create_app(config_object="config.DevConfig"):
     def _stub_banner():
         return {"_stub_auth_active": app.config.get("AUTH_MODE") == "stub"}
 
-
-
     # -------------
     # dev Dbase schema check, Route dump, Sanity check
     # -------------
-    """
-    Silenced during Development
-    if app.debug:
-        _dump_routes(app)
-        _boot_sanity(app)
+
+    # Silenced during Development
+    if flask_app.debug:
+        _dump_routes(flask_app)
+        _boot_sanity(flask_app)
 
     # only in dev, not during tests
-    if app.config.get("ENV") == "development" and not app.testing:
-        _5chema_5heck(app)
+    # if app.config.get("ENV") == "development" and not app.testing:
+    #     _5chema_5heck(app)
 
-    if app.debug and app.config.get("LEDGER_CHECK_ON_BOOT", True):
-        _ledger_sanity(
-            app, limit=int(app.config.get("LEDGER_CHECK_LIMIT", 20))
-        )
-    """
+    # if app.debug and app.config.get("LEDGER_CHECK_ON_BOOT", True):
+    #     _ledger_sanity(
+    #         app, limit=int(app.config.get("LEDGER_CHECK_LIMIT", 20))
+    #     )
+
     register_cli(flask_app)
     return flask_app
 
@@ -442,11 +457,11 @@ def _boot_sanity(app):
     print("====================\n")
 
 
-def _dump_routes(app):
+def _dump_routes(flask_app):
     """Compact route map (methods/rule -> endpoint) plus DB echo."""
     print("\n=== ROUTES ===")
     rows = []
-    for rule in app.url_map.iter_rules():
+    for rule in flask_app.url_map.iter_rules():
         methods = ",".join(
             m
             for m in sorted(rule.methods or [])
@@ -456,12 +471,13 @@ def _dump_routes(app):
     for rule, methods, endpoint in sorted(rows, key=lambda x: (x[0], x[1])):
         print(f"{methods:6} {rule:35} -> {endpoint}")
     print("=== END ROUTES ===")
-    print("DEV_DB_PATH =", app.config.get("DATABASE"))
+    print("DEV_DB_PATH =", flask_app.config.get("DATABASE"))
 
 
 def _5chema_5heck(app):
-    from app.extensions import db
     from sqlalchemy import inspect
+
+    from app.extensions import db
 
     with app.app_context():
         insp = inspect(db.engine)

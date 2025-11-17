@@ -1,5 +1,4 @@
 # tests/foundation/test_governance_policies_index.py
-
 def test_governance_policies_index_and_get(client):
     # Index
     r = client.get("/api/v2/governance/policies")
@@ -11,7 +10,9 @@ def test_governance_policies_index_and_get(client):
     # If we have any policies, validate coarse shape
     if d["policies"]:
         item = d["policies"][0]
-        assert {"key","filename","domains","focus","has_schema"}.issubset(item.keys())
+        assert {"key", "filename", "domains", "focus", "has_schema"}.issubset(
+            item.keys()
+        )
         assert isinstance(item["domains"], list)
         assert isinstance(item["has_schema"], bool)
 

@@ -1,7 +1,6 @@
 # app/slices/logistics/models.py
 from sqlalchemy import (
     CheckConstraint,
-    ForeignKey,
     Index,
     Integer,
     String,
@@ -10,7 +9,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.extensions import db
-from app.lib.chrono import now_iso8601_ms
 from app.lib.models import ULIDFK, ULIDPK, IsoTimestamps
 
 

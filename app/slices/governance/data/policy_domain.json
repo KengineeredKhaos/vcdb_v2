@@ -6,11 +6,10 @@
       "admin":   ["governor", "staff", "customer", "resource", "sponsor", "civilian"],
       "staff":   ["governor"],
       "user":    ["customer", "resource", "sponsor", "civilian"],
-      "auditor": []
+      "auditor": ["staff"]
     },
     "must_include_when_rbac": {
-      "admin": ["governor"],
-      "staff": ["governor"]
+      "admin": ["governor"]
     },
     "forbidden_pairs": [
       ["civilian", "governor"]

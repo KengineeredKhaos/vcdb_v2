@@ -9,10 +9,14 @@ SQLite/SQLAlchemy request guardrails:
 - Always remove the session
 """
 from __future__ import annotations
+
 import sqlite3
 from typing import Optional
+
 from flask import g, request
+
 from app.extensions import db
+
 
 def _flip_query_only(on: bool) -> None:
     """Flip PRAGMA query_only for the *current* bound SQLite connection."""

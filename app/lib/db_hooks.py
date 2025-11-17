@@ -1,8 +1,12 @@
 # app/lib/db_hooks.py
 from __future__ import annotations
+
 import sqlite3
+
 from sqlalchemy import event
+
 from app.extensions import db
+
 
 def install_sqlite_engine_hooks() -> None:
     """

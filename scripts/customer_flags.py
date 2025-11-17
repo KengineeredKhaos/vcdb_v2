@@ -1,11 +1,13 @@
 # scripts/customer_flags.py (optional CLI helper for dev)
 #!/usr/bin/env python3
 from __future__ import annotations
+
 import click
-from app import create_app, db
+
+from app import create_app
 from app.slices.customers.services.eligibility import (
-    set_verification_flags,
     set_tier_min,
+    set_verification_flags,
 )
 
 

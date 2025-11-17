@@ -1,8 +1,9 @@
 # tests/foundation/test_entity_person_org_integrity.py
-from app.slices.entity.services import(
-    create_person_entity,
+from app.slices.entity.services import (
     create_org_entity,
+    create_person_entity,
 )
+
 
 def test_create_person_entity_happy_path(write_session):
     dto = create_person_entity(
@@ -27,7 +28,7 @@ def test_create_org_entity_happy_path(write_session):
 
 def test_person_org_fk_backrefs(ro_session):
     # Ensure Person/Org ↔ Entity FKs and backrefs are intact
-    from app.slices.entity.models import Entity, EntityPerson, EntityOrg
+    from app.slices.entity.models import Entity, EntityOrg, EntityPerson
     e = ro_session.query(Entity).first()
     if e is None:
         # Seed should ensure ≥1 entity exists

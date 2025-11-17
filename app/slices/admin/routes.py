@@ -1,13 +1,13 @@
 # app/slices/admin/routes.py
 from __future__ import annotations
 
-import difflib
 import json
 import os
 import sqlite3
 from pathlib import Path
 
 from flask import (
+    Blueprint,
     current_app,
     flash,
     jsonify,
@@ -21,12 +21,11 @@ from flask_login import login_required
 from sqlalchemy import text
 
 from app.extensions import db, event_bus
+from app.extensions.contracts import governance_v2
 
-# POLICY helpers from our extensions
-# POLICY helpers from our extensions
+# POLICY helpers from extensions
 from app.extensions.policies import (
     canonicalize_json,
-    load_policy,
     save_policy,
     validate_json_schema,
 )
@@ -148,9 +147,8 @@ def cron_ack():
         flash("Missing job name.", "error")
         return redirect(url_for("admin.cron_index"))
     event_bus.emit(
-        type="cron.job.acknowledged",
-        slice="admin",
-        operation="acknowledged",
+        domain="admin",
+        operation="cron.job.acknowledged",
         request_id=new_ulid(),
         actor_ulid=None,
         target_ulid=None,
@@ -177,15 +175,15 @@ def cron_run_now():
         flash("Missing job name.", "error")
         return redirect(url_for("admin.cron_index"))
     event_bus.emit(
-        type="cron.job.triggered",
-        slice="admin",
-        operation="triggered",
+        domain="admin",
+        operation="cron.job.trigged",
         request_id=new_ulid(),
         actor_ulid=None,
         target_ulid=None,
         happened_at_utc=now_iso8601_ms(),
         refs={"job_name": job},
     )
+
     if not _enqueue_job(job):
         flash(
             f"No runner configured for '{job}'. (Recorded request.)", "info"
@@ -199,7 +197,10 @@ def _enqueue_job(job_name: str) -> bool:
     return False  # plug your scheduler later
 
 
-# ---------- Policies UI ----------
+# -----------------
+# Policies UI (read)
+# -----------------
+
 # single source of truth locations:
 GOV_DATA = Path("app/slices/governance/data")
 AUTH_DATA = Path("app/slices/auth/data")
@@ -208,13 +209,75 @@ AUTH_DATA = Path("app/slices/auth/data")
 @bp.get("/policies")
 @login_required
 @roles_required("admin")
-def policy_index():
-    items = []
-    for root, label in [(GOV_DATA, "governance"), (AUTH_DATA, "auth")]:
-        if root.exists():
-            for p in sorted(root.glob("*.json")):
-                items.append({"area": label, "name": p.name, "path": str(p)})
-    return render_template("admin/policy_index.html", items=items)
+def admin_policies_index():
+    # Read-only list for the Admin UI; no ledger emits in routes.
+    validate = request.args.get("validate") in {"1", "true", "yes"}
+    res = governance_v2.list_policies(validate=validate)
+    return render_template("admin/policy_index.html", payload=res)
+
+
+@bp.get("/policies/<string:key>")
+@login_required
+@roles_required("admin")
+def admin_policies_view(key: str):
+    validate = request.args.get("validate") in {"1", "true", "yes"}
+    res = governance_v2.get_policy(key=key, validate=validate)
+    status = (
+        200
+        if res.get("ok")
+        else (404 if res.get("error") == "not_found" else 422)
+    )
+    return (
+        render_template("admin/policy_view.html", key=key, payload=res),
+        status,
+    )
+
+
+# -----------------
+# Admin API
+# (preview/commit)
+# -----------------
+
+# NOTE: RBAC admin + domain governor should be enforced upstream with your
+# combined decorator (if you have it). If not, keep it simple: admin here,
+# and enforce domain role check inside the handler (or wrap it).
+from app.slices.auth.decorators import require_domain_role
+
+
+@bp.post("/api/governance/policies/<string:key>")
+@login_required
+@roles_required("admin")
+@require_domain_role("governor")
+def admin_policy_update(key: str):
+    """
+    POST body:
+      {
+        "policy": {...},   # required dict
+        "dry_run": true|false
+      }
+    """
+    body = request.get_json(silent=True) or {}
+    doc = body.get("policy")
+    if not isinstance(doc, dict):
+        return jsonify({"ok": False, "error": "invalid_payload"}), 400
+
+    if bool(body.get("dry_run", False)):
+        res = governance_v2.preview_policy_update(key=key, new_policy=doc)
+        return jsonify(res), (200 if res.get("ok") else 422)
+
+    # commit path — ledger emit occurs inside the governance provider
+    # retrieve actor ULID via your existing helper
+    from flask_login import current_user as current_user_ulid
+
+    # or your central helper
+
+    res = governance_v2.commit_policy_update(
+        key=key, new_policy=doc, actor_ulid=current_user_ulid()
+    )
+    if not res.get("ok"):
+        code = 404 if res.get("error") == "not_found" else 422
+        return jsonify(res), code
+    return jsonify(res), 200
 
 
 @bp.get("/policies/edit")
@@ -333,9 +396,8 @@ def policy_save():
 
     # emit a ledger event (names only)
     event_bus.emit(
-        type="policy.saved",
-        slice="admin",
-        operation="save",
+        domain="admin",
+        operation="policy.saved",
         request_id=new_ulid(),
         actor_ulid=None,
         target_ulid=None,

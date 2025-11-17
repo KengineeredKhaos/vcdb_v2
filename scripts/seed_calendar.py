@@ -5,8 +5,8 @@ from datetime import timedelta
 from typing import Optional
 
 from app.extensions import db
-from app.slices.calendar.models import Project, Calendar
 from app.lib.chrono import now_iso8601_ms, parse_iso8601, to_iso8601
+from app.slices.calendar.models import Calendar, Project
 
 # ---- helpers ---------------------------------------------------------------
 

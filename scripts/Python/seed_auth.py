@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # scripts/seed_dev.py
 from __future__ import annotations
+
 import os
 import sys
 from typing import Dict
+
 from sqlalchemy import inspect
 
 from app import create_app

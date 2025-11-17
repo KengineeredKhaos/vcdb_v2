@@ -1,8 +1,10 @@
 # tests/support.py
 from __future__ import annotations
+
 import contextlib
-from sqlalchemy import text
+
 from app.extensions import db
+
 
 @contextlib.contextmanager
 def with_readonly_session():

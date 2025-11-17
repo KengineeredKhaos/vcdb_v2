@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import os
-import contextlib
-import typing as t
+
 import pytest
 from flask import Flask
 from sqlalchemy import event

@@ -1,12 +1,11 @@
 # app/slices/entity/models.py
 from __future__ import annotations
 
-from sqlalchemy import String, UniqueConstraint, CheckConstraint, Boolean
+from sqlalchemy import Boolean, CheckConstraint, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.chrono import now_iso8601_ms, utcnow_naive
-from app.lib.models import ULIDPK, ULIDFK, IsoTimestamps
+from app.lib.models import ULIDFK, ULIDPK, IsoTimestamps
 
 
 # -------------------------

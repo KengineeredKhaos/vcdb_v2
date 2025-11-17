@@ -1,8 +1,9 @@
 # tests/test_foundation_decision_catalog.py
 import importlib
 from pathlib import Path
-import yaml
+
 import pytest
+import yaml
 
 CAT_PATH = Path("docs/decision_catalog.yaml")
 

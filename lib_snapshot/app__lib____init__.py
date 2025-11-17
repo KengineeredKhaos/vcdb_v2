@@ -23,7 +23,7 @@ from .jsonutil import (
     try_loads,
     write_json_file,
 )
-from .logging import JSONLineFormatter, get_logger
+from .logging import JSONLineFormatter
 from .pagination import Page
 from .request_ctx import (
     ensure_request_id,

@@ -1,8 +1,10 @@
 # tests/foundation/test_ledger_immutable.py
 import pytest
-from sqlalchemy.exc import OperationalError, IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
+
 from app.extensions import db
 from app.slices.ledger.models import LedgerEvent
+
 
 def test_ledger_rows_are_immutable():
     ev = db.session.query(LedgerEvent).first()

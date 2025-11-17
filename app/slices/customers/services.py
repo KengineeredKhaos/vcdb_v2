@@ -10,7 +10,6 @@ from sqlalchemy import desc, func, select
 from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
-from app.slices.entity.models import Entity
 
 from .models import Customer, CustomerEligibility, CustomerHistory
 

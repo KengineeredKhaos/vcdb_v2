@@ -11,7 +11,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.chrono import now_iso8601_ms, utcnow_naive
 from app.lib.models import ULIDFK, ULIDPK, IsoTimestamps
 
 

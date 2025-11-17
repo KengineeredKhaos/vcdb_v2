@@ -1,8 +1,6 @@
 # app/slices/customers/routes.py
 from __future__ import annotations
 
-from re import template
-
 from flask import jsonify, request
 
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid

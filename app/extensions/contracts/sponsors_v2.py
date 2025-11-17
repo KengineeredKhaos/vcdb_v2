@@ -19,7 +19,6 @@ from typing import Any, Mapping, Optional, TypedDict
 
 from app.slices.sponsors import services as svc
 
-
 # ---------- classes ----------
 
 

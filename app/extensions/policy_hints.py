@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from app.extensions.contracts.catalog_v2 import list_skus
 from app.extensions.policies import load_policy_domain
 
 

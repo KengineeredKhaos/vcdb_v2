@@ -8,7 +8,6 @@
 #   inv bootstrap                        # end-to-end: lint → seed → validate → demo
 
 import os
-from pathlib import Path
 
 from invoke import task
 

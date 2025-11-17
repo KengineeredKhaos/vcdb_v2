@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional
 
 from app.extensions.policies import load_policy_calendar
 from app.lib.chrono import now_iso8601_ms
-from app.lib.errors import PolicyError
-from app.lib.jsonutil import safe_loads
 
 
 def calendar_blackout_ok(ctx):

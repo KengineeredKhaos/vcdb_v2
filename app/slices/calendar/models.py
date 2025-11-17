@@ -1,8 +1,6 @@
 # app/slices/calendar/models.py
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
-
 from sqlalchemy import (
     JSON,
     Boolean,

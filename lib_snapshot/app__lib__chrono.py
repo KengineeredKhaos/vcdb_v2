@@ -1,6 +1,5 @@
 # app/lib/time.py
 from datetime import datetime, timezone
-from typing import Optional
 
 
 # Always produce ISO-8601 UTC with 'Z' and 3 decimal milliseconds

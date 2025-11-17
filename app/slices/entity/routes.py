@@ -1,20 +1,17 @@
 # app/slices/entity/routes.py
 from __future__ import annotations
 
-import time
-
 from flask import flash, jsonify, redirect, render_template, request, url_for
 from flask_login import login_required
 
 from app.extensions.contracts.entity import v2 as entity_contract
 from app.lib.geo import us_states
 from app.lib.ids import new_ulid
-from app.lib.security import require_permission, require_roles_any
+from app.lib.security import require_permission
 
 from . import bp
 from . import services as svc
 from .models import EntityPerson
-
 
 
 @bp.get("/hello")

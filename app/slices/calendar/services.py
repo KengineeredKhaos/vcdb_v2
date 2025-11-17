@@ -1,12 +1,9 @@
 # app/slices/calendar/services.py
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, TypedDict
+from typing import TYPE_CHECKING, Any, Optional, TypedDict
 
-from sqlalchemy import select
-from sqlalchemy.orm import joinedload
-
-from app.extensions import current_actor_ulid, db, enforcers, event_bus, ulid
+from app.extensions import db, event_bus
 from app.extensions.contracts.finance import v1 as finance
 from app.extensions.policies import GOV_DATA, _load_and_cache
 from app.lib.chrono import now_iso8601_ms
@@ -31,7 +28,7 @@ class FundSummary(TypedDict, total=False):
 
 if TYPE_CHECKING:
     # type-only; won’t import at runtime
-    from app.slices.finance.models import Fund
+    pass
 
     # not actually used in code paths
 

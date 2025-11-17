@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 
 from ulid import ULID  # python-ulid
 
-
 # -----------------
 # ULID generation
 # -----------------

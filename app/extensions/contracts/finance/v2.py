@@ -1,7 +1,8 @@
 # app/extensions/contracts/finance_v2.py
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 
 # ---------- DTOs ----------

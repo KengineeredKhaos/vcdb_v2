@@ -1,9 +1,8 @@
 # app / extensions / contracts / calendar_v2.py
 
 from __future__ import annotations
-from typing import TypedDict, Optional
 
-
+from typing import Optional, TypedDict
 
 
 class CalendarGateDTO(TypedDict):

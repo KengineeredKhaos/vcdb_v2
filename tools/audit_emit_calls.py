@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # vcdb-v2/tools/audit_emit_calls.py
-import ast, sys, pathlib, json
+import ast
+import pathlib
+import sys
 
 SKIP_DIRS = {
     ".git",
@@ -30,7 +32,7 @@ def should_skip(p: pathlib.Path) -> bool:
 def audit_file(path: pathlib.Path):
     try:
         src = path.read_text(encoding="utf-8")
-    except Exception as e:
+    except Exception:
         return []
 
     try:

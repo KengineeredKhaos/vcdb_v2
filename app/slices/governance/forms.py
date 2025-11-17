@@ -3,9 +3,11 @@
 # Governance Admin Forms — skinny forms, JSON validated in-form
 
 from __future__ import annotations
+
 from flask_wtf import FlaskForm
-from wtforms import TextAreaField, SubmitField
+from wtforms import SubmitField, TextAreaField
 from wtforms.validators import DataRequired
+
 from app.lib.jsonutil import try_parse_json
 
 

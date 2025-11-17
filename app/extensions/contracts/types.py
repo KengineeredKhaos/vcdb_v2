@@ -1,7 +1,7 @@
 # extensions/contracts/types.py
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, NotRequired, Optional, TypedDict
+from typing import Any, Dict, NotRequired, Optional, TypedDict
 
 
 class ContractRequest(TypedDict):

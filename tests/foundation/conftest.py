@@ -1,8 +1,11 @@
 # tests/foundation/conftest.py
+import os
+import pathlib
+
 import pytest
-import os, pathlib
+
 from app import create_app
-from app.lib.chrono import utcnow_naive
+
 
 @pytest.fixture(scope="session")
 def app():

@@ -1,10 +1,8 @@
 # app/extensions/policy_semantics.py
 from __future__ import annotations
 
-import fnmatch
 from typing import Any, Dict, Iterable, List, Tuple
 
-from app.extensions.contracts.catalog_v2 import list_skus
 from app.extensions.policies import (  # if you have these
     load_policy_domain,
     load_policy_issuance,

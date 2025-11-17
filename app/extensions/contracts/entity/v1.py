@@ -1,6 +1,7 @@
 # app/extensions/contracts/entity/v1.py
-from typing import List, Dict
-from app.extensions.contracts.types import ContractEnvelope, LedgerDTO
+from typing import Dict, List
+
+from app.extensions.contracts.types import ContractEnvelope
 
 
 def list_entity_roles(env: ContractEnvelope, entity_ulid: str) -> List[str]:

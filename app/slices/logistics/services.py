@@ -779,8 +779,8 @@ def available_skus_for_customer(
     Iterate known SKUs and include those Governance approves for the given
     customer/time; Logistics defers all rules to Governance.
     """
-    from app.slices.governance.services import decide_issue
     from app.extensions.contracts import governance_v2 as govc
+    from app.slices.governance.services import decide_issue
 
     rows = db.session.execute(
         select(InventoryItem.sku, InventoryItem.category)

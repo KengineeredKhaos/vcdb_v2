@@ -2,12 +2,16 @@
 # Thin compatibility shim — forwards to canon RBAC in app/lib/security.py
 
 from app.lib.security import (
-    require_roles_any as rbac,  # legacy name used in some places
-    require_roles_any as roles_required,  # <-- add this alias
-    require_roles_all,
+    require_feature,  # expose for convenience
     require_login,
     require_permission,  # expose for convenience
-    require_feature,  # expose for convenience
+    require_roles_all,
+)
+from app.lib.security import (
+    require_roles_any as rbac,  # legacy name used in some places
+)
+from app.lib.security import (
+    require_roles_any as roles_required,  # <-- add this alias
 )
 
 __all__ = [

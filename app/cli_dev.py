@@ -14,8 +14,8 @@ import click
 from flask import current_app
 from flask.cli import with_appcontext
 from sqlalchemy import select
-from app.cli import echo_db_banner
 
+from app.cli import echo_db_banner
 
 
 def register_cli(app):
@@ -417,8 +417,6 @@ def dev_policy_lint(
 def _scan_issuance_coverage():
     from types import SimpleNamespace as NS
 
-    from sqlalchemy import select
-
     from app.extensions import db
     from app.extensions.policies import load_policy_issuance
     from app.slices.governance.services import _rule_matches
@@ -575,11 +573,8 @@ def dev_issuance_tripwires(
     import json
     from types import SimpleNamespace as NS
 
-    from sqlalchemy import select
-
     from app.extensions import db
     from app.extensions.policies import (
-        load_policy_calendar,
         load_policy_issuance,
     )
     from app.lib.chrono import now_iso8601_ms
@@ -596,7 +591,6 @@ def dev_issuance_tripwires(
     from app.slices.logistics.services import (
         ensure_item,
         ensure_location,
-        issue_inventory,
         receive_inventory,
     )
     from app.slices.logistics.sku import parse_sku, validate_sku
@@ -991,7 +985,6 @@ def dev_decide_issue(
     from app.slices.logistics.sku import (
         classification_key_for,
         parse_sku,
-        validate_sku,
     )
 
     parts = parse_sku(sku_code)
@@ -1055,7 +1048,6 @@ def dev_whoami():
 def dev_list_stock(loc_code: str, limit: int):
     """List on-hand quantities at a location."""
     echo_db_banner("list-stock")
-    from sqlalchemy import select
 
     from app.extensions import db
     from app.slices.logistics.models import (
@@ -1121,7 +1113,6 @@ def dev_demo_issue(
       - uses a throwaway ULID for the customer if none provided
     """
     echo_db_banner("demo-issue")
-    from sqlalchemy import select
 
     from app.extensions import db
     from app.lib.chrono import now_iso8601_ms
@@ -1222,7 +1213,6 @@ def dev_lint_skus(data_dir: str):
     """
     echo_db_banner("lint-skus")
     import json
-    import os
 
     from app.lib.schema import try_validate_json
 
@@ -1268,7 +1258,7 @@ def dev_purge_seed_items():
     in FK-safe order: issues → movements → stock → batches → items.
     """
     echo_db_banner("purge-seed-items")
-    from sqlalchemy import delete, select
+    from sqlalchemy import delete
 
     from app.extensions import db
     from app.slices.logistics.models import (
@@ -1496,12 +1486,11 @@ def dev_seed_demo_customers(prefix: str):
     """
     echo_db_banner("seed-demo-customers")
     from app.extensions import db
-    from app.lib.ids import new_ulid
-    from app.lib.chrono import now_iso8601_ms
-    from app.slices.entity import services as ent_svc
-    from app.slices.customers import services as cust_svc
     from app.extensions.contracts import customers_v2 as custx
     from app.extensions.contracts import governance_v2 as govx
+    from app.lib.ids import new_ulid
+    from app.slices.customers import services as cust_svc
+    from app.slices.entity import services as ent_svc
 
     def _mk_person(label: str) -> str:
         rid = new_ulid()
@@ -1643,10 +1632,11 @@ def dev_seed_demo_customers(prefix: str):
 def dev_seed_demo_resources(prefix: str):
     """Seed a couple of resources with valid capabilities/readiness/MOU + ledger emits."""
     echo_db_banner("seed-demo-resources")
+    import click
+
     from app.lib.ids import new_ulid
     from app.slices.entity import services as ent_svc
     from app.slices.resources import services as res_svc
-    import click
 
     # Pull the canonical capability list and index it by domain prefix
     allowed = sorted(res_svc.allowed_capabilities())
@@ -1790,9 +1780,10 @@ def dev_seed_demo_sponsors(prefix: str):
     """
     echo_db_banner("seed-demo-sponsors")
     import click
+
+    from app.extensions.contracts import sponsors_v2 as spx
     from app.lib.ids import new_ulid
     from app.slices.entity import services as ent_svc
-    from app.extensions.contracts import sponsors_v2 as spx
 
     # Helper: pick first allowed "funding.*" key if service exposes a list; fallback to a safe default.
     funding_key = "funding.cash_grant"

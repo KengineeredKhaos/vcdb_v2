@@ -9,11 +9,10 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import Index, LargeBinary, String, Text
+from sqlalchemy import Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.extensions import db
-from app.lib.chrono import now_iso8601_ms
 from app.lib.models import ULIDPK, IsoTimestamps
 
 # -*- coding: utf-8 -*-

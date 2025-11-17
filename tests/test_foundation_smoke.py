@@ -1,8 +1,8 @@
 # tests/test_foundation_smoke.py
 def test_foundation_smoke(app):
     from app.extensions import db
-    from app.slices.entity.models import Entity, EntityPerson, EntityOrg
     from app.slices.customers.models import Customer
+    from app.slices.entity.models import Entity, EntityOrg, EntityPerson
     from app.slices.resources.models import Resource
     from app.slices.sponsors.models import Sponsor
 

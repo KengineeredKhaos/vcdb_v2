@@ -1,10 +1,12 @@
 # app/slices/governance/routes.py
 from __future__ import annotations
-from flask import Blueprint, request, jsonify
 
-from app.lib.request_ctx import get_actor_ulid
-from . import services as svc
+from flask import Blueprint, jsonify, request
+
 from app.extensions.contracts import governance_v2
+from app.lib.request_ctx import get_actor_ulid
+
+from . import services as svc
 
 bp = Blueprint("governance", __name__, url_prefix="/governance")
 

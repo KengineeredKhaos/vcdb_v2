@@ -5,6 +5,7 @@ from app.slices.customers.services import ensure_customer
 from app.slices.resources.services import ensure_resource
 from app.slices.sponsors.services import ensure_sponsor
 
+
 def _as_ulid(x):
     return getattr(x, "ulid", x)
 

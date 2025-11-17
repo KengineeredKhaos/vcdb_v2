@@ -376,7 +376,6 @@ def find_resources(
 
     # Join to projection as needed
     if any_of:
-        from sqlalchemy import or_, and_
 
         ors = []
         for d, k in any_of:

@@ -1,7 +1,10 @@
 # scripts/summarize_lib.py
-import ast, hashlib, json, os, re, sys
+import ast
+import hashlib
+import json
+import sys
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List
 
 ROOT = Path(__file__).resolve().parents[1]
 LIB = ROOT / "app" / "lib"

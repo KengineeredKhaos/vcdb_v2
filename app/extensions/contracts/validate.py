@@ -1,7 +1,6 @@
 # app/extensions/contracts/validate.py
 
 import json
-from importlib.resources import files
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError as JSONSchemaValidationError

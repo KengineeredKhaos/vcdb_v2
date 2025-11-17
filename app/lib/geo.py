@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Dict, Tuple, Iterable, Optional
-
+from typing import Dict, Optional, Tuple
 
 # Strict state two letter codes plus DC & PR
 # in json format

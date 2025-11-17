@@ -1,6 +1,7 @@
 # extensions/contracts/admin/v1.py
-from typing import TypedDict, NotRequired
 from datetime import datetime, timezone
+from typing import NotRequired, TypedDict
+
 from extensions.contracts.types import ContractRequest, ContractResponse
 
 

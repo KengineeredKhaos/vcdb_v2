@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from hashlib import sha256
-from typing import Iterable, List, Tuple
+from typing import List, Tuple
 
 from sqlalchemy import asc
 from sqlalchemy.orm import joinedload
@@ -14,7 +14,7 @@ from app.lib.chrono import utcnow_naive
 from app.lib.ids import new_ulid
 from app.lib.utils import normalize_email, validate_email
 
-from .models import Role, User, UserRole
+from .models import Role, User
 
 
 # Domain-local error for 404 mapping in routes

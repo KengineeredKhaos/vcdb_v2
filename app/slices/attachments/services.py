@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import hashlib
 import os
-from typing import Optional, BinaryIO, Tuple
+from typing import BinaryIO, Optional, Tuple
 
 from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
+
 from .models import Attachment, AttachmentLink
 
 # ---- Storage abstraction ----------------------------------------------------
@@ -121,9 +122,8 @@ def upload_register(
         if not backend.exists(storage_key):
             backend.put(storage_key, src=BinaryIOAdapter(data))
         event_bus.emit(
-            type="attachment.uploaded",
-            slice="attachments",
-            operation="insert",
+            domain="attachments",
+            operation="attachment.uploaded",
             actor_ulid=actor_ulid,
             target_ulid=att.ulid,
             request_id=request_id,
@@ -193,9 +193,9 @@ def link_attachment(
     db.session.commit()
 
     event_bus.emit(
-        type="attachment.linked",
-        slice="attachments",
-        operation="link",
+        type="",
+        domain="attachments",
+        operation="attachment.linked",
         actor_ulid=actor_ulid,
         target_ulid=link.ulid,
         request_id=request_id,
@@ -226,9 +226,8 @@ def unlink_attachment(
     db.session.commit()
 
     event_bus.emit(
-        type="attachment.unlinked",
-        slice="attachments",
-        operation="unlink",
+        domain="attachments",
+        operation="attachment.unlinked",
         actor_ulid=actor_ulid,
         target_ulid=link.ulid,
         request_id=request_id,
@@ -258,9 +257,8 @@ def sign_url(
         raise ValueError("attachment not found")
     url = get_backend().sign_url(att.storage_key, ttl_seconds=ttl_seconds)
     event_bus.emit(
-        type="attachment.url.signed",
-        slice="attachments",
-        operation="sign",
+        domain="attachments",
+        operation="attachment.url.signed",
         actor_ulid=actor_ulid,
         target_ulid=attachment_ulid,
         request_id=request_id,

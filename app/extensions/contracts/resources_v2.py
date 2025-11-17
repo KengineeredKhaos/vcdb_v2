@@ -38,7 +38,6 @@ from typing import Any, Mapping, Optional, TypedDict
 
 from app.slices.resources import services as svc
 
-
 # ---------- classes ----------
 
 

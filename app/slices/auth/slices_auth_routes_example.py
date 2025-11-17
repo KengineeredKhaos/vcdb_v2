@@ -1,7 +1,8 @@
 # slices/auth/routes.py (example)
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, current_app, jsonify, request
+
+from app.extensions.policies import AUTH_DATA, save_policy
 from app.slices.auth.decorators import rbac
-from app.extensions.policies import save_policy, AUTH_DATA
 
 bp = Blueprint("auth_policies", __name__)
 

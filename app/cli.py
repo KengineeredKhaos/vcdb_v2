@@ -11,14 +11,16 @@ Add new groups in their own module and import/register them here.
 """
 
 from __future__ import annotations
+
 import click
 from flask import current_app
 
+
 def register_cli(app) -> None:
     # Import here so importing app.__init__ doesn’t eagerly pull every CLI module
-    from app.cli_gov import governance_group
-    from app.cli_finance import finance_group
     from app.cli_dev import dev_group  # ← new
+    from app.cli_finance import finance_group
+    from app.cli_gov import governance_group
     from app.cli_ledger import ledger_group
     from app.cli_seed import seed_cmd
 

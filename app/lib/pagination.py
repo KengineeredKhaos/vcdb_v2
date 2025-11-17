@@ -13,8 +13,6 @@ from typing import (
     Any,
     Callable,
     Generic,
-    Iterable,
-    List,
     Optional,
     Sequence,
     Tuple,
@@ -174,10 +172,10 @@ def paginate_sa(
             "SQLAlchemy is not available; cannot paginate this source."
         )
 
+    from flask import current_app
     from flask_sqlalchemy import (
         SQLAlchemy,
     )  # assume you're using Flask-SQLAlchemy
-    from flask import current_app
 
     db: SQLAlchemy = current_app.extensions["sqlalchemy"].db  # type: ignore
 

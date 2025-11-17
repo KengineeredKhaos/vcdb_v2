@@ -1,5 +1,6 @@
 # app/slices/auth/policies.py
 from pathlib import Path
+
 from app.lib.jsonutil import read_json_file
 
 POLICY_RBAC = Path("app/slices/auth/data/policy_rbac.json")

@@ -1,12 +1,11 @@
 # app/slices/attachments/models.py
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Index, Integer, String, UniqueConstraint
+from sqlalchemy import Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.models import ULIDPK, ULIDFK, IsoTimestamps
-
+from app.lib.models import ULIDFK, ULIDPK, IsoTimestamps
 
 
 class Attachment(db.Model, ULIDPK, IsoTimestamps):

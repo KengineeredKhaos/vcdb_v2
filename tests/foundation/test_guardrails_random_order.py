@@ -1,5 +1,5 @@
 # tests/foundation/test_guardrails_random_order.py
-import random, itertools
+import random
 
 ROUTES = [
     "/api/dev/health/db",

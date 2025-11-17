@@ -1,4 +1,5 @@
-from flask import jsonify, request, render_template
+from flask import jsonify, render_template, request
+
 from app.lib.errors import AppError
 
 

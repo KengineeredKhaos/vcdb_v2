@@ -1,5 +1,6 @@
 # app/extensions/contracts/ledger/v1.py
 from __future__ import annotations
+
 from dataclasses import dataclass
 
 

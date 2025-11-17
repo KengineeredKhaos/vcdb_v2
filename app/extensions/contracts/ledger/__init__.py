@@ -2,12 +2,12 @@
 
 from typing import Any, Dict
 
-from app.extensions.contracts.ledger import v2 as v2  # re-export module
 from app.extensions.contracts.errors import (
     ContractConflict,
     ContractDataNotFound,
     ContractUnavailable,
 )
+from app.extensions.contracts.ledger import v2 as v2  # re-export module
 from app.extensions.contracts.validate import load_schema, validate_payload
 from app.slices.ledger import services as ledger
 

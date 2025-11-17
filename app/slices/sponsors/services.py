@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import json
-from datetime import timedelta
 from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import desc, func
 
 from app.extensions import db, event_bus
-from app.lib.chrono import now_iso8601_ms, utcnow_naive
+from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
 
 from .models import (
@@ -665,7 +664,6 @@ def find_sponsors(
         )
     # any_of capabilities (OR)
     if any_of:
-        from sqlalchemy import or_, and_
 
         ors = []
         for d, k in any_of:

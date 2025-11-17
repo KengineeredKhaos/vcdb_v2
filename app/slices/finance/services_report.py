@@ -1,12 +1,11 @@
 # app/slices/finance/services_report.py
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Dict
 
 from sqlalchemy import text
 
 from app.extensions import db
-from app.lib.chrono import now_iso8601_ms
 
 # NOTE: This is intentionally written using SQL text for portability across
 # whatever model helpers you finalize later.

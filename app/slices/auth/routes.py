@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from flask import (
-    Blueprint,
     flash,
     jsonify,
     redirect,
@@ -13,12 +12,11 @@ from flask import (
 from flask_login import login_required, login_user, logout_user
 
 from app.extensions import csrf
-from app.lib.request_ctx import ensure_request_id, get_actor_ulid
+from app.lib.request_ctx import ensure_request_id
 
 from . import bp
 from . import services as svc
 from .decorators import rbac
-from .models import User
 
 
 @bp.get("/login", endpoint="login")
@@ -48,7 +46,7 @@ def login_post():
             remember=True,
         )
         return redirect(request.form.get("next") or url_for("web.index"))
-    except Exception as e:
+    except Exception:
         flash("Login failed", "error")
         return redirect(url_for("auth.login"))
 

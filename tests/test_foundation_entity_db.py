@@ -1,10 +1,12 @@
 # tests/test_foundation_entity_db.py
 
-import pytest
 from app.extensions import db
+from app.slices.customers.models import (
+    Customer,
+    CustomerEligibility,
+    CustomerHistory,
+)
 from app.slices.entity.services import create_person_entity
-from app.slices.customers.models import Customer, CustomerHistory, CustomerEligibility
-
 
 
 def test_fk_constraints_positive_path(app):

@@ -1,25 +1,25 @@
 # app/cli_seed.py
 from __future__ import annotations
-import random
+
 import click
 
-from flask import current_app
 from app.cli import echo_db_banner
 from app.extensions import db
-from app.lib.ids import new_ulid
 from app.lib.chrono import now_iso8601_ms
+from app.lib.ids import new_ulid
 
 # Seeds API (you uploaded this)
 from app.seeds.core import (
-    seed_rbac_from_policy,
+    seed_active_resource,
     seed_domain_from_policy,
     seed_minimal_customer,
-    seed_active_resource,
+    seed_rbac_from_policy,
     seed_sponsor_with_policy,
 )
 
 # Models for POCs (entity “person” attached to an org)
-from app.slices.entity.models import Entity, EntityPerson, EntityOrg
+from app.slices.entity.models import Entity, EntityPerson
+
 
 # If you have a formal “POC” link model later, swap this helper accordingly.
 def _ensure_org_poc_pair(*, org_entity_ulid: str, label: str) -> list[str]:

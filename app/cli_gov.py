@@ -3,20 +3,18 @@
 # one event per real change.
 
 import json
+from pathlib import Path
 
 import click
 from flask import current_app
 from flask.cli import with_appcontext
-from pathlib import Path
+
 from app.cli import echo_db_banner
 
 # event bus (services will usually emit; CLI only passes actor/request ids down)
-from app.extensions import event_bus
-
 # canon helpers (timestamps)
 from app.lib.chrono import (
     now_iso8601_ms,
-    utcnow_naive,
 )  # ensure these exist per your chrono.py
 
 # Governance services (you’ll wire these; names used below)
@@ -668,7 +666,9 @@ def governance_lint(strict):
     app = create_app()  # or respect env vars/flags as you already do
     with app.app_context():
         data_dir = Path(current_app.root_path) / "slices" / "governance" / "data"
-        from jsonschema import Draft202012Validator  # assume installed for CLI
+        from jsonschema import (
+            Draft202012Validator,  # assume installed for CLI
+        )
         errors = 0
         for p in sorted(data_dir.glob("*.json")):
             if p.name.endswith(".schema.json") or p.parent.name == "schemas":

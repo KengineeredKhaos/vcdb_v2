@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, TypedDict
+from typing import Optional, TypedDict
 
 
 class CadenceGateDTO(TypedDict, total=False):

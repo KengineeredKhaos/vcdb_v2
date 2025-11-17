@@ -14,7 +14,6 @@ from flask_login import current_user  # Not Canonical: DEV OPS Only
 from app.extensions import db
 from app.slices.auth.models import (
     Role,
-    User,
 )  # read-only import is fine for a contract
 
 
