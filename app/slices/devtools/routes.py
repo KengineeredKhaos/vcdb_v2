@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 from werkzeug.exceptions import BadRequest, Forbidden
 
 from app.extensions import db
-from app.lib.chrono import utcnow_naive
+from app.lib.chrono import now_iso8601_ms
 from app.lib.security import ASSUME_KEY
 from app.slices.auth.decorators import rbac
 from app.slices.entity.models import EntityOrg, EntityPerson, EntityRole
@@ -20,6 +20,42 @@ from app.slices.entity.services import (
     create_person_entity,
     ensure_role,
 )
+
+
+def get_org_poc_cards(sess: Session, org_ulid: str) -> list[dict]:
+    rows = (
+        sess.query(ResourcePOC)
+        .filter(
+            ResourcePOC.org_ulid == org_ulid, ResourcePOC.relation == "poc"
+        )
+        .order_by(
+            ResourcePOC.active.desc(),
+            ResourcePOC.scope.asc(),
+            ResourcePOC.rank.asc(),
+        )
+        .all()
+    )
+    cards = []
+    for r in rows:
+        person = get_entity_card(sess, r.person_entity_ulid)
+        cards.append(
+            {
+                "link": {
+                    "org_ulid": r.org_ulid,
+                    "person_entity_ulid": r.person_entity_ulid,
+                    "relation": r.relation,
+                    "scope": r.scope,
+                    "rank": r.rank,
+                    "is_primary": r.is_primary,
+                    "org_role": r.org_role,
+                    "valid_from_utc": r.valid_from_utc,
+                    "valid_to_utc": r.valid_to_utc,
+                    "active": r.active,
+                },
+                "person": person.__dict__,
+            }
+        )
+    return cards
 
 
 def _json():
@@ -431,24 +467,29 @@ def v2_auth_roles_alias():
     return jsonify(_rbac_roles_payload())
 
 
+# ----------------- Error Handling Example ------------------
+
+
 @bp_api_v2.get("/api/v2/governance/roles")
 def v2_governance_roles():
-    from app.extensions.contracts.governance_v2 import (
-        ContractError,
-        get_role_catalogs,
-    )
+    from app.extensions.contracts.governance_v2 import get_role_catalogs
+    from app.extensions.errors import ContractError
 
     try:
-        return jsonify(get_role_catalogs()), 200
-    except ContractError as e:
+        data = get_role_catalogs()
+        return jsonify({"ok": True, **data}), 200
+    except ContractError as ce:
         current_app.logger.error(
             {
                 "event": "contract_error",
-                "where": "governance_v2.get_role_catalogs",
-                "error": str(e),
+                "where": ce.where,
+                "code": ce.code,
+                "msg": ce.message,
+                "data": ce.data or {},
             }
         )
-        return jsonify({"error": "internal_error"}), 500
+        # devtools surface: keep a JSON body (tests can assert)
+        return jsonify({"ok": False, **ce.to_dict()}), ce.http_status
 
 
 # -----------------
@@ -800,3 +841,35 @@ def v2_dev_fake_assign_role():
         s.rollback()
         current_app.logger.exception("dev_fake_assign_role_error")
         return jsonify({"error": "internal_error"}), 500
+
+
+# -----------------
+# API V2 POC ops
+# curl get's
+# -----------------
+
+
+@bp_api_v2.get("/api/v2/resources/<string:org_ulid>/pocs")
+def v2_resources_pocs(org_ulid: str):
+    try:
+        sess = db.session
+        items = res_get_pocs(sess, org_ulid)
+        return jsonify({"ok": True, "count": len(items), "items": items})
+    except Exception as e:
+        current_app.logger.error(
+            {"event": "unhandled_exception", "error": str(e)}
+        )
+        return jsonify({"ok": False, "error": "internal_error"}), 500
+
+
+@bp_api_v2.get("/api/v2/sponsors/<string:org_ulid>/pocs")
+def v2_sponsors_pocs(org_ulid: str):
+    try:
+        sess = db.session
+        items = sp_get_pocs(sess, org_ulid)
+        return jsonify({"ok": True, "count": len(items), "items": items})
+    except Exception as e:
+        current_app.logger.error(
+            {"event": "unhandled_exception", "error": str(e)}
+        )
+        return jsonify({"ok": False, "error": "internal_error"}), 500

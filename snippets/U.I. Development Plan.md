@@ -1,9 +1,5 @@
 # U.I. Development Plan
 
-
-
-
-
 1. Decide the minimal shell
 - `templates/layout/base.html` with StrictUndefined and a single `{% block content %}`
 

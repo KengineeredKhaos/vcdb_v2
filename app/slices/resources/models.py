@@ -4,6 +4,8 @@ from __future__ import annotations
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Column,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -116,5 +118,96 @@ class ResourceCapabilityIndex(db.Model, ULIDPK, IsoTimestamps):
     __table_args__ = (
         UniqueConstraint(
             "resource_ulid", "domain", "key", name="uq_res_cap_idx_triplet"
+        ),
+    )
+
+
+class ResourcePOC(ULIDPK, IsoTimestamps):
+    """
+    Slice-owned linkage row connecting a Resource org to a Person entity as a POC,
+    with Governance-constrained metadata (scope, rank, etc.). No PII here.
+    """
+
+    __tablename__ = "resource_poc"
+
+    resource_ulid: Mapped[str] = ULIDFK(
+        "resource", ondelete="CASCADE", nullable=False, index=True
+    )
+    # Person ULID from Entity slice
+    person_entity_ulid: Mapped[str] = ULIDFK(
+        "entity_person", ondelete="RESTRICT", nullable=False, index=True
+    )
+
+    # Optional relation label (keep "poc" as default in services if you like)
+    relation: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="poc"
+    )
+
+    # Governance-constrained
+    scope: Mapped[Optional[str]] = mapped_column(
+        String(24), nullable=True
+    )  # validated in service
+    rank: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Freeform org-visible title/descriptor
+    org_role: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    # Window as ISO-8601 strings (match your IsoTimestamps format)
+    valid_from_utc: Mapped[Optional[str]] = mapped_column(
+        String(30), nullable=True
+    )
+    valid_to_utc: Mapped[Optional[str]] = mapped_column(
+        String(30), nullable=True
+    )
+
+    is_primary: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+
+    resource: Mapped["Resource"] = relationship(back_populates="pocs")
+
+    # -------------
+    # Relationships
+    # -------------
+
+    org = relationship(
+        "EntityOrg",
+        back_populates="resource_pocs",
+        passive_deletes=True,
+    )
+    person = relationship(
+        "EntityPerson",
+        passive_deletes=True,
+    )
+
+    __table_args__ = (
+        # Uniqueness allows same person to serve multiple scopes if needed
+        UniqueConstraint(
+            "resource_ulid",
+            "person_entity_ulid",
+            "relation",
+            "scope",
+            name="uq_resource_poc_link",
+        ),
+        # Helpful ordering / primary lookups
+        Index(
+            "ix_resource_poc_org_scope_rank",
+            "resource_ulid",
+            "relation",
+            "scope",
+            "rank",
+        ),
+        Index(
+            "ix_resource_poc_primary",
+            "resource_ulid",
+            "relation",
+            "scope",
+            "is_primary",
+        ),
+        CheckConstraint(
+            "rank >= 0 AND rank <= 99", name="ck_resource_poc_rank_range"
         ),
     )

@@ -20,6 +20,7 @@ from sqlalchemy import text
 from werkzeug.exceptions import HTTPException
 
 from app.cli import register_cli
+from app.extensions.errors import ContractError
 from app.lib.chrono import parse_iso8601, utcnow_aware
 from app.lib.logging import configure_logging
 
@@ -62,9 +63,6 @@ def create_app(config_object="config.DevConfig"):
     # Always good to disable this noise
     flask_app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
 
-    # Configure logging first
-    configure_logging(flask_app)
-
     # -----------------
     # testing logging
     # -----------------
@@ -87,7 +85,11 @@ def create_app(config_object="config.DevConfig"):
     # init extensions first
     init_extensions(flask_app)
 
-    # --- CSRF + Jinja (after extensions, before blueprints) ---
+    # -------------
+    # CSRF + Jinja + http error handlers
+    # (after extensions, before blueprints)
+    # -------------
+
     try:
         from flask_wtf.csrf import CSRFError, generate_csrf
     except Exception:  # allow tests/envs without Flask-WTF
@@ -115,6 +117,12 @@ def create_app(config_object="config.DevConfig"):
 
     # jinja strict mode (keep)
     flask_app.jinja_env.undefined = StrictUndefined
+
+    @flask_app.errorhandler(ContractError)
+    def handle_contract_error(e: ContractError):
+        resp = jsonify(e.to_dict())
+        resp.status_code = e.http_status
+        return resp
 
     # -------------
     # Stub auth
@@ -383,7 +391,9 @@ def create_app(config_object="config.DevConfig"):
 
     @flask_app.context_processor
     def _stub_banner():
-        return {"_stub_auth_active": app.config.get("AUTH_MODE") == "stub"}
+        return {
+            "_stub_auth_active": flask_app.config.get("AUTH_MODE") == "stub"
+        }
 
     # -------------
     # dev Dbase schema check, Route dump, Sanity check

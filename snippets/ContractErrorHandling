@@ -1,0 +1,111 @@
+
+from app.extensions.error import ContractError
+
+# -----------------
+# Raise an error (example)
+# -----------------
+
+
+def get_role_catalogs() -> dict:
+    """
+    Read the current RBAC and Domain role catalogs from their canonical owners.
+    Returns: {"rbac_roles":[...], "domain_roles":[...]}
+    """
+    where = "governance_v2.get_role_catalogs"
+    root = _app_root()
+
+    rbac_policy = _load_json(root / AUTH_RBAC_PATH, where)
+    gov_policy = _load_json(root / GOV_DOMAIN_PATH, where)
+
+    rbac_roles = list(rbac_policy.get("rbac_roles") or [])
+    domain_roles = list(gov_policy.get("domain_roles") or [])
+
+    if not rbac_roles:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message="rbac_roles missing or empty",
+            http_status=503,
+            data={"path": str(root / AUTH_RBAC_PATH)},
+        )
+    if not domain_roles:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message="domain_roles missing or empty",
+            http_status=503,
+            data={"path": str(root / GOV_DOMAIN_PATH)},
+        )
+# ------------------------------------------------------
+    where = "governance_v2.get_poc_policy"
+    root = _app_root()
+    obj = _load_json(root / POC_POLICY_PATH, where)
+
+    required = ("poc_scopes", "default_scope", "max_rank")
+    if any(k not in obj for k in required):
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message="POC policy missing required keys",
+            http_status=503,
+            data={"required": required, "path": str(root / POC_POLICY_PATH)},
+
+# ------------------
+# This calls a class template:
+# ------------------
+
+@dataclass
+class ContractError(RuntimeError):
+    """
+    Raised by Extensions contracts when a contract boundary cannot be honored.
+    Never include PII. Keep messages operator-friendly, not end-user.
+    """
+
+    code: str  # short machine code, e.g. "policy_missing", "policy_invalid"
+    where: str  # contract function name, e.g. "governance_v2.get_role_catalogs"
+    message: str  # human readable one-liner
+    http_status: int = (
+        503  # 4xx for caller misuse, 5xx for system/config problems
+    )
+    data: Optional[
+        dict[str, Any]
+    ] = None  # safe payload (paths, counts, keys)
+
+    def __str__(self) -> str:
+        return f"{self.code} @ {self.where}: {self.message}"
+
+    def to_dict(self) -> dict[str, Any]:
+        out = {
+            "error": self.code,
+            "where": self.where,
+            "message": self.message,
+            "status": self.http_status,
+        }
+        if self.data:
+            out["data"] = self.data
+        return out
+
+
+# -----------------
+# Error Logging
+# Example:
+# -----------------
+
+@bp_api_v2.get("/api/v2/governance/roles")
+def v2_governance_roles():
+    from app.extensions.contracts import get_role_catalogs
+    from app.extensions.contracts.governance_v2 import ContractError
+
+    try:
+        data = get_role_catalogs()
+        return jsonify({"ok": True, **data}), 200
+    except ContractError as ce:
+        current_app.logger.error({
+            "event": "contract_error",
+            "where": ce.where,
+            "code": ce.code,
+            "msg": ce.message,
+            "data": ce.data or {},
+        })
+        # devtools surface: keep a JSON body (tests can assert)
+        return jsonify({"ok": False, **ce.to_dict()}), ce.http_status

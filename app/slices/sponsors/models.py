@@ -1,9 +1,11 @@
 # app/slices/sponsors/models.py
 from __future__ import annotations
+from typing import Optional
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -194,5 +196,80 @@ class Allocation(db.Model, ULIDPK, IsoTimestamps):
     __table_args__ = (
         CheckConstraint(
             "amount_authorized_cents >= 0", name="ck_alloc_amount_nonneg"
+        ),
+    )
+
+
+class SponsorPOC(ULIDPK, IsoTimestamps):
+    __tablename__ = "sponsor_poc"
+
+    sponsor_ulid: Mapped[str] = ULIDFK(
+        "sponsor", ondelete="CASCADE", nullable=False, index=True
+    )
+    person_entity_ulid: Mapped[str] = ULIDFK(
+        "entity_person", ondelete="RESTRICT", nullable=False, index=True
+    )
+
+    relation: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="poc"
+    )
+    scope: Mapped[Optional[str]] = mapped_column(String(24), nullable=True)
+    rank: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    org_role: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    valid_from_utc: Mapped[Optional[str]] = mapped_column(
+        String(30), nullable=True
+    )
+    valid_to_utc: Mapped[Optional[str]] = mapped_column(
+        String(30), nullable=True
+    )
+
+    is_primary: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+
+    sponsor: Mapped["Sponsor"] = relationship(back_populates="pocs")
+
+    # -------------
+    # Relationships
+    # -------------
+    org = relationship(
+        "EntityOrg",
+        back_populates="sponsor_pocs",
+        passive_deletes=True,
+    )
+    person = relationship(
+        "EntityPerson",
+        passive_deletes=True,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "sponsor_ulid",
+            "person_entity_ulid",
+            "relation",
+            "scope",
+            name="uq_sponsor_poc_link",
+        ),
+        Index(
+            "ix_sponsor_poc_org_scope_rank",
+            "sponsor_ulid",
+            "relation",
+            "scope",
+            "rank",
+        ),
+        Index(
+            "ix_sponsor_poc_primary",
+            "sponsor_ulid",
+            "relation",
+            "scope",
+            "is_primary",
+        ),
+        CheckConstraint(
+            "rank >= 0 AND rank <= 99", name="ck_sponsor_poc_rank_range"
         ),
     )

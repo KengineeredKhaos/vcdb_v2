@@ -36,7 +36,11 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Optional, TypedDict
 
+from sqlalchemy.orm import Session
+
+from app.extensions.contracts.entity_v2 import get_entity_card
 from app.slices.resources import services as svc
+from app.slices.resources.models import ResourcePOC
 
 # ---------- classes ----------
 
@@ -47,10 +51,16 @@ class ResourceProfileDTO(TypedDict):
     mou_status: str
     capabilities: dict
 
+
 __schema__ = {
     "get_profile": {
         "requires": ["resource_ulid"],
-        "returns_keys": ["resource_ulid", "status", "mou_status", "capabilities"],
+        "returns_keys": [
+            "resource_ulid",
+            "status",
+            "mou_status",
+            "capabilities",
+        ],
     }
 }
 
@@ -187,3 +197,41 @@ def rebuild_all(
         {"processed": int(processed), "page": int(page), "per": int(per)}
     )
 
+
+# ---------------- Resource POC workings ----------------------
+
+
+def get_org_poc_cards(sess: Session, org_ulid: str) -> list[dict]:
+    rows = (
+        sess.query(ResourcePOC)
+        .filter(
+            ResourcePOC.org_ulid == org_ulid, ResourcePOC.relation == "poc"
+        )
+        .order_by(
+            ResourcePOC.active.desc(),
+            ResourcePOC.scope.asc(),
+            ResourcePOC.rank.asc(),
+        )
+        .all()
+    )
+    cards = []
+    for r in rows:
+        person = get_entity_card(sess, r.person_entity_ulid)
+        cards.append(
+            {
+                "link": {
+                    "org_ulid": r.org_ulid,
+                    "person_entity_ulid": r.person_entity_ulid,
+                    "relation": r.relation,
+                    "scope": r.scope,
+                    "rank": r.rank,
+                    "is_primary": r.is_primary,
+                    "org_role": r.org_role,
+                    "valid_from_utc": r.valid_from_utc,
+                    "valid_to_utc": r.valid_to_utc,
+                    "active": r.active,
+                },
+                "person": person.__dict__,
+            }
+        )
+    return cards

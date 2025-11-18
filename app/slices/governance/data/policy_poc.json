@@ -1,0 +1,15 @@
+{
+  "poc_scopes": [
+    "ops",
+    "billing",
+    "scheduling",
+    "finance",
+    "admin",
+    "promotions",
+    "social_media",
+    "graphics",
+    "event_coor"
+  ],
+  "default_scope": "ops",
+  "max_rank": 9
+}

@@ -5,12 +5,18 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, TypedDict
+from typing import (
+    Any,
+    Dict,
+    List,
+    TypedDict,
+)
 
 from flask import current_app
 
 from app.extensions import event_bus
 from app.extensions.contracts import customers_v2
+from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
 from app.slices.governance.services import decide_issue
 from app.slices.governance.services_admin import (
@@ -28,10 +34,15 @@ __all__ = [
     "decide_issue",
 ]
 
+# -----------------
+# Policy Paths
+# -----------------
 
-class ContractError(RuntimeError):
-    pass
-
+AUTH_RBAC_PATH = Path("slices") / "auth" / "data" / "policy_rbac.json"
+GOV_DOMAIN_PATH = (
+    Path("slices") / "governance" / "data" / "policy_domain.json"
+)
+POC_POLICY_PATH = Path("slices") / "governance" / "data" / "policy_poc.json"
 
 # -----------------
 # DTO's
@@ -96,16 +107,13 @@ class DecisionDTO:
 
 
 # -----------------
-# Role Code Mechanisms
-# contract shape &
-# sane defaults used
-# primarily for tests
-# DISABLE FOR PRODUCTION
-# (todo: deal with this)
+# Role Code & POC
+# Policy Mechanisms
+# contract shape
 # -----------------
 
 
-# Contract shape:
+# Contract general JSON shape example:
 # {
 #   "rbac_roles": ["admin","auditor","staff","user"],
 #   "domain_roles": ["customer","resource","sponsor","governor","civilian","staff"],
@@ -119,96 +127,172 @@ class DecisionDTO:
 
 
 def _app_root() -> Path:
-    # <app-root> (where Flask's current_app.root_path points to app/)
     return Path(current_app.root_path)
 
 
-def _policy_path_auth(name: str) -> Path:
-    # Auth owns RBAC
-    return _app_root() / "slices" / "auth" / "data" / f"{name}.json"
+# -----------------
+# Read Policy JSON
+# -----------------
 
 
-def _policy_path_gov(name: str) -> Path:
-    # Governance owns domain roles
-    return _app_root() / "slices" / "governance" / "data" / f"{name}.json"
-
-
-def _load_json_file(p: Path) -> dict:
-    if not p.exists():
-        raise ContractError(f"policy file missing: {p}")
+def _load_json(path: Path, where: str):
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception as e:
-        raise ContractError(f"failed to parse {p}: {e}") from e
-
-
-def get_role_catalogs() -> Dict[str, object]:
-    """
-    Read-only contract returning role catalogs from policy files:
-
-      {
-        "roles": [... domain role codes ...],
-        "rbac_roles": [... rbac role codes ...],
-        "rbac_to_domain": { "<rbac>": [<domain role>, ...], ... }
-      }
-
-    Sources:
-      - RBAC:        app/slices/auth/data/policy_rbac.json
-      - Domain roles app/slices/governance/data/policy_domain.json
-    """
-    rbac = _load_json_file(_policy_path_auth("policy_rbac"))
-    dom = _load_json_file(_policy_path_gov("policy_domain"))
-
-    rbac_roles: List[str] = list(map(str, (rbac.get("rbac_roles") or [])))
-    domain_roles: List[str] = list(map(str, (dom.get("domain_roles") or [])))
-
-    ar = dom.get("assignment_rules") or {}
-    raw_map = ar.get("rbac_to_domain") or {}
-
-    domain_set = set(domain_roles)
-    rbac_to_domain = {
-        str(k): sorted([str(d) for d in (v or []) if str(d) in domain_set])
-        for k, v in raw_map.items()
-        if str(k) in rbac_roles
-    }
-    # ensure every RBAC role is present as a key (even if empty)
-    for r in rbac_roles:
-        rbac_to_domain.setdefault(r, [])
-
-    return {
-        "roles": sorted(domain_roles),
-        "rbac_roles": sorted(rbac_roles),
-        "rbac_to_domain": rbac_to_domain,
-    }
-
-
-# Optional aliases used by some callers
-def rbac_role_codes() -> List[str]:
-    return get_role_catalogs()["rbac_roles"]  # type: ignore[index]
-
-
-def domain_role_codes() -> List[str]:
-    return get_role_catalogs()["roles"]  # type: ignore[index]
-
-
-def _gov_data_dir() -> Path:
-    # <app-root>/slices/governance/data
-    return Path(current_app.root_path) / "slices" / "governance" / "data"
-
-
-def _load_json(name: str) -> dict:
-    p = _gov_data_dir() / f"{name}.json"
-    if not p.exists():
-        raise ContractError(f"policy file missing: {p}")
-    try:
-        with p.open("r", encoding="utf-8") as f:
+        with path.open("r", encoding="utf-8") as f:
             return json.load(f)
+    except FileNotFoundError:
+        raise ContractError(
+            code="policy_missing",
+            where=where,
+            message=f"policy file missing: {path}",
+            http_status=503,
+            data={"path": str(path)},
+        )
     except Exception as e:
-        raise ContractError(f"failed to parse {p}: {e}") from e
+        raise ContractError(
+            code="policy_read_error",
+            where=where,
+            message=str(e),
+            http_status=503,
+            data={"path": str(path)},
+        )
 
 
 # -----------------
-# Custoner Contract API
+# Role Policy Catalog
+# -----------------
+
+
+def get_role_catalogs() -> dict:
+    """
+    Read the current RBAC and Domain role catalogs from their canonical owners.
+    Returns: {"rbac_roles":[...], "domain_roles":[...]}
+    """
+    where = "governance_v2.get_role_catalogs"
+    root = _app_root()
+
+    rbac_policy = _load_json(root / AUTH_RBAC_PATH, where)
+    gov_policy = _load_json(root / GOV_DOMAIN_PATH, where)
+
+    rbac_roles = sorted(
+        {str(x) for x in (rbac_policy.get("rbac_roles") or [])}
+    )
+    domain_roles = sorted(
+        {str(x) for x in (gov_policy.get("domain_roles") or [])}
+    )
+
+    if not rbac_roles:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message="rbac_roles missing or empty",
+            http_status=503,
+            data={"path": str(root / AUTH_RBAC_PATH)},
+        )
+    if not domain_roles:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message="domain_roles missing or empty",
+            http_status=503,
+            data={"path": str(root / GOV_DOMAIN_PATH)},
+        )
+
+    return {"rbac_roles": rbac_roles, "domain_roles": domain_roles}
+
+
+# -----------------
+# POC policy for both
+# Resource & Sponsor
+# -----------------
+"""
+When you later wire JSON Schema validation, keep this function as-is
+schema checks are a nice pre-filter, but this contract-level
+validation guarantees a clean, normalized DTO for callers.
+"""
+
+
+def get_poc_policy() -> dict:
+    """
+    Read-only contract for POC linkage constraints.
+    Returns: {"poc_scopes":[str,...], "default_scope":str, "max_rank":int}
+    Raises ContractError (503) if the policy is missing or invalid.
+    """
+    where = "governance_v2.get_poc_policy"
+    root = _app_root()
+    obj = _load_json(root / POC_POLICY_PATH, where)
+
+    # 1) Presence check first (avoid KeyError)
+    required = ("poc_scopes", "default_scope", "max_rank")
+    if any(k not in obj for k in required):
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message="POC policy missing required keys",
+            http_status=503,
+            data={"required": required, "path": str(root / POC_POLICY_PATH)},
+        )
+
+    # 2) Shape / type checks + normalization
+    scopes_raw = obj.get("poc_scopes")
+    if not isinstance(scopes_raw, list) or not scopes_raw:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message="poc_scopes must be a non-empty list",
+            http_status=503,
+            data={"path": str(root / POC_POLICY_PATH)},
+        )
+    # normalize to unique strings (sorted for determinism)
+    scopes = sorted({str(s) for s in scopes_raw})
+
+    default_scope = str(obj.get("default_scope"))
+    try:
+        max_rank = int(obj.get("max_rank"))
+    except Exception:
+        raise ContractError(  # noqa: B904
+            code="policy_invalid",
+            where=where,
+            message="max_rank must be an integer",
+            http_status=503,
+            data={
+                "path": str(root / POC_POLICY_PATH),
+                "value": obj.get("max_rank"),
+            },
+        )
+
+    # Optional bound—matches schema if you adopt it
+    if max_rank < 0 or max_rank > 99:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message="max_rank must be between 0 and 99",
+            http_status=503,
+            data={"path": str(root / POC_POLICY_PATH), "value": max_rank},
+        )
+
+    # 3) Invariant: default must be a valid scope
+    if default_scope not in scopes:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message="default_scope must be one of poc_scopes",
+            http_status=503,
+            data={
+                "default_scope": default_scope,
+                "poc_scopes": scopes,
+                "path": str(root / POC_POLICY_PATH),
+            },
+        )
+
+    return {
+        "poc_scopes": scopes,
+        "default_scope": default_scope,
+        "max_rank": max_rank,
+    }
+
+
+# -----------------
+# Customer Contract API
 # -----------------
 
 
@@ -297,7 +381,7 @@ def describe():
 # -----------------
 # Governance Policy
 # typed DTOs for
-# Admin policy changes
+# Admin policy change
 # -----------------
 """
 Expose pure functions with typed DTOs.
@@ -342,19 +426,27 @@ class PolicyUpdateCommitDTO(TypedDict):
 
 
 def list_policies(*, validate: bool = False) -> Dict[str, Any]:
-    """Discover governance policies (PII-free). Optionally JSON-Schema validate."""
+    """
+    Discover governance policies (PII-free).
+    Optionally JSON-Schema validate.
+    """
     return list_policies_impl(validate=validate)
 
 
 def get_policy(*, key: str, validate: bool = False) -> Dict[str, Any]:
-    """Fetch one policy’s raw JSON (PII-free). Optionally JSON-Schema validate."""
+    """
+    Fetch one policy’s raw JSON (PII-free).
+    Optionally JSON-Schema validate.
+    """
     return get_policy_impl(key=key, validate=validate)
 
 
 def preview_policy_update(
     *, key: str, new_policy: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Dry-run: canonicalize + validate + diff, but do not write or emit."""
+    """
+    Dry-run: canonicalize + validate + diff, but do not write or emit.
+    """
     return preview_update_impl(key=key, new_policy=new_policy)
 
 

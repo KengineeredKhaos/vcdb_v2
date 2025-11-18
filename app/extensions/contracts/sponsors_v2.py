@@ -17,7 +17,11 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Optional, TypedDict
 
+from sqlalchemy.orm import Session
+
+from app.extensions.contracts.entity_v2 import get_entity_card
 from app.slices.sponsors import services as svc
+from app.slices.sponsors.models import SponsorPOC
 
 # ---------- classes ----------
 
@@ -28,10 +32,16 @@ class SponsorPolicyDTO(TypedDict):
     caps: dict
     expiry_days: int
 
+
 __schema__ = {
     "get_policy": {
         "requires": ["sponsor_ulid"],
-        "returns_keys": ["sponsor_ulid", "constraints", "caps", "expiry_days"],
+        "returns_keys": [
+            "sponsor_ulid",
+            "constraints",
+            "caps",
+            "expiry_days",
+        ],
     }
 }
 
@@ -74,7 +84,11 @@ def _require_int_ge(name: str, value: Any, minval: int = 0) -> int:
 def get_policy(sponsor_ulid: str) -> SponsorPolicyDTO:
     return {
         "sponsor_ulid": sponsor_ulid,
-        "constraints": {"veteran_only": False, "homeless_only": False, "local_only": False},
+        "constraints": {
+            "veteran_only": False,
+            "homeless_only": False,
+            "local_only": False,
+        },
         "caps": {"total_cents": 0, "food_cap_cents": 0},
         "expiry_days": 45,
     }
@@ -183,3 +197,40 @@ def get_profile(*, sponsor_ulid: str) -> dict:
     if view is None:
         raise ValueError("sponsor not found")
     return _ok(view)
+
+
+# ---------------- Sponsor POC workings -------------------
+
+
+def get_org_poc_cards(sess: Session, org_ulid: str) -> list[dict]:
+    rows = (
+        sess.query(SponsorPOC)
+        .filter(SponsorPOC.org_ulid == org_ulid, SponsorPOC.relation == "poc")
+        .order_by(
+            SponsorPOC.active.desc(),
+            SponsorPOC.scope.asc(),
+            SponsorPOC.rank.asc(),
+        )
+        .all()
+    )
+    cards = []
+    for r in rows:
+        person = get_entity_card(sess, r.person_entity_ulid)
+        cards.append(
+            {
+                "link": {
+                    "org_ulid": r.org_ulid,
+                    "person_entity_ulid": r.person_entity_ulid,
+                    "relation": r.relation,
+                    "scope": r.scope,
+                    "rank": r.rank,
+                    "is_primary": r.is_primary,
+                    "org_role": r.org_role,
+                    "valid_from_utc": r.valid_from_utc,
+                    "valid_to_utc": r.valid_to_utc,
+                    "active": r.active,
+                },
+                "person": person.__dict__,
+            }
+        )
+    return cards

@@ -2,19 +2,22 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 from sqlalchemy import desc, func
+from sqlalchemy.orm import Session
 
 from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
+from app.services import poc as poc_svc
 
 from .models import (
     Sponsor,
     SponsorCapabilityIndex,
     SponsorHistory,
     SponsorPledgeIndex,
+    SponsorPOC,
 )
 
 # ---------------- Controlled vocabulary (move to Governance later) ----------------
@@ -42,6 +45,96 @@ NOTE_MAX = 120
 
 READINESS_ALLOWED = {"draft", "review", "active", "suspended"}
 MOU_ALLOWED = {"none", "pending", "active", "expired", "terminated"}
+
+
+# -----------------
+# Point of Contact
+# wrappers for
+# app.services.poc
+# -----------------
+
+
+def sponsor_link_poc(
+    *,
+    org_ulid: str,
+    person_entity_ulid: str,
+    scope: str | None = None,
+    rank: int = 0,
+    is_primary: bool = False,
+    window: dict | None = None,
+    org_role: str | None = None,
+    actor_ulid: str | None = None,
+    request_id: str,
+):
+    return poc_svc.link_poc(
+        db.session,
+        POCModel=SponsorPOC,
+        domain="sponsors",
+        org_ulid=org_ulid,
+        person_entity_ulid=person_entity_ulid,
+        scope=scope,
+        rank=rank,
+        is_primary=is_primary,
+        window=window,
+        org_role=org_role,
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+    )
+
+
+def sponsor_update_poc(
+    *,
+    org_ulid: str,
+    person_entity_ulid: str,
+    scope: str | None = None,
+    rank: int | None = None,
+    is_primary: bool | None = None,
+    window: dict | None = None,
+    org_role: str | None = None,
+    actor_ulid: str | None = None,
+    request_id: str,
+):
+    return poc_svc.update_poc(
+        db.session,
+        POCModel=SponsorPOC,
+        domain="sponsors",
+        org_ulid=org_ulid,
+        person_entity_ulid=person_entity_ulid,
+        scope=scope,
+        rank=rank,
+        is_primary=is_primary,
+        window=window,
+        org_role=org_role,
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+    )
+
+
+def sponsor_unlink_poc(
+    *,
+    org_ulid: str,
+    person_entity_ulid: str,
+    scope: str | None = None,
+    actor_ulid: str | None = None,
+    request_id: str,
+):
+    return poc_svc.unlink_poc(
+        db.session,
+        POCModel=SponsorPOC,
+        domain="sponsors",
+        org_ulid=org_ulid,
+        person_entity_ulid=person_entity_ulid,
+        scope=scope,
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+    )
+
+
+def sponsor_list_pocs(*, org_ulid: str) -> list[dict]:
+    return poc_svc.list_pocs(
+        db.session, POCModel=SponsorPOC, org_ulid=org_ulid
+    )
+
 
 # ---------------- helpers ----------------
 
@@ -126,6 +219,237 @@ def ensure_sponsor(
         s.last_touch_utc = now_iso8601_ms()
         db.session.commit()
     return s.ulid
+
+
+# ---------------- Sponsor POC workings -------------------------
+
+
+def _normalize_policy(
+    scope: Optional[str], rank: Optional[int]
+) -> tuple[str, int, dict]:
+    policy = get_poc_policy()
+    scopes = policy["poc_scopes"]
+    default = policy["default_scope"]
+    max_rank = policy["max_rank"]
+
+    norm_scope = scope or default
+    if norm_scope not in scopes:
+        raise ValueError("invalid scope")
+    norm_rank = rank if rank is not None else 0
+    if not (0 <= norm_rank <= max_rank):
+        raise ValueError("invalid rank")
+    return norm_scope, norm_rank, policy
+
+
+def _enforce_primary(
+    sess: Session, org_ulid: str, scope: str, is_primary: bool
+):
+    if not is_primary:
+        return
+    # Flip any existing primary for same (org, relation, scope)
+    sess.query(SponsorPOC).filter(
+        and_(
+            SponsorPOC.org_ulid == org_ulid,
+            SponsorPOC.relation == POC_RELATION,
+            SponsorPOC.scope == scope,
+            SponsorPOC.is_primary == True,  # noqa: E712
+        )
+    ).update({"is_primary": False}, synchronize_session=False)
+
+
+def link_poc(
+    sess: Session,
+    *,
+    org_ulid: str,
+    person_entity_ulid: str,
+    scope: Optional[str] = None,
+    rank: int = 0,
+    is_primary: bool = False,
+    window: Optional[dict] = None,  # {"from": isoZ|None, "to": isoZ|None}
+    org_role: Optional[str] = None,
+    actor_ulid: Optional[str] = None,
+):
+    _ensure_reqid(request_id)
+    sc, rk, _ = _normalize_policy(scope, rank)
+    _enforce_primary(sess, org_ulid, sc, is_primary)
+
+    row = SponsorPOC(
+        org_ulid=org_ulid,
+        person_entity_ulid=person_entity_ulid,
+        relation=POC_RELATION,
+        scope=sc,
+        rank=rk,
+        is_primary=bool(is_primary),
+        active=True,
+        org_role=org_role,
+        valid_from_utc=(window or {}).get("from"),
+        valid_to_utc=(window or {}).get("to"),
+        created_at_utc=now_iso8601_ms(),
+        updated_at_utc=now_iso8601_ms(),
+    )
+    sess.add(row)
+
+    event_bus.emit(
+        domain="sponsors",
+        operation="poc.linked",
+        target_ulid=org_ulid,
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+        happened_at=now_iso8601_ms(),
+        meta={
+            "person_entity_ulid": person_entity_ulid,
+            "relation": POC_RELATION,
+            "scope": sc,
+            "rank": rk,
+            "is_primary": bool(is_primary),
+            "org_role": org_role,
+            "valid_from_utc": row.valid_from_utc.isoformat()
+            if row.valid_from_utc
+            else None,
+            "valid_to_utc": row.valid_to_utc.isoformat()
+            if row.valid_to_utc
+            else None,
+        },
+    )
+    return row
+
+
+def update_poc(
+    sess: Session,
+    *,
+    org_ulid: str,
+    person_entity_ulid: str,
+    scope: Optional[str] = None,
+    rank: Optional[int] = None,
+    is_primary: Optional[bool] = None,
+    window: Optional[dict] = None,
+    org_role: Optional[str] = None,
+    actor_ulid: Optional[str] = None,
+):
+    _ensure_reqid(request_id)
+    q = sess.query(SponsorPOC).filter(
+        and_(
+            SponsorPOC.org_ulid == org_ulid,
+            SponsorPOC.person_entity_ulid == person_entity_ulid,
+            SponsorPOC.relation == POC_RELATION,
+        )
+    )
+    row = q.one_or_none()
+    if not row:
+        raise LookupError("POC link not found")
+
+    new_scope = row.scope if scope is None else scope
+    new_rank = row.rank if rank is None else rank
+    sc, rk, _ = _normalize_policy(new_scope, new_rank)
+
+    if is_primary is not None:
+        _enforce_primary(sess, org_ulid, sc, is_primary)
+        row.is_primary = bool(is_primary)
+
+    row.scope = sc
+    row.rank = rk
+    if org_role is not None:
+        row.org_role = org_role
+    if window is not None:
+        row.valid_from_utc = window.get("from")
+        row.valid_to_utc = window.get("to")
+    row.updated_at_utc = now_iso8601_ms()
+
+    event_bus.emit(
+        domain="sponsors",
+        operation="poc.updated",
+        target_ulid=org_ulid,
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+        happened_at=now_iso8601_ms(),
+        meta={
+            "person_entity_ulid": person_entity_ulid,
+            "relation": POC_RELATION,
+            "scope": row.scope,
+            "rank": row.rank,
+            "is_primary": row.is_primary,
+            "org_role": row.org_role,
+            "valid_from_utc": row.valid_from_utc.isoformat()
+            if row.valid_from_utc
+            else None,
+            "valid_to_utc": row.valid_to_utc.isoformat()
+            if row.valid_to_utc
+            else None,
+        },
+    )
+    return row
+
+
+def unlink_poc(
+    sess: Session,
+    *,
+    org_ulid: str,
+    person_entity_ulid: str,
+    scope: Optional[str] = None,
+    actor_ulid: Optional[str] = None,
+):
+    _ensure_reqid(request_id)
+    q = sess.query(SponsorPOC).filter(
+        and_(
+            SponsorPOC.org_ulid == org_ulid,
+            SponsorPOC.person_entity_ulid == person_entity_ulid,
+            SponsorPOC.relation == POC_RELATION,
+        )
+    )
+    if scope:
+        q = q.filter(SponsorPOC.scope == scope)
+    row = q.one_or_none()
+    if not row:
+        return
+
+    row.active = False
+    row.updated_at_utc = now_iso8601_ms()
+
+    event_bus.emit(
+        domain="sponsors",
+        operation="poc.unlinked",
+        target_ulid=org_ulid,
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+        happened_at=now_iso8601_ms(),
+        meta={
+            "person_entity_ulid": person_entity_ulid,
+            "relation": POC_RELATION,
+            "scope": row.scope,
+        },
+    )
+
+
+def list_pocs(sess: Session, *, org_ulid: str) -> list[dict]:
+    rows: Iterable[SponsorPOC] = (
+        sess.query(SponsorPOC)
+        .filter(
+            SponsorPOC.org_ulid == org_ulid,
+            SponsorPOC.relation == POC_RELATION,
+        )
+        .order_by(
+            SponsorPOC.active.desc(),
+            SponsorPOC.scope.asc(),
+            SponsorPOC.rank.asc(),
+        )
+    )
+    out = []
+    for r in rows:
+        out.append(
+            {
+                "org_ulid": r.org_ulid,
+                "person_entity_ulid": r.person_entity_ulid,
+                "relation": r.relation,
+                "scope": r.scope,
+                "rank": r.rank,
+                "is_primary": r.is_primary,
+                "org_role": r.org_role,
+                "valid_from_utc": r.valid_from_utc,
+                "valid_to_utc": r.valid_to_utc,
+                "active": r.active,
+            }
+        )
+    return out
 
 
 # ---------------- capabilities: replace & patch ----------------
@@ -356,7 +680,7 @@ def set_readiness_status(
         target_ulid=sponsor_ulid,
         request_id=request_id,
         happened_at_utc=now_iso8601_ms(),
-        changed_fields={"readiness_status": status, "prev": prev},
+        changed={"readiness_status": status, "prev": prev},
     )
 
 
@@ -387,7 +711,7 @@ def set_mou_status(
         target_ulid=sponsor_ulid,
         request_id=request_id,
         happened_at_utc=now_iso8601_ms(),
-        changed_fields={"mou_status": status, "prev": prev},
+        changed={"mou_status": status, "prev": prev},
     )
 
 
@@ -664,7 +988,6 @@ def find_sponsors(
         )
     # any_of capabilities (OR)
     if any_of:
-
         ors = []
         for d, k in any_of:
             ors.append(

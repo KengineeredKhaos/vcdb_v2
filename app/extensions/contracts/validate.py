@@ -5,7 +5,7 @@ import json
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError as JSONSchemaValidationError
 
-from .errors import ContractValidationError
+from app.extensions.errors import ContractError
 
 
 def load_schema(module_file: str, rel_path: str) -> dict:

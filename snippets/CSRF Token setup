@@ -1,0 +1,143 @@
+CSRF Token setup
+
+Totally—once you start using real forms, wire CSRF “for real” and keep your JSON APIs/devtools out of the blast radius. Here’s a clean, battle-tested setup that fits your current factory + blueprint shape.
+
+# 1) Initialize CSRF in your app factory
+
+* Use **Flask-WTF**’s `CSRFProtect`.
+* Keep your Jinja `csrf_token()` global (nice for templates).
+* Exempt JSON/API blueprints so your contracts/devtools don’t break.
+
+```python
+# app/__init__.py (inside create_app)
+from flask_wtf import CSRFProtect
+try:
+    from flask_wtf.csrf import CSRFError, generate_csrf
+except Exception:
+    CSRFError = None
+    generate_csrf = lambda: ""
+
+# --- Config knobs (works with your existing config style) ---
+flask_app.config.setdefault("SECRET_KEY", "dev-override-me")
+flask_app.config.setdefault("WTF_CSRF_ENABLED", True)
+flask_app.config.setdefault("WTF_CSRF_TIME_LIMIT", 3600)  # 1h
+flask_app.config.setdefault("WTF_CSRF_CHECK_DEFAULT", True)  # protect form POST/PUT/PATCH/DELETE
+# If you serve from a subdomain, also set WTF_CSRF_SSL_STRICT, SESSION_COOKIE_SAMESITE, etc.
+
+# --- CSRF setup ---
+csrf = CSRFProtect()
+if CSRFError is not None:
+    csrf.init_app(flask_app)
+
+# Make {{ csrf_token() }} available in templates
+flask_app.jinja_env.globals["csrf_token"] = generate_csrf
+
+# JSON error for CSRF failures (you already have this pattern)
+if CSRFError is not None:
+    @flask_app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        return (
+            {
+                "error": "csrf_failed",
+                "description": getattr(e, "description", "CSRF validation failed."),
+            },
+            400,
+        )
+```
+
+# 2) Exempt the blueprints that are API-only
+
+Protect browser forms; leave contract/devtools routes free (or add a header-based token later).
+
+```python
+# after you register blueprints; examples:
+from app.slices.devtools.routes import bp as devtools_bp
+from app.slices.devtools.routes import bp_api_v2 as devtools_api_v2
+from app.slices.devtools.routes import bp_api_public as devtools_api_public
+from app.slices.extensions.routes_admin import bp as admin_bp  # hypothetical admin UI with forms
+
+flask_app.register_blueprint(devtools_bp)
+flask_app.register_blueprint(devtools_api_v2, url_prefix="/api/v2")
+flask_app.register_blueprint(devtools_api_public, url_prefix="/api")
+
+# Exempt pure-JSON APIs (adjust as needed)
+csrf.exempt(devtools_api_v2)
+csrf.exempt(devtools_api_public)
+
+# Do NOT exempt the Admin (browser) UI blueprint—those routes will use forms
+# flask_app.register_blueprint(admin_bp)  # CSRF stays ON here
+```
+
+# 3) In templates: include the CSRF field
+
+For **WTForms** forms, always include `form.hidden_tag()`; for non-WTForms forms, include the `csrf_token()` hidden input.
+
+```html
+<!-- WTForms -->
+<form method="POST" action="{{ url_for('admin.entity_create_person') }}">
+  {{ form.hidden_tag() }}
+  <!-- fields... -->
+  <button type="submit">Save</button>
+</form>
+
+<!-- Non-WTForms -->
+<form method="POST" action="{{ url_for('admin.entity_create_person_raw') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <!-- fields... -->
+  <button type="submit">Save</button>
+</form>
+```
+
+Tip: wrap that in a macro so you never forget:
+
+```jinja
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
+```
+
+# 4) AJAX / fetch POSTs from browser pages
+
+If you later POST JSON from an HTML page (not from your pure API clients), use the **double-submit** pattern: read a token from a cookie or meta tag and send it in a header.
+
+Template:
+
+```html
+<meta name="csrf-token" content="{{ csrf_token() }}">
+```
+
+JS:
+
+```js
+const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+fetch("/admin/policy/update", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-CSRFToken": token,            // Flask-WTF accepts X-CSRFToken or X-CSRF-Token
+  },
+  body: JSON.stringify(payload),
+});
+```
+
+Server: CSRFProtect will validate the header token automatically for same-site requests. (Keep your admin UI under CSRF; keep your `/api/*` exempt or switch them to header-tokens when you move away from devtools.)
+
+# 5) Tests
+
+* For request/route unit tests, either:
+
+  * disable CSRF: `app.config["WTF_CSRF_ENABLED"] = False`, **or**
+  * include a valid token in the form/headers (heavier).
+* Keep your foundation tests focused on behavior; turn CSRF back on when you add UI integration tests.
+
+# 6) Common gotchas (quick checklist)
+
+* Make sure `SECRET_KEY` is set in non-dev envs (or CSRF will silently misbehave).
+* For cross-origin admin setups, align cookie `SameSite`/`Secure` and CORS; otherwise CSRF will bite.
+* If you see random 400s on long forms, extend `WTF_CSRF_TIME_LIMIT` or re-issue a token on form render.
+
+---
+
+If you want, I can give you a tiny **Admin demo form** (WTForms + route) that exercises CSRF end-to-end against one of your entity create endpoints; just say the blueprint name you want it under.
