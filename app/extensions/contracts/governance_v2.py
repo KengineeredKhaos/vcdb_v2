@@ -136,6 +136,7 @@ def _app_root() -> Path:
 
 
 def _load_json(path: Path, where: str):
+    where = "governance_v2._load_json"
     try:
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)
@@ -181,6 +182,7 @@ def get_role_catalogs() -> dict:
     )
 
     if not rbac_roles:
+        where = "governance_v2.get_role_catalogs.rbac_roles"
         raise ContractError(
             code="policy_invalid",
             where=where,
@@ -189,6 +191,7 @@ def get_role_catalogs() -> dict:
             data={"path": str(root / AUTH_RBAC_PATH)},
         )
     if not domain_roles:
+        where = "governance_v2.get_role_catalogs.domain_roles"
         raise ContractError(
             code="policy_invalid",
             where=where,

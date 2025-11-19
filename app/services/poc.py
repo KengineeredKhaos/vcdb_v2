@@ -6,9 +6,9 @@ from typing import Callable, Iterable, Optional, Type
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
-from app.errors import ContractError  # your existing error type
 from app.extensions import event_bus
 from app.extensions.contracts.governance_v2 import get_poc_policy
+from app.extensions.errors import ContractError  # your existing error type
 from app.lib.chrono import now_iso8601_ms
 
 # The slice model contract expected by this module:

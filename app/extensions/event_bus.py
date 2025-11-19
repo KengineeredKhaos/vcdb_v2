@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from app.extensions.contracts.ledger import v2 as ledger_v2
+from app.extensions.contracts import ledger_v2
 
 # -*- coding: utf-8 -*-
 # VCDB Canon — DO NOT MODIFY WITHOUT GOVERNANCE APPROVAL

@@ -40,9 +40,7 @@ class LedgerEvent(db.Model, ULIDPK, IsoTimestamps):
     request_id: Mapped[str] = mapped_column(String(26), nullable=False)
 
     # ISO timestamps as strings for consistency
-    happened_at_utc: Mapped[str] = mapped_column(
-        String(30), nullable=True
-    )
+    happened_at_utc: Mapped[str] = mapped_column(String(30), nullable=True)
 
     # JSON payloads (compact/normalized)
     refs_json: Mapped[Optional[str]] = mapped_column(
