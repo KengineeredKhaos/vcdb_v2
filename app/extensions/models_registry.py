@@ -2,6 +2,7 @@
 # DO NOT add any runtime logic here — imports only.
 # Keep list alphabetized to avoid churn in diffs.
 
+"""
 # flake8: noqa
 from app.slices.admin import models as _admin_models
 from app.slices.attachments import models as _attachments_models
@@ -15,4 +16,6 @@ from app.slices.ledger import models as _ledger_models
 from app.slices.logistics import models as _logistics_models
 from app.slices.resources import models as _resources_models
 from app.slices.sponsors import models as _sponsors_models
+
 # ...add other slices as they come online
+"""

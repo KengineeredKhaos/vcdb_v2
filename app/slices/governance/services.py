@@ -12,9 +12,9 @@ from sqlalchemy import asc, func, select
 
 from app.extensions import db, event_bus
 from app.extensions.contracts import logistics_v2
+from app.extensions.errors import ContractError
 from app.extensions.policies import load_policy, load_policy_issuance
 from app.lib.chrono import add_years_utc, as_naive_utc, now_iso8601_ms
-from app.lib.errors import PolicyError
 from app.lib.geo import us_states
 from app.lib.ids import new_ulid
 from app.lib.jsonutil import (

@@ -19,12 +19,16 @@ BASE = Path(__file__).resolve().parents[1]
 
 # -------- Seed Role Codes ---------------
 
+
 def _load_json(p: Path) -> dict:
     return json.loads(p.read_text(encoding="utf-8"))
 
+
 def seed_rbac_from_policy() -> int:
     """Idempotently seed RBAC role codes from auth policy JSON."""
-    policy = _load_json(BASE / "slices" / "auth" / "data" / "policy_rbac.json")
+    policy = _load_json(
+        BASE / "slices" / "auth" / "data" / "policy_rbac.json"
+    )
     codes: Iterable[str] = policy.get("rbac_roles", [])
     count = 0
     for code in codes:
@@ -36,9 +40,12 @@ def seed_rbac_from_policy() -> int:
     db.session.commit()
     return count
 
+
 def seed_domain_from_policy() -> int:
     """Idempotently seed Domain role codes from governance policy JSON."""
-    policy = _load_json(BASE / "slices" / "governance" / "data" / "policy_domain.json")
+    policy = _load_json(
+        BASE / "slices" / "governance" / "data" / "policy_domain.json"
+    )
     codes: Iterable[str] = policy.get("domain_roles", [])
     count = 0
     for code in codes:
@@ -48,6 +55,7 @@ def seed_domain_from_policy() -> int:
             count += 1
     db.session.commit()
     return count
+
 
 # -------- Entity (minimal org + person) ----------
 from app.slices.entity.models import Entity
@@ -88,6 +96,7 @@ from app.slices.sponsors.models import (
 def _iso_now():
     return now_iso8601_ms()
 
+
 def _infer_domain(key: str) -> str:
     veterans = {"va_forms", "claims_help"}
     housing = {"housing", "furniture", "welcome_home_kit"}
@@ -97,9 +106,15 @@ def _infer_domain(key: str) -> str:
         return "housing"
     return "basic_needs"
 
+
 def _flatten_caps_json(d: Dict[str, bool]) -> str:
     import json
-    return json.dumps({k: {"has": bool(v)} for k, v in (d or {}).items()}, ensure_ascii=False)
+
+    return json.dumps(
+        {k: {"has": bool(v)} for k, v in (d or {}).items()},
+        ensure_ascii=False,
+    )
+
 
 # ---------------- Seeds ----------------
 @dataclass(frozen=True)
@@ -107,11 +122,13 @@ class SeedCustomerResult:
     entity_ulid: str
     customer_ulid: str
 
+
 @dataclass(frozen=True)
 class SeedResourceResult:
     entity_ulid: str
     resource_ulid: str
     code: str
+
 
 @dataclass(frozen=True)
 class SeedSponsorResult:
@@ -128,7 +145,6 @@ def _apply_org_label(entity_org_obj, label: str) -> None:
     raise RuntimeError(
         "EntityOrg has no recognizable name column (tried: name, display_name, legal_name, org_name)."
     )
-
 
 
 def _ensure_org_entity(*, entity_ulid: str | None, org_name: str) -> str:
@@ -153,8 +169,9 @@ def _ensure_org_entity(*, entity_ulid: str | None, org_name: str) -> str:
     return ent.ulid
 
 
-
-def seed_minimal_customer(*, first: str, last: str, preferred: str | None = None) -> dict:
+def seed_minimal_customer(
+    *, first: str, last: str, preferred: str | None = None
+) -> dict:
     """
     Minimal happy-path customer: create Entity(kind='person') + EntityPerson,
     then Customer referencing that Entity. No commit here.
@@ -187,16 +204,21 @@ def seed_minimal_customer(*, first: str, last: str, preferred: str | None = None
     # no commit here — caller owns transaction
     return {"entity_ulid": ent.ulid, "customer_ulid": cust.ulid}
 
+
 def seed_active_resource(
     *,
     code: str = "res-dev-001",
     label: str = "Sample Dev Resource",
     capabilities: Optional[Dict[str, bool]] = None,
-    readiness_status: str = "active",   # draft|review|active|suspended
-    mou_status: str = "active",         # none|pending|active|expired|terminated
+    readiness_status: str = "active",  # draft|review|active|suspended
+    mou_status: str = "active",  # none|pending|active|expired|terminated
     entity_ulid: Optional[str] = None,
 ) -> SeedResourceResult:
-    caps = capabilities or {"housing": True, "furniture": True, "barber": False}
+    caps = capabilities or {
+        "housing": True,
+        "furniture": True,
+        "barber": False,
+    }
     e_ulid = _ensure_org_entity(entity_ulid=entity_ulid, org_name=label)
     now = _iso_now()
     r_ulid = new_ulid()
@@ -211,8 +233,10 @@ def seed_active_resource(
         last_touch_utc=now,
         capability_last_update_utc=now,
     )
-    if hasattr(r, "created_at_utc"): r.created_at_utc = now
-    if hasattr(r, "updated_at_utc"): r.updated_at_utc = now
+    if hasattr(r, "created_at_utc"):
+        r.created_at_utc = now
+    if hasattr(r, "updated_at_utc"):
+        r.updated_at_utc = now
     db.session.add(r)
     db.session.flush()
 
@@ -223,8 +247,10 @@ def seed_active_resource(
         data_json=_flatten_caps_json(caps),
         created_by_actor=None,
     )
-    if hasattr(hist, "created_at_utc"): hist.created_at_utc = now
-    if hasattr(hist, "updated_at_utc"): hist.updated_at_utc = now
+    if hasattr(hist, "created_at_utc"):
+        hist.created_at_utc = now
+    if hasattr(hist, "updated_at_utc"):
+        hist.updated_at_utc = now
     db.session.add(hist)
 
     for key, active in caps.items():
@@ -234,12 +260,17 @@ def seed_active_resource(
             key=key,
             active=bool(active),
         )
-        if hasattr(idx, "created_at_utc"): idx.created_at_utc = now
-        if hasattr(idx, "updated_at_utc"): idx.updated_at_utc = now
+        if hasattr(idx, "created_at_utc"):
+            idx.created_at_utc = now
+        if hasattr(idx, "updated_at_utc"):
+            idx.updated_at_utc = now
         db.session.add(idx)
 
     db.session.commit()
-    return SeedResourceResult(entity_ulid=e_ulid, resource_ulid=r_ulid, code=code)
+    return SeedResourceResult(
+        entity_ulid=e_ulid, resource_ulid=r_ulid, code=code
+    )
+
 
 def seed_sponsor_with_policy(
     *,
@@ -248,7 +279,9 @@ def seed_sponsor_with_policy(
     readiness_status: str = "active",
     mou_status: str = "active",
     constraints: Optional[Dict[str, Any]] = None,  # e.g. {"local_only": True}
-    caps: Optional[Dict[str, int]] = None,         # e.g. {"total_cents": 40000, "food_cap_cents": 5000}
+    caps: Optional[
+        Dict[str, int]
+    ] = None,  # e.g. {"total_cents": 40000, "food_cap_cents": 5000}
     pledge_summary: Optional[Iterable[Dict[str, Any]]] = None,
     entity_ulid: Optional[str] = None,
 ) -> SeedSponsorResult:
@@ -267,8 +300,10 @@ def seed_sponsor_with_policy(
         capability_last_update_utc=now,
         pledge_last_update_utc=now,
     )
-    if hasattr(s, "created_at_utc"): s.created_at_utc = now
-    if hasattr(s, "updated_at_utc"): s.updated_at_utc = now
+    if hasattr(s, "created_at_utc"):
+        s.created_at_utc = now
+    if hasattr(s, "updated_at_utc"):
+        s.updated_at_utc = now
     db.session.add(s)
     db.session.flush()
 
@@ -277,11 +312,15 @@ def seed_sponsor_with_policy(
             sponsor_ulid=s_ulid,
             section="sponsor:capability:v1",
             version=1,
-            data_json=_flatten_caps_json({k: bool(v) for k, v in constraints.items()}),
+            data_json=_flatten_caps_json(
+                {k: bool(v) for k, v in constraints.items()}
+            ),
             created_by_actor=None,
         )
-        if hasattr(hist, "created_at_utc"): hist.created_at_utc = now
-        if hasattr(hist, "updated_at_utc"): hist.updated_at_utc = now
+        if hasattr(hist, "created_at_utc"):
+            hist.created_at_utc = now
+        if hasattr(hist, "updated_at_utc"):
+            hist.updated_at_utc = now
         db.session.add(hist)
 
         for key, active in constraints.items():
@@ -291,8 +330,10 @@ def seed_sponsor_with_policy(
                 key=key,
                 active=bool(active),
             )
-            if hasattr(idx, "created_at_utc"): idx.created_at_utc = now
-            if hasattr(idx, "updated_at_utc"): idx.updated_at_utc = now
+            if hasattr(idx, "created_at_utc"):
+                idx.created_at_utc = now
+            if hasattr(idx, "updated_at_utc"):
+                idx.updated_at_utc = now
             db.session.add(idx)
 
     for p in pledge_summary or ():
@@ -305,9 +346,13 @@ def seed_sponsor_with_policy(
             est_value_number=p.get("est_value_number"),
             currency=p.get("currency"),
         )
-        if hasattr(pl, "created_at_utc"): pl.created_at_utc = now
-        if hasattr(pl, "updated_at_utc"): pl.updated_at_utc = now
+        if hasattr(pl, "created_at_utc"):
+            pl.created_at_utc = now
+        if hasattr(pl, "updated_at_utc"):
+            pl.updated_at_utc = now
         db.session.add(pl)
 
     # DO NOT COMMIT HERE — caller (CLI/tests) owns the transaction boundary
-    return SeedSponsorResult(entity_ulid=e_ulid, sponsor_ulid=s_ulid, code=code)
+    return SeedSponsorResult(
+        entity_ulid=e_ulid, sponsor_ulid=s_ulid, code=code
+    )

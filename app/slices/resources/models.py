@@ -52,6 +52,10 @@ class Resource(db.Model, ULIDPK, IsoTimestamps):
         String(30), nullable=True
     )
 
+    # -------------
+    # Relationships
+    # -------------
+
     histories: Mapped[list["ResourceHistory"]] = relationship(
         "ResourceHistory",
         back_populates="resource",
@@ -61,6 +65,12 @@ class Resource(db.Model, ULIDPK, IsoTimestamps):
         "ResourceCapabilityIndex",
         back_populates="resource",
         cascade="all, delete-orphan",
+    )
+    pocs: Mapped[list["ResourcePOC"]] = relationship(
+        "ResourcePOC",
+        back_populates="resource",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
 
@@ -122,7 +132,7 @@ class ResourceCapabilityIndex(db.Model, ULIDPK, IsoTimestamps):
     )
 
 
-class ResourcePOC(ULIDPK, IsoTimestamps):
+class ResourcePOC(db.Model, ULIDPK, IsoTimestamps):
     """
     Slice-owned linkage row connecting a Resource org to a Person entity as a POC,
     with Governance-constrained metadata (scope, rank, etc.). No PII here.
@@ -131,7 +141,7 @@ class ResourcePOC(ULIDPK, IsoTimestamps):
     __tablename__ = "resource_poc"
 
     resource_ulid: Mapped[str] = ULIDFK(
-        "resource", ondelete="CASCADE", nullable=False, index=True
+        "resource_resource", ondelete="CASCADE", nullable=False, index=True
     )
     # Person ULID from Entity slice
     person_entity_ulid: Mapped[str] = ULIDFK(
@@ -143,22 +153,22 @@ class ResourcePOC(ULIDPK, IsoTimestamps):
         String(16), nullable=False, default="poc"
     )
 
+    org_entity_ulid: Mapped[str] = ULIDFK(
+        "entity_org", ondelete="CASCADE", nullable=False, index=True
+    )
+
     # Governance-constrained
-    scope: Mapped[Optional[str]] = mapped_column(
+    scope: Mapped[str] = mapped_column(
         String(24), nullable=True
     )  # validated in service
     rank: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Freeform org-visible title/descriptor
-    org_role: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    org_role: Mapped[str] = mapped_column(String(64), nullable=True)
 
     # Window as ISO-8601 strings (match your IsoTimestamps format)
-    valid_from_utc: Mapped[Optional[str]] = mapped_column(
-        String(30), nullable=True
-    )
-    valid_to_utc: Mapped[Optional[str]] = mapped_column(
-        String(30), nullable=True
-    )
+    valid_from_utc: Mapped[str] = mapped_column(String(30), nullable=True)
+    valid_to_utc: Mapped[str] = mapped_column(String(30), nullable=True)
 
     is_primary: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
@@ -167,18 +177,22 @@ class ResourcePOC(ULIDPK, IsoTimestamps):
         Boolean, nullable=False, default=True
     )
 
-    resource: Mapped["Resource"] = relationship(back_populates="pocs")
-
     # -------------
     # Relationships
     # -------------
 
-    org = relationship(
+    resource: Mapped["Resource"] = relationship(
+        "Resource",
+        back_populates="pocs",
+    )
+
+    org: Mapped["EntityOrg"] = relationship(
         "EntityOrg",
         back_populates="resource_pocs",
+        foreign_keys="ResourcePOC.org_entity_ulid",
         passive_deletes=True,
     )
-    person = relationship(
+    person: Mapped["EntityPerson"] = relationship(
         "EntityPerson",
         passive_deletes=True,
     )
@@ -190,7 +204,7 @@ class ResourcePOC(ULIDPK, IsoTimestamps):
             "person_entity_ulid",
             "relation",
             "scope",
-            name="uq_resource_poc_link",
+            name="uq_resource_poc_resource_person_scope",
         ),
         # Helpful ordering / primary lookups
         Index(

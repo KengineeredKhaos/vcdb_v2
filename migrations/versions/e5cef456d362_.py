@@ -1,8 +1,8 @@
-"""Base schema v2 (all slices)
+"""empty message
 
-Revision ID: 742d25a45d89
+Revision ID: e5cef456d362
 Revises: 
-Create Date: 2025-11-05 22:10:10.571821
+Create Date: 2025-11-19 11:03:12.780192
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '742d25a45d89'
+revision = 'e5cef456d362'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -713,6 +713,35 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_resource_history_resource_ulid'), ['resource_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_resource_history_section'), ['section'], unique=False)
 
+    op.create_table('resource_poc',
+    sa.Column('resource_ulid', sa.String(length=26), nullable=False),
+    sa.Column('person_entity_ulid', sa.String(length=26), nullable=False),
+    sa.Column('relation', sa.String(length=16), nullable=False),
+    sa.Column('org_entity_ulid', sa.String(length=26), nullable=False),
+    sa.Column('scope', sa.String(length=24), nullable=True),
+    sa.Column('rank', sa.Integer(), nullable=False),
+    sa.Column('org_role', sa.String(length=64), nullable=True),
+    sa.Column('valid_from_utc', sa.String(length=30), nullable=True),
+    sa.Column('valid_to_utc', sa.String(length=30), nullable=True),
+    sa.Column('is_primary', sa.Boolean(), nullable=False),
+    sa.Column('active', sa.Boolean(), nullable=False),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
+    sa.CheckConstraint('rank >= 0 AND rank <= 99', name='ck_resource_poc_rank_range'),
+    sa.ForeignKeyConstraint(['org_entity_ulid'], ['entity_org.ulid'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['person_entity_ulid'], ['entity_person.ulid'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resource_ulid'], ['resource_resource.ulid'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('ulid'),
+    sa.UniqueConstraint('resource_ulid', 'person_entity_ulid', 'relation', 'scope', name='uq_resource_poc_resource_person_scope')
+    )
+    with op.batch_alter_table('resource_poc', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_resource_poc_org_entity_ulid'), ['org_entity_ulid'], unique=False)
+        batch_op.create_index('ix_resource_poc_org_scope_rank', ['resource_ulid', 'relation', 'scope', 'rank'], unique=False)
+        batch_op.create_index(batch_op.f('ix_resource_poc_person_entity_ulid'), ['person_entity_ulid'], unique=False)
+        batch_op.create_index('ix_resource_poc_primary', ['resource_ulid', 'relation', 'scope', 'is_primary'], unique=False)
+        batch_op.create_index(batch_op.f('ix_resource_poc_resource_ulid'), ['resource_ulid'], unique=False)
+
     op.create_table('sponsor_allocation',
     sa.Column('sponsor_ulid', sa.String(length=26), nullable=False),
     sa.Column('customer_ulid', sa.String(length=26), nullable=False),
@@ -790,6 +819,35 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_sponsor_pledge_index_sponsor_ulid'), ['sponsor_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_sponsor_pledge_index_status'), ['status'], unique=False)
         batch_op.create_index(batch_op.f('ix_sponsor_pledge_index_type'), ['type'], unique=False)
+
+    op.create_table('sponsor_poc',
+    sa.Column('sponsor_ulid', sa.String(length=26), nullable=False),
+    sa.Column('person_entity_ulid', sa.String(length=26), nullable=False),
+    sa.Column('relation', sa.String(length=16), nullable=False),
+    sa.Column('org_entity_ulid', sa.String(length=26), nullable=False),
+    sa.Column('scope', sa.String(length=24), nullable=True),
+    sa.Column('rank', sa.Integer(), nullable=False),
+    sa.Column('org_role', sa.String(length=64), nullable=True),
+    sa.Column('valid_from_utc', sa.String(length=30), nullable=True),
+    sa.Column('valid_to_utc', sa.String(length=30), nullable=True),
+    sa.Column('is_primary', sa.Boolean(), nullable=False),
+    sa.Column('active', sa.Boolean(), nullable=False),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
+    sa.CheckConstraint('rank >= 0 AND rank <= 99', name='ck_sponsor_poc_rank_range'),
+    sa.ForeignKeyConstraint(['org_entity_ulid'], ['entity_org.ulid'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['person_entity_ulid'], ['entity_person.ulid'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['sponsor_ulid'], ['sponsor_sponsor.ulid'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('ulid'),
+    sa.UniqueConstraint('sponsor_ulid', 'person_entity_ulid', 'relation', 'scope', name='uq_sponsor_poc_sponsor_person_scope')
+    )
+    with op.batch_alter_table('sponsor_poc', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_sponsor_poc_org_entity_ulid'), ['org_entity_ulid'], unique=False)
+        batch_op.create_index('ix_sponsor_poc_org_scope_rank', ['sponsor_ulid', 'relation', 'scope', 'rank'], unique=False)
+        batch_op.create_index(batch_op.f('ix_sponsor_poc_person_entity_ulid'), ['person_entity_ulid'], unique=False)
+        batch_op.create_index('ix_sponsor_poc_primary', ['sponsor_ulid', 'relation', 'scope', 'is_primary'], unique=False)
+        batch_op.create_index(batch_op.f('ix_sponsor_poc_sponsor_ulid'), ['sponsor_ulid'], unique=False)
 
     op.create_table('calendar',
     sa.Column('kind', sa.String(length=24), nullable=False),
@@ -891,6 +949,14 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_calendar_assigned_to_ulid'))
 
     op.drop_table('calendar')
+    with op.batch_alter_table('sponsor_poc', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_sponsor_poc_sponsor_ulid'))
+        batch_op.drop_index('ix_sponsor_poc_primary')
+        batch_op.drop_index(batch_op.f('ix_sponsor_poc_person_entity_ulid'))
+        batch_op.drop_index('ix_sponsor_poc_org_scope_rank')
+        batch_op.drop_index(batch_op.f('ix_sponsor_poc_org_entity_ulid'))
+
+    op.drop_table('sponsor_poc')
     with op.batch_alter_table('sponsor_pledge_index', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_sponsor_pledge_index_type'))
         batch_op.drop_index(batch_op.f('ix_sponsor_pledge_index_status'))
@@ -918,6 +984,14 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_sponsor_allocation_approved_by_ulid'))
 
     op.drop_table('sponsor_allocation')
+    with op.batch_alter_table('resource_poc', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_resource_poc_resource_ulid'))
+        batch_op.drop_index('ix_resource_poc_primary')
+        batch_op.drop_index(batch_op.f('ix_resource_poc_person_entity_ulid'))
+        batch_op.drop_index('ix_resource_poc_org_scope_rank')
+        batch_op.drop_index(batch_op.f('ix_resource_poc_org_entity_ulid'))
+
+    op.drop_table('resource_poc')
     with op.batch_alter_table('resource_history', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_resource_history_section'))
         batch_op.drop_index(batch_op.f('ix_resource_history_resource_ulid'))

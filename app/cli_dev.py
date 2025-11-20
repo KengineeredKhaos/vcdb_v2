@@ -1,6 +1,153 @@
-# Dev/ops utilities — helpers for local workflows, policy checks, smoke tests.
-# Safe to ship; nothing runs unless invoked.
-# Keep prod side-effects behind guards.
+# app/cli_dev.py
+
+"""
+Developer / ops CLI helpers for VCDB v2 (non-seeding).
+
+These commands hang off the ``dev`` Click group that is wired in
+``manage_vcdb.py``. They exist to support local workflows, policy
+validation, and smoke tests against an already-seeded dev database.
+
+**All data seeding now lives in ``cli_seed.py`` behind the ``seed`` group.**
+This module should not introduce *new* records except where explicitly
+called out (e.g., tripwire/demo helpers).
+
+Typical usage from the project root::
+
+    # Policy health + issuance coverage
+    flask --app manage_vcdb.py dev policy-health
+
+    # Lint policy JSON against schemas
+    flask --app manage_vcdb.py dev policy-lint
+
+    # Sanity-check SKUs and issuance logic
+    flask --app manage_vcdb.py dev validate-skus
+    flask --app manage_vcdb.py dev issuance-debug --sku AC-GL-LC-L-LB-U-00B
+
+
+Command groups (high level)
+===========================
+
+Policy / Governance helpers
+---------------------------
+
+dev policy-health
+    - Validate governance policy files via ``policy_semantics``:
+        * JSON Schema validation (via the semantics module)
+        * Cross-policy semantic checks (RBAC↔Domain, invariants, etc.)
+        * Issuance coverage report over the current catalog
+    - Exit code 1 only on fatal policy errors.
+
+dev policy-lint
+    - Validate raw policy JSON files against their JSON Schemas.
+    - Options:
+        * ``--which`` to target issuance / eligibility / calendar / etc.
+        * ``--fix`` to pretty-print + sort keys (stable diffs).
+        * ``--base`` / ``--schema-base`` to override search paths.
+    - This operates on files only; no DB writes.
+
+Logistics / SKU helpers
+-----------------------
+
+dev validate-skus
+    - Scan ``InventoryItem`` and ``Issue`` rows for invalid SKUs.
+    - Uses the same SKU parser/validator as Logistics slice.
+    - Prints the first few errors and exits 1 on problems.
+
+dev lint-skus
+    - Validate ``skus.json`` against ``sku.schema.json`` under
+      ``app/slices/logistics/data`` (or overrides via ``--data-dir``).
+    - Fails fast with row/field errors. No DB writes.
+
+dev list-stock
+    - List on-hand stock at a given Location (e.g. ``LOC-MAIN``).
+    - Read-only: just SELECTs from stock tables.
+
+dev demo-issue
+    - Issue inventory for a single SKU from a given location.
+    - Behavior:
+        * If ``--sku`` omitted, picks the first SKU with stock at location.
+        * If ``--customer-ulid`` omitted, uses a throwaway ULID
+          (no FK expected).
+    - **Side-effect:** writes an issuance + movements; this is a deliberate
+      “manual smoke test” against Logistics.
+
+Issuance / policy-debug helpers
+-------------------------------
+
+dev issuance-debug
+    - For one SKU:
+        * Show which issuance rules match.
+        * Show the final decision from Governance (allowed / reason).
+    - Uses an in-memory context; no DB writes.
+
+dev issuance-tripwires
+    - For each issuance rule:
+        * find or fabricate a matching SKU,
+        * run blackout / qualifiers-missing / qualifiers-satisfied /
+          cadence checks,
+        * print per-rule behavior in a compact table.
+    - Options:
+        * ``--force-blackout`` to deliberately trip blackout enforcer.
+        * ``--twice`` to write a “policy-only” Issue once, then re-check
+          cadence limits.
+        * ``--show-json`` to dump raw decisions for debugging.
+    - **Side-effects:**
+        * May create a test Customer if one is not provided.
+        * May create SKUs, stock, and Issues as part of exercising rules.
+
+dev decide-issue
+    - Evaluate issuance policy for a SKU and a customer without writing.
+    - Prints allowed / reason and a pretty JSON payload for debugging.
+    - Uses a synthetic context; no DB writes by default.
+
+Misc / maintenance helpers
+--------------------------
+
+dev whoami
+    - Dump minimal context useful during local debugging:
+        * APP_MODE
+        * SQLALCHEMY_DATABASE_URI
+
+dev purge-seed-items
+    - Cleanup helper for old “Seed Item” logistics data.
+    - Deletes rows in FK-safe order:
+        * Issues → Movements → Stock → Batches → Items.
+    - Intended for one-off cleanup of legacy dev artifacts.
+
+dev list-capabilities
+    - Print canonical Resource capability keys as exposed by
+      ``resources.services.allowed_capabilities()``.
+
+dev list-sponsor-capabilities
+    - Print canonical Sponsor capability keys if exposed by
+      ``sponsors.services.allowed_capabilities()``.
+    - If not available, prints a friendly “no listing available” message.
+
+
+Implementation notes
+====================
+
+- Registration:
+    * ``register_cli(app)`` attaches the ``dev`` group to the Flask CLI.
+    * All commands here should be safe to ship; nothing runs unless explicitly
+      invoked.
+
+- Side-effects:
+    * Most commands are read-only (SELECTs and file validation).
+    * The few that **do** write (e.g., ``issuance-tripwires`` with cadence
+      tests, ``demo-issue``, ``purge-seed-items``) are explicitly documented
+      as such above.
+    * Keep any new dev commands either:
+        - read-only, OR
+        - very clearly documented about what they mutate and why.
+
+- Scope and separation from seeding:
+    * All **seeding** lives in ``cli_seed.py`` under the ``seed`` group.
+    * This module is for diagnostics, linting, and interactive smoke tests.
+    * When adding new helpers, update this docstring so future maintainers
+      can see available tools and their side-effects at a glance.
+"""
+
 
 from __future__ import annotations
 
@@ -39,63 +186,6 @@ except Exception:  # still useful even if semantics module not present yet
 @click.group("dev")
 def dev_group():
     """Developer / Ops helpers (policy health, wiring checks, seed shims)."""
-    ...
-
-
-# -----------------
-# Generic Helpers
-# for dev_group
-# commands
-# -----------------
-
-
-
-
-@click.command("seed-demo")
-@with_appcontext
-def seed_demo():
-    echo_db_banner("seed-demo")
-    from app.seeds.demo import seed_demo_dataset
-    seed_demo_dataset()
-    click.echo("✓ demo data seeded")
-
-
-def _print_json_error(e: Exception, fname: str) -> None:
-    """
-    Pretty-print JSON Schema validation errors with the instance path and schema path.
-    """
-    import click
-
-    try:
-        import jsonschema
-    except Exception:  # pragma: no cover
-        click.secho(f"ERR  — {fname}: {e!r}", fg="red")
-        return
-
-    if isinstance(e, jsonschema.ValidationError):
-        # JSON Pointer-ish path to the offending location in the instance
-        instance_path = (
-            "/" + "/".join(str(p) for p in e.absolute_path)
-            if e.absolute_path
-            else "$"
-        )
-        schema_path = (
-            "/" + "/".join(str(p) for p in e.absolute_schema_path)
-            if e.absolute_schema_path
-            else "$"
-        )
-
-        click.secho(f"FAIL — {fname}", fg="red")
-        click.echo(f"  at     : {instance_path}")
-        click.echo(f"  error  : {e.message}")
-        click.echo(f"  schema : {schema_path}")
-        # Show a tiny bit of context if available
-        if e.context:
-            click.echo("  details:")
-            for sub in e.context[:3]:
-                click.echo(f"    - {sub.message}")
-    else:
-        click.secho(f"ERR  — {fname}: {e!r}", fg="red")
 
 
 # -----------------
@@ -414,6 +504,8 @@ def dev_policy_lint(
 # issuance coverage
 # helpers
 # -----------------
+
+
 def _scan_issuance_coverage():
     from types import SimpleNamespace as NS
 
@@ -474,6 +566,10 @@ def _scan_issuance_coverage():
 
 # -----------------
 # Issuance Debugger
+# check to see if
+# Inventory item restrictions
+# Customer qualifications
+# work across SKU's
 # -----------------
 
 
@@ -1022,6 +1118,11 @@ def dev_decide_issue(
     click.echo(json.dumps(payload, indent=2))
 
 
+# -----------------
+# Env/DB location Check
+# -----------------
+
+
 @dev_group.command("whoami")
 @with_appcontext
 def dev_whoami():
@@ -1032,7 +1133,8 @@ def dev_whoami():
 
 
 # -----------------
-# dev seeds
+# List Inventory
+# In-Stock/On-Hand
 # -----------------
 
 
@@ -1082,6 +1184,11 @@ def dev_list_stock(loc_code: str, limit: int):
     click.echo(f"Stock at {loc.code} ({loc.ulid}):")
     for sku, name, qty, unit in rows:
         click.echo(f"  {sku:20s}  {qty:4d} {unit:6s}  {name}")
+
+
+# -----------------
+# Issuance Policy Check
+# -----------------
 
 
 @dev_group.command("demo-issue")
@@ -1202,6 +1309,11 @@ def dev_demo_issue(
     click.echo(f"decision={res['decision']}")
 
 
+# -----------------
+# Lint SKU's
+# -----------------
+
+
 @dev_group.command("lint-skus")
 @with_appcontext
 @click.option(
@@ -1248,6 +1360,11 @@ def dev_lint_skus(data_dir: str):
         raise SystemExit(1)
 
     click.echo(f"OK — {len(rows)} SKUs validated.")
+
+
+# -----------------
+# Purge Seeds
+# -----------------
 
 
 @dev_group.command("purge-seed-items")
@@ -1329,425 +1446,9 @@ def dev_purge_seed_items():
     )
 
 
-@dev_group.command("seed-logistics-canonical")
-@with_appcontext
-@click.option(
-    "--count",
-    type=int,
-    default=20,
-    show_default=True,
-    help="How many SKUs to generate.",
-)
-@click.option(
-    "--per-sku",
-    type=int,
-    default=25,
-    show_default=True,
-    help="Units to receive per SKU.",
-)
-@click.option("--loc-code", default="LOC-MAIN", show_default=True)
-@click.option("--loc-name", default="Main Warehouse", show_default=True)
-@click.option(
-    "--sources",
-    default="DR,LC",
-    show_default=True,
-    help="Comma list of sources to use (DR, LC). Default: DR,LC",
-)
-def dev_seed_logistics_canonical(
-    count: int = 20,
-    per_sku: int = 25,
-    loc_code: str = "LOC-MAIN",
-    loc_name: str = "Main Warehouse",
-    sources: str = "DR,LC",
-):
-    """
-    Seed a clean, predictable canonical set of SKUs (no kits),
-    mostly issuance_class=U.
-    """
-    echo_db_banner("seed-logistics-canonical")
-    import random
-
-    from app.extensions import db
-    from app.lib.chrono import now_iso8601_ms
-    from app.slices.logistics.services import (
-        ensure_item,
-        ensure_location,
-        receive_inventory,
-    )
-    from app.slices.logistics.sku import int_to_b36, parse_sku, validate_sku
-
-    # canonical enums (non-kit)
-    CATS = ["UW", "OW", "CW", "FW", "CG", "AC", "FD", "DG"]
-    SUBS = ["TP", "BT", "SK", "GL", "HT", "BG", "SL", "SH"]  # exclude KT
-    SRCS = [s.strip().upper() for s in sources.split(",") if s.strip()]
-    SIZES = ["XS", "S", "M", "L", "XL", "2X", "3X", "NA"]
-    COLORS = [
-        "BK",
-        "BL",
-        "LB",
-        "BR",
-        "TN",
-        "GN",
-        "RD",
-        "OR",
-        "YL",
-        "WT",
-        "OD",
-        "CY",
-        "FG",
-        "MC",
-        "MX",
-    ]
-    # For LC we bias toward U; DR is forced to V by rule below
-    CLASSES_LC = ["U", "U", "U", "V", "H", "D"]
-
-    loc_ulid = ensure_location(code=loc_code, name=loc_name)
-
-    made = 0
-    attempts = 0
-    max_attempts = count * 10  # safety to avoid infinite loop
-    while made < count and attempts < max_attempts:
-        attempts += 1
-        cat = random.choice(CATS)
-        sub = random.choice(SUBS)
-        src = random.choice(SRCS) or "LC"
-        size = random.choice(SIZES)
-        col = random.choice(COLORS)
-        # DRMO constraint: All DR items must be Veteran-only
-        clazz = "V" if src == "DR" else random.choice(CLASSES_LC)
-        seq = int_to_b36(made + 1, 3)
-
-        sku = f"{cat}-{sub}-{src}-{size}-{col}-{clazz}-{seq}"
-        if not validate_sku(sku):
-            continue
-
-        parts = parse_sku(sku)
-        name = f"{cat}/{sub} {size} {col} ({clazz})"
-        # Generate only items that satisfy SKU policy constraints
-        try:
-            item_ulid = ensure_item(
-                category=f"{cat}/{sub}",
-                name=name,
-                unit="each",
-                condition="new",
-                sku=sku,
-            )
-        except ValueError:
-            # e.g., assert_sku_constraints_ok rejected it; try another
-            continue
-
-        try:
-            receive_inventory(
-                item_ulid=item_ulid,
-                quantity=per_sku,
-                unit="each",
-                source="donation",
-                received_at_utc=now_iso8601_ms(),
-                location_ulid=loc_ulid,
-                note="seed:canonical",
-                actor_ulid=None,
-                source_entity_ulid=None,
-            )
-        except ValueError:
-            # Extremely rare if unit/source constraints fire here
-            continue
-        made += 1
-
-    db.session.commit()
-    click.echo(
-        f"OK — seeded {made} canonical SKUs at {loc_code} "
-        f"(attempts={attempts}). Try: flask dev list-stock --location {loc_code}"
-    )
-
-
 # -----------------
-# seed-demo-customers
+# Resource Capabilities
 # -----------------
-
-
-@dev_group.command("seed-demo-customers")
-@with_appcontext
-@click.option(
-    "--prefix",
-    default="Demo",
-    show_default=True,
-    help="First/last name prefix for seed people.",
-)
-def dev_seed_demo_customers(prefix: str):
-    """
-    Create a small, predictable set of Customer records for demos/tests
-    (and exercise ledger emits). Prints the ULIDs so you can copy/paste.
-
-    Creates four customers:
-      A) veteran+homeless (Tier1.housing=1)  → attention_required, eligible_veteran_only, eligible_homeless_only
-      B) veteran only (no crisis)            → eligible_veteran_only
-      C) non-veteran                         → not eligible for veteran-only
-      D) tier2_income crisis (watchlist)     → watchlist
-    """
-    echo_db_banner("seed-demo-customers")
-    from app.extensions import db
-    from app.extensions.contracts import customers_v2 as custx
-    from app.extensions.contracts import governance_v2 as govx
-    from app.lib.ids import new_ulid
-    from app.slices.customers import services as cust_svc
-    from app.slices.entity import services as ent_svc
-
-    def _mk_person(label: str) -> str:
-        rid = new_ulid()
-        return ent_svc.ensure_person(
-            first_name=f"{prefix}-{label}",
-            last_name=f"{prefix}-{label}",
-            email=None,
-            phone=None,
-            request_id=rid,
-            actor_ulid=None,
-        )
-
-    def _mk_customer(label: str) -> str:
-        ent_ulid = _mk_person(label)
-        return cust_svc.ensure_customer(
-            entity_ulid=ent_ulid,
-            request_id=new_ulid(),
-            actor_ulid=None,
-        )
-
-    out = {}
-
-    # A) Veteran + Homeless (Tier1.housing=1)
-    a = _mk_customer("A-VetHomeless")
-    custx.verify_veteran(
-        customer_ulid=a,
-        method="va_id",
-        verified=True,
-        actor_ulid=None,
-        actor_has_governor=True,
-        request_id=new_ulid(),
-    )
-    custx.update_tier1(
-        customer_ulid=a,
-        payload={
-            "food": 2,
-            "hygiene": 2,
-            "health": 2,
-            "housing": 1,
-            "clothing": 3,
-        },
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-    govx.evaluate_customer(a, request_id=new_ulid(), actor_ulid=None)
-    out["A_vet_homeless"] = a
-
-    # B) Veteran only (no crisis)
-    b = _mk_customer("B-VetOnly")
-    custx.verify_veteran(
-        customer_ulid=b,
-        method="va_id",
-        verified=True,
-        actor_ulid=None,
-        actor_has_governor=True,
-        request_id=new_ulid(),
-    )
-    custx.update_tier1(
-        customer_ulid=b,
-        payload={
-            "food": 2,
-            "hygiene": 2,
-            "health": 2,
-            "housing": 2,
-            "clothing": 3,
-        },
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-    govx.evaluate_customer(b, request_id=new_ulid(), actor_ulid=None)
-    out["B_vet_only"] = b
-
-    # C) Non-veteran (baseline)
-    c = _mk_customer("C-NonVet")
-    custx.update_tier1(
-        customer_ulid=c,
-        payload={
-            "food": 3,
-            "hygiene": 3,
-            "health": 2,
-            "housing": 2,
-            "clothing": 3,
-        },
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-    govx.evaluate_customer(c, request_id=new_ulid(), actor_ulid=None)
-    out["C_non_vet"] = c
-
-    # D) Tier2 income crisis (watchlist)
-    d = _mk_customer("D-IncomeCrisis")
-    custx.update_tier1(
-        customer_ulid=d,
-        payload={
-            "food": 2,
-            "hygiene": 2,
-            "health": 2,
-            "housing": 2,
-            "clothing": 3,
-        },
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-    custx.update_tier2(
-        customer_ulid=d,
-        payload={
-            "income": 1,
-            "employment": 2,
-            "transportation": 3,
-            "education": 3,
-        },
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-    govx.evaluate_customer(d, request_id=new_ulid(), actor_ulid=None)
-    out["D_tier2_income_watchlist"] = d
-
-    db.session.commit()
-
-    click.echo("OK — seeded demo customers:")
-    for k, v in out.items():
-        click.echo(f"  {k:28s} → {v}")
-    click.echo(
-        "Tip: `flask dev tail-ledger --domain customers --n 20` to inspect events."
-    )
-
-
-# -----------------
-# Seed Demo Resources
-# -----------------
-
-
-# app/cli_dev.py
-
-
-@dev_group.command("seed-demo-resources")
-@with_appcontext
-@click.option("--prefix", default="DemoOrg", show_default=True)
-def dev_seed_demo_resources(prefix: str):
-    """Seed a couple of resources with valid capabilities/readiness/MOU + ledger emits."""
-    echo_db_banner("seed-demo-resources")
-    import click
-
-    from app.lib.ids import new_ulid
-    from app.slices.entity import services as ent_svc
-    from app.slices.resources import services as res_svc
-
-    # Pull the canonical capability list and index it by domain prefix
-    allowed = sorted(res_svc.allowed_capabilities())
-    allowed_set = set(allowed)
-
-    def pick(prefix: str, default: str | None = None) -> str | None:
-        """Pick the first canonical key that starts with '<prefix>.' or return default."""
-        pfx = prefix + "."
-        for k in allowed:
-            if k.startswith(pfx):
-                return k
-        return default
-
-    def mk_org(label: str) -> str:
-        rid = new_ulid()
-        return ent_svc.ensure_org(
-            legal_name=f"{prefix}-{label}",
-            ein=None,
-            request_id=rid,
-            actor_ulid=None,
-        )
-
-    # Choose safe defaults that we know exist (if they do)
-    food_key = (
-        "basic_needs.food_pantry"
-        if "basic_needs.food_pantry" in allowed_set
-        else pick("basic_needs")
-    )
-    housing_key = (
-        "housing.public_housing_coordination"
-        if "housing.public_housing_coordination" in allowed_set
-        else pick("housing")
-    )
-    counseling_key = pick("counseling_services")
-
-    # A: Active, has two valid capabilities
-    org_a = mk_org("A")
-    res_a = res_svc.ensure_resource(
-        entity_ulid=org_a,
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-    payload_a = {}
-    if food_key:
-        payload_a[food_key] = {"has": True, "note": "walk-in ok"}
-    if housing_key:
-        payload_a[housing_key] = {"has": True, "note": "call ahead"}
-    if payload_a:
-        res_svc.upsert_capabilities(
-            resource_ulid=res_a,
-            payload=payload_a,
-            request_id=new_ulid(),
-            actor_ulid=None,
-        )
-    res_svc.set_readiness_status(
-        resource_ulid=res_a,
-        status="review",
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-    res_svc.set_mou_status(
-        resource_ulid=res_a,
-        status="active",
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-    res_svc.promote_readiness_if_clean(
-        resource_ulid=res_a,
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-
-    # B: Draft/Pending MOU, counseling if available (else food fallback)
-    org_b = mk_org("B")
-    res_b = res_svc.ensure_resource(
-        entity_ulid=org_b,
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-    payload_b = {}
-    if counseling_key:
-        payload_b[counseling_key] = {"has": True, "note": "Mon–Thu"}
-    elif food_key:
-        payload_b[food_key] = {"has": True, "note": "Mon–Thu"}
-
-    if payload_b:
-        res_svc.upsert_capabilities(
-            resource_ulid=res_b,
-            payload=payload_b,
-            request_id=new_ulid(),
-            actor_ulid=None,
-        )
-    res_svc.set_readiness_status(
-        resource_ulid=res_b,
-        status="draft",
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-    res_svc.set_mou_status(
-        resource_ulid=res_b,
-        status="pending",
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-
-    click.echo("OK — seeded resources:")
-    click.echo(f"  A → {res_a}")
-    click.echo(f"  B → {res_b}")
-    click.echo(
-        "Tip: `flask dev list-capabilities` to see the canonical keys."
-    )
 
 
 # (Optional) Handy viewer
@@ -1763,111 +1464,8 @@ def dev_list_capabilities():
 
 
 # -----------------
-# Seed Demo Sponsors
+# Sponsor Capabilities
 # -----------------
-
-
-# --- Demo seeders: Sponsors ---------------------------------------------------
-
-
-@dev_group.command("seed-demo-sponsors")
-@with_appcontext
-@click.option("--prefix", default="DemoSponsor", show_default=True)
-def dev_seed_demo_sponsors(prefix: str):
-    """
-    Create a couple of Sponsor orgs, attach canonical capabilities,
-    and add a sample cash pledge to one of them. Uses sponsors_v2.
-    """
-    echo_db_banner("seed-demo-sponsors")
-    import click
-
-    from app.extensions.contracts import sponsors_v2 as spx
-    from app.lib.ids import new_ulid
-    from app.slices.entity import services as ent_svc
-
-    # Helper: pick first allowed "funding.*" key if service exposes a list; fallback to a safe default.
-    funding_key = "funding.cash_grant"
-    try:
-        # If your sponsors.services defines allowed_capabilities(), prefer it.
-        from app.slices.sponsors import services as ssvc  # type: ignore
-
-        if hasattr(ssvc, "allowed_capabilities"):
-            allowed = set(ssvc.allowed_capabilities() or [])
-            # Strong preference for cash_grant; otherwise take first funding.* key
-            if "funding.cash_grant" in allowed:
-                funding_key = "funding.cash_grant"
-            else:
-                funding_key = next(
-                    (k for k in sorted(allowed) if k.startswith("funding.")),
-                    funding_key,
-                )
-    except Exception:
-        pass
-
-    def mk_org(label: str) -> str:
-        rid = new_ulid()
-        return ent_svc.ensure_org(
-            legal_name=f"{prefix}-{label}",
-            ein=None,
-            request_id=rid,
-            actor_ulid=None,
-        )
-
-    # S1: Reimbursement-style sponsor with a pledge
-    org1 = mk_org("Elks")
-    s1 = spx.create_sponsor(
-        entity_ulid=org1, request_id=new_ulid(), actor_ulid=None
-    )["data"]["sponsor_ulid"]
-
-    # Capabilities (e.g., funding modes they support)
-    spx.upsert_capabilities(
-        sponsor_ulid=s1,
-        capabilities={
-            funding_key: {"has": True, "note": "core funding"},
-        },
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-
-    # Add a sample cash pledge and mark it active
-    pledge_ulid = new_ulid()
-    spx.pledge_upsert(
-        sponsor_ulid=s1,
-        pledge={
-            "pledge_ulid": pledge_ulid,
-            "type": "cash",  # keep in sync with your services' accepted values
-            "status": "proposed",
-            "currency": "USD",
-            "stated_amount": 40000,  # $400.00
-            "notes": "Welcome Home Kit budget",
-        },
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-    spx.pledge_set_status(
-        pledge_ulid=pledge_ulid,
-        status="active",
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-
-    # S2: Direct-support sponsor without a pledge (just capabilities)
-    org2 = mk_org("Rotary")
-    s2 = spx.create_sponsor(
-        entity_ulid=org2, request_id=new_ulid(), actor_ulid=None
-    )["data"]["sponsor_ulid"]
-    spx.upsert_capabilities(
-        sponsor_ulid=s2,
-        capabilities={
-            funding_key: {"has": True, "note": "microgrants"},
-        },
-        request_id=new_ulid(),
-        actor_ulid=None,
-    )
-
-    click.echo("OK — seeded sponsors:")
-    click.echo(f"  S1 → {s1} (pledge {pledge_ulid})")
-    click.echo(f"  S2 → {s2}")
 
 
 @dev_group.command("list-sponsor-capabilities")

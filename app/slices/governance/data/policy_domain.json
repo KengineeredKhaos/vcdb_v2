@@ -9,7 +9,8 @@
       "auditor": ["staff"]
     },
     "must_include_when_rbac": {
-      "admin": ["governor"]
+      "admin": ["governor"],
+      "staff": ["governor"]
     },
     "forbidden_pairs": [
       ["civilian", "governor"]

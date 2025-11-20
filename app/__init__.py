@@ -24,7 +24,7 @@ from app.extensions.errors import ContractError
 from app.lib.chrono import parse_iso8601, utcnow_aware
 from app.lib.logging import configure_logging
 
-from .extensions import init_extensions
+from .extensions import csrf, init_extensions
 
 # from .web import bp as web_bp
 
@@ -84,6 +84,9 @@ def create_app(config_object="config.DevConfig"):
 
     # init extensions first
     init_extensions(flask_app)
+
+    # Bind CSRF after core extensions are attached
+    csrf.init_app(flask_app)
 
     # -------------
     # CSRF + Jinja + http error handlers
@@ -400,9 +403,9 @@ def create_app(config_object="config.DevConfig"):
     # -------------
 
     # Silenced during Development
-    if flask_app.debug:
-        _dump_routes(flask_app)
-        _boot_sanity(flask_app)
+    # if flask_app.debug:
+    #     _dump_routes(flask_app)
+    #     _boot_sanity(flask_app)
 
     # only in dev, not during tests
     # if app.config.get("ENV") == "development" and not app.testing:
