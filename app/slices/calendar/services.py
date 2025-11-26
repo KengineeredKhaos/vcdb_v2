@@ -1,10 +1,12 @@
 # app/slices/calendar/services.py
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, Optional, TypedDict
 
 from app.extensions import db, event_bus
-from app.extensions.contracts.finance import v1 as finance
+from app.extensions.contracts import finance_v2 as finance
+from app.extensions.contracts.errors import ContractError
 from app.extensions.policies import GOV_DATA, _load_and_cache
 from app.lib.chrono import now_iso8601_ms
 
@@ -50,10 +52,11 @@ def _resolve_fund_summary(
 ) -> Optional[dict[str, Any]]:
     if not fund_ulid:
         return None
-    resp = finance.fund_get(
-        {"request_id": f"cal-{fund_ulid}", "data": {"fund_ulid": fund_ulid}}
-    )
-    return resp["data"] if resp.get("ok") else None
+    try:
+        dto = finance.get_fund_summary(fund_ulid)
+    except ContractError:
+        return None  # or re-raise if you want strict behavior
+    return asdict(dto)
 
 
 def create_project(data: dict, actor_ulid: str) -> dict:

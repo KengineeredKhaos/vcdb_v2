@@ -1,4 +1,175 @@
 # app/slices/governance/services.py
+
+"""
+VCDB v2 — Governance policy services
+
+This module owns the *interpretation* of all Governance policy families.
+It is the only place that is allowed to turn stored policy blobs (JSON) into
+runtime-friendly objects and decision helpers.
+
+High-level architecture
+=======================
+
+* Canonical store (target state)
+  - All Governance policies live as JSON blobs in the ``Policy`` table
+    (family, key, version, body_json).
+  - During the v2 build-out, some older families are still file-backed under
+    ``app/slices/governance/data/*.json``.  Helpers here (and in
+    ``services_admin``) hide where the bits are stored from everyone else.
+
+* Single access pipeline
+  - Other slices and CLI commands MUST go through the
+    ``app.extensions.contracts.governance_v2`` contract.
+  - Callers never reach into this module or the ``Policy`` model directly.
+  - Admin policy editing goes:
+        Admin UI / CLI
+        -> governance_v2 (admin layer)
+        -> services_admin (file/DB read-write + schema validation)
+        -> Policy table (or file, during transition)
+        -> Ledger event.
+
+* Read-only vs admin
+  - This module focuses on **read-only** helpers and decision engines that
+    the contract layer wraps (e.g. issuance decisions).
+  - ``services_admin`` owns the **write path** for policies
+    (preview/commit with JSON Schema validation and ledger emission).
+
+Policy families
+===============
+
+Each family is a logical bucket of related rules with a shared JSON shape and
+a single owner in the real world (the Board / Governance).  A given family has:
+
+    * a storage location (file or Policy row, moving toward Policy-only),
+    * a loader/validator here in ``governance.services``,
+    * one or more accessors exposed via ``governance_v2``.
+
+Current families (2025-11, v2 build-out):
+
+1. Role catalogs (RBAC + domain roles)
+   -----------------------------------
+   * Subject:
+       - RBAC roles (auth roles the app understands),
+       - Domain roles (customer/resource/sponsor/governor, etc.).
+   * Storage:
+       - Seeded from JSON under ``governance/data/`` into code tables
+         (e.g. ``RoleCode``), and/or Policy rows via the registry.
+   * Helpers here:
+       - Seed functions (e.g. ``seed_domain_roles``) that populate the DB
+         from the canonical JSON/Policy blobs.
+   * Exposed via contract:
+       - ``governance_v2.get_role_catalogs()`` returns DTOs used by:
+           - Auth slice (RBAC),
+           - Governance/Admin UI (domain role assignment),
+           - Devtools.
+
+2. Issuance policy (inventory / cadence / blackout decisions)
+   ----------------------------------------------------------
+   * Subject:
+       - Which SKUs can be issued to which customers,
+       - Cadence windows, blackout behavior, and qualifiers
+         (veteran / housing status, etc.).
+   * Storage:
+       - Currently file-backed (``policy_issuance.json``) under
+         ``governance/data/``; target is a Policy row family
+         (e.g. ``family="issuance"``).
+   * Helpers here:
+       - ``load_policy_issuance()`` (JSON -> in-memory policy object),
+       - private helpers (``_rule_matches``, ``_check_qualifiers``,
+         ``_apply_cadence``, etc.),
+       - ``decide_issue(ctx)``: core decision engine.
+   * Exposed via contract:
+       - ``governance_v2.decide_issue(ctx) -> IssueDecision``
+         used by Logistics slice, dev CLI ``dev decide-issue``,
+         and issuance debug tooling.
+
+   * Dependencies:
+       - Calendar enforcers (blackout),
+       - Logistics contracts (issuance counts in windows),
+       - Customers contracts (eligibility snapshot).
+
+3. Sponsor capability & lifecycle policy
+   -------------------------------------
+   * Subject:
+       - Capability taxonomy for sponsors (what kinds of funding /
+         in-kind support they offer),
+       - Sponsor lifecycle states (readiness / MOU status enums).
+   * Storage:
+       - File-backed JSON (e.g. ``policy_sponsor_capabilities.json``,
+         ``policy_sponsor_lifecycle.json``) under ``governance/data/``,
+         with a planned migration into Policy rows
+         (families like ``"sponsor_caps"`` and ``"sponsor_lifecycle"``).
+   * Helpers here (planned):
+       - Loader/validator functions such as
+         ``get_sponsor_capability_policy()`` and
+         ``get_sponsor_lifecycle_policy()`` that return normalized vocab.
+   * Exposed via contract:
+       - ``governance_v2.get_sponsor_capability_catalog()`` for the Sponsors
+         slice to validate capability flags and build forms,
+       - ``governance_v2.get_sponsor_lifecycle_policy()`` for validating
+         readiness / MOU fields.
+
+4. POC policy (points-of-contact)
+   ------------------------------
+   * Subject:
+       - Controlled vocabulary for POC scopes (primary, backup, billing, etc.),
+       - Maximum rank / counts where applicable.
+   * Storage:
+       - File-backed JSON (``policy_poc.json``) under ``governance/data/``,
+         with target migration into a Policy family (e.g. ``"poc_policy"``).
+   * Helpers:
+       - Policy loader/validator lives in the contract layer today
+         (``governance_v2.get_poc_policy()``); long term it may move here
+         for consistency with other families.
+   * Exposed via contract:
+       - ``governance_v2.get_poc_policy()`` returns a DTO used by the shared
+         POC helpers (Resource/Sponsor POC wiring, forms, and validations).
+
+5. Spending / authorizations / officers
+   ------------------------------------
+   * Subject:
+       - Officer catalog (Board offices, pro-tem roles),
+       - Spending policies and who can authorize what
+         (e.g., staff vs Treasurer for over-cap amounts),
+       - Restrictions that apply to sponsors / programs.
+   * Storage:
+       - DB-backed via the ``Policy`` model and ``POLICY_REGISTRY``.
+         Families include things like:
+             * governance.officers
+             * governance.spending_matrix
+             * governance.restrictions
+   * Helpers here:
+       - ``_policy_upsert``, ``set_policy``, ``get_policy_value`` and seed
+         helpers (e.g. ``seed_office_catalog``,
+         ``seed_spending_policy_v1``, ``seed_restriction_policies_v1``).
+   * Exposed via contract:
+       - Read-only accessors (current and planned) that let the Admin, Finance,
+         and Governance slices query these policies without touching the
+         underlying tables directly.
+
+Runtime rules
+=============
+
+* Only Governance reads/writes policy storage
+  - No other slice should open JSON policy files or query the ``Policy``
+    table directly.
+  - All access flows through this module (for DB/file I/O) and the
+    ``services_admin`` provider (for admin-grade edits).
+
+* All external callers use contracts
+  - Slices, routes, and CLI commands call
+        ``app.extensions.contracts.governance_v2``
+    for decisions and DTOs.
+  - This allows the storage representation of any family (file vs Policy row)
+    to change without forcing changes across the rest of the app.
+
+* Migration strategy
+  - As v2 stabilizes, file-backed families will be promoted into the Policy
+    table one by one.  The public contract signatures (e.g.
+    ``decide_issue``, ``get_role_catalogs``, ``get_poc_policy``, sponsor
+    capability/lifecycle accessors) remain stable while the storage moves.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,9 +183,12 @@ from sqlalchemy import asc, func, select
 
 from app.extensions import db, event_bus
 from app.extensions.contracts import logistics_v2
-from app.extensions.errors import ContractError
-from app.extensions.policies import load_policy, load_policy_issuance
+from app.extensions.policies import (
+    load_policy,
+    load_policy_issuance,
+)
 from app.lib.chrono import add_years_utc, as_naive_utc, now_iso8601_ms
+from app.lib.errors import PolicyError
 from app.lib.geo import us_states
 from app.lib.ids import new_ulid
 from app.lib.jsonutil import (
@@ -384,8 +558,8 @@ def get_policy(namespace: str, key: str) -> tuple[Dict[str, Any], Policy]:
         .where(
             Policy.namespace == namespace,
             Policy.key == key,
-            Policy.is_active == True,
-        )  # noqa: E712
+            Policy.is_active.is_(True),
+        )
         .limit(1)
     )
     row = db.session.execute(stmt).scalar_one_or_none()

@@ -1,4 +1,57 @@
 # app/slices/auth/models.py
+
+"""
+
+VCDB v2 — Auth slice models
+
+This module defines the **RBAC user account tables** for VCDB v2.
+Auth owns authentication and RBAC role membership only. It does **not**
+own domain roles (customer/resource/sponsor/governor); those are governed
+by the Governance slice and exposed via contracts.
+
+Tables
+======
+
+User
+    Core authentication identity for a human user of the system.
+    - Primary key is a ULID (see app/lib/ids.py).
+    - Carries login fields (username, email, password_hash) and flags
+      for active/locked accounts.
+    - Timestamp mixin (IsoTimestamps) tracks created/updated times.
+
+Role
+    RBAC role catalog for auth-level permissions.
+    - Examples: "user", "staff", "admin", "auditor", "dev".
+    - Role *definitions* (which roles exist and how they map to UI) are
+      governed by policy in the Governance slice; Auth just stores the
+      rows and assignments.
+
+UserRole
+    Many-to-many join table linking Users to Roles.
+    - Each (user_id, role_id) pair is unique.
+    - Represents the current RBAC permissions granted to a user.
+
+Ownership and boundaries
+========================
+
+* Auth is the **single owner** of the User/Role/UserRole tables and any
+  SQL touching them.
+* Other slices must not query these tables directly; they interact with
+  Auth via contracts and helpers in app/lib/security.py.
+* Domain roles (customer/resource/sponsor/governor, officer roles, etc.)
+  live in Governance and are *not* stored here.
+
+Ledger
+======
+
+Auth services (create_user, set_account_roles, etc.) are responsible for
+emitting ledger events (via the event_bus and ledger_v2 contract) when
+auth-relevant facts change. This keeps all authentication-related side
+effects inside the Auth slice while still giving the rest of the system
+a consistent audit trail.
+"""
+
+
 from __future__ import annotations
 
 from sqlalchemy import (

@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from app.extensions.contracts.errors import ContractError
+
 
 # ---------- DTOs ----------
 @dataclass
@@ -206,3 +208,16 @@ def statement_of_activities(period: str) -> ActivitiesReportDTO:
     )
 
     return _svc_soa(period)
+
+
+def get_fund_summary(fund_ulid: str) -> FundDTO:
+    from app.slices.finance.services import get_fund_summary as _svc
+
+    try:
+        return _svc(fund_ulid)
+    except Exception as e:  # ideally a FinanceError subclass
+        raise ContractError(
+            "finance.fund_not_found",
+            f"Fund {fund_ulid} not found",
+            {"fund_ulid": fund_ulid},
+        ) from e

@@ -3,7 +3,7 @@
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 # File: <set to the relative path of this file>
 # Purpose: Single source of truth for audit/ledger write-path.
-# Canon API: ledger-core v1.0.0  (frozen)
+# Canon API: ledger-core v2.0.0  (frozen)
 # Ethos: skinny routes, fat services, ULID, ISO timestamps, no PII in ledger
 
 

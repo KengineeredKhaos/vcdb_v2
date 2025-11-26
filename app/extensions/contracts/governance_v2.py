@@ -1,5 +1,120 @@
 # app/extensions/contracts/governance_v2.py
 
+"""
+VCDB v2 — Governance contract (v2)
+
+This module is the **only public interface** other slices, CLI commands, and
+UI code should use to interact with Governance policy and decisions.
+
+It sits on top of the internal services layer defined in
+``app.slices.governance.services`` (see that module’s policy map docstring for
+full details of the policy families and storage model).
+
+It is intentionally thin:
+
+    routes / services / CLI
+        -> app.extensions.contracts.governance_v2
+        -> app.slices.governance.services   (read-only helpers & decision engines)
+        -> app.slices.governance.services_admin  (admin write-path only)
+
+The full “policy map” — which policy families exist, where they are stored
+(DB vs JSON files), and which helpers interpret them — lives in the top-of-file
+docstring in ``app.slices.governance.services``. See that file for the
+canonical catalog of policy families and migration plan. :contentReference[oaicite:0]{index=0}
+
+This contract module does three things:
+
+* Expose **stable, versioned functions** that other slices can call
+  (e.g. ``decide_issue``, ``get_role_catalogs``, POC/sponsor catalogs, etc.),
+  returning simple DTOs instead of ORM rows.
+* Normalize error handling, so callers only ever see
+  ``app.extensions.errors.ContractError`` on failure.
+* Hide storage and implementation details so we can move a policy family
+  from JSON files to the ``Policy`` table (or update the decision logic)
+  without touching callers.
+
+Design
+======
+
+* No other slice imports ``app.slices.governance.services`` directly.
+  They *only* import this contract module.
+* This module does *not* reach into Governance models either; it delegates
+  to ``governance.services`` / ``governance.services_admin`` and focuses on
+  arguments, DTOs, and error translation.
+* Once a v2 contract function signature ships, we treat it as stable; new
+  behavior comes in as v3 side-by-side rather than mutating v2 in place.
+
+* Single entry point
+  - Callers import from here, never from ``governance.services`` or the
+    ``Policy`` model directly.
+  - This allows Governance to move policy families from file-backed JSON
+    into DB-backed ``Policy`` rows without breaking callers.
+
+* DTOs, not models
+  - All functions here return simple dataclasses / dicts / primitives
+    (IssueDecision, role catalogs, POC policy, etc.).
+  - No SQLAlchemy models or raw JSON blobs cross this boundary.
+
+* Runtime vs admin
+  - **Runtime contracts** (safe for any slice to use at request time):
+        - ``decide_issue(ctx) -> IssueDecision``
+            Core issuance decision engine for Logistics and dev CLI.
+        - ``get_role_catalogs() -> RoleCatalogDTO``
+            RBAC + domain role vocab for Auth, Governance, Admin UI.
+        - ``get_poc_policy() -> POCPolicyDTO``
+            POC scopes / max rank for shared POC helpers (Resources/Sponsors).
+        - (Planned) ``get_sponsor_capability_catalog() -> SponsorCapsDTO``
+            Capability taxonomy for Sponsors slice.
+        - (Planned) ``get_sponsor_lifecycle_policy() -> SponsorLifecycleDTO``
+            Readiness/MOU vocab for Sponsors slice.
+        - (Planned) Resource policy helpers
+            e.g. availability windows, vendor allow/deny lists, SLA shapes.
+
+  - **Admin contracts** (RBAC/domain guarded; used only by Admin/Devtools):
+        - ``list_policies(validate: bool = False)``
+        - ``get_policy(key: str, validate: bool = False)``
+        - ``preview_policy_update(key: str, new_policy: dict)``
+        - ``commit_policy_update(key: str, new_policy: dict, actor_ulid: str)``
+      These delegate to ``app.slices.governance.services_admin`` to perform
+      JSON Schema validation, atomic writes, and ledger emission when board
+      policy changes.
+
+Error model
+===========
+
+All public functions raise:
+
+    ``extensions.contracts.errors.ContractError``
+
+for caller-visible failures (bad input, missing policy, validation errors,
+downstream contract failures).  Internal exceptions from services are caught
+and normalized to ``ContractError`` so callers have a single error type to
+handle.
+
+Usage
+=====
+
+Runtime code (slices, routes, CLI):
+
+    from app.extensions.contracts import governance_v2
+
+    decision = governance_v2.decide_issue(ctx)
+    catalogs = governance_v2.get_role_catalogs()
+    poc_cfg  = governance_v2.get_poc_policy()
+
+Admin-only code (policy editor UI / devtools):
+
+    from app.extensions.contracts import governance_v2
+
+    infos = governance_v2.list_policies(validate=True)
+    old   = governance_v2.get_policy("policy_issuance", validate=True)
+    diff  = governance_v2.preview_policy_update("policy_issuance", new_body)
+    res   = governance_v2.commit_policy_update("policy_issuance", new_body, actor_ulid)
+
+All future Governance policy access should follow this pattern.
+"""
+
+
 from __future__ import annotations
 
 import json
@@ -32,6 +147,10 @@ __all__ = [
     "IssueDecision",
     "RestrictionContext",
     "decide_issue",
+    "get_role_catalogs",
+    "get_poc_policy",
+    "get_sponsor_capability_policy",
+    "get_sponsor_lifecycle_policy",
 ]
 
 # -----------------
@@ -43,6 +162,16 @@ GOV_DOMAIN_PATH = (
     Path("slices") / "governance" / "data" / "policy_domain.json"
 )
 POC_POLICY_PATH = Path("slices") / "governance" / "data" / "policy_poc.json"
+SPONSOR_CAPS_PATH = (
+    Path("slices")
+    / "governance"
+    / "data"
+    / "policy_sponsor_capabilities.json"
+)
+SPONSOR_LIFECYCLE_PATH = (
+    Path("slices") / "governance" / "data" / "policy_sponsor_lifecycle.json"
+)
+
 
 # -----------------
 # DTO's
@@ -57,6 +186,16 @@ class SpendingLimitsDTO(TypedDict):
 class ConstraintFlagsDTO(TypedDict):
     veteran_only: bool
     homeless_only: bool
+
+
+class SponsorCapsDTO(TypedDict):
+    caps: Dict[str, List[str]]
+    all_codes: List[str]
+
+
+class SponsorLifecycleDTO(TypedDict):
+    readiness_allowed: List[str]
+    mou_allowed: List[str]
 
 
 __schema__ = {
@@ -379,6 +518,122 @@ def describe():
         "rbac_to_domain": bundle["domain"]["rbac_to_domain"],
         "calendar": {"blackout": bundle["calendar"]["blackout_summary"]},
     }
+
+
+# -----------------
+# Sponsor Policy DTO's
+# -----------------
+
+
+def get_sponsor_capability_policy() -> SponsorCapsDTO:
+    """
+    Read-only contract for Sponsor capability taxonomy.
+
+    Returns a normalized DTO:
+        {
+          "caps": {
+              "funding": [ ... ],
+              "in_kind": [ ... ],
+              "meta": [ ... ]
+          },
+          "all_codes": [ ... ]  # flattened, sorted unique list
+        }
+
+    Raises ContractError (503) if the policy is missing or invalid.
+    """
+    where = "governance_v2.get_sponsor_capability_policy"
+    root = _app_root()
+    obj = _load_json(root / SPONSOR_CAPS_PATH, where)
+
+    # Require "caps" top-level mapping
+    caps_raw = obj.get("caps")
+    if not isinstance(caps_raw, dict) or not caps_raw:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message='"caps" must be a non-empty object',
+            http_status=503,
+            data={"path": str(root / SPONSOR_CAPS_PATH)},
+        )
+
+    normalized: Dict[str, List[str]] = {}
+    all_codes_set: set[str] = set()
+
+    for family, codes in caps_raw.items():
+        if not isinstance(codes, list) or not codes:
+            raise ContractError(
+                code="policy_invalid",
+                where=where,
+                message=f'"caps.{family}" must be a non-empty list',
+                http_status=503,
+                data={"path": str(root / SPONSOR_CAPS_PATH)},
+            )
+        # normalize each family to sorted unique strings
+        codes_norm = sorted({str(c) for c in codes})
+        normalized[str(family)] = codes_norm
+        all_codes_set.update(codes_norm)
+
+    if not all_codes_set:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message="no capability codes defined",
+            http_status=503,
+            data={"path": str(root / SPONSOR_CAPS_PATH)},
+        )
+
+    return SponsorCapsDTO(
+        caps=normalized,
+        all_codes=sorted(all_codes_set),
+    )
+
+
+def get_sponsor_lifecycle_policy() -> SponsorLifecycleDTO:
+    """
+    Read-only contract for Sponsor readiness/MOU lifecycle vocabulary.
+
+    Returns:
+        {
+          "readiness_allowed": [...],
+          "mou_allowed": [...]
+        }
+
+    Both lists are normalized to sorted unique strings.
+
+    Raises ContractError (503) if the policy is missing or invalid.
+    """
+    where = "governance_v2.get_sponsor_lifecycle_policy"
+    root = _app_root()
+    obj = _load_json(root / SPONSOR_LIFECYCLE_PATH, where)
+
+    readiness = obj.get("readiness_allowed")
+    mou = obj.get("mou_allowed")
+
+    if not isinstance(readiness, list) or not readiness:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message='"readiness_allowed" must be a non-empty list',
+            http_status=503,
+            data={"path": str(root / SPONSOR_LIFECYCLE_PATH)},
+        )
+
+    if not isinstance(mou, list) or not mou:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message='"mou_allowed" must be a non-empty list',
+            http_status=503,
+            data={"path": str(root / SPONSOR_LIFECYCLE_PATH)},
+        )
+
+    readiness_norm = sorted({str(x) for x in readiness})
+    mou_norm = sorted({str(x) for x in mou})
+
+    return SponsorLifecycleDTO(
+        readiness_allowed=readiness_norm,
+        mou_allowed=mou_norm,
+    )
 
 
 # -----------------

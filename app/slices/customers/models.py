@@ -1,4 +1,51 @@
 # app/slices/customers/models.py
+
+"""
+Customers slice — core customer record, sensitive history snapshots, and
+non-PII eligibility qualifiers.
+
+This module defines three models that together represent a "customer" from the
+app's point of view:
+
+* Customer
+    One row per person who is treated as a customer in VCDB. It is keyed by
+    `entity_ulid` (from the Entity slice) and stores denormalized, UI-friendly
+    cues only: tier thresholds, watch/flag status, lifecycle status, and a
+    handful of ISO8601 timestamps for "first seen", "last touch", and needs
+    updates. No high-granularity profile details live here; this table is
+    deliberately shallow and optimized for dashboards, lists, and quick filters.
+* CustomerHistory
+    Privacy-A snapshot store. This is where sensitive profile data actually
+    lives, in sectioned JSON blobs (for example: "profile:needs:tier1"). Each
+    row is a versioned snapshot for a single customer/section. Routes and
+    services should treat this as the source of truth for "what did this part
+    of the profile look like at that time?" and avoid leaking its contents into
+    logs, ledger, or other slices.
+* CustomerEligibility
+    Non-PII eligibility and cadence qualifiers, one row per Customer. This holds
+    coarse, policy-relevant flags such as "is veteran verified", how that was
+    verified, homelessness verification, and tier minima. Values are normalized,
+    constrained via CHECK constraints, and safe to expose via contracts to
+    Governance, Logistics, Resources, etc., when those slices need to evaluate
+    issuance/referral policy without touching raw profile data.
+
+Ownership and boundaries:
+
+* The Customers slice owns these tables and is responsible for enforcing the
+  PII boundary: detailed profile values go into CustomerHistory; only coarse,
+  derived indicators are surfaced in Customer and CustomerEligibility.
+* Other slices should reference customers by `customer_ulid` (never by internal
+  structure here) and interact through extensions/contracts, not by importing
+  these models directly.
+* Ledger and logging must continue to refer only to ULIDs and non-PII flags,
+  never to raw snapshot contents.
+
+In short, this module gives us a clean separation between the lightweight
+"customer card" we show to staff, the sensitive historical snapshots we must
+protect, and the normalized eligibility signals that downstream policy engines
+consume.
+"""
+
 from __future__ import annotations
 
 from sqlalchemy import (

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "types": [
+    { "code": "cash", "label": "Cash" },
+    { "code": "in_kind", "label": "In-kind" }
+  ],
+  "statuses": [
+    { "code": "proposed", "label": "Proposed" },
+    { "code": "active", "label": "Active" },
+    { "code": "fulfilled", "label": "Fulfilled" },
+    { "code": "cancelled", "label": "Cancelled" }
+  ],
+  "transitions": {
+    "proposed": ["active", "cancelled"],
+    "active": ["fulfilled", "cancelled"]
+  }
+}

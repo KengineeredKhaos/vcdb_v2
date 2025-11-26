@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "policy_sponsor_pledge.schema.json",
+  "title": "Sponsor Pledge Policy",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "types": {
+      "type": "array",
+      "description": "Allowed pledge type codes (e.g. cash, in_kind).",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "statuses": {
+      "type": "array",
+      "description": "Allowed pledge status codes.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "transitions": {
+      "type": "object",
+      "description": "Optional allowed status transitions (status -> [next...]).",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "required": ["types", "statuses"],
+  "additionalProperties": false
+}

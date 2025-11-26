@@ -1,5 +1,11 @@
 # app / extensions / contracts / calendar_v2.py
 
+# ------------------
+# NOTE: Stub contract.
+# Real blackout logic currently lives in calendar.services.
+# Do not rely on this module for policy decisions yet.
+# ------------------
+
 from __future__ import annotations
 
 from typing import Optional, TypedDict
@@ -10,8 +16,12 @@ class CalendarGateDTO(TypedDict):
     label: Optional[str]
     reason: str  # ok|calendar_blackout|calendar_unavailable
 
+
 __schema__ = {
-    "blackout_ok": {"requires": ["when_iso?"], "returns_keys": ["ok", "label", "reason"]}
+    "blackout_ok": {
+        "requires": ["when_iso?"],
+        "returns_keys": ["ok", "label", "reason"],
+    }
 }
 
 

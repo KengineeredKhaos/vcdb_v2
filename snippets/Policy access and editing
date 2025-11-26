@@ -1,0 +1,11 @@
+Policy access and editing
+
+Org-wide / board policies live in Governance (and Auth for RBAC); slice-only 
+reference data lives in each slice.
+
+All slices read board policy only through governance_v2 / auth_v2 contracts
+as read-only data.
+
+Admin policy editing goes through a Governance-admin path that uses the same 
+loaders/schemas under the hood, but adds validation, dry-run/commit, and 
+ledger logging.

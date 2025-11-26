@@ -48,9 +48,7 @@ def _unique_code(model_cls, prefix: str, max_tries: int = 8) -> str:
     for _ in range(max_tries):
         code = _gen_code(prefix, length)
         exists = db.session.execute(
-            select(model_cls)
-            .where(model_cls.code == code)
-            .limit(1)
+            select(model_cls).where(model_cls.code == code).limit(1)
         ).first()
         if not exists:
             return code

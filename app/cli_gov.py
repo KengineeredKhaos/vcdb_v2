@@ -658,17 +658,26 @@ def protem_revoke_cmd(grant_ulid, reason, actor_ulid, dry_run):
 # Policy Linting
 # -----------------
 
+
 @governance_group.command("lint")
-@click.option("--strict/--no-strict", default=False, help="Exit non-zero if any schema fails.")
+@click.option(
+    "--strict/--no-strict",
+    default=False,
+    help="Exit non-zero if any schema fails.",
+)
 def governance_lint(strict):
     """Validate governance policies against their schemas."""
     from app import create_app
+
     app = create_app()  # or respect env vars/flags as you already do
     with app.app_context():
-        data_dir = Path(current_app.root_path) / "slices" / "governance" / "data"
+        data_dir = (
+            Path(current_app.root_path) / "slices" / "governance" / "data"
+        )
         from jsonschema import (
             Draft202012Validator,  # assume installed for CLI
         )
+
         errors = 0
         for p in sorted(data_dir.glob("*.json")):
             if p.name.endswith(".schema.json") or p.parent.name == "schemas":

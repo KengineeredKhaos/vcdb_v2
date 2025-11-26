@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from flask import (
+    current_app,
     flash,
     jsonify,
     redirect,
@@ -46,9 +47,11 @@ def login_post():
             remember=True,
         )
         return redirect(request.form.get("next") or url_for("web.index"))
+    except ValueError:
+        flash("Invalid username or password", "error")
     except Exception:
-        flash("Login failed", "error")
-        return redirect(url_for("auth.login"))
+        current_app.logger.exception("Unexpected error during login")
+        flash("Something went wrong. Please try again.", "error")
 
 
 @bp.post("/logout", endpoint="logout")

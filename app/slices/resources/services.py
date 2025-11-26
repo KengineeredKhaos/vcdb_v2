@@ -2,16 +2,14 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
 from app.extensions import db, event_bus
-from app.extensions.contracts.entity_v2 import get_entity_card
 from app.extensions.contracts.governance_v2 import get_poc_policy
-from app.extensions.event_bus import emit as ledger_emit
-from app.lib.chrono import now_iso8601_ms, utcnow_naive
+from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
 from app.services import poc as poc_svc
 from app.slices.resources.models import (
@@ -430,9 +428,6 @@ def upsert_capabilities(
     return hist.ulid
 
 
-# ----------- Resource POC workings ------
-
-
 def _normalize_policy(
     scope: Optional[str], rank: Optional[int]
 ) -> tuple[str, int, dict]:
@@ -464,195 +459,6 @@ def _enforce_primary(
             ResourcePOC.is_primary == True,  # noqa: E712
         )
     ).update({"is_primary": False}, synchronize_session=False)
-
-
-def link_poc(
-    sess: Session,
-    *,
-    org_ulid: str,
-    person_entity_ulid: str,
-    scope: Optional[str] = None,
-    rank: int = 0,
-    is_primary: bool = False,
-    window: Optional[dict] = None,  # {"from": isoZ|None, "to": isoZ|None}
-    org_role: Optional[str] = None,
-    actor_ulid: Optional[str] = None,
-):
-    sc, rk, _ = _normalize_policy(scope, rank)
-    _enforce_primary(sess, org_ulid, sc, is_primary)
-
-    row = ResourcePOC(
-        org_ulid=org_ulid,
-        person_entity_ulid=person_entity_ulid,
-        relation=POC_RELATION,
-        scope=sc,
-        rank=rk,
-        is_primary=bool(is_primary),
-        active=True,
-        org_role=org_role,
-        valid_from_utc=(window or {}).get("from"),
-        valid_to_utc=(window or {}).get("to"),
-        created_at_utc=utcnow_naive(),
-        updated_at_utc=utcnow_naive(),
-    )
-    sess.add(row)
-
-    ledger_emit(
-        domain="resources",
-        operation="poc.linked",
-        entity_ulid=org_ulid,
-        actor_ulid=actor_ulid,
-        happened_at=utcnow_naive(),
-        meta={
-            "person_entity_ulid": person_entity_ulid,
-            "relation": POC_RELATION,
-            "scope": sc,
-            "rank": rk,
-            "is_primary": bool(is_primary),
-            "org_role": org_role,
-            "valid_from_utc": row.valid_from_utc.isoformat()
-            if row.valid_from_utc
-            else None,
-            "valid_to_utc": row.valid_to_utc.isoformat()
-            if row.valid_to_utc
-            else None,
-        },
-    )
-    return row
-
-
-def update_poc(
-    sess: Session,
-    *,
-    org_ulid: str,
-    person_entity_ulid: str,
-    scope: Optional[str] = None,
-    rank: Optional[int] = None,
-    is_primary: Optional[bool] = None,
-    window: Optional[dict] = None,
-    org_role: Optional[str] = None,
-    actor_ulid: Optional[str] = None,
-):
-    q = sess.query(ResourcePOC).filter(
-        and_(
-            ResourcePOC.org_ulid == org_ulid,
-            ResourcePOC.person_entity_ulid == person_entity_ulid,
-            ResourcePOC.relation == POC_RELATION,
-        )
-    )
-    row = q.one_or_none()
-    if not row:
-        raise LookupError("POC link not found")
-
-    new_scope = row.scope if scope is None else scope
-    new_rank = row.rank if rank is None else rank
-    sc, rk, _ = _normalize_policy(new_scope, new_rank)
-
-    if is_primary is not None:
-        _enforce_primary(sess, org_ulid, sc, is_primary)
-        row.is_primary = bool(is_primary)
-
-    row.scope = sc
-    row.rank = rk
-    if org_role is not None:
-        row.org_role = org_role
-    if window is not None:
-        row.valid_from_utc = window.get("from")
-        row.valid_to_utc = window.get("to")
-    row.updated_at_utc = utcnow_naive()
-
-    ledger_emit(
-        domain="resources",
-        operation="poc.updated",
-        entity_ulid=org_ulid,
-        actor_ulid=actor_ulid,
-        happened_at=utcnow_naive(),
-        meta={
-            "person_entity_ulid": person_entity_ulid,
-            "relation": POC_RELATION,
-            "scope": row.scope,
-            "rank": row.rank,
-            "is_primary": row.is_primary,
-            "org_role": row.org_role,
-            "valid_from_utc": row.valid_from_utc.isoformat()
-            if row.valid_from_utc
-            else None,
-            "valid_to_utc": row.valid_to_utc.isoformat()
-            if row.valid_to_utc
-            else None,
-        },
-    )
-    return row
-
-
-def unlink_poc(
-    sess: Session,
-    *,
-    org_ulid: str,
-    person_entity_ulid: str,
-    scope: Optional[str] = None,
-    actor_ulid: Optional[str] = None,
-):
-    q = sess.query(ResourcePOC).filter(
-        and_(
-            ResourcePOC.org_ulid == org_ulid,
-            ResourcePOC.person_entity_ulid == person_entity_ulid,
-            ResourcePOC.relation == POC_RELATION,
-        )
-    )
-    if scope:
-        q = q.filter(ResourcePOC.scope == scope)
-    row = q.one_or_none()
-    if not row:
-        return
-
-    row.active = False
-    row.updated_at_utc = utcnow_naive()
-
-    ledger_emit(
-        domain="resources",
-        operation="poc.unlinked",
-        entity_ulid=org_ulid,
-        actor_ulid=actor_ulid,
-        happened_at=utcnow_naive(),
-        meta={
-            "person_entity_ulid": person_entity_ulid,
-            "relation": POC_RELATION,
-            "scope": row.scope,
-        },
-    )
-
-
-def list_pocs(sess: Session, *, org_ulid: str) -> list[dict]:
-    rows: Iterable[ResourcePOC] = (
-        sess.query(ResourcePOC)
-        .filter(
-            ResourcePOC.org_ulid == org_ulid,
-            ResourcePOC.relation == POC_RELATION,
-        )
-        .order_by(
-            ResourcePOC.active.desc(),
-            ResourcePOC.scope.asc(),
-            ResourcePOC.rank.asc(),
-        )
-    )
-    out = []
-    for r in rows:
-        out.append(
-            {
-                "org_ulid": r.org_ulid,
-                "person_entity_ulid": r.person_entity_ulid,
-                "relation": r.relation,
-                "scope": r.scope,
-                "rank": r.rank,
-                "is_primary": r.is_primary,
-                "org_role": r.org_role,
-                "valid_from_utc": r.valid_from_utc,
-                "valid_to_utc": r.valid_to_utc,
-                "active": r.active,
-            }
-        )
-    return out
 
 
 # ----------- views / search -------------

@@ -1,4 +1,64 @@
 # app/slices/logistics/models.py
+
+"""
+Logistics slice — inventory catalog, stock/movements, and issuance facts.
+
+This module defines the core data model for physical inventory in VCDB v2.
+Logistics owns the *facts* about items, stock levels, and movements; policy,
+financial valuation, and customer profile live in other slices. The tables here
+are deliberately narrow and operational:
+
+* Location
+    Logical or physical locations where stock can live (e.g., main warehouse,
+    outreach van, storage locker). These are referenced by batches, movements,
+    and stock summary rows.
+* InventoryItem
+    The canonical item catalog, one row per SKU. Each item carries a human
+    category/name/unit/condition plus a parsed, indexed SKU family
+    (cat/sub/src/size/color/issuance_class/seq) to support fast lookups by
+    classification and issuance rules.
+* InventoryBatch
+    Represents a discrete batch of an item at a specific location (e.g., a
+    receipt or donation lot). Used when you need to trace stock back to a
+    source or DRMO vs commercial acquisition. Quantities are in whole units.
+* InventoryMovement
+    Append-only record of item movements: receipts, issues, transfers, etc.
+    Each movement ties an item and location (and optionally a batch) to a
+    quantity, timestamp, and optional external references (source/target ULIDs,
+    actor, note). This is the ground truth for how stock has changed over time.
+* InventoryStock
+    A denormalized stock summary per (item_ulid, location_ulid). This table is
+    a performance helper derived from movements; it can be recomputed if needed
+    and should never be treated as an audit log.
+* Issue
+    Customer-facing issuance facts keyed by `customer_ulid`. Each row captures
+    what SKU was issued, in what quantity, when, and under which project. It
+    also links back to the underlying movement row (if any) and can store a
+    JSON-encoded decision payload explaining why the issuance was allowed under
+    policy. This is the Logistics-owned history that downstream slices (e.g.,
+    Governance, Customers) use to enforce cadence and eligibility; no PII lives
+    here beyond the customer ULID.
+
+Ownership and boundaries:
+
+* The Logistics slice is the only writer for these tables. Other slices must
+  interact with inventory and issuance via services and contracts, not by
+  importing these models directly or joining on them.
+* Governance supplies issuance policy and cadence rules; Logistics applies that
+  policy to customer/stock context and records the resulting Issue and
+  movements.
+* Finance is responsible for valuing items and recording monetary impact in the
+  journal; Logistics records only quantities, SKUs, locations, and references.
+* Ledger events for inventory/issuance are emitted from Logistics services via
+  the shared event bus and refer to ULIDs, not raw row contents.
+
+In short, this module is the operational backbone for "what do we have, where
+is it, and what did we hand to whom and when?" All higher-level reporting,
+policy, and financial views are layered on top of these facts.
+"""
+
+from __future__ import annotations
+
 from sqlalchemy import (
     CheckConstraint,
     Index,
@@ -52,7 +112,6 @@ class InventoryItem(db.Model, ULIDPK):
         String(1), index=True, nullable=False
     )
     sku_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
 
     __table_args__ = (
         Index(

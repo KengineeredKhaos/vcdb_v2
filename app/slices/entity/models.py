@@ -1,4 +1,61 @@
 # app/slices/entity/models.py
+
+"""
+Entity slice — canonical people/org registry and their basic contact surface.
+
+This module defines the core "Entity" model for VCDB v2 and its immediate
+one-to-one / one-to-many satellites. Every person or organization known to
+the system gets a single Entity row; all other slices reference that identity
+via `entity_ulid` instead of storing their own PII.
+
+Models:
+
+* Entity
+    Root record keyed by ULID, with a simple `kind` ("person", "org", etc.)
+    and timestamp metadata. It owns the 1:1 relationships to EntityPerson and
+    EntityOrg, plus 1:N relationships to roles, contacts, and addresses. This
+    is the canonical ID other slices use as `entity_ulid`.
+* EntityPerson
+    1:1 extension of Entity for people. Stores first/last name and an optional
+    preferred name. Enforced as a strict 1:1 via a UNIQUE constraint on
+    `entity_ulid`. All name normalization and validation happens in services.
+* EntityOrg
+    1:1 extension of Entity for organizations. Stores legal_name, optional DBA,
+    and an optional EIN. Enforced as a strict 1:1 via a UNIQUE constraint on
+    `entity_ulid` and a separate UNIQUE constraint on EIN (subject to DB
+    behavior with NULLs). It also owns backrefs to ResourcePOC/SponsorPOC so
+    Resource/Sponsor slices can attach POCs without duplicating org identity.
+* EntityRole
+    1:N roles attached to an Entity (e.g., "customer", "staff", "governor").
+    Governance defines which role strings are valid; the DB enforces uniqueness
+    per entity via (entity_ulid, role). These are "system roles", distinct from
+    Auth RBAC roles, and are safe to expose via contracts (no PII).
+* EntityContact
+    1:N contact methods per Entity (email/phone, plus a primary flag). Values
+    are normalized and validated in services, not here. Useful for quick
+    lookups and UI display; other slices should not duplicate email/phone.
+* EntityAddress
+    1:N addresses per Entity. Distinguishes physical vs postal (either/both)
+    and stores normalized address fields, including a two-letter state code
+    enforced by a CHECK constraint. All higher-level geo policy (allowed
+    states, service areas) lives in Governance.
+
+Ownership and boundaries:
+
+* The Entity slice is the single source of truth for people/org identity,
+  contacts, and addresses. No other slice should store names, emails, phones,
+  or raw addresses; they should reference `entity_ulid` instead.
+* Other slices (Customers, Resources, Sponsors, Auth, etc.) may attach their
+  own records to an Entity via foreign keys but must not reach into these
+  tables directly; they should go through services/contracts where possible.
+* Ledger and logging must never store PII from these models; they refer only to
+  ULIDs and non-identifying role labels.
+
+In short, this module gives VCDB v2 a unified identity spine for all people and
+organizations, with a clean separation between core identity data here and
+slice-specific behavior elsewhere.
+"""
+
 from __future__ import annotations
 
 from sqlalchemy import Boolean, CheckConstraint, String, UniqueConstraint

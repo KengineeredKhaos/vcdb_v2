@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "policy_sponsor_lifecycle.schema.json",
+  "title": "Sponsor Lifecycle Policy",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "readiness_allowed": {
+      "type": "array",
+      "description": "Allowed readiness status codes.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "mou_allowed": {
+      "type": "array",
+      "description": "Allowed MOU status codes.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "transitions": {
+      "type": "object",
+      "description": "Optional allowed status transitions per lifecycle dimension.",
+      "properties": {
+        "readiness": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "mou": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": ["readiness_allowed", "mou_allowed"],
+  "additionalProperties": false
+}

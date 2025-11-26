@@ -5,6 +5,55 @@
 # Purpose: Single source of truth for audit/ledger write-path.
 # Canon API: ledger-core v1.0.0  (frozen)
 # Ethos: skinny routes, fat services, ULID, ISO timestamps, no PII in ledger
+
+"""
+Ledger slice — canonical, append-only event log (hash-chained, no PII).
+
+This module defines the core LedgerEvent model, which is the single canonical
+record of "what happened" across all slices. Every meaningful mutation in the
+system should result in exactly one LedgerEvent written via the ledger write
+path (event_bus -> extensions.contracts.ledger_v2 -> Ledger services), never by
+constructing LedgerEvent rows directly.
+
+Model:
+
+* LedgerEvent
+    Append-only event rows keyed by ULID and partitioned by `chain_key`
+    (typically a domain-level stream such as "finance.journal" or
+    "logistics.issue"). Each event records:
+      - domain / operation / event_type: a taxonomy of what happened,
+      - actor_ulid / target_ulid: who initiated it and the primary subject,
+      - request_id: a required correlation ID tying multiple events to a single
+        request or workflow,
+      - happened_at_utc: ISO8601 UTC timestamp as a string for consistency
+        across languages/tools,
+      - refs_json: compact JSON references to related entities/policies
+        (e.g., {"customer_ulid": "...", "policy_key": "..."}),
+      - changed_json: a compact diff or summary of what changed (keys only,
+        no PII or sensitive values),
+      - meta_json: optional extra context useful for diagnostics or audits.
+    Events are hash-chained via prev_hash_hex / curr_hash_hex, allowing offline
+    verification that a chain has not been tampered with. Indexes on
+    chain_key, request_id, and event_type support efficient verification and
+    querying by stream or workflow.
+
+Ownership and boundaries:
+
+* The Ledger slice owns this table and its invariants; no other slice may
+  mutate it directly. All writes must go through the ledger v2 contract and
+  associated services so that hashing, chain partitioning, and validation stay
+  consistent.
+* LedgerEvent must never contain PII or full object snapshots; only ULIDs,
+  coarse event types, and normalized JSON refs/changed/meta are allowed.
+* Downstream reporting, reconciliation tools, and admin "who did what when"
+  views should treat LedgerEvent as the source of truth for system behavior,
+  using ULIDs to look up detailed state in slice-local tables when needed.
+
+In short, this module provides the immutable audit spine for VCDB v2: a
+hash-chained, PII-free event log that every slice writes to but only Ledger
+controls.
+"""
+
 from __future__ import annotations
 
 from typing import Optional

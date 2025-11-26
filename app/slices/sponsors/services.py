@@ -2,14 +2,19 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import desc, func
-from sqlalchemy.orm import Session
 
 from app.extensions import db, event_bus
+from app.extensions.contracts.governance_v2 import (
+    get_sponsor_capability_policy,
+    get_sponsor_lifecycle_policy,
+    get_sponsor_pledge_policy,
+)
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
+from app.lib.logging import get_logger
 from app.services import poc as poc_svc
 
 from .models import (
@@ -20,31 +25,171 @@ from .models import (
     SponsorPOC,
 )
 
-# ---------------- Controlled vocabulary (move to Governance later) ----------------
-SPONSOR_CAPS: dict[str, tuple[str, ...]] = {
-    "funding": (
-        "cash_grant",
-        "restricted_grant",
-        "event_sponsorship",
-        "matching_gifts",
-    ),
-    "in_kind": (
-        "in_kind_food",
-        "in_kind_goods",
-        "in_kind_services",
-        "facility_use",
-        "equipment_loan",
-        "volunteer_hours",
-    ),
-    "meta": ("unclassified",),
-}
+# -----------------
+# Wrappers & Helpers
+# -----------------
 
+log = get_logger(__name__)
+
+# History sections (these labels are part of our own internal structure;
+# the *allowed values* within those sections come from Board policy.)
 CAPS_SECTION = "sponsor:capability:v1"
 PLEDGE_SECTION = "sponsor:pledge:v1"
-NOTE_MAX = 120
+NOTE_MAX = 120  # shared misc cap for short-string notes
 
-READINESS_ALLOWED = {"draft", "review", "active", "suspended"}
-MOU_ALLOWED = {"none", "pending", "active", "expired", "terminated"}
+
+def _ensure_reqid(request_id: str) -> None:
+    if not request_id or not isinstance(request_id, str):
+        raise ValueError("request_id required")
+    if len(request_id) < 8:
+        # just a sanity guard; IDs come from caller (usually contracts)
+        raise ValueError("request_id too short")
+
+
+def _split(flat_key: str) -> Tuple[str, str]:
+    """
+    Split 'domain.key' into ('domain', 'key').
+    """
+    if "." not in flat_key:
+        raise ValueError("flat capability key must be 'domain.code'")
+    d, k = flat_key.split(".", 1)
+    d = d.strip()
+    k = k.strip()
+    if not d or not k:
+        raise ValueError("invalid flat capability key")
+    return d, k
+
+
+def _flatten_caps_payload(
+    payload: Dict[str, Any]
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Normalise capability payload into flat keys.
+
+    Accepts two shapes:
+
+      1) Flat:
+         {
+             "funding.cash_grant": true,
+             "in_kind.in_kind_goods": {"has": false, "note": "..." },
+         }
+
+      2) Nested:
+         {
+             "funding": {
+                 "cash_grant": true,
+                 "restricted_grant": {"has": true, "note": "Board restricted"},
+             },
+             "in_kind": {
+                 "in_kind_goods": {"has": false},
+             },
+         }
+
+    Returns a mapping of flat keys to objects of the form:
+        { "<domain>.<code>": {"has": bool, "note": str?}, ... }
+    """
+    flat: Dict[str, Dict[str, Any]] = {}
+
+    if not payload:
+        return flat
+
+    for key, value in payload.items():
+        # Shape 1: already "domain.code"
+        if "." in key:
+            flat_key = key
+            obj = value
+            items = [(flat_key, obj)]
+        else:
+            # Shape 2: nested by domain
+            domain = key
+            if not isinstance(value, dict):
+                raise ValueError(
+                    "nested capabilities must be objects per domain"
+                )
+            items = []
+            for sub_key, sub_val in value.items():
+                items.append((f"{domain}.{sub_key}", sub_val))
+
+        for flat_key, obj in items:
+            # Normalise to {"has": bool, "note": str?}
+            if isinstance(obj, bool):
+                flat[flat_key] = {"has": bool(obj)}
+            elif isinstance(obj, dict):
+                out: Dict[str, Any] = {}
+                if "has" in obj:
+                    out["has"] = bool(obj["has"])
+                else:
+                    # default missing "has" → True
+                    out["has"] = True
+                note_raw = obj.get("note")
+                if note_raw is not None:
+                    note = str(note_raw).strip()
+                    if note:
+                        out["note"] = note[:NOTE_MAX]
+                flat[flat_key] = out
+            else:
+                raise ValueError("invalid capability payload value")
+
+    return flat
+
+
+def _validate_caps(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """
+    Validate and normalise a sponsor capability payload against Board policy.
+
+    - Normalises nested/flat payload shapes.
+    - Ensures every capability code is in the Governance capability policy.
+    - Trims note fields to NOTE_MAX chars.
+
+    Returns a dict keyed by flat capability code, for example:
+
+        {
+          "funding.cash_grant": {"has": True, "note": "Board approved"},
+          "in_kind.volunteer_hours": {"has": False},
+        }
+    """
+    flat = _flatten_caps_payload(payload)
+    if not flat:
+        return flat
+
+    policy = get_sponsor_capability_policy()
+    # Governance policy exposes *flat* capability codes, e.g. "funding.cash_grant".
+    # (See policy_sponsor_capabilities.json + governance_v2.SponsorCapsDTO.)
+    allowed_flat: set[str] = policy.all_codes  # set of strings
+
+    unknown = sorted(k for k in flat.keys() if k not in allowed_flat)
+    if unknown:
+        raise ValueError(f"invalid capability keys: {', '.join(unknown)}")
+
+    return flat
+
+
+def _latest_caps(sponsor_ulid: str) -> Dict[str, dict]:
+    h = (
+        db.session.query(SponsorHistory)
+        .filter_by(sponsor_ulid=sponsor_ulid, section=CAPS_SECTION)
+        .order_by(desc(SponsorHistory.version))
+        .first()
+    )
+    return json.loads(h.data_json) if h else {}
+
+
+def _next_version(sponsor_ulid: str, section: str) -> int:
+    cur = (
+        db.session.query(func.max(SponsorHistory.version))
+        .filter_by(sponsor_ulid=sponsor_ulid, section=section)
+        .scalar()
+    )
+    return int(cur or 0) + 1
+
+
+def allowed_capabilities() -> List[str]:
+    """
+    Convenience helper: return all allowed flat capability codes from policy,
+    sorted for U.I. / CLI.
+    """
+    policy = get_sponsor_capability_policy()
+    return sorted(policy.all_codes)
 
 
 # -----------------
@@ -136,58 +281,9 @@ def sponsor_list_pocs(*, org_ulid: str) -> list[dict]:
     )
 
 
-# ---------------- helpers ----------------
-
-
-def _ensure_reqid(rid: Optional[str]) -> str:
-    if not rid or not str(rid).strip():
-        raise ValueError("request_id must be non-empty")
-    return str(rid)
-
-
-def _split(flat_key: str) -> Tuple[str, str]:
-    if "." not in flat_key:
-        raise ValueError(f"invalid key '{flat_key}' (expected 'domain.key')")
-    d, k = flat_key.split(".", 1)
-    return d.strip(), k.strip()
-
-
-def _validate_caps(payload: Dict[str, Any]) -> Dict[str, dict]:
-    norm: Dict[str, dict] = {}
-    for flat, obj in (payload or {}).items():
-        d, k = _split(flat)
-        if d not in SPONSOR_CAPS or k not in SPONSOR_CAPS[d]:
-            raise ValueError(f"unknown capability '{d}.{k}'")
-        if not isinstance(obj, dict) or "has" not in obj:
-            raise ValueError(f"missing 'has' in '{flat}'")
-        has = bool(obj["has"])
-        note = obj.get("note")
-        if note is not None:
-            note = str(note).strip()[:NOTE_MAX] or None
-        norm[f"{d}.{k}"] = {"has": has, **({"note": note} if note else {})}
-    return norm
-
-
-def _latest_caps(sponsor_ulid: str) -> Dict[str, dict]:
-    h = (
-        db.session.query(SponsorHistory)
-        .filter_by(sponsor_ulid=sponsor_ulid, section=CAPS_SECTION)
-        .order_by(desc(SponsorHistory.version))
-        .first()
-    )
-    return json.loads(h.data_json) if h else {}
-
-
-def _next_version(sponsor_ulid: str, section: str) -> int:
-    cur = (
-        db.session.query(func.max(SponsorHistory.version))
-        .filter_by(sponsor_ulid=sponsor_ulid, section=section)
-        .scalar()
-    )
-    return int(cur or 0) + 1
-
-
-# ---------------- core: sponsor row ----------------
+# -----------------
+# core: sponsor row
+# -----------------
 
 
 def ensure_sponsor(
@@ -221,238 +317,10 @@ def ensure_sponsor(
     return s.ulid
 
 
-# ---------------- Sponsor POC workings -------------------------
-
-
-def _normalize_policy(
-    scope: Optional[str], rank: Optional[int]
-) -> tuple[str, int, dict]:
-    policy = get_poc_policy()
-    scopes = policy["poc_scopes"]
-    default = policy["default_scope"]
-    max_rank = policy["max_rank"]
-
-    norm_scope = scope or default
-    if norm_scope not in scopes:
-        raise ValueError("invalid scope")
-    norm_rank = rank if rank is not None else 0
-    if not (0 <= norm_rank <= max_rank):
-        raise ValueError("invalid rank")
-    return norm_scope, norm_rank, policy
-
-
-def _enforce_primary(
-    sess: Session, org_ulid: str, scope: str, is_primary: bool
-):
-    if not is_primary:
-        return
-    # Flip any existing primary for same (org, relation, scope)
-    sess.query(SponsorPOC).filter(
-        and_(
-            SponsorPOC.org_ulid == org_ulid,
-            SponsorPOC.relation == POC_RELATION,
-            SponsorPOC.scope == scope,
-            SponsorPOC.is_primary == True,  # noqa: E712
-        )
-    ).update({"is_primary": False}, synchronize_session=False)
-
-
-def link_poc(
-    sess: Session,
-    *,
-    org_ulid: str,
-    person_entity_ulid: str,
-    scope: Optional[str] = None,
-    rank: int = 0,
-    is_primary: bool = False,
-    window: Optional[dict] = None,  # {"from": isoZ|None, "to": isoZ|None}
-    org_role: Optional[str] = None,
-    actor_ulid: Optional[str] = None,
-):
-    _ensure_reqid(request_id)
-    sc, rk, _ = _normalize_policy(scope, rank)
-    _enforce_primary(sess, org_ulid, sc, is_primary)
-
-    row = SponsorPOC(
-        org_ulid=org_ulid,
-        person_entity_ulid=person_entity_ulid,
-        relation=POC_RELATION,
-        scope=sc,
-        rank=rk,
-        is_primary=bool(is_primary),
-        active=True,
-        org_role=org_role,
-        valid_from_utc=(window or {}).get("from"),
-        valid_to_utc=(window or {}).get("to"),
-        created_at_utc=now_iso8601_ms(),
-        updated_at_utc=now_iso8601_ms(),
-    )
-    sess.add(row)
-
-    event_bus.emit(
-        domain="sponsors",
-        operation="poc.linked",
-        target_ulid=org_ulid,
-        actor_ulid=actor_ulid,
-        request_id=request_id,
-        happened_at=now_iso8601_ms(),
-        meta={
-            "person_entity_ulid": person_entity_ulid,
-            "relation": POC_RELATION,
-            "scope": sc,
-            "rank": rk,
-            "is_primary": bool(is_primary),
-            "org_role": org_role,
-            "valid_from_utc": row.valid_from_utc.isoformat()
-            if row.valid_from_utc
-            else None,
-            "valid_to_utc": row.valid_to_utc.isoformat()
-            if row.valid_to_utc
-            else None,
-        },
-    )
-    return row
-
-
-def update_poc(
-    sess: Session,
-    *,
-    org_ulid: str,
-    person_entity_ulid: str,
-    scope: Optional[str] = None,
-    rank: Optional[int] = None,
-    is_primary: Optional[bool] = None,
-    window: Optional[dict] = None,
-    org_role: Optional[str] = None,
-    actor_ulid: Optional[str] = None,
-):
-    _ensure_reqid(request_id)
-    q = sess.query(SponsorPOC).filter(
-        and_(
-            SponsorPOC.org_ulid == org_ulid,
-            SponsorPOC.person_entity_ulid == person_entity_ulid,
-            SponsorPOC.relation == POC_RELATION,
-        )
-    )
-    row = q.one_or_none()
-    if not row:
-        raise LookupError("POC link not found")
-
-    new_scope = row.scope if scope is None else scope
-    new_rank = row.rank if rank is None else rank
-    sc, rk, _ = _normalize_policy(new_scope, new_rank)
-
-    if is_primary is not None:
-        _enforce_primary(sess, org_ulid, sc, is_primary)
-        row.is_primary = bool(is_primary)
-
-    row.scope = sc
-    row.rank = rk
-    if org_role is not None:
-        row.org_role = org_role
-    if window is not None:
-        row.valid_from_utc = window.get("from")
-        row.valid_to_utc = window.get("to")
-    row.updated_at_utc = now_iso8601_ms()
-
-    event_bus.emit(
-        domain="sponsors",
-        operation="poc.updated",
-        target_ulid=org_ulid,
-        actor_ulid=actor_ulid,
-        request_id=request_id,
-        happened_at=now_iso8601_ms(),
-        meta={
-            "person_entity_ulid": person_entity_ulid,
-            "relation": POC_RELATION,
-            "scope": row.scope,
-            "rank": row.rank,
-            "is_primary": row.is_primary,
-            "org_role": row.org_role,
-            "valid_from_utc": row.valid_from_utc.isoformat()
-            if row.valid_from_utc
-            else None,
-            "valid_to_utc": row.valid_to_utc.isoformat()
-            if row.valid_to_utc
-            else None,
-        },
-    )
-    return row
-
-
-def unlink_poc(
-    sess: Session,
-    *,
-    org_ulid: str,
-    person_entity_ulid: str,
-    scope: Optional[str] = None,
-    actor_ulid: Optional[str] = None,
-):
-    _ensure_reqid(request_id)
-    q = sess.query(SponsorPOC).filter(
-        and_(
-            SponsorPOC.org_ulid == org_ulid,
-            SponsorPOC.person_entity_ulid == person_entity_ulid,
-            SponsorPOC.relation == POC_RELATION,
-        )
-    )
-    if scope:
-        q = q.filter(SponsorPOC.scope == scope)
-    row = q.one_or_none()
-    if not row:
-        return
-
-    row.active = False
-    row.updated_at_utc = now_iso8601_ms()
-
-    event_bus.emit(
-        domain="sponsors",
-        operation="poc.unlinked",
-        target_ulid=org_ulid,
-        actor_ulid=actor_ulid,
-        request_id=request_id,
-        happened_at=now_iso8601_ms(),
-        meta={
-            "person_entity_ulid": person_entity_ulid,
-            "relation": POC_RELATION,
-            "scope": row.scope,
-        },
-    )
-
-
-def list_pocs(sess: Session, *, org_ulid: str) -> list[dict]:
-    rows: Iterable[SponsorPOC] = (
-        sess.query(SponsorPOC)
-        .filter(
-            SponsorPOC.org_ulid == org_ulid,
-            SponsorPOC.relation == POC_RELATION,
-        )
-        .order_by(
-            SponsorPOC.active.desc(),
-            SponsorPOC.scope.asc(),
-            SponsorPOC.rank.asc(),
-        )
-    )
-    out = []
-    for r in rows:
-        out.append(
-            {
-                "org_ulid": r.org_ulid,
-                "person_entity_ulid": r.person_entity_ulid,
-                "relation": r.relation,
-                "scope": r.scope,
-                "rank": r.rank,
-                "is_primary": r.is_primary,
-                "org_role": r.org_role,
-                "valid_from_utc": r.valid_from_utc,
-                "valid_to_utc": r.valid_to_utc,
-                "active": r.active,
-            }
-        )
-    return out
-
-
-# ---------------- capabilities: replace & patch ----------------
+# -----------------
+# Capabilities:
+# replace & patch
+# -----------------
 
 
 def upsert_capabilities(
@@ -650,7 +518,10 @@ def patch_capabilities(
     return hist.ulid
 
 
-# ---------------- readiness/mou helpers ----------------
+# -----------------
+# Readiness/MOU
+# helpers
+# -----------------
 
 
 def set_readiness_status(
@@ -664,15 +535,22 @@ def set_readiness_status(
     s = db.session.get(Sponsor, sponsor_ulid)
     if not s:
         raise ValueError("sponsor not found")
+
     status = (status or "").strip().lower()
-    if status not in READINESS_ALLOWED:
+
+    lifecycle = get_sponsor_lifecycle_policy()
+    allowed_readiness = set(lifecycle["readiness_allowed"])
+    if status not in allowed_readiness:
         raise ValueError("invalid readiness_status")
+
     if s.readiness_status == status:
         return
+
     prev = s.readiness_status
     s.readiness_status = status
     s.last_touch_utc = now_iso8601_ms()
     db.session.commit()
+
     event_bus.emit(
         domain="sponsors",
         operation="readiness_update",
@@ -695,15 +573,22 @@ def set_mou_status(
     s = db.session.get(Sponsor, sponsor_ulid)
     if not s:
         raise ValueError("sponsor not found")
+
     status = (status or "").strip().lower()
-    if status not in MOU_ALLOWED:
+
+    lifecycle = get_sponsor_lifecycle_policy()
+    allowed_mou = set(lifecycle["mou_allowed"])
+    if status not in allowed_mou:
         raise ValueError("invalid mou_status")
+
     if s.mou_status == status:
         return
+
     prev = s.mou_status
     s.mou_status = status
     s.last_touch_utc = now_iso8601_ms()
     db.session.commit()
+
     event_bus.emit(
         domain="sponsors",
         operation="mou_update",
@@ -715,10 +600,33 @@ def set_mou_status(
     )
 
 
-# ---------------- pledges ----------------
+# -----------------
+# Pledges
+# -----------------
 
-PLEDGE_ALLOWED_TYPES = {"cash", "in_kind"}
-PLEDGE_ALLOWED_STATUS = {"proposed", "active", "fulfilled", "cancelled"}
+
+def _pledge_policy() -> dict:
+    """
+    Thin wrapper around Governance pledge policy.
+
+    Returns a dict with:
+      - types:     list of {code, label}
+      - statuses:  list of {code, label}
+      - transitions: optional {status -> [next...]}
+    """
+    return get_sponsor_pledge_policy()
+
+
+def _allowed_pledge_types() -> set[str]:
+    policy = _pledge_policy()
+    # JSON shape: "types": [{ "code": "...", "label": "..." }, ...]
+    return {t["code"] for t in policy.get("types", [])}
+
+
+def _allowed_pledge_statuses() -> set[str]:
+    policy = _pledge_policy()
+    # JSON shape: "statuses": [{ "code": "...", "label": "..." }, ...]
+    return {s["code"] for s in policy.get("statuses", [])}
 
 
 def _latest_pledges(sponsor_ulid: str) -> Dict[str, dict]:
@@ -733,36 +641,54 @@ def _latest_pledges(sponsor_ulid: str) -> Dict[str, dict]:
 
 def _validate_pledge_payload(p: dict) -> dict:
     """
-    Required: pledge_ulid, type, status
-    Cash: currency, stated_amount (int cents)
-    In-kind: in_kind_category, estimated_value (int units/cents optional), currency optional if using value
+    Normalise and validate a pledge payload against Board policy.
+
+    Required fields:
+      - pledge_ulid (26 chars)
+      - type (must be in policy_sponsor_pledge.types[*].code)
+      - status (must be in policy_sponsor_pledge.statuses[*].code)
+
+    Cash:
+      - currency (default "USD")
+      - stated_amount (int cents, >= 0)
+
+    In-kind:
+      - in_kind_category (string)
+      - optional estimated_value (int >= 0) and currency
     """
-    out = {}
+    out: dict = {}
+
     pu = str(p.get("pledge_ulid") or "").strip()
     if len(pu) != 26:
         raise ValueError("pledge_ulid required (26)")
-    t = (p.get("type") or "").strip().lower()
-    if t not in PLEDGE_ALLOWED_TYPES:
-        raise ValueError("invalid pledge type")
-    st = (p.get("status") or "").strip().lower()
-    if st not in PLEDGE_ALLOWED_STATUS:
-        raise ValueError("invalid pledge status")
-
     out["pledge_ulid"] = pu
+
+    allowed_types = _allowed_pledge_types()
+    allowed_status = _allowed_pledge_statuses()
+
+    t = (p.get("type") or "").strip().lower()
+    if t not in allowed_types:
+        raise ValueError("invalid pledge type")
     out["type"] = t
+
+    st = (p.get("status") or "").strip().lower()
+    if st not in allowed_status:
+        raise ValueError("invalid pledge status")
     out["status"] = st
+
     out["notes"] = (
         str(p.get("notes")).strip()[:NOTE_MAX] if p.get("notes") else None
     )
 
-    # restriction (optional)
+    # Restriction (optional)
     rest = p.get("restriction") or None
     if rest:
         out["restriction"] = {
             "fund_code": str(rest.get("fund_code") or "").strip()[:32],
             "purpose": str(rest.get("purpose") or "").strip()[:64],
         }
-    # schedule (optional; passthrough minimal)
+
+    # Schedule (optional; pass-through)
     if p.get("schedule"):
         out["schedule"] = p["schedule"]
 
@@ -893,8 +819,11 @@ def set_pledge_status(
 ) -> None:
     _ensure_reqid(request_id)
     status = (status or "").strip().lower()
-    if status not in PLEDGE_ALLOWED_STATUS:
+
+    allowed_status = _allowed_pledge_statuses()
+    if status not in allowed_status:
         raise ValueError("invalid pledge status")
+
     row = (
         db.session.query(SponsorPledgeIndex)
         .filter_by(pledge_ulid=pledge_ulid)
@@ -904,22 +833,20 @@ def set_pledge_status(
         raise ValueError("pledge not found")
     if row.status == status:
         return
+
+    prev = row.status
     row.status = status
     row.updated_at_utc = now_iso8601_ms()
-    # bump sponsor ops
-    s = db.session.get(Sponsor, row.sponsor_ulid)
-    if s:
-        s.pledge_last_update_utc = row.updated_at_utc
-        s.last_touch_utc = row.updated_at_utc
     db.session.commit()
+
     event_bus.emit(
         domain="sponsors",
-        operation="pleddge_update",
+        operation="pledge_status_update",
         actor_ulid=actor_ulid,
         target_ulid=row.sponsor_ulid,
         request_id=request_id,
-        happened_at_utc=row.updated_at_utc,
-        refs={"pledge_ulid": pledge_ulid},
+        happened_at_utc=now_iso8601_ms(),
+        changed={"pledge_ulid": pledge_ulid, "status": status, "prev": prev},
     )
 
 

@@ -1,4 +1,59 @@
 # app/slices/resources/models.py
+
+"""
+Resources slice — service-providing orgs, capability snapshots, and POCs.
+
+This module models organizations that act as service providers ("Resources") in
+VCDB v2. Each Resource is backed by a single EntityOrg record and carries its
+own lifecycle flags (readiness, MOU status) plus capability metadata and
+points-of-contact. No PII is stored here; people/organizations are always
+referenced by their Entity ULIDs.
+
+Models:
+
+* Resource
+    One row per service-providing org, keyed by `entity_ulid` from EntityOrg.
+    Tracks operational state (admin_review_required, readiness_status,
+    mou_status) and a few ISO8601 timestamps for first_seen, last_touch, and
+    last capability update. This is the anchor record that other slices use
+    when referring to a provider.
+* ResourceHistory
+    Privacy-A snapshot store of capability details. Each row captures a
+    versioned JSON blob (booleans + notes) for a fixed section
+    ('resource:capability:v1'). Services write here on capability upsert so we
+    have an auditable record of what the org said it could do at a given time,
+    without leaking notes into search indexes or other slices.
+* ResourceCapabilityIndex
+    A materialized "current capabilities" index for fast search/filter. It
+    stores only (resource_ulid, domain, key, active) — names/flags, no notes.
+    Services rebuild this index from ResourceHistory so search endpoints can
+    answer "which orgs provide X?" without touching the sensitive snapshot
+    data.
+* ResourcePOC
+    Slice-owned linkage between a Resource and a person (EntityPerson) serving
+    as a point-of-contact for an EntityOrg. Stores only ULIDs plus
+    Governance-constrained metadata such as relation, scope, rank, and org_role,
+    along with validity windows and primary/active flags. This lets Resources
+    expose and order POCs without duplicating names, emails, or phone numbers.
+
+Ownership and boundaries:
+
+* The Resources slice owns these tables and is responsible for keeping PII in
+  the Entity slice and sensitive notes in ResourceHistory; other slices should
+  interact via services/contracts using ULIDs and capability keys, not by
+  importing these models directly.
+* Governance defines capability taxonomies, allowed POC scopes/ranks, and MOU
+  semantics; Resources applies that policy when updating histories, indexes,
+  and POCs.
+* Ledger and logging must continue to record only ULIDs and normalized keys;
+  any detailed narrative about capabilities or MOUs lives in snapshot JSON or
+  external documents, not in logs or the ledger.
+
+In short, this module gives us a clean separation between a provider org's
+lifecycle state, its sensitive capability snapshots, a searchable capability
+index, and slice-local POC links back to Entity identities.
+"""
+
 from __future__ import annotations
 
 from sqlalchemy import (

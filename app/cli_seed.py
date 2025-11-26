@@ -8,6 +8,16 @@ These commands hang off the ``seed`` Click group that is wired in
 database into a predictable playground for development, manual testing,
 and demos.
 
+Fresh dev DB recipe:
+
+    rm -f var/app-instance/dev.db
+    flask --app manage_vcdb.py db upgrade
+    flask --app manage_vcdb.py seed seed-foundation
+    # optional extras:
+    # flask --app manage_vcdb.py seed seed-smoke
+    # flask --app manage_vcdb.py seed seed-logistics-canonical
+
+
 Typical usage from the project root::
 
     # Fresh dev DB

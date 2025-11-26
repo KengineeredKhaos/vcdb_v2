@@ -1,4 +1,11 @@
 # app/slices/admin/routes.py
+
+"""
+Ledger emits in this file need to be moved at some point.
+All three are deemed acceptable exceptions for now;
+refactor into Admin services when we build out the Admin slice proper
+"""
+
 from __future__ import annotations
 
 import json
