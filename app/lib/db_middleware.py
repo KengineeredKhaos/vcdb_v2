@@ -31,10 +31,16 @@ def _flip_query_only(on: bool) -> None:
         except Exception:
             pass
 
+
 def init_request_db_guards(app) -> None:
     @app.before_request
     def _begin_request():
-        g._vcdb_writable = request.method in {"POST", "PUT", "PATCH", "DELETE"}
+        g._vcdb_writable = request.method in {
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+        }
         if not g._vcdb_writable:
             _flip_query_only(True)
 

@@ -1,4 +1,24 @@
 # app/extensions/validate.py
+
+"""
+Thin JSON + JSON Schema helpers used by the policy layer.
+
+This module is intentionally tiny and focused:
+
+- `load_json(path)`: load UTF-8 JSON from disk.
+- `load_json_schema(path)`: load a JSON Schema document and assert that
+  it is a JSON object.
+- `validate_json_payload(payload, schema_path)`:
+    * Load the schema from disk.
+    * Use Draft202012Validator to validate the payload in-place.
+    * Raise jsonschema.ValidationError on failure.
+
+`policies.py` and `policy_semantics.py` build on these helpers for all
+policy/config validation. If you introduce new schema versions or change
+Draft versions, this is the right place to wire that up so behavior
+remains consistent across the app.
+"""
+
 from __future__ import annotations
 
 import json

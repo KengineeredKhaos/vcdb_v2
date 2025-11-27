@@ -1,4 +1,34 @@
 # app/extensions/policy_hints.py
+
+"""
+Helper functions that turn policy into "hints" for humans.
+
+Where `policy_semantics` focuses on strict correctness, this module is
+aimed at surfacing advisory information: suggestions, near-misses, and
+coverage hints that are useful in admin UIs or CLI diagnostics.
+
+Current helpers:
+
+- `hints_for_entity_type(entity_type)`:
+    * Reads assignment_guidance.entity_types from policy_domain.json
+      (if present) and returns any guidance strings for the given
+      entity type.
+
+- `hints_for_customer_sku_gaps()`:
+    * Placeholder for future logic once Customer Profile qualifiers
+      (tiers, flags, etc.) are finalized.
+    * Intended to report SKUs the customer almost qualifies for.
+
+- `hints_for_policy_coverage()`:
+    * Wraps `policy_semantics.check_issuance_policy_against_catalog()`
+      and presents the messages in a simple dict.
+
+Future Dev:
+- Keep this module "read-only semantics": it should not mutate policies
+  or DB state. Think of it as the backing store for dashboards, reports,
+  and friendly admin hints, not enforcement.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict, List

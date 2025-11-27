@@ -5,6 +5,24 @@
 # Purpose: Stable library primitive for VCDB.
 # Canon API: lib-core v1.0.0 (frozen)
 
+"""
+Generic pagination helpers (in-memory and SQLAlchemy).
+
+This module provides a small, slice-agnostic pagination layer:
+
+- Page[T]: immutable pagination result with items, total, page, per_page,
+  next/prev_page, and a to_dict() helper for DTOs.
+- paginate_list(): paginate in-memory sequences.
+- paginate_sa(): paginate SQLAlchemy Query or Select objects.
+- paginate(): unified entry point that dispatches to list vs SQLAlchemy
+  depending on the source type.
+
+Routes and services should use these helpers instead of hand-rolling
+offset/limit logic, so pagination behavior and DTO shapes stay
+consistent across slices.
+"""
+
+
 from __future__ import annotations
 
 from dataclasses import dataclass

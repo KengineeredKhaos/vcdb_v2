@@ -1,4 +1,45 @@
 # app/extensions/policy_semantics.py
+
+"""
+Semantic validation and cross-file checks for Governance policies.
+
+This module is where we do the deeper, cross-cutting reasoning about
+policy files beyond simple JSON Schema validation:
+
+- Domain & RBAC:
+    * `check_domain_policy()`: sanity checks for policy_domain.json
+      (domain roles, forbidden_pairs, domain_disallows_rbac).
+    * `check_rbac_policy()`: sanity checks for policy_rbac.json.
+    * `check_rbac_domain_relationship()`: cross-file rules like
+      "admin/staff must imply governor" and "civilian disallows RBAC".
+
+- Issuance vs catalog:
+    * `check_issuance_policy_against_catalog()`: loads policy_issuance
+      and compares it to the Logistics inventory catalog to ensure
+      cadence settings are sane and classification_keys have coverage.
+
+- SKU constraints:
+    * `_load_sku_constraints()`, `check_sku_constraints()`,
+      `assert_sku_constraints_ok()`: optional layer that ties SKU
+      parsing to governance-defined constraints on issuance_class, etc.
+
+- Cadence helpers:
+    * `resolve_cadence(policy, rule)`: merges rule-level cadence,
+      presets, and defaults into a single concrete cadence dict.
+
+- Aggregates:
+    * `policy_health_report()`: high-level entry point used by dev/admin
+      tools; returns (warnings, infos) and raises PolicyError on fatal
+      issues.
+
+Future Dev:
+- Add new semantic checks here rather than sprinkling them through
+  slices. The goal is: Schemas validate structure; this module validates
+  business meaning.
+- Keep this module PII-free and modular so it can safely run in CLI,
+  tests, and admin tools without touching live flows.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Tuple

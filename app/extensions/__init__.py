@@ -1,4 +1,18 @@
 # app/extensions/__init__.py
+
+"""
+Extensions: cross-slice glue (policies, enforcers, and contracts).
+
+This package wires VCDB slices together via JSON-based governance
+policies, runtime enforcers, and versioned contract modules under
+`extensions/contracts`.
+
+For a higher-level overview (how policies, schemas, and contracts fit
+together), see docs/extensions.md.
+
+The balance of this file is SQLite Database/SQLAlchemy wiring.
+"""
+
 from __future__ import annotations
 
 import sqlite3

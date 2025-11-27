@@ -5,6 +5,25 @@
 # Purpose: Stable library primitive for VCDB.
 # Canon API: lib-core v1.0.0 (frozen)
 
+"""
+Small normalization and validation helpers for common identifiers.
+
+This module collects a few generic input helpers:
+
+- Email:
+  - normalize_email(): lowercase/strip only.
+  - validate_email() / assert_valid_email(): lightweight syntax checks.
+- Phone (US-style):
+  - normalize_phone(): strip non-digits, drop leading '1'.
+  - validate_phone() / assert_valid_phone(): require exactly 10 digits.
+- EIN:
+  - normalize_ein(): extract 9 digits or None.
+  - validate_ein() / assert_valid_ein(): accept None or 9 digits.
+
+Use these instead of sprinkling regexes and ad-hoc validation logic
+throughout slices. They’re intentionally minimal and business-rule-free.
+"""
+
 from __future__ import annotations
 
 import re

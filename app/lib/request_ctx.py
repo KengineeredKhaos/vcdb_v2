@@ -5,6 +5,25 @@
 # Purpose: Stable library primitive for VCDB.
 # Canon API: lib-core v1.0.0 (frozen)
 
+"""
+Lightweight request context (request_id and actor ULID).
+
+This module uses contextvars to track per-request metadata without
+requiring Flask's request globals:
+
+- ensure_request_id() / get_request_id() / set_request_id(): manage the
+  current request ULID (used for tracing and logs).
+- get_actor_ulid() / set_actor_ulid(): track the current actor's entity
+  ULID, if known.
+- use_request_ctx(): context manager to temporarily set both values.
+- as_dict(): convenience snapshot for logging/ledger emits.
+
+Log messages and ledger events should pull context from here so we can
+correlate actions across layers. Do not stash request-specific data in
+global variables—use this module instead.
+"""
+
+
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Optional

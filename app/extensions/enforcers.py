@@ -1,5 +1,34 @@
 # app/extensions/enforcers.py
 
+"""
+Named hook registry for runtime policy checks ("enforcers").
+
+This module provides a very small registry for cross-cutting "gates" that
+slice code can call without knowing the underlying policy details.
+
+Key pieces:
+
+- `calendar_blackout_ok(ctx)`: sample gate that consults the Governance
+  calendar policy (policy_calendar.json) to decide whether an operation
+  is allowed at a given time. Returns (ok: bool, meta: dict) where
+  meta.reason is one of {"ok", "calendar_blackout", "calendar_unavailable"}.
+
+- `_Enforcers`: registry type that lets you do:
+      enforcers.register("my_gate", fn)
+    or:
+      @enforcers.register("my_gate")
+      def my_gate(...): ...
+
+- `enforcers`: the singleton registry instance used by the rest of the app.
+
+Future Dev:
+- Treat enforcer names as a small, stable vocabulary. Once something is
+  in use ("calendar_blackout_ok", future "cadence_ok", etc.), it becomes
+  part of the implicit contract between slices and Governance policy.
+- Enforcers should be thin: read policies and context, return a simple
+  (ok, meta) tuple; they should not perform heavy side effects.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional

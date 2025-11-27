@@ -5,6 +5,27 @@
 # Purpose: Stable library primitive for VCDB.
 # Canon API: lib-core v1.0.0 (frozen)
 
+"""
+VCDB core error types.
+
+This module defines the base AppError hierarchy used across VCDB's core
+libraries and slices. It gives us a single, structured way to represent
+recoverable domain errors:
+
+- AppError: base type with code, HTTP-ish status, message, details, and
+  optional context (request_id, actor_ulid, etc.).
+- Common subclasses: NotFoundError, ValidationError, PermissionDenied,
+  ConflictError, PolicyError, etc.
+
+Handlers (routes, CLI, jobs) should raise or catch these instead of
+bare Exceptions wherever a caller might reasonably recover or emit a
+clean error response. The JSON-friendly to_dict() output is designed to
+feed directly into logs and API responses.
+
+Public API is considered canon: do not change signatures or semantics
+without a migration plan.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict, Optional

@@ -5,6 +5,23 @@
 # Purpose: Stable library primitive for VCDB.
 # Canon API: lib-core v1.0.0 (frozen)
 
+"""
+Shared SQLAlchemy mixins for IDs and timestamps.
+
+This module defines the canonical model building blocks:
+
+- ULIDPK: mixin that adds a 26-char ULID primary key column named
+  'ulid' with a length check constraint.
+- ULIDFK(table): helper for foreign-key columns that reference
+  <table>.ulid with sane defaults.
+- IsoTimestamps: mixin that adds created_at_utc and updated_at_utc
+  ISO-8601 string timestamps (UTC, ms precision).
+
+All slice models should build on these mixins to keep IDs and timestamps
+uniform across the codebase. If you need another timestamp style, add
+it here so we preserve a single source of truth.
+"""
+
 from typing import Optional, Tuple
 
 from sqlalchemy import CheckConstraint, ForeignKey, String

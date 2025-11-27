@@ -3,6 +3,23 @@
 # VCDB CANON — ULID generator + SQLAlchemy PK/FK helpers
 # (python-ulid required)
 
+"""
+VCDB ULID helpers and SQLAlchemy ID primitives.
+
+This module centralizes all ULID-related logic:
+
+- new_ulid(): generate a canonical 26-char ULID string.
+- ulid_min_for() / ulid_max_for(): compute key-range ULIDs for a given
+  datetime (used for time-sliced queries).
+- is_ulid() / is_ulid_strict(): shallow vs strict validation.
+- ulid_sort_key() / ulid_ts_ms(): helpers for sorting and timestamp
+  extraction.
+
+All entity primary keys are ULIDs, and every FK points to a ULID column.
+If you need an ID, you should be using these helpers instead of uuid4
+or ad-hoc strings.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -94,5 +111,4 @@ __all__ = [
     "is_ulid",
     "ulid_min_for",
     "ulid_max_for",
-
 ]

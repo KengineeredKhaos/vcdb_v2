@@ -5,6 +5,25 @@
 # Purpose: Stable library primitive for VCDB.
 # Canon API: lib-core v1.0.0 (frozen)
 
+"""
+JSON Schema validation utilities for governance and configuration.
+
+This module wraps jsonschema with VCDB-flavored helpers:
+
+- validate_json(schema, payload): validate or raise ValidationError with
+  a helpful message (and dotted-path location when available).
+- try_validate_json(schema, payload): boolean + error string instead of
+  raising.
+- enum_values(schema, path): extract enum values from a nested schema
+  path (handy for building choices lists).
+- load_json_schema(path): load a JSON Schema from disk.
+
+Governance policy files and other JSON-based configs should use these
+helpers so validation behavior and error reporting remain consistent
+across the app.
+"""
+
+
 from __future__ import annotations
 
 import hashlib

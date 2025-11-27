@@ -5,6 +5,26 @@
 # Purpose: Stable library primitive for VCDB.
 # Canon API: lib-core v1.0.0 (frozen)
 
+"""
+JSON utilities for deterministic storage, hashing, and safe parsing.
+
+This module provides the JSON primitives used by the ledger and other
+core services:
+
+- stable_dumps() / stable_loads(): compact, deterministic JSON used for
+  hashing and content-addressable storage.
+- pretty_dumps(): human-readable JSON with stable key ordering.
+- safe_loads() / try_parse_json(): defensive parsers that fail soft
+  (returning a default/None) instead of raising.
+- canonical_hash(): SHA-256 hash of a normalized JSON payload.
+- NDJSON helpers: iter_ndjson(), to_ndjson_lines().
+- json_merge_patch(): small RFC-7386-style merge helper.
+- read_json_file() / write_json_file(): tiny file I/O helpers for JSON.
+
+If you need to hash, compare, or safely parse JSON in VCDB, reach for
+these functions instead of raw json.dumps/json.loads calls.
+"""
+
 from __future__ import annotations
 
 import hashlib

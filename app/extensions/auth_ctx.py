@@ -1,5 +1,25 @@
 # app/extensions/auth_ctx.py
 
+"""
+Auth-layer adapter for the current actor ULID.
+
+This module bridges Flask-Login's `current_user` to VCDB's notion of an
+'actor' (the entity ULID we use in logs and ledger events).
+
+For now, we keep things deliberately simple:
+- If there is no authenticated user, we return None.
+- If there IS an authenticated user, we mint and cache a ULID in the
+  Flask session keyed by that user id.
+
+In production you may instead:
+- Store the actor's entity ULID on the User row, or
+- Map RBAC users to Entity rows via Governance policy.
+
+Either way, callers should treat `current_actor_ulid()` as the single
+source of truth for "who is acting" at the Extensions layer and use it
+to seed `request_ctx.set_actor_ulid()` and ledger emissions.
+"""
+
 from __future__ import annotations
 
 from typing import Optional

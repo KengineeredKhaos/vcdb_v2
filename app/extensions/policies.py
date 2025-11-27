@@ -1,4 +1,38 @@
 # app/extensions/policies.py
+
+"""
+Governance/Auth policy loader, cache, and save helpers.
+
+This module is the single point of contact for reading and writing
+JSON-based policy files, primarily under:
+
+- app/slices/governance/data/...
+- app/slices/auth/data/...
+
+Core ideas:
+
+- `load_policy_issuance()`, `load_policy_domain()`,
+  `load_policy_calendar()`, `load_policy_rbac()`:
+    * Load JSON from disk.
+    * Optionally validate against a JSON Schema (via validate_json_payload).
+    * Cache by mtime + hash so repeated reads are cheap.
+
+- `save_policy(path, payload, schema_name, auditor)`:
+    * Optionally validate before writing.
+    * Write pretty JSON.
+    * Bust the local cache.
+    * Call an optional `auditor` callback with before/after hashes.
+
+- `load_policy(name)`: compatibility shim that preserves older call
+  sites that refer to policies by short names like "issuance" or "rbac".
+
+Future Dev:
+- When you add new governance policy files, wire them here so the rest
+  of the app never reaches directly into app/slices/governance/data.
+- Policy validation should live in JSON Schemas + policy_semantics, not
+  scattered ad-hoc across slices.
+"""
+
 from __future__ import annotations
 
 import time

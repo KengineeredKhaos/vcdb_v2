@@ -1,5 +1,23 @@
 # app/lib/logging.py
-# -*- coding: utf-8 -*-
+
+"""
+Structured JSON logging configuration for VCDB.
+
+This module wires Python's logging into the JSON-first pattern used by
+VCDB:
+
+- JSONLineFormatter: emits one JSON object per log line with fields like
+  ts (ISO-8601), lvl, logger, msg, and optional exc_info.
+- configure_logging(app): sets up handlers for dev vs non-dev modes,
+  including rotating file handlers that archive old logs as gzipped
+  files under LOG_DIR/archive.
+
+All application logs should flow through this configuration so we get
+consistent, machine-parseable logs for debugging, auditing, and export.
+If you add new loggers, configure them via configure_logging rather than
+hand-rolling your own handlers.
+"""
+
 from __future__ import annotations
 
 import gzip
@@ -93,7 +111,9 @@ def _archiving_rotating_handler(
 def configure_logging(flask_app) -> None:
     # Be robust even if someone accidentally passes the 'app' *module*.
     cfg = getattr(flask_app, "config", {}) or {}
-    is_testing = bool(getattr(flask_app, "testing", cfg.get("TESTING", False)))
+    is_testing = bool(
+        getattr(flask_app, "testing", cfg.get("TESTING", False))
+    )
     is_dev = (not is_testing) and (
         bool(getattr(flask_app, "debug", False))
         or cfg.get("ENV") in {"dev", "development"}
