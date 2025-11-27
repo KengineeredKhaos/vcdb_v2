@@ -13,6 +13,7 @@ from app.extensions.contracts.governance_v2 import (
     get_resource_capabilities_policy,
     get_resource_lifecycle_policy,
 )
+from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
 from app.services import poc as poc_svc
@@ -31,6 +32,49 @@ from app.slices.resources.models import (
 
 SECTION = "resource:capability:v1"
 POC_RELATION = "poc"  # table-level convention, not board policy
+
+# -----------------
+# Contract Errors
+# -----------------
+
+
+def _as_contract_error(where: str, exc: Exception) -> ContractError:
+    # If we’re already looking at a ContractError, just bubble it up unchanged
+    if isinstance(exc, ContractError):
+        return exc
+
+    msg = str(exc) or exc.__class__.__name__
+
+    if isinstance(exc, ValueError):
+        return ContractError(
+            code="bad_argument",
+            where=where,
+            message=msg,
+            http_status=400,
+        )
+    if isinstance(exc, PermissionError):
+        return ContractError(
+            code="permission_denied",
+            where=where,
+            message=msg,
+            http_status=403,
+        )
+    if isinstance(exc, LookupError):
+        return ContractError(
+            code="not_found",
+            where=where,
+            message=msg,
+            http_status=404,
+        )
+
+    # Fallback: unexpected system/runtime error
+    return ContractError(
+        code="internal_error",
+        where=where,
+        message="unexpected error in contract; see logs",
+        http_status=500,
+        data={"exc_type": exc.__class__.__name__},
+    )
 
 
 # -----------------

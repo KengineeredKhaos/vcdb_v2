@@ -17,10 +17,12 @@ Guaranteed fields:
 - Write calls return ResultDTOs with refs
   (e.g., history version ULID) and never leak values.
 
-Raises (contract-scoped):
-- BadRequest: bad arguments / validation failed
-- PermissionDenied: actor lacks governor override where required
-- NotFound: target customer/entity not found
+Raises ContractError with code values:
+- bad_argument
+- permission_denied
+- not_found
+- internal_error
+
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from dataclasses import dataclass
 from typing import Mapping, Optional, TypedDict
 
 from app.extensions import db
+from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
 from app.slices.customers import services as cust_svc
 
@@ -37,25 +40,49 @@ from app.slices.customers import services as cust_svc
 # ---------------------------
 
 
-class ContractError(Exception):
-    ...
+def _as_contract_error(where: str, exc: Exception) -> ContractError:
+    # If we’re already looking at a ContractError, just bubble it up unchanged
+    if isinstance(exc, ContractError):
+        return exc
 
+    msg = str(exc) or exc.__class__.__name__
 
-class NotFound(ContractError):
-    ...
+    if isinstance(exc, ValueError):
+        return ContractError(
+            code="bad_argument",
+            where=where,
+            message=msg,
+            http_status=400,
+        )
+    if isinstance(exc, PermissionError):
+        return ContractError(
+            code="permission_denied",
+            where=where,
+            message=msg,
+            http_status=403,
+        )
+    if isinstance(exc, LookupError):
+        return ContractError(
+            code="not_found",
+            where=where,
+            message=msg,
+            http_status=404,
+        )
 
-
-class BadRequest(ContractError):
-    ...
-
-
-class PermissionDenied(ContractError):
-    ...
+    # Fallback: unexpected system/runtime error
+    return ContractError(
+        code="internal_error",
+        where=where,
+        message="unexpected error in contract; see logs",
+        http_status=500,
+        data={"exc_type": exc.__class__.__name__},
+    )
 
 
 # ---------------------------
 # DTOs
 # ---------------------------
+
 
 class CustomerProfileDTO(TypedDict):
     customer_ulid: str
@@ -64,10 +91,17 @@ class CustomerProfileDTO(TypedDict):
     flags: dict
     tier1: dict
 
+
 __schema__ = {
     "get_profile": {
         "requires": ["customer_ulid"],
-        "returns_keys": ["customer_ulid", "is_veteran_verified", "veteran_method", "flags", "tier1"],
+        "returns_keys": [
+            "customer_ulid",
+            "is_veteran_verified",
+            "veteran_method",
+            "flags",
+            "tier1",
+        ],
     }
 }
 
@@ -128,16 +162,6 @@ class TierUpdateResultDTO:
 # ---------------------------
 # Helpers
 # ---------------------------
-
-
-def _map_service_error(e: Exception) -> ContractError:
-    msg = str(e)
-    if isinstance(e, PermissionError):
-        return PermissionDenied(msg)
-    # Map common service-layer ValueErrors to BadRequest
-    if isinstance(e, ValueError):
-        return BadRequest(msg)
-    return BadRequest(msg)
 
 
 # ---------------------------
@@ -230,6 +254,7 @@ def verify_veteran(
     Method 'other' requires actor_has_governor=True.
     Emits 'customers.verification_updated' via services.
     """
+    where = "customers_v2.verify_veteran"
     try:
         snap = cust_svc.set_veteran_verification(
             customer_ulid=customer_ulid,
@@ -254,8 +279,8 @@ def verify_veteran(
             approved_at_utc=None,
             as_of_iso=snap.as_of_iso,
         )
-    except Exception as e:  # map all service-layer errors
-        raise _map_service_error(e)
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def update_tier1(
@@ -265,6 +290,7 @@ def update_tier1(
     request_id: str,
     actor_ulid: str | None,
 ) -> TierUpdateResultDTO:
+    where = "customers_v2.update_tier1"
     try:
         vptr = cust_svc.update_tier1(
             customer_ulid=customer_ulid,
@@ -278,8 +304,8 @@ def update_tier1(
             version_ptr=vptr,
             as_of_iso=now_iso8601_ms(),
         )
-    except Exception as e:
-        raise _map_service_error(e)
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def update_tier2(
@@ -289,6 +315,7 @@ def update_tier2(
     request_id: str,
     actor_ulid: str | None,
 ) -> TierUpdateResultDTO:
+    where = "customers_v2.update_tier2"
     try:
         vptr = cust_svc.update_tier2(
             customer_ulid=customer_ulid,
@@ -302,8 +329,8 @@ def update_tier2(
             version_ptr=vptr,
             as_of_iso=now_iso8601_ms(),
         )
-    except Exception as e:
-        raise _map_service_error(e)
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def update_tier3(
@@ -313,6 +340,7 @@ def update_tier3(
     request_id: str,
     actor_ulid: str | None,
 ) -> TierUpdateResultDTO:
+    where = "customers_v2.update_tier3"
     try:
         vptr = cust_svc.update_tier3(
             customer_ulid=customer_ulid,
@@ -326,5 +354,5 @@ def update_tier3(
             version_ptr=vptr,
             as_of_iso=now_iso8601_ms(),
         )
-    except Exception as e:
-        raise _map_service_error(e)
+    except Exception as exc:
+        raise _as_contract_error(where, exc)

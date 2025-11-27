@@ -1,5 +1,5 @@
 # app/extensions/contracts/resources_v2.py
-# -*- coding: utf-8 -*-
+
 """
 resources_v2 — Stable, PII-free contract for the Resources slice.
 
@@ -39,6 +39,7 @@ from typing import Any, Mapping, Optional, TypedDict
 from sqlalchemy.orm import Session
 
 from app.extensions.contracts.entity_v2 import get_entity_card
+from app.extensions.errors import ContractError
 from app.slices.resources import services as svc
 from app.slices.resources.models import ResourcePOC
 
@@ -76,6 +77,49 @@ def _one(key: str, value: Any) -> dict[str, Any]:
     return {"ok": True, "data": {key: value}}
 
 
+# -----------------
+# ContractError
+# worker
+# ------------------
+
+
+def _as_contract_error(where: str, exc: Exception) -> ContractError:
+    if isinstance(exc, ContractError):
+        return exc
+
+    msg = str(exc) or exc.__class__.__name__
+
+    if isinstance(exc, ValueError):
+        return ContractError(
+            code="bad_argument",
+            where=where,
+            message=msg,
+            http_status=400,
+        )
+    if isinstance(exc, PermissionError):
+        return ContractError(
+            code="permission_denied",
+            where=where,
+            message=msg,
+            http_status=403,
+        )
+    if isinstance(exc, LookupError):
+        return ContractError(
+            code="not_found",
+            where=where,
+            message=msg,
+            http_status=404,
+        )
+
+    return ContractError(
+        code="internal_error",
+        where=where,
+        message="unexpected error in resources contract; see logs",
+        http_status=500,
+        data={"exc_type": exc.__class__.__name__},
+    )
+
+
 # ---------- API ----------
 
 
@@ -88,13 +132,39 @@ def get_profile(resource_ulid: str) -> ResourceProfileDTO:
     }
 
 
+"""
+ContractError wrapper for get_profile
+Staged for when Resources adds a real "profile view"
+
+def get_profile(resource_ulid: str) -> ResourceProfileDTO:
+    where = "resources_v2.get_profile"
+    try:
+        view = svc.get_profile_view(resource_ulid=resource_ulid)
+        return {
+            "resource_ulid": view.resource_ulid,
+            "status": view.status,
+            "mou_status": view.mou_status,
+            "capabilities": view.capabilities,
+        }
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
+
+"""
+
+
 def ensure_resource(
     *, entity_ulid: str, request_id: str, actor_ulid: Optional[str]
 ) -> dict:
-    rid = svc.ensure_resource(
-        entity_ulid=entity_ulid, request_id=request_id, actor_ulid=actor_ulid
-    )
-    return _one("resource_ulid", rid)
+    where = "resources_v2.ensure_resource"
+    try:
+        rid = svc.ensure_resource(
+            entity_ulid=entity_ulid,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+        return _one("resource_ulid", rid)
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def set_readiness(
@@ -104,13 +174,17 @@ def set_readiness(
     request_id: str,
     actor_ulid: Optional[str],
 ) -> dict:
-    version_ptr = svc.set_readiness_status(
-        resource_ulid=resource_ulid,
-        status=status,
-        request_id=request_id,
-        actor_ulid=actor_ulid,
-    )
-    return _one("version_ptr", version_ptr)
+    where = "resources_v2.set_readiness"
+    try:
+        version_ptr = svc.set_readiness_status(
+            resource_ulid=resource_ulid,
+            status=status,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+        return _one("version_ptr", version_ptr)
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def set_mou(
@@ -120,13 +194,17 @@ def set_mou(
     request_id: str,
     actor_ulid: Optional[str],
 ) -> dict:
-    version_ptr = svc.set_mou_status(
-        resource_ulid=resource_ulid,
-        status=status,
-        request_id=request_id,
-        actor_ulid=actor_ulid,
-    )
-    return _one("version_ptr", version_ptr)
+    where = "resources_v2.set_mou"
+    try:
+        version_ptr = svc.set_mou_status(
+            resource_ulid=resource_ulid,
+            status=status,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+        return _one("version_ptr", version_ptr)
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def upsert_capabilities(
@@ -136,13 +214,17 @@ def upsert_capabilities(
     request_id: str,
     actor_ulid: Optional[str],
 ) -> dict:
-    hist = svc.upsert_capabilities(
-        resource_ulid=resource_ulid,
-        payload=capabilities,
-        request_id=request_id,
-        actor_ulid=actor_ulid,
-    )
-    return _one("history_ulid", hist)
+    where = "resources_v2.upsert_capabilities"
+    try:
+        hist = svc.upsert_capabilities(
+            resource_ulid=resource_ulid,
+            payload=capabilities,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+        return _one("history_ulid", hist)
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def patch_capabilities(
@@ -152,35 +234,47 @@ def patch_capabilities(
     request_id: str,
     actor_ulid: Optional[str],
 ) -> dict:
-    hist = svc.patch_capabilities(
-        resource_ulid=resource_ulid,
-        payload=capabilities,
-        request_id=request_id,
-        actor_ulid=actor_ulid,
-    )
-    return _one("history_ulid", hist)
+    where = "resources_v2.patch_capabilities"
+    try:
+        hist = svc.patch_capabilities(
+            resource_ulid=resource_ulid,
+            payload=capabilities,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+        return _one("history_ulid", hist)
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def promote_if_clean(
     *, resource_ulid: str, request_id: str, actor_ulid: Optional[str]
 ) -> dict:
-    promoted = svc.promote_readiness_if_clean(
-        resource_ulid=resource_ulid,
-        request_id=request_id,
-        actor_ulid=actor_ulid,
-    )
-    return _one("promoted", promoted)
+    where = "resources_v2.promote_if_clean"
+    try:
+        promoted = svc.promote_readiness_if_clean(
+            resource_ulid=resource_ulid,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+        return _one("promoted", promoted)
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def rebuild_index(
     *, resource_ulid: str, request_id: str, actor_ulid: Optional[str]
 ) -> dict:
-    n = svc.rebuild_capability_index(
-        resource_ulid=resource_ulid,
-        request_id=request_id,
-        actor_ulid=actor_ulid,
-    )
-    return _ok({"reindexed": int(n)})
+    where = "resources_v2.rebuild_index"
+    try:
+        n = svc.rebuild_capability_index(
+            resource_ulid=resource_ulid,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+        return _ok({"reindexed": int(n)})
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def rebuild_all(
@@ -190,12 +284,16 @@ def rebuild_all(
     request_id: str,
     actor_ulid: Optional[str],
 ) -> dict:
-    processed = svc.rebuild_all_capability_indexes(
-        page=page, per=per, request_id=request_id, actor_ulid=actor_ulid
-    )
-    return _ok(
-        {"processed": int(processed), "page": int(page), "per": int(per)}
-    )
+    where = "resources_v2.rebuild_all"
+    try:
+        processed = svc.rebuild_all_capability_indexes(
+            page=page, per=per, request_id=request_id, actor_ulid=actor_ulid
+        )
+        return _ok(
+            {"processed": int(processed), "page": int(page), "per": int(per)}
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 # ---------------- Resource POC workings ----------------------

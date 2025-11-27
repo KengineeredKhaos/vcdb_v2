@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from app.extensions.contracts.errors import ContractError
+from app.extensions.errors import ContractError
 
 
 # ---------- DTOs ----------
@@ -133,7 +133,8 @@ class ValuationRequired(FinanceContractError):
 # These are intentionally minimal so you can wire them as thin facades over slice services.
 
 
-def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:  # type: ignore[override]
+def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:
+    # type: ignore[override]
     """Contract entry point: validate & delegate to Finance slice services.
     Required keys in payload: fund_id, project_id, occurred_on, vendor, amount_cents, category.
     May raise: RestrictionViolation, BudgetExceeded, CategoryNotAllowed, ApprovalRequired, DocumentationMissing
@@ -145,7 +146,8 @@ def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:  # type:
     return _svc_log_expense(payload, dry_run=dry_run)
 
 
-def record_receipt(payload: dict) -> ReceiptDTO:  # type: ignore[override]
+def record_receipt(payload: dict) -> ReceiptDTO:
+    # type: ignore[override]
     from app.slices.finance.services import (
         record_receipt as _svc_record_receipt,
     )

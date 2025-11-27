@@ -3,10 +3,13 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from app.lib.chrono import utcnow_naive  # not used here but stays consistent
+from app.extensions.errors import ContractError
+from app.lib.chrono import now_iso8601_ms
+
+# not used here but stays consistent
 from app.slices.entity.models import (
-    ContactPoint,
     Entity,
+    EntityContact,
     EntityOrg,
     EntityPerson,
 )  # adjust names
@@ -23,9 +26,9 @@ class EntityCardDTO:
 
 def _first_email_phone(sess: Session, entity_ulid: str) -> list[dict]:
     q = (
-        sess.query(ContactPoint)
-        .filter(ContactPoint.entity_ulid == entity_ulid)
-        .order_by(ContactPoint.created_at_utc.asc())
+        sess.query(EntityContact)
+        .filter(EntityContact.entity_ulid == entity_ulid)
+        .order_by(EntityContact.created_at_utc.asc())
     )
     emails = []
     phones = []
@@ -40,31 +43,80 @@ def _first_email_phone(sess: Session, entity_ulid: str) -> list[dict]:
 
 
 def get_entity_card(sess: Session, entity_ulid: str) -> EntityCardDTO:
-    ent = sess.query(Entity).get(entity_ulid)
-    if not ent:
-        raise LookupError("entity not found")
+    where = "entity_v2.get_entity_card"
+    try:
+        ent = sess.query(Entity).get(entity_ulid)
+        if not ent:
+            raise ContractError(
+                code="not_found",
+                where="entity_v2.get_entity_card",
+                message="entity not found",
+                http_status=404,
+                data={"entity_ulid": entity_ulid},
+            )
 
-    person = sess.query(EntityPerson).get(entity_ulid)
-    org = None if person else sess.query(EntityOrg).get(entity_ulid)
+        person = sess.query(EntityPerson).get(entity_ulid)
+        org = None if person else sess.query(EntityOrg).get(entity_ulid)
 
-    if person:
-        display = f"{person.last_name}, {person.first_name}".strip().strip(
-            ","
+        if person:
+            display = (
+                f"{person.last_name}, {person.first_name}".strip().strip(",")
+            )
+            etype = "person"
+        elif org:
+            display = org.legal_name
+            etype = "org"
+        else:
+            display = entity_ulid
+            etype = "org"
+
+        contacts = _first_email_phone(sess, entity_ulid)
+        # (Optional) short address can be stitched from your address table if desired
+        return EntityCardDTO(
+            ulid=entity_ulid,
+            type=etype,
+            display_name=display,
+            contacts=contacts,
+            address_short=None,
         )
-        etype = "person"
-    elif org:
-        display = org.legal_name
-        etype = "org"
-    else:
-        display = entity_ulid
-        etype = "org"
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
-    contacts = _first_email_phone(sess, entity_ulid)
-    # (Optional) short address can be stitched from your address table if desired
-    return EntityCardDTO(
-        ulid=entity_ulid,
-        type=etype,
-        display_name=display,
-        contacts=contacts,
-        address_short=None,
+
+def _as_contract_error(where: str, exc: Exception) -> ContractError:
+    # If we’re already looking at a ContractError, just bubble it up unchanged
+    if isinstance(exc, ContractError):
+        return exc
+
+    msg = str(exc) or exc.__class__.__name__
+
+    if isinstance(exc, ValueError):
+        return ContractError(
+            code="bad_argument",
+            where=where,
+            message=msg,
+            http_status=400,
+        )
+    if isinstance(exc, PermissionError):
+        return ContractError(
+            code="permission_denied",
+            where=where,
+            message=msg,
+            http_status=403,
+        )
+    if isinstance(exc, LookupError):
+        return ContractError(
+            code="not_found",
+            where=where,
+            message=msg,
+            http_status=404,
+        )
+
+    # Fallback: unexpected system/runtime error
+    return ContractError(
+        code="internal_error",
+        where=where,
+        message="unexpected error in contract; see logs",
+        http_status=500,
+        data={"exc_type": exc.__class__.__name__},
     )

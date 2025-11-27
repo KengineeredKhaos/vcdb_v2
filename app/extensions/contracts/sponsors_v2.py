@@ -20,6 +20,7 @@ from typing import Any, Mapping, Optional, TypedDict
 from sqlalchemy.orm import Session
 
 from app.extensions.contracts.entity_v2 import get_entity_card
+from app.extensions.errors import ContractError
 from app.slices.sponsors import services as svc
 from app.slices.sponsors.models import SponsorPOC
 
@@ -44,6 +45,48 @@ __schema__ = {
         ],
     }
 }
+
+
+# -------- ContractError ------
+
+
+def _as_contract_error(where: str, exc: Exception) -> ContractError:
+    # If we’re already looking at a ContractError, just bubble it up unchanged
+    if isinstance(exc, ContractError):
+        return exc
+
+    msg = str(exc) or exc.__class__.__name__
+
+    if isinstance(exc, ValueError):
+        return ContractError(
+            code="bad_argument",
+            where=where,
+            message=msg,
+            http_status=400,
+        )
+    if isinstance(exc, PermissionError):
+        return ContractError(
+            code="permission_denied",
+            where=where,
+            message=msg,
+            http_status=403,
+        )
+    if isinstance(exc, LookupError):
+        return ContractError(
+            code="not_found",
+            where=where,
+            message=msg,
+            http_status=404,
+        )
+
+    # Fallback: unexpected system/runtime error
+    return ContractError(
+        code="internal_error",
+        where=where,
+        message="unexpected error in contract; see logs",
+        http_status=500,
+        data={"exc_type": exc.__class__.__name__},
+    )
 
 
 # ---------- helpers ----------
@@ -97,12 +140,18 @@ def get_policy(sponsor_ulid: str) -> SponsorPolicyDTO:
 def create_sponsor(
     *, entity_ulid: str, request_id: str, actor_ulid: Optional[str]
 ) -> dict:
-    entity_ulid = _require_ulid("entity_ulid", entity_ulid)
-    request_id = _require_ulid("request_id", request_id)
-    sid = svc.ensure_sponsor(
-        entity_ulid=entity_ulid, request_id=request_id, actor_ulid=actor_ulid
-    )
-    return _one("sponsor_ulid", sid)
+    where = "sponsors_v2.create_sponsor"
+    try:
+        entity_ulid = _require_ulid("entity_ulid", entity_ulid)
+        request_id = _require_ulid("request_id", request_id)
+        sid = svc.ensure_sponsor(
+            entity_ulid=entity_ulid,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+        return _one("sponsor_ulid", sid)
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def upsert_capabilities(
@@ -112,20 +161,24 @@ def upsert_capabilities(
     request_id: str,
     actor_ulid: Optional[str],
 ) -> dict:
-    sponsor_ulid = _require_ulid("sponsor_ulid", sponsor_ulid)
-    request_id = _require_ulid("request_id", request_id)
-    if not isinstance(capabilities, dict):
-        raise ValueError(
-            "capabilities must be an object mapping 'domain.key' -> {has[,note]}"
+    where = "sponsors_v2.upsert_capabilities"
+    try:
+        sponsor_ulid = _require_ulid("sponsor_ulid", sponsor_ulid)
+        request_id = _require_ulid("request_id", request_id)
+        if not isinstance(capabilities, dict):
+            raise ValueError(
+                "capabilities must be an object mapping 'domain.key' -> {has[,note]}"
+            )
+        hist = svc.upsert_capabilities(
+            sponsor_ulid=sponsor_ulid,
+            payload=capabilities,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
         )
-    hist = svc.upsert_capabilities(
-        sponsor_ulid=sponsor_ulid,
-        payload=capabilities,
-        request_id=request_id,
-        actor_ulid=actor_ulid,
-    )
-    view = svc.sponsor_view(sponsor_ulid)
-    return _ok({"history_ulid": hist, "sponsor": view})
+        view = svc.sponsor_view(sponsor_ulid)
+        return _ok({"history_ulid": hist, "sponsor": view})
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def patch_capabilities(
@@ -135,20 +188,24 @@ def patch_capabilities(
     request_id: str,
     actor_ulid: Optional[str],
 ) -> dict:
-    sponsor_ulid = _require_ulid("sponsor_ulid", sponsor_ulid)
-    request_id = _require_ulid("request_id", request_id)
-    if not isinstance(capabilities, dict):
-        raise ValueError(
-            "capabilities must be an object mapping 'domain.key' -> {has[,note]}"
+    where = "sponsors_v2.patch_capabilities"
+    try:
+        sponsor_ulid = _require_ulid("sponsor_ulid", sponsor_ulid)
+        request_id = _require_ulid("request_id", request_id)
+        if not isinstance(capabilities, dict):
+            raise ValueError(
+                "capabilities must be an object mapping 'domain.key' -> {has[,note]}"
+            )
+        hist = svc.patch_capabilities(
+            sponsor_ulid=sponsor_ulid,
+            payload=capabilities,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
         )
-    hist = svc.patch_capabilities(
-        sponsor_ulid=sponsor_ulid,
-        payload=capabilities,
-        request_id=request_id,
-        actor_ulid=actor_ulid,
-    )
-    view = svc.sponsor_view(sponsor_ulid)
-    return _ok({"history_ulid": hist, "sponsor": view})
+        view = svc.sponsor_view(sponsor_ulid)
+        return _ok({"history_ulid": hist, "sponsor": view})
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def pledge_upsert(
@@ -158,18 +215,22 @@ def pledge_upsert(
     request_id: str,
     actor_ulid: Optional[str],
 ) -> dict:
-    sponsor_ulid = _require_ulid("sponsor_ulid", sponsor_ulid)
-    request_id = _require_ulid("request_id", request_id)
-    if not isinstance(pledge, dict):
-        raise ValueError("pledge must be an object")
-    pid = svc.upsert_pledge(
-        sponsor_ulid=sponsor_ulid,
-        pledge=pledge,
-        request_id=request_id,
-        actor_ulid=actor_ulid,
-    )
-    view = svc.sponsor_view(sponsor_ulid)
-    return _ok({"pledge_ulid": pid, "sponsor": view})
+    where = "sponsors_v2.pledge_upsert"
+    try:
+        sponsor_ulid = _require_ulid("sponsor_ulid", sponsor_ulid)
+        request_id = _require_ulid("request_id", request_id)
+        if not isinstance(pledge, dict):
+            raise ValueError("pledge must be an object")
+        pid = svc.upsert_pledge(
+            sponsor_ulid=sponsor_ulid,
+            pledge=pledge,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+        view = svc.sponsor_view(sponsor_ulid)
+        return _ok({"pledge_ulid": pid, "sponsor": view})
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def pledge_set_status(
@@ -179,24 +240,32 @@ def pledge_set_status(
     request_id: str,
     actor_ulid: Optional[str],
 ) -> dict:
-    pledge_ulid = _require_ulid("pledge_ulid", pledge_ulid)
-    status = _require_str("status", status).lower()
-    request_id = _require_ulid("request_id", request_id)
-    svc.set_pledge_status(
-        pledge_ulid=pledge_ulid,
-        status=status,
-        request_id=request_id,
-        actor_ulid=actor_ulid,
-    )
-    return _ok({})
+    where = "sponsors_v2.pledge_set_status"
+    try:
+        pledge_ulid = _require_ulid("pledge_ulid", pledge_ulid)
+        status = _require_str("status", status).lower()
+        request_id = _require_ulid("request_id", request_id)
+        svc.set_pledge_status(
+            pledge_ulid=pledge_ulid,
+            status=status,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+        return _ok({})
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 def get_profile(*, sponsor_ulid: str) -> dict:
-    sponsor_ulid = _require_ulid("sponsor_ulid", sponsor_ulid)
-    view = svc.sponsor_view(sponsor_ulid)
-    if view is None:
-        raise ValueError("sponsor not found")
-    return _ok(view)
+    where = "sponsors_v2.get_profile"
+    try:
+        sponsor_ulid = _require_ulid("sponsor_ulid", sponsor_ulid)
+        view = svc.sponsor_view(sponsor_ulid)
+        if view is None:
+            raise ValueError("sponsor not found")
+        return _ok(view)
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
 
 
 # ---------------- Sponsor POC workings -------------------
