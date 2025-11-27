@@ -246,6 +246,26 @@ def _iso(s: str) -> datetime:
 
 
 # -----------------
+# Policy Loader Stack
+# returns specific
+# policy JSON as read
+# from Governance/data/
+# with eventual migration
+# to read policy from
+# governance.models.Polcy
+# dbase table policy cache
+# ------------------
+
+
+# def get_resource_capabilities_policy() -> dict:
+#     return _load_policy("policy_resource_capabilities.json")
+
+
+# def get_resource_lifecycle_policy() -> dict:
+#     return _load_policy("policy_resource_lifecycle.json")
+
+
+# -----------------
 # List active U.S. states
 # (canonical rows)
 # -----------------

@@ -124,6 +124,7 @@ from typing import (
     Any,
     Dict,
     List,
+    Set,
     TypedDict,
 )
 
@@ -133,6 +134,7 @@ from app.extensions import event_bus
 from app.extensions.contracts import customers_v2
 from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
+from app.slices.governance import services as gov_svc
 from app.slices.governance.services import decide_issue
 from app.slices.governance.services_admin import (
     commit_update_impl,
@@ -243,6 +245,21 @@ class DecisionDTO:
     eligible_veteran_only: bool  # Veteran gates veteran-only programs
     eligible_homeless_only: bool  # Homeless gates homeless-only programs
     as_of_iso: str
+
+
+@dataclass
+class ResourceCapsPolicy:
+    note_max: int
+    classifications: Dict[str, List[str]]
+
+    @property
+    def all_codes(self) -> Set[str]:
+        # e.g. {"basic_needs.food_pantry", "housing.rent_assistance", ...}
+        out: Set[str] = set()
+        for domain, codes in self.classifications.items():
+            for code in codes:
+                out.add(f"{domain}.{code}")
+        return out
 
 
 # -----------------
@@ -518,6 +535,33 @@ def describe():
         "rbac_to_domain": bundle["domain"]["rbac_to_domain"],
         "calendar": {"blackout": bundle["calendar"]["blackout_summary"]},
     }
+
+
+# -----------------
+# Resource Policy DTO's
+# -----------------
+
+
+def get_resource_capabilities_policy() -> ResourceCapsPolicy:
+    """
+    Board policy: resource capabilities & taxonomy.
+    Backed by policy_resource_capabilities.json (or DB equivalent later).
+    """
+    data = gov_svc.svc_get_policy_value("resource", "capabilities")
+    return ResourceCapsPolicy(
+        note_max=int(data["note_max"]),
+        classifications={
+            k: list(v) for k, v in data["classifications"].items()
+        },
+    )
+
+
+def get_resource_lifecycle_policy() -> dict:
+    """
+    Board policy: resource readiness + MOU status vocab.
+    Backed by policy_resource_lifecycle.json.
+    """
+    return gov_svc.svc_get_policy_value("resource", "lifecycle")
 
 
 # -----------------

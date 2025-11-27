@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "readiness_status_allowed": [
+    "draft",
+    "review",
+    "active",
+    "suspended"
+  ],
+  "mou_status_allowed": [
+    "none",
+    "pending",
+    "active",
+    "expired",
+    "terminated"
+  ]
+}

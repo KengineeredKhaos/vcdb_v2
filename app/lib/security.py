@@ -273,14 +273,12 @@ from typing import Iterable, Set
 from flask import abort, current_app, session
 from flask_login import current_user
 
-from app.extensions.contracts.auth import v2 as auth_ro
+from app.extensions.contracts import auth_v2 as auth_ro
 
 ASSUME_KEY = "assumed_domain_roles"
 
 
 def _dev_assumption_enabled(user) -> bool:
-
-
     if current_app.config.get("APP_MODE") == "production":
         return False
     has_dev = "dev" in getattr(user, "rbac_roles", [])
