@@ -1,10 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "VCDB SKU Construction Constraints",
+  "title": "VCDB SKU Constraints Policy",
   "type": "object",
-  "required": ["version", "rules"],
+  "required": ["version", "rules", "allowed_units", "allowed_sources"],
   "properties": {
     "version": { "type": "integer", "minimum": 1 },
+
     "rules": {
       "type": "array",
       "items": {
@@ -26,7 +27,10 @@
           "then": {
             "type": "object",
             "properties": {
-              "issuance_class": { "type": "string", "enum": ["V","H","D","U"] }
+              "issuance_class": {
+                "type": "string",
+                "enum": ["V", "H", "D", "U"]
+              }
             },
             "required": ["issuance_class"],
             "additionalProperties": false
@@ -35,7 +39,26 @@
         },
         "additionalProperties": false
       }
+    },
+
+    "allowed_units": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["each", "lbs", "kit", "box", "pack"]
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+
+    "allowed_sources": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["donation", "purchase", "transfer", "drmo"]
+      },
+      "minItems": 1,
+      "uniqueItems": true
     }
-  },
-  "additionalProperties": false
+  }
 }

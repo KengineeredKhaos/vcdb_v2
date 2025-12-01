@@ -1,6 +1,7 @@
 {
   "spending_staff_cap_cents": 20000,
   "default_behavior": "allow",
+  "coverage_mode": "advisory",
 
   "defaults": {
     "cadence": {

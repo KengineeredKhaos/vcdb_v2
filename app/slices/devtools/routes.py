@@ -11,8 +11,7 @@ from werkzeug.exceptions import BadRequest, Forbidden
 
 from app.extensions import db
 from app.lib.chrono import now_iso8601_ms
-from app.lib.security import ASSUME_KEY
-from app.slices.auth.decorators import rbac
+from app.lib.security import ASSUME_KEY, rbac
 from app.slices.entity.models import EntityOrg, EntityPerson, EntityRole
 from app.slices.entity.services import (
     allowed_role_codes,

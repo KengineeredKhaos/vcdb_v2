@@ -10,6 +10,11 @@
       "enum": ["allow", "deny"],
       "description": "Engine posture when no rule matches."
     },
+    "coverage_mode": {
+      "type": "string",
+      "enum": ["advisory", "strict"],
+      "description": "Treat unmatched SKU's as INFO or WARN"
+    },
     "defaults": {
       "type": "object",
       "properties": {

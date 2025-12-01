@@ -34,6 +34,8 @@ matching Ledger ethos.
 # Canonical values
 # -----------------
 
+# REFACTOR: transition away from declared constants to governance policy reads
+
 TIER_FACTORS: dict[str, tuple[str, ...]] = {
     "tier1": ("food", "hygiene", "health", "housing", "clothing"),
     "tier2": ("income", "employment", "transportation", "education"),
@@ -41,6 +43,23 @@ TIER_FACTORS: dict[str, tuple[str, ...]] = {
 }
 ALLOWED_VALUES = {1, 2, 3, "unknown", "n/a", None}
 ALLOWED_METHODS = {"dd214", "va_id", "state_dl_veteran", "other"}
+
+"""
+These all want to come from Governance:
+
+policy_customer_needs.json + schema as canonical source.
+
+Contract helper like governance_v2.get_customer_needs_policy() returning:
+
+tier_factors (tier1/2/3 → factor names)
+
+allowed_values
+
+allowed_methods.
+
+The shape of customer.services can stay the same; we just swap
+TIER_FACTORS, ALLOWED_VALUES, ALLOWED_METHODS for a policy-backed lookup.
+"""
 
 # -----------------
 # Snapshots

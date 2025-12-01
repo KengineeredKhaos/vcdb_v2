@@ -14,10 +14,10 @@ from flask_login import login_required, login_user, logout_user
 
 from app.extensions import csrf
 from app.lib.request_ctx import ensure_request_id
+from app.lib.security import rbac, require_domain_role
 
 from . import bp
 from . import services as svc
-from .decorators import rbac
 
 
 @bp.get("/login", endpoint="login")

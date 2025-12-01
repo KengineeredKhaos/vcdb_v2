@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VCDB Storage Locations Policy",
+  "type": "object",
+  "required": ["version", "kinds", "locations", "patterns"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+
+    "kinds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["warehouse", "rackbin", "satellite", "vehicle"]
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+
+    "locations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "kind", "name"],
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["warehouse", "rackbin", "satellite", "vehicle"]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        }
+      }
+    },
+
+    "patterns": {
+      "type": "object",
+      "required": ["rackbin"],
+      "additionalProperties": false,
+      "properties": {
+        "rackbin": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

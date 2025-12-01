@@ -26,6 +26,7 @@ from .models import (
     EntityRole,
 )
 
+# REFACTOR: ensure proper calls to governance_v2 contract
 # -----------------
 # Allowed Role Codes
 # -----------------
@@ -39,6 +40,18 @@ except Exception:
     _gov_role_catalogs = (
         None  # contract not wired yet (dev/test fallback path)
     )
+"""
+Any ALLOWED_*ROLE* constants → replace with:
+
+Governance policy (governance.roles family) via contract call, or
+
+DB-backed RoleCode catalog helper (list_domain_roles() in Governance) exposed
+through governance_v2.
+
+Any DTOs that are used by other slices → move definitions into
+extensions/contracts/entity_v2.py and import them in entity.services
+instead of defining them “locally”.
+"""
 
 
 def allowed_role_codes(session=None) -> Set[str]:
@@ -58,6 +71,9 @@ def _ensure_reqid(request_id: Optional[str]) -> str:
     if request_id is None or not str(request_id).strip():
         raise ValueError("request_id must be non-empty")
     return str(request_id)
+
+
+# REFACTOR: ensure these show up in contracts
 
 
 # -----------------
@@ -102,6 +118,67 @@ def _org_to_dto(o: EntityOrg) -> dict:
         "created_at_utc": ent.created_at_utc if ent else None,
         "updated_at_utc": ent.updated_at_utc if ent else None,
     }
+
+
+# -----------------
+# Seed Functions
+# -----------------
+
+
+def _validate_entity_shape(e: Entity) -> None:
+    """Hard guard: exactly one child matching kind."""
+    if e.kind == "person":
+        if e.person is None or e.org is not None:
+            raise ValueError(
+                "kind='person' requires person child and forbids org child"
+            )
+    elif e.kind == "org":
+        if e.org is None or e.person is not None:
+            raise ValueError(
+                "kind='org' requires org child and forbids person child"
+            )
+    else:
+        raise ValueError("Entity.kind must be 'person' or 'org'")
+
+
+def create_person_entity(
+    *,
+    first_name: str,
+    last_name: str,
+    preferred_name: str | None = None,
+    session: Session | None = None,
+) -> Entity:
+    s = session or db.session
+    e = Entity(kind="person")
+    e.person = EntityPerson(
+        first_name=first_name,
+        last_name=last_name,
+        preferred_name=preferred_name,
+    )
+    _validate_entity_shape(e)
+    s.add(e)
+    s.flush()  # assigns ULIDs and timestamps
+    return e
+
+
+def create_org_entity(
+    *,
+    legal_name: str,
+    dba_name: str | None = None,
+    ein: str | None = None,
+    session: Session | None = None,
+) -> Entity:
+    s = session or db.session
+    e = Entity(kind="org")
+    e.org = EntityOrg(
+        legal_name=legal_name,
+        dba_name=dba_name,
+        ein=ein,
+    )
+    _validate_entity_shape(e)
+    s.add(e)
+    s.flush()
+    return e
 
 
 # -----------------
@@ -660,64 +737,3 @@ def _upsert_primary_contact(
         c.email = email
     if phone is not None:
         c.phone = phone
-
-
-# -----------------
-# Test Fixtures
-# -----------------
-
-
-def _validate_entity_shape(e: Entity) -> None:
-    """Hard guard: exactly one child matching kind."""
-    if e.kind == "person":
-        if e.person is None or e.org is not None:
-            raise ValueError(
-                "kind='person' requires person child and forbids org child"
-            )
-    elif e.kind == "org":
-        if e.org is None or e.person is not None:
-            raise ValueError(
-                "kind='org' requires org child and forbids person child"
-            )
-    else:
-        raise ValueError("Entity.kind must be 'person' or 'org'")
-
-
-def create_person_entity(
-    *,
-    first_name: str,
-    last_name: str,
-    preferred_name: str | None = None,
-    session: Session | None = None,
-) -> Entity:
-    s = session or db.session
-    e = Entity(kind="person")
-    e.person = EntityPerson(
-        first_name=first_name,
-        last_name=last_name,
-        preferred_name=preferred_name,
-    )
-    _validate_entity_shape(e)
-    s.add(e)
-    s.flush()  # assigns ULIDs and timestamps
-    return e
-
-
-def create_org_entity(
-    *,
-    legal_name: str,
-    dba_name: str | None = None,
-    ein: str | None = None,
-    session: Session | None = None,
-) -> Entity:
-    s = session or db.session
-    e = Entity(kind="org")
-    e.org = EntityOrg(
-        legal_name=legal_name,
-        dba_name=dba_name,
-        ein=ein,
-    )
-    _validate_entity_shape(e)
-    s.add(e)
-    s.flush()
-    return e

@@ -74,7 +74,6 @@ class DevConfig(BaseConfig):
     PERMISSIONS_MAP = {
         "governance:policy:edit": {"admin"},
         "ledger:read": {"admin", "auditor"},
-
     }
 
 
@@ -91,12 +90,13 @@ class TestConfig(BaseConfig):
     )
 
     AUTH_MODE = "stub"
-    AUTO_LOGIN_ADMIN = False     # test shouldn’t silently auto-admin
+    AUTO_LOGIN_ADMIN = False  # test shouldn’t silently auto-admin
     WTF_CSRF_ENABLED = False
     LEDGER_CHECK_ON_BOOT = False
     ALLOW_HEADER_AUTH = True
     SESSION_COOKIE_NAME = "vcdb_test_session"
     REMEMBER_COOKIE_NAME = "vcdb_test_remember"
+
 
 # ---------- Production ----------
 class ProdConfig(BaseConfig):
@@ -111,7 +111,7 @@ class ProdConfig(BaseConfig):
         else "sqlite:///var/app-instance/prod.db"
     )
 
-    AUTH_MODE = "real"
+    AUTH_MODE = "db"
     SESSION_COOKIE_NAME = "vcdb_test_session"
     REMEMBER_COOKIE_NAME = "vcdb_test_remember"
     ALLOW_HEADER_AUTH = True

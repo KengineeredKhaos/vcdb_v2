@@ -333,6 +333,81 @@ def dev_policy_health(as_json: bool):
             )
     else:
         click.echo("  (no rules loaded)")
+        # --- Additional summaries (text mode only) ----------------------------
+    # Give Dev/Ops a quick view of how SKU/unit and Location policy are
+    # being used in the Logistics slice. Skip when --json is requested.
+    if not as_json:
+        click.echo("")
+        _print_sku_policy_summary()
+        click.echo("")
+        _print_location_policy_summary()
+
+
+def _print_location_policy_summary() -> None:
+    """
+    Print a compact summary of Location policy vs DB usage.
+
+    - Shows explicit location specs from policy_locations.json
+    - Shows the rack/bin regex pattern
+    - Flags any Location.code in DB that is not covered by policy/pattern
+    """
+    import re
+
+    from app.extensions import db
+    from app.extensions.policies import load_policy_locations
+    from app.slices.logistics.models import Location
+
+    pol = load_policy_locations()
+    kinds = pol.get("kinds") or []
+    loc_specs = pol.get("locations") or []
+    patterns = pol.get("patterns") or {}
+    rackbin_pattern = re.compile(
+        patterns.get("rackbin", r"$^")
+    )  # match nothing if missing
+
+    allowed_codes = {spec["code"] for spec in loc_specs}
+
+    click.echo("Location policy — codes vs DB")
+    click.echo("-----------------------------")
+    click.echo(f"kinds          : {', '.join(kinds) or '(none)'}")
+    click.echo("locations:")
+    for spec in loc_specs:
+        click.echo(
+            f"  - code={spec['code']!r:10s}  "
+            f"kind={spec.get('kind', '?'):10s}  "
+            f"name={spec.get('name', '')}"
+        )
+    click.echo(f"rackbin pattern: {patterns.get('rackbin', '(none)')}")
+    click.echo("")
+
+    rows = (
+        db.session.execute(select(Location.code).order_by(Location.code))
+        .scalars()
+        .all()
+    )
+
+    if not rows:
+        click.echo("Location codes in DB: (no rows)")
+        return
+
+    click.echo("Location codes in DB:")
+    bad_codes: list[str] = []
+    for code in rows:
+        in_policy = code in allowed_codes
+        matches_pattern = bool(rackbin_pattern.match(code))
+        flag = ""
+        if not (in_policy or matches_pattern):
+            flag = "  (! not in policy)"
+            bad_codes.append(code)
+        click.echo(f"  {code!r}{flag}")
+
+    if bad_codes:
+        click.echo("")
+        click.echo(
+            "WARN: Location codes not covered by policy or rackbin pattern:"
+        )
+        for c in sorted(set(bad_codes)):
+            click.echo(f"  - {c!r}")
 
 
 # -----------------
@@ -570,6 +645,58 @@ def _scan_issuance_coverage():
     return summary, per_rule
 
 
+def _print_sku_policy_summary() -> None:
+    """
+    Print a compact summary of SKU constraints policy vs DB usage.
+
+    - Shows allowed_units / allowed_sources from policy_sku_constraints.json
+    - Shows InventoryItem.unit usage and flags any units not allowed by policy
+    """
+    from sqlalchemy import func
+    from app.extensions import db
+    from app.extensions.policies import load_policy_sku_constraints
+    from app.slices.logistics.models import InventoryItem
+
+    pol = load_policy_sku_constraints()
+    allowed_units = set(pol.get("allowed_units") or [])
+    allowed_sources = set(pol.get("allowed_sources") or [])
+
+    click.echo("SKU constraints — policy vs catalog")
+    click.echo("----------------------------------")
+    click.echo(
+        f"allowed_units   : {', '.join(sorted(allowed_units)) or '(none)'}"
+    )
+    click.echo(
+        f"allowed_sources : {', '.join(sorted(allowed_sources)) or '(none)'}"
+    )
+    click.echo("")
+
+    rows = db.session.execute(
+        select(InventoryItem.unit, func.count())
+        .group_by(InventoryItem.unit)
+        .order_by(InventoryItem.unit)
+    ).all()
+
+    if not rows:
+        click.echo("InventoryItem units (DB) : (no items)")
+        return
+
+    click.echo("InventoryItem units (DB usage):")
+    bad_units: list[str] = []
+    for unit, count in rows:
+        flag = ""
+        if unit not in allowed_units:
+            flag = "  (! not in policy)"
+            bad_units.append(unit)
+        click.echo(f"  {unit!r:10s}  {count:5d}{flag}")
+
+    if bad_units:
+        click.echo("")
+        click.echo("WARN: units present in DB but not allowed by policy:")
+        for u in sorted(set(bad_units)):
+            click.echo(f"  - {u!r}")
+
+
 # -----------------
 # Assign Default Behavior
 # so issuance-debug has a
@@ -721,7 +848,7 @@ def dev_issuance_debug(
     default=None,
     help="Existing test customer ULID; if absent we'll create one.",
 )
-@click.option("--location", default="LOC-MAIN", show_default=True)
+@click.option("--location", default="MAIN", show_default=True)
 @click.option(
     "--per-sku",
     type=int,
@@ -1418,6 +1545,120 @@ def dev_demo_issue(
 
     click.echo(f"OK movement={res['movement_ulid']}")
     click.echo(f"decision={res['decision']}")
+
+
+# -----------------
+# Issuance Ledger Trace
+# -----------------
+
+
+@dev_group.command("ledger-issuance-trace")
+@with_appcontext
+@click.option(
+    "--customer-ulid", required=True, help="Customer ULID to issue to."
+)
+@click.option(
+    "--sku-code", required=True, help="SKU code to issue (must have stock)."
+)
+@click.option(
+    "--location-code",
+    required=True,
+    help="Location.code to issue from (e.g. MAIN, MAIN-A1-2).",
+)
+def dev_ledger_issuance_trace(
+    customer_ulid: str,
+    sku_code: str,
+    location_code: str,
+) -> None:
+    """
+    Issue a single item and show all ledger events generated for it.
+
+    This is a dev-only trace tool:
+      - resolves a Location by code (using Logistics ensure_location),
+      - generates a correlation request_id,
+      - calls Logistics decide_and_issue_one(...),
+      - then queries the Ledger by that request_id and prints the events.
+
+    Use this to understand “how many ledger events does one issuance create?”
+    and which domains/operations are involved.
+    """
+    echo_db_banner("ledger-issuance-trace")
+
+    from sqlalchemy import select
+
+    from app.extensions import db
+    from app.lib.ids import new_ulid
+    from app.slices.logistics.issuance_services import decide_and_issue_one
+    from app.slices.logistics.services import ensure_location
+
+    # TODO: adjust this import to match your actual Ledger model path/name.
+    # Common patterns in this project would be something like:
+    #   from app.slices.ledger.models import LedgerEvent
+    #
+    # For now, assume LedgerEvent with fields:
+    #   request_id, domain, operation, target_ulid, chain_key, happened_at_utc.
+    try:
+        from app.slices.ledger.models import LedgerEvent  # type: ignore
+    except ImportError as e:  # pragma: no cover - dev helper
+        click.echo(f"FATAL: could not import LedgerEvent: {e}", err=True)
+        raise SystemExit(1)
+
+    # Resolve location ULID by code (No-Garbage-In enforced via policy)
+    loc_ulid = ensure_location(code=location_code, name=location_code)
+
+    # Correlation id for this issuance
+    req_id = new_ulid()
+    click.echo(f"Using request_id={req_id}")
+
+    # Do the issuance
+    result = decide_and_issue_one(
+        customer_ulid=customer_ulid,
+        sku_code=sku_code,
+        quantity=1,
+        when_iso=None,
+        project_ulid=None,
+        actor_ulid=None,
+        location_ulid=loc_ulid,
+        batch_ulid=None,
+        request_id=req_id,
+    )
+
+    click.echo(
+        f"Decision: ok={result.get('ok')} reason={result.get('reason')} "
+        f"movement_ulid={result.get('movement_ulid')}"
+    )
+    if not result.get("ok"):
+        # If issuance failed, there may still be some ledger events (e.g. policy checks),
+        # but usually far fewer.
+        click.echo(
+            "Issuance denied or failed; continuing to trace ledger events.\n"
+        )
+
+    # Fetch all ledger events for this request_id
+    events = (
+        db.session.execute(
+            select(LedgerEvent)
+            .where(LedgerEvent.request_id == req_id)
+            .order_by(LedgerEvent.happened_at_utc)
+        )
+        .scalars()
+        .all()
+    )
+
+    click.echo("")
+    click.echo(f"Ledger events for request_id={req_id}: {len(events)}")
+    if not events:
+        click.echo("  (no events found)")
+        return
+
+    for ev in events:
+        # Adjust attribute names if your LedgerEvent model uses different ones.
+        click.echo(
+            f"  - {ev.domain}.{ev.operation} "
+            f"target={getattr(ev, 'target_ulid', None)} "
+            f"chain={getattr(ev, 'chain_key', None)} "
+            f"ts={getattr(ev, 'happened_at_utc', None)}"
+        )
 
 
 # -----------------

@@ -1,9 +1,4 @@
-# app/extensions/contracts/auth_v2.py
-# -*- coding: utf-8 -*-
-# VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
-# File: app/extensions/contracts/auth_v2.py
-# Purpose: Single source of truth for RBAC role lookups (read-only via Auth contract)
-# Canon API: rbac-core v1.0.0  (frozen)
+# app/slices/auth/services.py
 
 from __future__ import annotations
 

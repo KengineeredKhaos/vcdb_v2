@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from sqlalchemy import and_, func, select
 
-from app.extensions import db
-from app.extensions.enforcers import enforcers  # calendar_blackout_ok
-from app.extensions.event_bus import emit as emit_event
+from app.extensions import db, event_bus
+from app.extensions.contracts import governance_v2
+from app.extensions.policies import (
+    load_policy_locations,
+    load_policy_sku_constraints,
+)
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 from app.lib.jsonutil import pretty_dumps
-from app.slices.governance import services as gov  # decide_issue
 from app.slices.logistics.sku import (
     classification_key_for,
     parse_sku,
@@ -30,73 +33,47 @@ from .models import (
 )
 from .sku import b36_to_int, int_to_b36
 
-ALLOWED_UNITS = {"each", "lbs", "kit", "box", "pack"}
-ALLOWED_SOURCES = {"donation", "purchase", "transfer", "drmo"}
+# Load and cache SKU constraints policy (allowed units/sources, rules).
+# If the policy is invalid, this fails fast at startup.
+_SKU_POLICY = load_policy_sku_constraints()
+_ALLOWED_UNITS = frozenset(_SKU_POLICY.get("allowed_units") or [])
+_ALLOWED_SOURCES = frozenset(_SKU_POLICY.get("allowed_sources") or [])
+_LOCATION_POLICY = load_policy_locations()
+_ALLOWED_LOCATIONS = frozenset(
+    loc["code"] for loc in _LOCATION_POLICY.get("locations", [])
+)
+_RACKBIN_PATTERN = re.compile(
+    _LOCATION_POLICY.get("patterns", {}).get("rackbin", r"$^")
+)  # default $^ matches nothing
 
 
-# -----------------
-# _Ctx (canonical)
-# -----------------
-# Context/DTO utilities
-# used by enforcer &
-# policy orchestration
-# -----------------
+def _require_valid_unit(unit: str) -> None:
+    """Raise ValueError if unit is not allowed by Governance policy."""
+    if unit not in _ALLOWED_UNITS:
+        raise ValueError(
+            f"invalid unit {unit!r}; allowed={sorted(_ALLOWED_UNITS)}"
+        )
 
 
-class _Ctx:
-    """
-    Minimal attribute carrier for enforcers/governance so callers don’t need
-    to import slice internals.
-    """
-
-    def __init__(
-        self,
-        *,
-        customer_ulid: str,
-        sku_code: Optional[str],
-        classification_key: Optional[str],
-        when_iso: str,
-        project_ulid: Optional[str],
-        sku_parts: Optional[dict] = None,
-        cost_cents: Optional[int] = None,
-        force_blackout: bool = False,  # harmless if not used
-    ):
-        self.customer_ulid = customer_ulid
-        self.sku_code = sku_code
-        self.classification_key = classification_key
-        self.when_iso = when_iso
-        self.project_ulid = project_ulid
-        self.sku_parts = sku_parts
-        self.cost_cents = cost_cents
-        self.force_blackout = force_blackout
+def _require_valid_source(source: str) -> None:
+    """Raise ValueError if source is not allowed by Governance policy."""
+    if source not in _ALLOWED_SOURCES:
+        raise ValueError(
+            f"invalid source {source!r}; allowed={sorted(_ALLOWED_SOURCES)}"
+        )
 
 
-def issue_inventory(
-    customer_ulid: str,
-    sku_code: str,
-    *,
-    when_iso: str | None = None,
-    project_ulid: str | None = None,
-    quantity: int = 1,
-    actor_ulid: str | None = None,
-    location_ulid: str | None = None,
-    batch_ulid: str | None = None,
-) -> dict:
-    """
-    Canonical issuance surface.
-    Delegates to decide_and_issue_one and returns its dict:
-    {'ok', 'reason', 'movement_ulid'?, 'issue_ulid'?, 'decision': {...}, ...}
-    """
-    return decide_and_issue_one(
-        customer_ulid=customer_ulid,
-        sku_code=sku_code,
-        quantity=quantity,
-        when_iso=when_iso,
-        project_ulid=project_ulid,
-        actor_ulid=actor_ulid,
-        location_ulid=location_ulid,
-        batch_ulid=batch_ulid,
-    )
+def _require_valid_location_code(code: str) -> None:
+    policy = load_policy_locations()  # same pattern as SKU policy
+    known_codes = {loc["code"] for loc in policy["locations"]}
+    rackbin_pattern = re.compile(policy["patterns"]["rackbin"])
+
+    if code in known_codes:
+        return
+    if rackbin_pattern.match(code):
+        return
+
+    raise ValueError(f"invalid location code {code!r}")
 
 
 # -----------------
@@ -106,18 +83,19 @@ def issue_inventory(
 
 
 def ensure_location(*, code: str, name: str) -> str:
-    """
-    Idempotently create or return a Location by code (upper-cased),
-    committing if a new row is inserted.
-    """
+    code = code.strip().upper()
+    name = name.strip()
+
+    _require_valid_location_code(code)  # policy-backed check
+
     row = db.session.execute(
         select(Location).where(Location.code == code)
     ).scalar_one_or_none()
     if row:
+        # Optional: ensure name matches policy if this code is policy-controlled
         return row.ulid
-    row = Location(
-        ulid=new_ulid(), code=code.strip().upper(), name=name.strip()
-    )
+
+    row = Location(ulid=new_ulid(), code=code, name=name)
     db.session.add(row)
     db.session.commit()
     return row.ulid
@@ -166,8 +144,13 @@ def ensure_item(
 ) -> str:
     """Idempotently create or return an InventoryItem for the given SKU
     (or parts), validating and enforcing SKU constraints."""
-    if unit not in ALLOWED_UNITS:
-        raise ValueError("invalid unit")
+    # Governance-backed unit validation (No Garbage In).
+    _require_valid_unit(unit)
+
+    # Normalize unit/category/name if you like; optional:
+    unit = unit.strip().lower()  # or .upper(), as long as it matches policy
+    category = category.strip()
+    name = name.strip()
 
     # Resolve SKU
     if sku:
@@ -274,11 +257,15 @@ def receive_inventory(
     source_entity_ulid: str | None = None,
 ) -> dict:
     """Record a receipt: create batch, create 'receipt' movement,
-    and increase on-hand stock at the location."""
-    if unit not in ALLOWED_UNITS:
-        raise ValueError("invalid unit")
-    if source not in ALLOWED_SOURCES:
-        raise ValueError("invalid source")
+    and increase on-hand stock at the location.
+    """
+    # Governance-backed validation for unit/source on ingress.
+    _require_valid_unit(unit)
+    _require_valid_source(source)
+
+    # Normalize if needed to match policy casing:
+    unit = unit.strip().lower()
+    source = source.strip().lower()
 
     b = InventoryBatch(
         ulid=new_ulid(),
@@ -331,9 +318,8 @@ def issue_inventory_lowlevel(
     actor_ulid: str | None,
 ) -> str:
     """Low-level issuance path that writes a movement, reduces stock,
-    and inserts the Issue row; returns movement_ulid."""
-    if unit not in ALLOWED_UNITS:
-        raise ValueError("invalid unit")
+    and inserts the Issue row; returns movement_ulid.
+    """
 
     # Movement record
     m = InventoryMovement(
@@ -385,26 +371,6 @@ def issue_inventory_lowlevel(
     return m.ulid
 
 
-# ----------------------------
-# Context/DTO utilities
-# (used by enforcer/policy orchestration)
-# ----------------------------
-
-
-@dataclass(frozen=True)
-class IssueResult:
-    """
-    Lightweight result DTO for policy-only issuances and
-    CLI/reporting surfaces.
-    """
-
-    ok: bool
-    reason: str
-    issue_ulid: Optional[str] = None
-    decision: Optional[Dict[str, Any]] = None
-    meta: Optional[Dict[str, Any]] = None
-
-
 # -----------------
 # Attach Decision Trace
 # Issue.decision_json
@@ -423,305 +389,6 @@ def attach_issue_decision(movement_ulid: str, decision: dict) -> None:
     if issue:
         issue.decision_json = pretty_dumps(decision)
         db.session.commit()
-
-
-# -----------------
-# Issue (high-level):
-# enforcer → policy → resolve batch → low-level issue → attach decision
-# -----------------
-
-
-def decide_and_issue_one(
-    *,
-    customer_ulid: str,
-    sku_code: str,
-    quantity: int = 1,
-    when_iso: str | None = None,
-    project_ulid: str | None = None,
-    actor_ulid: str | None = None,
-    location_ulid: str,  # where stock will be pulled from
-    batch_ulid: str | None = None,  # optional: choose a specific batch
-) -> dict:
-    """
-    End-to-end issuance that gates on blackout + policy,
-    locates stock, performs the low-level issue,
-    and stores the decision trace.
-
-    High-level "one-shot" issuance:
-      - Calendar blackout (fast gate)
-      - Policy decision (Governance)
-      - Resolve item/batch
-      - Call low-level issue_inventory_lowlevel(...)
-      - Persist decision_json on Issue
-    Returns {movement_ulid, decision, ok, reason}
-    """
-    as_of = when_iso or now_iso8601_ms()
-
-    # derive classification key from SKU once
-    parts = parse_sku(sku_code)
-    classification_key = classification_key_for(parts)
-
-    # 1) Enforcer: calendar blackout quick gate
-    # enforcer ctx
-    enforcer_ctx = type(
-        "Ctx",
-        (),
-        {
-            "customer_ulid": customer_ulid,
-            "sku_code": sku_code,
-            "classification_key": classification_key,
-            "sku_parts": parts,
-            "when_iso": as_of,
-            "project_ulid": project_ulid,
-        },
-    )
-    ok, meta = enforcers.calendar_blackout_ok(enforcer_ctx)
-    if not ok:
-        return {
-            "ok": False,
-            "reason": meta.get("reason", "calendar_blackout"),
-            "decision": {"enforcer": meta},
-        }
-
-    # governance ctx
-    gov_ctx = type(
-        "Ctx",
-        (),
-        {
-            "customer_ulid": customer_ulid,
-            "sku_code": sku_code,
-            "classification_key": classification_key,
-            "sku_parts": parts,  # ✅ pass parts into governance
-            "when_iso": as_of,
-            "project_ulid": project_ulid,
-        },
-    )
-    dec = gov.decide_issue(gov_ctx)
-
-    decision = {
-        # Governance returns IssueDecision(allowed=...), not ".ok"
-        "ok": bool(getattr(dec, "allowed", getattr(dec, "ok", False))),
-        "reason": getattr(dec, "reason", None),
-        "approver_required": getattr(dec, "approver_required", None),
-        "limit_window_label": getattr(dec, "limit_window_label", None),
-        "next_eligible_at_iso": getattr(dec, "next_eligible_at_iso", None),
-    }
-    if not decision["ok"]:
-        return {
-            "ok": False,
-            "reason": decision["reason"] or "denied",
-            "decision": decision,
-        }
-
-    # 3) Resolve item + batch if batch_ulid not supplied
-    it_ulid = db.session.execute(
-        select(InventoryItem.ulid).where(InventoryItem.sku == sku_code)
-    ).scalar_one_or_none()
-    if not it_ulid:
-        return {"ok": False, "reason": "item_not_found", "decision": decision}
-
-    b_ulid = batch_ulid
-    if not b_ulid:
-        b_ulid = db.session.execute(
-            select(InventoryBatch.ulid)
-            .where(
-                InventoryBatch.item_ulid == it_ulid,
-                InventoryBatch.location_ulid == location_ulid,
-            )
-            .order_by(InventoryBatch.ulid.desc())
-        ).scalar_one_or_none()
-        if not b_ulid:
-            return {
-                "ok": False,
-                "reason": "no_batch_at_location",
-                "decision": decision,
-            }
-
-    # 4) Low-level issuance
-    mv_ulid = issue_inventory_lowlevel(
-        batch_ulid=b_ulid,
-        item_ulid=it_ulid,
-        quantity=quantity,
-        unit="each",
-        location_ulid=location_ulid,
-        happened_at_utc=as_of,
-        target_ref_ulid=customer_ulid,
-        note=None,
-        actor_ulid=actor_ulid,
-    )
-
-    # 5) Attach decision trace to Issue
-    attach_issue_decision(mv_ulid, decision)
-
-    # 6) # Emit audit spine event (immutable)
-    emit_event(
-        domain="logistics",
-        operation="issue.created",
-        request_id=new_ulid(),  # correlation id
-        actor_ulid=actor_ulid,
-        target_ulid=customer_ulid,  # subject: the customer
-        refs={
-            "movement_ulid": mv_ulid,
-            "sku_code": sku_code,
-            "location_ulid": location_ulid,
-            "project_ulid": project_ulid,
-        },
-        changed={"quantity": quantity},
-        meta={"decision": decision},  # full decision trace mirrored here
-        happened_at_utc=as_of,
-        chain_key="logistics",
-    )
-
-    return {
-        "ok": True,
-        "reason": "ok",
-        "decision": decision,
-        "movement_ulid": mv_ulid,
-    }
-
-
-# -----------------
-# Policy-only Issue:
-# evaluate enforcer+policy,
-# insert Issue (no stock/movement)
-# -----------------
-
-
-def issue_inventory_policy(
-    customer_ulid: str,
-    sku_code: Optional[str],
-    when_iso: Optional[str] = None,
-    project_ulid: Optional[str] = None,
-    *,
-    actor_ulid: Optional[str] = None,  # ← standardized
-    quantity: int = 1,
-) -> IssueResult:
-    """
-    Policy-first issuance: enforcer + governance decision, then record an Issue
-    (no stock math / movement). Meant for CLI/testing or workflows that don't
-    pick a specific batch/location.
-    {ok, reason, issue_ulid?, decision, meta?}
-    """
-    # 0) quick input guardrails
-    if quantity <= 0:
-        return IssueResult(ok=False, reason="invalid_quantity")
-
-    as_of = when_iso or now_iso8601_ms()
-
-    classification_key: Optional[str] = None
-    parts: Optional[dict] = None
-    if sku_code:
-        if not validate_sku(sku_code):
-            return IssueResult(ok=False, reason="invalid_sku")
-        parts = parse_sku(sku_code)
-        classification_key = classification_key_for(parts)
-
-    ctx = _Ctx(
-        customer_ulid=customer_ulid,
-        sku_code=sku_code,
-        classification_key=classification_key,
-        when_iso=as_of,
-        project_ulid=project_ulid,
-        sku_parts=parts,
-    )
-
-    # 1) Enforcer (calendar blackout)
-    ok, enf_meta = enforcers.calendar_blackout_ok(ctx)
-    if not ok:
-        decision = {
-            "version": 1,
-            "ok": False,
-            "reason": enf_meta.get("reason", "calendar_blackout"),
-            "enforcer": enf_meta,
-            "policy": None,
-            "ctx": {
-                "customer_ulid": customer_ulid,
-                "sku_code": sku_code,
-                "classification_key": classification_key,
-                "sku_parts": parts,
-                "when_iso": as_of,
-                "project_ulid": project_ulid,
-                "quantity": quantity,
-                "actor_ulid": actor_ulid,
-            },
-        }
-        return IssueResult(
-            ok=False, reason=decision["reason"], decision=decision
-        )
-
-    # 2) Governance (policy decision)
-    dec = gov.decide_issue(ctx)
-    policy_dec = {
-        "allowed": bool(getattr(dec, "allowed", getattr(dec, "ok", False))),
-        "reason": getattr(dec, "reason", None),
-        "approver_required": getattr(dec, "approver_required", None),
-        "limit_window_label": getattr(dec, "limit_window_label", None),
-        "next_eligible_at_iso": getattr(dec, "next_eligible_at_iso", None),
-    }
-    if not policy_dec["allowed"]:
-        decision = {
-            "version": 1,
-            "ok": False,
-            "reason": policy_dec["reason"] or "denied",
-            "enforcer": {"reason": "ok"},
-            "policy": policy_dec,
-            "ctx": {
-                "customer_ulid": customer_ulid,
-                "sku_code": sku_code,
-                "classification_key": classification_key,
-                "sku_parts": parts,
-                "when_iso": as_of,
-                "project_ulid": project_ulid,
-                "quantity": quantity,
-                "actor_ulid": actor_ulid,
-            },
-        }
-        return IssueResult(
-            ok=False, reason=decision["reason"], decision=decision
-        )
-
-    # 3) Persist Issue row (policy-only)
-    #    (If Issue model lacks auto-ULID, uncomment ulid=new_ulid())
-    decision = {
-        "version": 1,
-        "ok": True,
-        "reason": policy_dec["reason"] or "ok",
-        "enforcer": {"reason": "ok"},
-        "policy": policy_dec,
-        "ctx": {
-            "customer_ulid": customer_ulid,
-            "sku_code": sku_code,
-            "classification_key": classification_key,
-            "sku_parts": parts,
-            "when_iso": as_of,
-            "project_ulid": project_ulid,
-            "quantity": quantity,
-            "actor_ulid": actor_ulid,
-        },
-    }
-
-    row = Issue(
-        # ulid=new_ulid(),          # ← enable if your model doesn’t auto-ULID
-        customer_ulid=customer_ulid,
-        classification_key=classification_key,
-        sku_code=sku_code,
-        quantity=quantity,
-        issued_at=as_of,  # naive UTC ISO is fine if consistent everywhere
-        project_ulid=project_ulid,
-        movement_ulid=None,
-        created_by_actor=actor_ulid,
-        decision_json=pretty_dumps(decision),  # richer, self-describing trace
-    )
-    db.session.add(row)
-    db.session.commit()
-
-    return IssueResult(
-        ok=True,
-        reason="ok",
-        issue_ulid=row.ulid,
-        decision=decision,
-        meta={"policy_only": True},
-    )
 
 
 # -----------------
@@ -760,43 +427,3 @@ def count_issues_in_window(
 
     q = select(func.count()).select_from(Issue).where(and_(*preds))
     return int(db.session.execute(q).scalar_one() or 0)
-
-
-# -----------------
-# List Allowed SKUs
-# for Customer at time T
-# (ask Governance per SKU)
-# -----------------
-
-
-def available_skus_for_customer(
-    customer_ulid: str,
-    as_of_iso: str,
-    project_ulid: str | None = None,
-    cost_cents: int | None = None,
-) -> list[str]:
-    """
-    Iterate known SKUs and include those Governance approves for the given
-    customer/time; Logistics defers all rules to Governance.
-    """
-    from app.extensions.contracts import governance_v2 as govc
-    from app.slices.governance.services import decide_issue
-
-    rows = db.session.execute(
-        select(InventoryItem.sku, InventoryItem.category)
-    ).all()
-
-    allowed: list[str] = []
-    for sku, category in rows:
-        ctx = govc.RestrictionContext(
-            customer_ulid=customer_ulid,
-            sku_code=sku,
-            classification_key=category,
-            as_of_iso=as_of_iso,
-            project_ulid=project_ulid,
-            cost_cents=cost_cents,
-        )
-        decision = decide_issue(ctx)
-        if getattr(decision, "ok", False):
-            allowed.append(sku)
-    return allowed

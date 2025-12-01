@@ -1,0 +1,142 @@
+# Hints & Notes
+
+Optional: add a tiny banner so it’s obvious when stub is active:
+
+@app.context_processor
+def _stub_banner():
+    return {"_stub_auth_active": app.config.get("AUTH_MODE") == "stub"}
+
+
+Then in templates (dev only):
+
+{% if _stub_auth_active %}<div class="stub-badge">STUB AUTH</div>{% endif %}
+
+
+Pytest trick: set stub headers on the test client
+
+When you need a specific role in a test:
+
+def test_admin_endpoint(client):
+    r = client.get("/dev/whoami", headers={"X-Auth-Stub": "admin"})
+    assert r.status_code == 200
+
+
+For a whole class/module:
+
+import pytest
+@pytest.fixture(autouse=True)
+def _stub_admin_headers(monkeypatch):
+    # only in tests that need it; otherwise be explicit per-call
+    pass
+
+When you circle back to foundation tests
+
+Keep the testing env headless (no UI blueprints).
+
+Your devtools endpoints expected by the suite should now just work:
+
+/api/dev/health/db
+
+/api/dev/health/session
+
+/api/dev/seed/manifest
+
+
+curl -s http://127.0.0.1:5000/end/point/routing/symbol | jq .
+
+
+9767  python -m py_compile app/slices/resources/services.py
+9768  clear
+9769  ruff check app/slices/resources/services.py
+
+
+JSON Notes:
+
+{ } vs [ ] (objects vs arrays),
+
+and how the schema describes the shape of the policy.
+
+Within the JSON policy file below:
+Think “Python types”:
+Outer { ... } → a dict:
+keys: "version", "rules", "allowed_units", "allowed_sources".
+"rules": [ ... ] → a list of dicts (each rule is an object).
+"allowed_units": [ ... ] → a list of strings.
+"allowed_sources": [ ... ] → a list of strings.
+
+So:
+{ ... } → “mapping: names → values”
+[ ... ] → “ordered list of values”
+
+That’s all the punctuation is really saying.
+
+{
+  "version": 1,
+  "rules": [
+    {
+      "if": { "source": "DR" },
+      "then": { "issuance_class": "V" },
+      "why": "All DRMO items are veteran-only"
+    },
+    {
+      "if": { "category": "CG", "subcategory": "SL", "source": "LC" },
+      "then": { "issuance_class": "H" },
+      "why": "Commercial sleeping gear reserved for homeless issuance"
+    }
+  ],
+  "allowed_units": ["each", "lbs", "kit", "box", "pack" ],
+  "allowed_sources": ["donation", "purchase", "transfer", "drmo"]
+}
+
+
+The schema: describing what the policy must look like:
+That's another kettle of fish...   same fish, different kettle. 
+
+Again: treat this like Python dict-of-dicts, just with special keys:
+"type": "object" → this thing must be a dict.
+"type": "array" → this thing must be a list.
+"properties": { ... } → for a dict, here are the allowed keys and their types.
+"items": { ... } → for a list, here’s what each element must look like.
+"required": [ ... ] → keys that must be present.
+"enum": [ ... ] → allowed values (like a whitelist).
+
+All we need to do is add allowed_units and allowed_sources into the schema’s
+"properties" and, if you want, into "required".
+
+
+Quick “brackets vs braces” cheatsheet
+
+{ ... } → dict / object
+Inside: "key": value pairs.
+Keys are strings; values can be string, number, bool, null, object, or array.
+Commas separate pairs.
+
+[ ... ] → list / array
+Inside: values, no keys.
+Commas separate items.
+
+Examples:
+
+A dict of two keys:
+{ "version": 1, "rules": [] }
+
+
+A list of three strings:
+[ "each", "lbs", "kit" ]
+
+
+A dict that contains a list:
+{
+  "allowed_units": ["each", "lbs", "kit"]
+}
+
+
+A list of dicts:
+[
+  { "if": { "source": "DR" }, "then": { "issuance_class": "V" } },
+  { "if": { "category": "CG" }, "then": { "issuance_class": "H" } }
+]
+
+
+Once you map “braces = dict” and “brackets = list” to your Python brain, 
+most of the scariness of JSON goes away.

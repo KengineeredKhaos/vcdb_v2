@@ -347,7 +347,7 @@ def seed_bootstrap(
     seed_logistics_canonical(
         count=skus,
         per_sku=per_sku,
-        loc_code="LOC-MAIN",
+        loc_code="MAIN",
         loc_name="Main Warehouse",
     )
 
@@ -458,7 +458,7 @@ def seed_demo() -> None:
     show_default=True,
     help="Units to receive per SKU.",
 )
-@click.option("--loc-code", default="LOC-MAIN", show_default=True)
+@click.option("--loc-code", default="MAIN", show_default=True)
 @click.option("--loc-name", default="Main Warehouse", show_default=True)
 @click.option(
     "--sources",
@@ -469,7 +469,7 @@ def seed_demo() -> None:
 def seed_logistics_canonical(
     count: int = 20,
     per_sku: int = 25,
-    loc_code: str = "LOC-MAIN",
+    loc_code: str = "MAIN",
     loc_name: str = "Main Warehouse",
     sources: str = "DR,LC",
 ):
@@ -516,6 +516,21 @@ def seed_logistics_canonical(
 
     loc_ulid = ensure_location(code=loc_code, name=loc_name)
 
+    # Also create a handful of rack/bin locations under MAIN that match
+    # the Governance pattern ^MAIN-[A-F][1-3]-[1-3]$.
+    rackbin_ulids: list[str] = []
+    if loc_code == "MAIN":
+        sections = ["A", "B", "C", "D", "E", "F"]
+        for _ in range(5):
+            sec = random.choice(sections)
+            shelf = random.randint(1, 3)
+            bin_no = random.randint(1, 3)
+            code = f"MAIN-{sec}{shelf}-{bin_no}"
+            rb_ulid = ensure_location(
+                code=code, name=f"Rack {sec}{shelf} Bin {bin_no}"
+            )
+            rackbin_ulids.append(rb_ulid)
+
     made = 0
     attempts = 0
     max_attempts = count * 10  # safety to avoid infinite loop
@@ -549,6 +564,11 @@ def seed_logistics_canonical(
             # e.g., assert_sku_constraints_ok rejected it; try another
             continue
 
+        # Choose a target location: primary MAIN plus any rack/bin
+        target_loc_ulid = loc_ulid
+        if rackbin_ulids:
+            target_loc_ulid = random.choice([loc_ulid] + rackbin_ulids)
+
         try:
             receive_inventory(
                 item_ulid=item_ulid,
@@ -556,11 +576,12 @@ def seed_logistics_canonical(
                 unit="each",
                 source="donation",
                 received_at_utc=now_iso8601_ms(),
-                location_ulid=loc_ulid,
+                location_ulid=target_loc_ulid,
                 note="seed:canonical",
                 actor_ulid=None,
                 source_entity_ulid=None,
             )
+
         except ValueError:
             # Extremely rare if unit/source constraints fire here
             continue

@@ -11,5 +11,8 @@
       "then": { "issuance_class": "H" },
       "why": "Commercial sleeping gear reserved for homeless issuance"
     }
-  ]
+  ],
+  "allowed_units": ["each", "lbs", "kit", "box", "pack" ],
+  "allowed_sources": ["donation", "purchase", "transfer", "drmo"]
+
 }

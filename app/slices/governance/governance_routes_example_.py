@@ -2,8 +2,7 @@
 from flask import Blueprint, jsonify, request
 
 from app.extensions.policies import GOV_DATA, save_policy
-from app.lib.security import require_domain_roles_any
-from app.slices.auth.decorators import rbac
+from app.lib.security import rbac, require_domain_roles_any
 
 bp = Blueprint("governance_policies", __name__)
 

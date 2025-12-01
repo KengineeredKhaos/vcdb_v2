@@ -88,6 +88,31 @@ def _uniq(seq: Iterable[str]) -> List[str]:
     return out
 
 
+# -----------------
+# Policy Health Check
+# -----------------
+
+
+def policy_health_report() -> Tuple[List[str], List[str]]:
+    """Returns (warnings, infos). Raises PolicyError on fatal issues."""
+    infos: List[str] = []
+    warns: List[str] = []
+    infos += check_rbac_policy()
+    infos += check_domain_policy()
+    infos += check_rbac_domain_relationship()
+    try:
+        infos += check_issuance_policy_against_catalog()
+    except Exception as e:
+        warns.append(f"issuance check: {e}")
+    return (warns, infos)
+
+
+# -----------------
+# Roles Related
+# Policy Semantics
+# -----------------
+
+
 def check_domain_policy() -> list[str]:
     """Pure semantic checks for policy_domain.json.
     Returns list of human messages.
@@ -166,6 +191,85 @@ def check_rbac_domain_relationship() -> list[str]:
     return msgs
 
 
+def validate_rbac_semantics(doc: dict) -> list[str]:
+    """
+    Soft semantic checks for policy_rbac.json.
+
+    This is meant for admin/dev tooling (e.g. the policy editor) and
+    should only ever return *hints*, not raise. Hard failures (missing
+    keys, wrong types, etc.) are handled by JSON Schema validation.
+
+    Current expectations (v1):
+
+      - doc.get("rbac_roles") should be a list of non-empty strings.
+      - we recommend lower-case, trimmed role codes because the Auth
+        contract normalises them to that shape.
+    """
+    hints: list[str] = []
+
+    roles = doc.get("rbac_roles")
+    if roles is None:
+        # Schema (or check_rbac_policy) will complain if this is truly
+        # required; here we just surface a soft hint.
+        hints.append("rbac_roles is missing (expected a list of role codes).")
+        return hints
+
+    if not isinstance(roles, list):
+        hints.append("rbac_roles should be a list of strings.")
+        return hints
+
+    # Non-string / empty entries
+    for r in roles:
+        if not isinstance(r, str):
+            hints.append(f"rbac_roles entry is not a string: {r!r}")
+        elif not r.strip():
+            hints.append(
+                "rbac_roles contains an empty/whitespace-only entry."
+            )
+
+    # Normalisation hints
+    for r in roles:
+        if not isinstance(r, str):
+            continue
+        trimmed = r.strip()
+        if trimmed != r:
+            hints.append(
+                f"role '{r}' has leading/trailing whitespace; "
+                f"it will be normalised to '{trimmed.lower()}' at runtime."
+            )
+        elif trimmed.lower() != trimmed:
+            hints.append(
+                f"role '{r}' will be normalised to lower-case "
+                f"('{trimmed.lower()}') at runtime."
+            )
+
+    # Duplicate detection (Schema may enforce uniqueItems later, but this
+    # keeps the hint logic explicit).
+    seen: set[str] = set()
+    dup: set[str] = set()
+    for r in roles:
+        if not isinstance(r, str):
+            continue
+        key = r.strip().lower()
+        if key in seen:
+            dup.add(key)
+        else:
+            seen.add(key)
+    if dup:
+        hints.append(
+            "duplicate roles (case-insensitive) in rbac_roles: "
+            + ", ".join(sorted(dup))
+        )
+
+    return hints
+
+
+# -----------------
+# Logistics Related
+# Policy Semantics
+# -----------------
+
+
 def check_issuance_policy_against_catalog() -> list[str]:
     """
     Sanity checks for issuance policy:
@@ -221,20 +325,6 @@ def check_issuance_policy_against_catalog() -> list[str]:
     return msgs
 
 
-def policy_health_report() -> Tuple[List[str], List[str]]:
-    """Returns (warnings, infos). Raises PolicyError on fatal issues."""
-    infos: List[str] = []
-    warns: List[str] = []
-    infos += check_rbac_policy()
-    infos += check_domain_policy()
-    infos += check_rbac_domain_relationship()
-    try:
-        infos += check_issuance_policy_against_catalog()
-    except Exception as e:
-        warns.append(f"issuance check: {e}")
-    return (warns, infos)
-
-
 def validate_issuance_semantics(doc: dict) -> list[str]:
     hints = []
 
@@ -274,6 +364,12 @@ def validate_issuance_semantics(doc: dict) -> list[str]:
                 )
 
     return hints
+
+
+# -----------------
+# SKU related
+# Policy Semantics
+# -----------------
 
 
 def _load_sku_constraints() -> dict:

@@ -1,4 +1,81 @@
 # app/services/poc.py
+
+"""
+Shared POC (Point-of-Contact) link helpers.
+
+This module is a small, slice-agnostic service for managing the relationship
+between an organization and its point-of-contact people. It is intended to be
+reused by multiple slices (e.g. Resources, Sponsors) rather than each slice
+reinventing its own POC tables and logic. :contentReference[oaicite:0]{index=0}
+
+Core ideas
+----------
+* The POC link itself lives in a slice-owned SQLAlchemy model ("POCModel")
+  with columns:
+    - ulid (PK)
+    - org_ulid
+    - person_entity_ulid
+    - relation (fixed to "poc" here)
+    - scope (policy-defined string, e.g. "general", "whk", etc.)
+    - rank (0..max_rank within a scope)
+    - is_primary (bool)
+    - org_role (free-text role label)
+    - valid_from_utc / valid_to_utc (optional window)
+    - active (soft-delete flag)
+    - created_at_utc / updated_at_utc
+  The slice passes this model class and a Session into the helper functions.
+
+* All scope/rank semantics come from the Governance POC policy via
+  `get_poc_policy()`. Policy defines:
+    - allowed `poc_scopes`
+    - `default_scope`
+    - `max_rank`
+  `_normalize_scope_rank()` applies those rules and raises `ContractError`
+  (`code="policy_invalid"`) if a scope or rank is out of bounds.
+
+* At most one primary POC is allowed per `(org_ulid, relation="poc", scope)`.
+  When `is_primary=True` is requested, `_flip_existing_primary()` clears any
+  existing primary for that org/scope before inserting or updating the row.
+
+What the helpers do
+-------------------
+* `link_poc(...)`
+    - Validates `request_id` and scope/rank against policy.
+    - Optionally flips existing primary for the same org/scope.
+    - Inserts a new POC row and flushes to obtain its ULID.
+    - Emits a PII-free ledger event via `event_bus.emit` with:
+        domain   : caller-supplied slice name (e.g. "resources", "sponsors")
+        operation: "poc.linked"
+        target_ulid: org_ulid
+        meta: org/poc linkage details (ULIDs, scope, rank, flags, window).
+
+* `update_poc(...)`
+    - Looks up an existing POC link by `(org_ulid, person_entity_ulid)`.
+    - Applies optional changes to scope, rank, primary flag, window, org_role.
+    - Enforces the single-primary-per-scope rule when `is_primary=True`.
+    - Emits "poc.updated" with the new linkage metadata (no PII).
+
+* `unlink_poc(...)`
+    - Idempotently marks a POC link inactive (soft delete).
+    - Emits "poc.unlinked" with org + person ULIDs and scope.
+    - Returns quietly if no matching row is found.
+
+* `list_pocs(...)`
+    - Returns a list of simple dicts describing all POC links for an org,
+      ordered by active desc, scope asc, rank asc, ulid asc.
+    - The result is suitable for contracts/UIs that will join to Entity to
+      display human-friendly names and contact details.
+
+Error model & PII boundary
+--------------------------
+All helpers raise `ContractError` for caller-visible failures (bad request,
+policy violation, not found). The ledger events are ULID-only and never
+include names, phone numbers, email addresses, or other PII; those remain
+in the Entity slice. Callers are expected to use this module to manage POC
+links and then resolve the related entity ULIDs through the Entity contracts
+for display.
+"""
+
 from __future__ import annotations
 
 from typing import Callable, Iterable, Optional, Type
