@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "project_types": [
+    { "key": "operations",          "label": "Office operations & supplies" },
+    { "key": "overhead",            "label": "Overhead (lease, utilities, insurance, phone, hosting)" },
+    { "key": "travel",              "label": "Travel & per diem" },
+    { "key": "freight",             "label": "Shipping & freight" },
+    { "key": "solicitation",        "label": "Fundraising mailers (printing, envelopes, postage)" },
+    { "key": "recruitment",         "label": "Volunteer recruitment" },
+    { "key": "fund_raising",        "label": "General fundraising event" },
+    { "key": "sponsor_recognition", "label": "Sponsor recognition swag" },
+    { "key": "lateral",             "label": "Donations to other nonprofits" },
+    { "key": "outreach",            "label": "County-wide homeless outreach" },
+    { "key": "stand_down",          "label": "Annual Stand Down event" },
+    { "key": "memorial_ride",       "label": "Rick Rice Memorial Ride" },
+    { "key": "veterans_ride",       "label": "Frank Parker Veterans Ride" }
+  ]
+}

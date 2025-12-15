@@ -9,7 +9,7 @@ from sqlalchemy import (
     Integer,
     String,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
 from app.lib.models import ULIDFK, ULIDPK, IsoTimestamps
@@ -115,7 +115,7 @@ class Project(db.Model, ULIDPK, IsoTimestamps):
         String(100), nullable=False, default="untitled"
     )
 
-    # Finance link (expects a finance_fund table/slice)
+    # Finance link (legacy; may be retired later)
     fund_ulid: Mapped[str | None] = mapped_column(String(26), nullable=True)
 
     # Ownership
@@ -128,6 +128,13 @@ class Project(db.Model, ULIDPK, IsoTimestamps):
     phase_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(
         String(24), nullable=False, default="planned"
+    )
+
+    # New: convenience relationship to funding plans
+    funding_plans: Mapped[list["ProjectFundingPlan"]] = relationship(
+        "ProjectFundingPlan",
+        back_populates="project",
+        cascade="all, delete-orphan",
     )
 
     __table_args__ = (
@@ -172,4 +179,64 @@ class Task(db.Model, ULIDPK, IsoTimestamps):
         Index("ix_task_project", "project_ulid"),
         Index("ix_task_assignee", "assigned_to_ulid"),
         Index("ix_task_status", "status"),
+    )
+
+
+class ProjectFundingPlan(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "funding_plan"
+
+    # Link: each funding plan row belongs to a single Calendar Project.
+    project_ulid: Mapped[str] = ULIDFK(
+        "project_project",
+        nullable=False,
+        ondelete="CASCADE",
+    )
+
+    # Human-facing short label, similar to FundingProspect.label
+    label: Mapped[str] = mapped_column(
+        String(80), nullable=False, default="unnamed"
+    )
+
+    # Governance / reporting classifications
+    source_kind: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )  # e.g. grant_reimbursement|matching_funds|internal_operations
+
+    fund_archetype_key: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )  # e.g. grant_reimbursement|general_unrestricted
+
+    # Planned amount (cents). Optional, but non-negative if present.
+    expected_amount_cents: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+
+    # True for in-kind; False/NULL for purely monetary
+    is_in_kind: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, index=True
+    )
+
+    # Optional hint for who we expect this from (PII-free)
+    expected_sponsor_hint: Mapped[str | None] = mapped_column(
+        String(120), nullable=True
+    )
+
+    # Free-text notes about this funding line
+    notes: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Optional relationship back to Project (handy in services)
+    project: Mapped["Project"] = relationship(
+        "Project",
+        back_populates="funding_plans",
+        passive_deletes=True,
+    )
+
+    __table_args__ = (
+        Index("ix_funding_plan_project", "project_ulid"),
+        Index("ix_funding_plan_source_kind", "source_kind"),
+        Index("ix_funding_plan_archetype", "fund_archetype_key"),
+        CheckConstraint(
+            "expected_amount_cents IS NULL OR expected_amount_cents >= 0",
+            name="ck_funding_plan_expected_nonneg",
+        ),
     )

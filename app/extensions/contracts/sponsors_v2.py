@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.extensions.contracts.entity_v2 import get_entity_card
 from app.extensions.errors import ContractError
+from app.lib.ids import new_ulid
 from app.slices.sponsors import services as svc
 from app.slices.sponsors.models import SponsorPOC
 
@@ -47,7 +48,9 @@ __schema__ = {
 }
 
 
-# -------- ContractError ------
+# -----------------
+# ContractError
+# -----------------
 
 
 def _as_contract_error(where: str, exc: Exception) -> ContractError:
@@ -89,7 +92,9 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
     )
 
 
-# ---------- helpers ----------
+# -----------------
+# Error Check Helpers
+# -----------------
 
 
 def _ok(payload: Mapping[str, Any] | None = None) -> dict:
@@ -256,6 +261,102 @@ def pledge_set_status(
         raise _as_contract_error(where, exc)
 
 
+# -----------------
+# Prospect Realized
+# hats off to the
+# team that made this
+# a reality
+# -----------------
+def record_prospect_realization(
+    *,
+    sponsor_ulid: str,
+    prospect_ulid: str,
+    amount_cents: int,
+    request_id: str | None = None,
+    actor_ulid: Optional[str] = None,
+    journal_ulid: str | None = None,
+    source: str | None = None,
+    happened_at_utc: str | None = None,
+) -> dict:
+    """
+    Contract entry point: record realized income against a Sponsor Funding Prospect.
+
+    This does **not** log a Finance journal entry and does not move money.
+    Callers are expected to:
+
+      1) Log the inbound donation via finance_v2.log_donation(...).
+      2) Call this function with the matching sponsor_ulid / prospect_ulid /
+         amount_cents and (optionally) the Finance journal_ulid.
+
+    Arguments:
+        sponsor_ulid:
+            ULID of the Sponsor (owner of the prospect/pledge).
+        prospect_ulid:
+            ULID of the Funding Prospect / Pledge being realized.
+        amount_cents:
+            Positive integer amount in cents.
+        request_id:
+            Optional ULID used for correlation; if omitted, a new ULID
+            will be generated.
+        actor_ulid:
+            Optional actor ULID (user performing this operation).
+        journal_ulid:
+            Optional Finance journal ULID to link this realization to a
+            specific donation entry.
+        source:
+            Optional free-text source label (e.g. 'pledge_realization').
+        happened_at_utc:
+            Optional ISO-8601 UTC timestamp for when the realization
+            happened. If omitted, the service will default to now.
+
+    Returns:
+        dict:
+            Wrapped in the standard {"ok": True, "data": {...}} envelope,
+            where data contains:
+              - sponsor_ulid
+              - prospect_ulid
+              - realized_total_cents
+              - last_amount_cents
+              - history_ulid (or None if unchanged)
+
+    Raises:
+        ContractError:
+            - code='bad_argument' when inputs are malformed.
+            - code='not_found' if the sponsor cannot be found.
+            - code='internal_error' for all unexpected failures.
+    """
+    where = "sponsors_v2.record_prospect_realization"
+    try:
+        sponsor_ulid = _require_ulid("sponsor_ulid", sponsor_ulid)
+        prospect_ulid = _require_ulid("prospect_ulid", prospect_ulid)
+        amount_cents = _require_int_ge("amount_cents", amount_cents, minval=1)
+
+        if request_id is None:
+            request_id = new_ulid()
+        else:
+            request_id = _require_ulid("request_id", request_id)
+
+        if journal_ulid is not None:
+            journal_ulid = _require_ulid("journal_ulid", journal_ulid)
+
+        if source is not None:
+            source = _require_str("source", source)
+
+        result = svc.record_prospect_realization(
+            sponsor_ulid=sponsor_ulid,
+            prospect_ulid=prospect_ulid,
+            amount_cents=amount_cents,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+            journal_ulid=journal_ulid,
+            source=source,
+            happened_at_utc=happened_at_utc,
+        )
+        return _ok(result)
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
+
+
 def get_profile(*, sponsor_ulid: str) -> dict:
     where = "sponsors_v2.get_profile"
     try:
@@ -303,3 +404,53 @@ def get_org_poc_cards(sess: Session, org_ulid: str) -> list[dict]:
             }
         )
     return cards
+
+
+# -----------------
+# Allocation Spend
+# -----------------
+
+
+def allocation_spend(
+    *,
+    allocation_ulid: str,
+    amount_cents: int,
+    request_id: str | None = None,
+    actor_ulid: str | None = None,
+    category: str | None = None,
+    vendor: str | None = None,
+    occurred_on: str | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Contract entry point: spend against a Sponsor Allocation.
+
+    - Validates arguments (ULIDs, ints).
+    - Delegates to sponsors.services.spend_allocation.
+    - Shapes any errors as ContractError.
+
+    This is the function that CLIs / other slices should call.
+    """
+    where = "sponsors_v2.allocation_spend"
+    try:
+        allocation_ulid = _require_ulid("allocation_ulid", allocation_ulid)
+        amount_cents = _require_int_ge("amount_cents", amount_cents, minval=1)
+
+        if request_id is None:
+            request_id = new_ulid()
+        else:
+            request_id = _require_ulid("request_id", request_id)
+
+        result = svc.spend_allocation(
+            allocation_ulid=allocation_ulid,
+            amount_cents=amount_cents,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+            category=category,
+            vendor=vendor,
+            occurred_on=occurred_on,
+            dry_run=dry_run,
+        )
+        return _ok(result)
+    except Exception as exc:
+        raise _as_contract_error(where, exc)

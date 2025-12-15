@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "periods": [
+    {
+      "period_label": "FY2025",
+      "lines": [
+        {
+          "fund_archetype_key": "grant_advance",
+          "fund_code": "ELKS-FREEDOM-2025",
+          "project_type_key": "stand_down",
+          "project_code": "Stand-Down-2025",
+          "amount_cents": 200000,
+          "source": "grant:ELKS_FREEDOM",
+          "status": "adopted"
+        }
+      ]
+    }
+    {
+      "period_label": "FY2026",
+      "lines": [
+        {
+          "fund_archetype_key": "local_only",
+          "fund_code": "cash",
+          "project_type_key": "operations",
+          "project_code": "office_supplies",
+          "amount_cents": 100000,
+          "source": "unfunded",
+          "status": "unfunded"
+        }
+      ]
+    }
+  ]
+}

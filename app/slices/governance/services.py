@@ -257,12 +257,12 @@ def _iso(s: str) -> datetime:
 # ------------------
 
 
-# def get_resource_capabilities_policy() -> dict:
-#     return _load_policy("policy_resource_capabilities.json")
+def get_resource_capabilities_policy() -> dict:
+    return _load_policy("policy_resource_capabilities.json")
 
 
-# def get_resource_lifecycle_policy() -> dict:
-#     return _load_policy("policy_resource_lifecycle.json")
+def get_resource_lifecycle_policy() -> dict:
+    return _load_policy("policy_resource_lifecycle.json")
 
 
 # -----------------

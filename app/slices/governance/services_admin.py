@@ -3,34 +3,30 @@
 """
 Implements the actual reading/writing of app/slices/governance/data/*.json.
 
-Performs JSON Schema validation.
+Responsibilities:
+  * Load and JSON-Schema validate Governance policy files.
+  * Create backups and perform atomic writes on update.
+  * Emit ledger events via event_bus.emit(...) when board policy changes.
 
-Creates backups and does atomic write.
+This module is **internal to the Governance slice**. It is not imported
+directly by routes or other slices.
 
-Emits ledger events via event_bus.emit(...).
+The public entry points for policy editing live in the governance_v2
+contract module:
 
-The contract module imports this provider and forwards calls
- — that’s your stable boundary.
+    app.extensions.contracts.governance_v2.list_policies(...)
+    app.extensions.contracts.governance_v2.get_policy(...)
+    app.extensions.contracts.governance_v2.preview_policy_update(...)
+    app.extensions.contracts.governance_v2.commit_policy_update(...)
 
-Routes call the contract, not the slice
+Admin routes (in app/slices/admin/routes.py) call those contract
+functions, with RBAC 'admin' and domain-role 'governor' guards.
 
-Admin route: app/slices/admin/routes.py →
-    calls governance_v2.preview_policy_update(...) and
-    governance_v2.commit_policy_update(...).
-RBAC admin + Domain governor guards live here.
-
-Devtools route (your /api/v2/governance/policies list):
-    call governance_v2.list_policies(validate=...).
-That keeps even “dev-only” endpoints honest.
-
-Tests call the routes or the contract — never the provider directly.
-from app.slices.governance.services_admin import (
-    list_policies_impl,
-    get_policy_impl,
-    preview_update_impl,
-    commit_update_impl,
-)
+During development, CLI tools or dev-only endpoints may also call the
+same governance_v2 contract functions, but no code outside the Governance
+slice should import this provider module directly.
 """
+
 # app/slices/governance/services_admin.py
 from __future__ import annotations
 

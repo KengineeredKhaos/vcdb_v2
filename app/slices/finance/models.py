@@ -15,7 +15,9 @@ from app.extensions import db
 from app.lib.chrono import now_iso8601_ms
 from app.lib.models import ULIDPK, IsoTimestamps
 
-# ---- Reference tables ------------------------------------------------------
+# -----------------
+# Reference tables
+# -----------------
 
 
 class Account(db.Model, ULIDPK, IsoTimestamps):
@@ -89,7 +91,9 @@ class Period(db.Model, ULIDPK, IsoTimestamps):
     )
 
 
-# ---- Journals --------------------------------------------------------------
+# -----------------
+# Journal
+# -----------------
 
 
 class Journal(db.Model, ULIDPK, IsoTimestamps):
@@ -125,6 +129,11 @@ class Journal(db.Model, ULIDPK, IsoTimestamps):
         cascade="all, delete-orphan",
         order_by="JournalLine.seq",
     )
+
+
+# -----------------
+# JournalLine
+# -----------------
 
 
 class JournalLine(db.Model, ULIDPK):
@@ -167,7 +176,10 @@ class JournalLine(db.Model, ULIDPK):
     )
 
 
-# ---- Balances Projection (rebuildable) -------------------------------------
+# -----------------
+# Balances Projection
+# (rebuildable)
+# -----------------
 
 
 class BalanceMonthly(db.Model, ULIDPK):
@@ -205,7 +217,11 @@ class BalanceMonthly(db.Model, ULIDPK):
     )
 
 
-# ---- Optional: Statistical metrics (non-monetary) --------------------------
+# -----------------
+# Optional:
+# Statistical metrics
+# (non-monetary)
+# -----------------
 
 
 class StatMetric(db.Model, ULIDPK, IsoTimestamps):
@@ -238,4 +254,137 @@ class StatMetric(db.Model, ULIDPK, IsoTimestamps):
             "source_ref_ulid",
             name="uq_stat_dedupe",
         ),
+    )
+
+
+# -----------------
+# Grants &
+# Reimbursements
+# -----------------
+
+
+class Grant(db.Model, ULIDPK, IsoTimestamps):
+    """
+    Finance representation of a grant commitment from a sponsor.
+
+    This is a *program* or *award* level object:
+
+        - which fund the grant flows through
+        - which sponsor it comes from
+        - total award amount and match requirement
+        - term dates
+        - reporting cadence
+        - which expense categories are allowable
+
+    Journal entries still live in Journal / JournalLine; this table
+    only stores the “paperwork” and configuration for that grant.
+    """
+
+    __tablename__ = "finance_grant"
+
+    fund_id: Mapped[str] = mapped_column(
+        String(26),
+        ForeignKey("finance_fund.ulid"),
+        nullable=False,
+        index=True,
+    )
+    sponsor_ulid: Mapped[str] = mapped_column(
+        String(26),
+        nullable=False,
+        index=True,
+    )
+
+    amount_awarded_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    match_required_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+
+    # YYYY-MM-DD strings, consistent with other date-ish string fields
+    start_on: Mapped[str] = mapped_column(String(10), nullable=False)
+    end_on: Mapped[str] = mapped_column(String(10), nullable=False)
+
+    reporting_frequency: Mapped[str] = mapped_column(
+        String(16), nullable=False, index=True
+    )  # monthly|quarterly|semiannual|annual|end_of_term
+
+    # Stored as a comma-separated list, with helpers for a Python list
+    allowable_categories_raw: Mapped[str] = mapped_column(
+        String(255), nullable=False, default=""
+    )
+
+    active: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, index=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "reporting_frequency in "
+            "('monthly','quarterly','semiannual','annual','end_of_term')",
+            name="ck_grant_reporting_frequency",
+        ),
+    )
+
+    reimbursements: Mapped[list["Reimbursement"]] = relationship(
+        "Reimbursement",
+        back_populates="grant",
+        cascade="all, delete-orphan",
+        order_by="Reimbursement.submitted_on",
+    )
+
+    @property
+    def allowable_categories(self) -> list[str]:
+        if not self.allowable_categories_raw:
+            return []
+        return [c for c in self.allowable_categories_raw.split(",") if c]
+
+    @allowable_categories.setter
+    def allowable_categories(self, categories: list[str]) -> None:
+        cleaned = sorted(
+            {c.strip() for c in categories or [] if c and c.strip()}
+        )
+        self.allowable_categories_raw = ",".join(cleaned)
+
+
+class Reimbursement(db.Model, ULIDPK, IsoTimestamps):
+    """
+    A reimbursement request submitted against a Grant.
+
+    This is *paperwork level*:
+
+        - which grant
+        - what period it covers
+        - how much we’re asking for
+        - current status in the reimbursement workflow
+    """
+
+    __tablename__ = "finance_reimbursement"
+
+    grant_id: Mapped[str] = mapped_column(
+        String(26),
+        ForeignKey("finance_grant.ulid"),
+        nullable=False,
+        index=True,
+    )
+
+    submitted_on: Mapped[str] = mapped_column(
+        String(10), nullable=False
+    )  # YYYY-MM-DD
+    period_start: Mapped[str] = mapped_column(String(10), nullable=False)
+    period_end: Mapped[str] = mapped_column(String(10), nullable=False)
+
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="submitted", index=True
+    )  # draft|submitted|approved|paid|void
+
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('draft','submitted','approved','paid','void')",
+            name="ck_reimbursement_status",
+        ),
+    )
+
+    grant: Mapped["Grant"] = relationship(
+        "Grant", back_populates="reimbursements"
     )

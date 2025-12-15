@@ -45,8 +45,12 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Tuple
 
 from app.extensions.policies import (  # if you have these
+    load_policy_budget,
     load_policy_domain,
+    load_policy_funding,
     load_policy_issuance,
+    load_policy_journal_flags,
+    load_policy_projects,
     load_policy_rbac,
 )
 from app.extensions.validate import validate_json_payload
@@ -427,3 +431,103 @@ def resolve_cadence(policy: dict, rule: dict) -> dict:
         if preset in presets:
             return presets[preset]
     return ((policy.get("defaults") or {}).get("cadence")) or {}
+
+
+# -----------------
+# Funding / Projects / Journal flags
+# -----------------
+
+
+def list_project_types() -> list[dict]:
+    """
+    Return the canonical list of project types from policy_projects.json.
+
+    Shape:
+      [{ "key": str, "label": str }, ...]
+    """
+    pol = load_policy_projects()
+    return list(pol.get("project_types") or [])
+
+
+def list_fund_archetypes() -> list[dict]:
+    """
+    Return the canonical list of fund archetypes from policy_funding.json.
+
+    Shape:
+      [{ "key": str, "restriction": str, "label": str? }, ...]
+    """
+    pol = load_policy_funding()
+    return list(pol.get("fund_archetypes") or [])
+
+
+def list_journal_flag_keys() -> list[str]:
+    """
+    Return the set of allowed Finance journal flag keys from policy_journal_flags.json.
+    """
+    pol = load_policy_journal_flags()
+    return [
+        f["key"]
+        for f in pol.get("flags") or []
+        if isinstance(f, dict) and "key" in f
+    ]
+
+
+def assert_journal_flags_ok(flags: list[str] | None) -> None:
+    """
+    Validate that all journal flags used in a Finance Journal entry are
+    defined in policy_journal_flags.json.
+
+    Raises PolicyError if any unknown flags are present.
+    """
+    if not flags:
+        return
+
+    allowed = set(list_journal_flag_keys())
+    unknown = sorted(set(flags) - allowed)
+    if unknown:
+        raise PolicyError(f"Unknown journal flag(s): {unknown}")
+
+
+def find_budget_cap(
+    *,
+    period_label: str,
+    fund_archetype_key: str,
+    project_type_key: str,
+    fund_code: str | None = None,
+    project_code: str | None = None,
+) -> dict | None:
+    """
+    Look up a single budget cap line from policy_budget.json
+    matching the given period + fund/project identifiers.
+
+    Matching strategy (v1, simple):
+      - Find the period with matching period_label.
+      - Within that period, prefer exact fund_code/project_code
+        matches if provided; otherwise fall back to archetype/type
+        only.
+
+    Returns the raw 'line' dict, or None if no budget is defined.
+    """
+    pol = load_policy_budget()
+    for period in pol.get("periods") or []:
+        if period.get("period_label") != period_label:
+            continue
+        for line in period.get("lines") or []:
+            if line.get("status") != "adopted":
+                continue
+
+            if line.get("fund_archetype_key") != fund_archetype_key:
+                continue
+            if line.get("project_type_key") != project_type_key:
+                continue
+
+            if fund_code and line.get("fund_code") not in (None, fund_code):
+                continue
+            if project_code and line.get("project_code") not in (
+                None,
+                project_code,
+            ):
+                continue
+
+            return line
+    return None

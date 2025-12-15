@@ -6,6 +6,23 @@
   "additionalProperties": false,
   "properties": {
     "version": { "type": "integer", "minimum": 1 },
+    "fund_archetypes": {
+      "type": "array",
+      "description": "Canonical list of fund archetype codes and restrictions.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "key":        { "type": "string", "minLength": 1 },
+          "restriction": {
+            "type": "string",
+            "enum": ["unrestricted", "temporarily_restricted"]
+          },
+          "label":      { "type": "string", "minLength": 1 }
+        },
+        "required": ["key", "restriction"]
+      }
+    },
     "projects": {
       "type": "object",
       "description": "Project ULID → allow-list of classification patterns",

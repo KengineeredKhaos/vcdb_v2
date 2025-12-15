@@ -102,16 +102,21 @@ Runtime code (slices, routes, CLI):
     catalogs = governance_v2.get_role_catalogs()
     poc_cfg  = governance_v2.get_poc_policy()
 
-Admin-only code (policy editor UI / devtools):
-
-    from app.extensions.contracts import governance_v2
+Admin-only code (policy editor UI):
 
     infos = governance_v2.list_policies(validate=True)
     old   = governance_v2.get_policy("policy_issuance", validate=True)
     diff  = governance_v2.preview_policy_update("policy_issuance", new_body)
-    res   = governance_v2.commit_policy_update("policy_issuance", new_body, actor_ulid)
+    res   = governance_v2.commit_policy_update(
+        "policy_issuance",
+        new_body,
+        actor_ulid=current_user.ulid,
+    )
 
-All future Governance policy access should follow this pattern.
+These admin contracts are intended for the Admin slice UI and for
+offline policy management tools (e.g. CLI). Dev-only endpoints may call
+them during development but are not part of the production surface.
+
 """
 
 
@@ -124,6 +129,7 @@ from typing import (
     Any,
     Dict,
     List,
+    Optional,
     Set,
     TypedDict,
 )
@@ -135,6 +141,7 @@ from app.extensions.contracts import customers_v2
 from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
 from app.slices.governance import services as gov_svc
+from app.slices.governance import services_budget as svc_budget
 from app.slices.governance.services import decide_issue
 from app.slices.governance.services_admin import (
     commit_update_impl,
@@ -143,7 +150,7 @@ from app.slices.governance.services_admin import (
     preview_update_impl,
 )
 
-# bind to live module
+# bind/expose to live module
 
 __all__ = [
     "IssueDecision",
@@ -153,7 +160,12 @@ __all__ = [
     "get_poc_policy",
     "get_sponsor_capability_policy",
     "get_sponsor_lifecycle_policy",
+    "get_sponsor_pledge_policy",
+    # New budget / spend helpers (runtime-safe)
+    "get_budget_position",
+    "preview_spend_decision",
 ]
+
 
 # -----------------
 # Policy Paths
@@ -176,8 +188,107 @@ SPONSOR_LIFECYCLE_PATH = (
 
 
 # -----------------
+# ContractError
+# -----------------
+
+
+def _as_contract_error(where: str, exc: Exception) -> ContractError:
+    # If we’re already looking at a ContractError, just bubble it up unchanged
+    if isinstance(exc, ContractError):
+        return exc
+
+    msg = str(exc) or exc.__class__.__name__
+
+    if isinstance(exc, ValueError):
+        return ContractError(
+            code="bad_argument",
+            where=where,
+            message=msg,
+            http_status=400,
+        )
+    if isinstance(exc, PermissionError):
+        return ContractError(
+            code="permission_denied",
+            where=where,
+            message=msg,
+            http_status=403,
+        )
+    if isinstance(exc, LookupError):
+        return ContractError(
+            code="not_found",
+            where=where,
+            message=msg,
+            http_status=404,
+        )
+
+    # Fallback: unexpected system/runtime error
+    return ContractError(
+        code="internal_error",
+        where=where,
+        message="unexpected error in contract; see logs",
+        http_status=500,
+        data={"exc_type": exc.__class__.__name__},
+    )
+
+
+# -----------------
+# Error Check Helpers
+# -----------------
+
+
+def _ok(payload: Mapping[str, Any] | None = None) -> dict:
+    return {"ok": True, "data": {} if payload is None else dict(payload)}
+
+
+def _one(name: str, value: Any) -> dict:
+    return {"ok": True, "data": {name: value}}
+
+
+def _require_str(name: str, value: Optional[str]) -> str:
+    if not value or not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} must be a non-empty string")
+    return value.strip()
+
+
+def _require_ulid(name: str, value: Optional[str]) -> str:
+    v = _require_str(name, value)
+    if len(v) != 26:
+        raise ValueError(f"{name} must be a 26-char ULID")
+    return v
+
+
+def _require_int_ge(name: str, value: Any, minval: int = 0) -> int:
+    if not isinstance(value, int):
+        raise ValueError(f"{name} must be an int")
+    if value < minval:
+        raise ValueError(f"{name} must be >= {minval}")
+    return value
+
+
+# -----------------
 # DTO's
 # -----------------
+
+
+@dataclass
+class DonationIntentDTO:
+    sponsor_ulid: str
+    amount_cents: int
+    fund_archetype_key: Optional[str] = None
+    period_label: Optional[str] = None
+    source: Optional[str] = None
+    prospect_ulid: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@dataclass
+class DonationClassificationDTO:
+    ok: bool
+    reason: str
+    fund_archetype_key: str
+    journal_flags: List[str]
+    reporting_tags: List[str]
+    restricted_project_type_keys: List[str]
 
 
 class SpendingLimitsDTO(TypedDict):
@@ -198,6 +309,61 @@ class SponsorCapsDTO(TypedDict):
 class SponsorLifecycleDTO(TypedDict):
     readiness_allowed: List[str]
     mou_allowed: List[str]
+
+
+class ProjectBudgetDemandDTO(TypedDict):
+    project_ulid: str
+    project_title: str
+    project_type_key: str | None
+    period_label: str | None
+    total_expected_cents: int
+    monetary_expected_cents: int
+    in_kind_expected_cents: int
+    by_fund_archetype: Dict[str, int]
+
+
+class BudgetPositionDTO(TypedDict):
+    """
+    PII-free budget position, exposed at the contract boundary.
+
+    Mirrors governance.services_budget.BudgetPosition, but uses only
+    primitives so it can be easily JSON-encoded and consumed by any
+    slice, CLI, or UI.
+    """
+
+    fund_archetype_key: str
+    project_type_key: str | None
+    period_label: str | None
+    cap_cents: int | None
+    spent_cents: int | None
+    remaining_cents: int | None
+
+
+class SpendDecisionDTO(TypedDict):
+    """
+    PII-free decision about a proposed spend.
+
+    Callers (typically Finance, possibly Calendar) can use this DTO
+    to drive UI and control flow:
+
+      * ok: overall allow/deny signal.
+      * requires_override: whether an admin override is required.
+      * reason: short machine-/human-readable code ('ok',
+        'over_budget_cap', etc.).
+    """
+
+    ok: bool
+    reason: str
+
+    fund_archetype_key: str
+    project_type_key: str | None
+    period_label: str | None
+
+    amount_cents: int
+    cap_cents: int | None
+    spent_cents: int | None
+    remaining_cents: int | None
+    requires_override: bool
 
 
 __schema__ = {
@@ -680,6 +846,30 @@ def get_sponsor_lifecycle_policy() -> SponsorLifecycleDTO:
     )
 
 
+def get_sponsor_pledge_policy() -> dict:
+    """
+    Read-only contract for Sponsor pledge policy.
+
+    This is intentionally thin: it delegates to the Governance services
+    helper and returns the raw, PII-free policy dict. Callers (Sponsors
+    slice, Admin UI) are responsible for interpreting specific keys.
+
+    Backed by the policy_sponsor_pledge.json family (file or DB), via
+    governance.services.svc_get_policy_value("sponsor", "pledge").
+    """
+    try:
+        return gov_svc.svc_get_policy_value("sponsor", "pledge")
+    except Exception as e:  # noqa: B902
+        # Normalize to ContractError so callers see a single error type
+        raise ContractError(
+            code="policy_read_error",
+            where="governance_v2.get_sponsor_pledge_policy",
+            message=str(e),
+            http_status=503,
+            data={"family": "sponsor", "key": "pledge"},
+        ) from e
+
+
 # -----------------
 # Governance Policy
 # typed DTOs for
@@ -687,12 +877,12 @@ def get_sponsor_lifecycle_policy() -> SponsorLifecycleDTO:
 # -----------------
 """
 Expose pure functions with typed DTOs.
-These are the only functions Admin/Devtools/Tests call.
-They return only DTOs, never internal models or file paths.
-
+These are the only functions the Admin slice UI and tests should call
+for Governance policy editing. They return only DTOs, never internal
+models or file paths.
 """
 # -----------------
-# Typed DTOs
+# Typed Policy DTOs
 # -----------------
 
 
@@ -723,7 +913,7 @@ class PolicyUpdateCommitDTO(TypedDict):
 
 
 # -----------------
-# Calls to DTOs
+# Calls to Policy DTOs
 # -----------------
 
 
@@ -762,3 +952,282 @@ def commit_policy_update(
     return commit_update_impl(
         key=key, new_policy=new_policy, actor_ulid=actor_ulid
     )
+
+
+# -----------------
+# Budget Services
+# functions
+# -----------------
+
+
+def evaluate_donation(
+    *,
+    sponsor_ulid: str,
+    amount_cents: int,
+    fund_archetype_key: Optional[str] = None,
+    period_label: Optional[str] = None,
+    source: Optional[str] = None,
+    prospect_ulid: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> DonationClassificationDTO:
+    """
+    Contract entry point: evaluate an inbound donation against Governance policy.
+
+    This function does **not** write to Finance or Sponsors. It performs
+    shape checks, delegates to governance.services_budget.classify_donation_intent,
+    and returns a DonationClassificationDTO.
+
+    Arguments:
+        sponsor_ulid:
+            ULID of the sponsor (from Sponsors slice).
+        amount_cents:
+            Proposed donation amount in cents (> 0).
+        fund_archetype_key:
+            Optional fund archetype hint; if omitted, a default such as
+            'general_unrestricted' may be applied according to policy.
+        period_label:
+            Optional period/budget label (e.g. 'FY2025') for future budget
+            semantics. Currently unused in MVP.
+        source:
+            Optional free-text source token (e.g. 'grant:ELKS_FREEDOM').
+        prospect_ulid:
+            Optional ULID of a Funding Prospect / Pledge in Sponsors slice.
+        notes:
+            Optional free-text notes for human context.
+
+    Returns:
+        DonationClassificationDTO:
+            - ok: True if the donation is allowed under current policy.
+            - reason: 'ok' or a short denial/explanation string.
+            - fund_archetype_key: normalized archetype key.
+            - journal_flags: accounting flags to pass into Finance.
+            - reporting_tags: tags for grant/reporting purposes.
+            - restricted_project_type_keys: hint about allowable project types.
+
+    Raises:
+        ContractError:
+            - code='bad_argument' when inputs are malformed.
+            - code='internal_error' for unexpected failures.
+    """
+    where = "governance_v2.evaluate_donation"
+    try:
+        sponsor_ulid = _require_ulid("sponsor_ulid", sponsor_ulid)
+        amount_cents = _require_int_ge("amount_cents", amount_cents, minval=1)
+        if fund_archetype_key is not None:
+            fund_archetype_key = _require_str(
+                "fund_archetype_key", fund_archetype_key
+            )
+        if period_label is not None:
+            period_label = _require_str("period_label", period_label)
+        if source is not None:
+            source = _require_str("source", source)
+        if prospect_ulid is not None:
+            prospect_ulid = _require_ulid("prospect_ulid", prospect_ulid)
+        if notes is not None:
+            notes = _require_str("notes", notes)
+
+        intent = svc_budget.DonationIntent(
+            sponsor_ulid=sponsor_ulid,
+            amount_cents=amount_cents,
+            fund_archetype_key=fund_archetype_key,
+            period_label=period_label,
+            source=source,
+            prospect_ulid=prospect_ulid,
+            notes=notes,
+        )
+        classification = svc_budget.classify_donation_intent(intent)
+
+        return DonationClassificationDTO(
+            ok=classification.ok,
+            reason=classification.reason,
+            fund_archetype_key=classification.fund_archetype_key,
+            journal_flags=list(classification.journal_flags),
+            reporting_tags=list(classification.reporting_tags),
+            restricted_project_type_keys=list(
+                classification.restricted_project_type_keys
+            ),
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
+
+
+def get_budget_demands_for_period(
+    *, period_label: str
+) -> List[ProjectBudgetDemandDTO]:
+    """
+    Contract entry point: compute planned budget demands for a period.
+
+    This is a *read-only* governance view that aggregates Calendar
+    projects and their ProjectFundingPlan rows into project-level
+    demand objects. It does not talk to Finance or Sponsors; it is
+    purely a planning/forecasting surface.
+
+    Args:
+        period_label:
+            Period/budget label understood by Calendar and Governance,
+            e.g. '2026', 'FY2026', etc.
+
+    Returns:
+        List[ProjectBudgetDemandDTO]:
+            One entry per project, including total planned amount and
+            breakdown by fund_archetype_key.
+
+    Raises:
+        ContractError:
+            - code='bad_argument' if period_label is blank.
+            - code='internal_error' if underlying services fail or if
+              Calendar has not yet wired the needed contract functions.
+    """
+    where = "governance_v2.get_budget_demands_for_period"
+    try:
+        period_label = _require_str("period_label", period_label)
+        demands = svc_budget.compute_budget_demands_for_period(period_label)
+        out: List[ProjectBudgetDemandDTO] = []
+
+        for d in demands:
+            out.append(
+                ProjectBudgetDemandDTO(
+                    project_ulid=d.project_ulid,
+                    project_title=d.project_title,
+                    project_type_key=d.project_type_key,
+                    period_label=d.period_label,
+                    total_expected_cents=d.total_expected_cents,
+                    monetary_expected_cents=d.monetary_expected_cents,
+                    in_kind_expected_cents=d.in_kind_expected_cents,
+                    by_fund_archetype=dict(d.by_fund_archetype),
+                )
+            )
+
+        return out
+    except Exception as exc:  # noqa: BLE001 - boundary wrapper
+        raise _as_contract_error(where, exc)
+
+
+def get_budget_position(
+    *,
+    fund_archetype_key: str,
+    project_type_key: str | None = None,
+    period_label: str | None = None,
+    current_spent_cents: int | None = None,
+) -> BudgetPositionDTO:
+    """
+    Contract entry point: summarize the budget position for a specific
+    fund / project_type / period combination.
+
+    MVP behaviour:
+
+      * Performs shape checks on the arguments.
+      * Delegates to governance.services_budget.compute_budget_position.
+      * Returns a BudgetPositionDTO.
+
+    This function is **read-only** and has no side-effects. Callers
+    should supply `current_spent_cents` based on their own Finance
+    queries; a future revision may compute this using Finance contracts.
+    """
+    where = "governance_v2.get_budget_position"
+    try:
+        fund_archetype_key = _require_str(
+            "fund_archetype_key", fund_archetype_key
+        )
+        if project_type_key is not None:
+            project_type_key = _require_str(
+                "project_type_key", project_type_key
+            )
+        if period_label is not None:
+            period_label = _require_str("period_label", period_label)
+        if current_spent_cents is not None:
+            current_spent_cents = _require_int_ge(
+                "current_spent_cents", current_spent_cents, minval=0
+            )
+
+        pos = svc_budget.compute_budget_position(
+            fund_archetype_key=fund_archetype_key,
+            project_type_key=project_type_key,
+            period_label=period_label,
+            current_spent_cents=current_spent_cents,
+        )
+
+        return BudgetPositionDTO(
+            fund_archetype_key=pos.fund_archetype_key,
+            project_type_key=pos.project_type_key,
+            period_label=pos.period_label,
+            cap_cents=pos.cap_cents,
+            spent_cents=pos.spent_cents,
+            remaining_cents=pos.remaining_cents,
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
+
+
+def preview_spend_decision(
+    *,
+    fund_archetype_key: str,
+    project_type_key: str | None,
+    amount_cents: int,
+    period_label: str | None = None,
+    current_spent_cents: int | None = None,
+) -> SpendDecisionDTO:
+    """
+    Contract entry point: ask Governance whether a proposed spend fits
+    within budget policy for a given fund/project/period.
+
+    This function is intended to be called *before* any use of
+    ``finance_v2.log_expense(...)`` so that policy decisions and Journal
+    writes remain cleanly separated.
+
+    MVP behaviour:
+
+      * Validates argument shapes (strings, ULIDs, ints >= 0).
+      * Constructs a SpendIntent and delegates to
+        governance.services_budget.preview_spend_decision.
+      * Returns a SpendDecisionDTO with a simple allow/deny + “requires
+        override” signal.
+
+    This function does **not** talk to Finance. Callers (usually the
+    Finance slice) are expected to pass `current_spent_cents` based on
+    their own view of Journal / balances. Future revisions may compute
+    that value internally.
+    """
+    where = "governance_v2.preview_spend_decision"
+    try:
+        fund_archetype_key = _require_str(
+            "fund_archetype_key", fund_archetype_key
+        )
+        if project_type_key is not None:
+            project_type_key = _require_str(
+                "project_type_key", project_type_key
+            )
+        if period_label is not None:
+            period_label = _require_str("period_label", period_label)
+
+        amount_cents = _require_int_ge("amount_cents", amount_cents, minval=1)
+        if current_spent_cents is not None:
+            current_spent_cents = _require_int_ge(
+                "current_spent_cents", current_spent_cents, minval=0
+            )
+
+        intent = svc_budget.SpendIntent(
+            fund_archetype_key=fund_archetype_key,
+            project_type_key=project_type_key,
+            period_label=period_label,
+            amount_cents=amount_cents,
+        )
+
+        decision = svc_budget.preview_spend_decision(
+            intent, current_spent_cents=current_spent_cents
+        )
+
+        return SpendDecisionDTO(
+            ok=decision.ok,
+            reason=decision.reason,
+            fund_archetype_key=decision.fund_archetype_key,
+            project_type_key=decision.project_type_key,
+            period_label=decision.period_label,
+            amount_cents=decision.amount_cents,
+            cap_cents=decision.cap_cents,
+            spent_cents=decision.spent_cents,
+            remaining_cents=decision.remaining_cents,
+            requires_override=decision.requires_override,
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc)

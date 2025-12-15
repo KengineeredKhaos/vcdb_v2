@@ -1,82 +1,5 @@
 # app/slices/sponsors/models.py
 
-"""
-Sponsors slice — funding orgs, capability & pledge snapshots, allocations, POCs.
-
-This module models organizations that act as Sponsors in VCDB v2: entities that
-provide cash, in-kind support, or services under board-governed policies. Each
-Sponsor is backed by a single EntityOrg record; this slice never stores PII,
-only ULIDs and policy-/reporting-friendly attributes.
-
-Models:
-
-* Sponsor
-    One row per sponsoring org, keyed by `entity_ulid` from EntityOrg
-    (enforced 1:1 via uq_sponsor_entity). Tracks governance-facing lifecycle
-    state: admin_review_required, readiness_status, mou_status, and a handful
-    of ISO8601 timestamps (first_seen, last_touch, capability_last_update,
-    pledge_last_update). This is the anchor record for all sponsor-related
-    capabilities, pledges, allocations, and POCs.
-
-* SponsorHistory
-    Privacy A (strict) snapshot store for sponsor-level details. Sections:
-      - 'sponsor:capability:v1': flattened "domain.key" -> {has: bool, note?: str}
-      - 'sponsor:pledge:v1'    : {pledge_ulid: payload}
-    Designed for governance/admin UIs and audits; contents should not be
-    indexed or leaked to logs or ledger. A CHECK constraint enforces a
-    positive version number.
-
-* SponsorCapabilityIndex
-    Projection table for fast, names-only capability queries. Each row is a
-    (sponsor_ulid, domain, key, active) triplet with a UNIQUE constraint, built
-    from SponsorHistory. This lets other slices answer questions like "which
-    sponsors fund housing?" without touching sensitive notes.
-
-* SponsorPledgeIndex
-    Projection summary for pledges, keyed by pledge_ulid. Stores only
-    high-level type (cash/in_kind), status (proposed/active/fulfilled/
-    cancelled), whether a restriction exists, and a coarse numeric estimate
-    (est_value_number + currency). Detailed pledge terms/notes live in
-    SponsorHistory or external documents, not here.
-
-* Allocation
-    Sponsor allocation to a Customer, PII-free. Links a sponsor_ulid to a
-    customer_ulid and records the authorized amount (integer cents), state
-    (e.g. committed), an optional approver ULID, and an optional ISO8601
-    expiry date. Governance policy and Finance integrate here: Governance
-    enforces who may approve and under what conditions; Finance records the
-    monetary impact in the journal. A CHECK constraint enforces non-negative
-    amounts.
-
-* SponsorPOC
-    Slice-owned linkage between a Sponsor and one or more people (EntityPerson)
-    serving as points-of-contact for an EntityOrg. Stores only ULIDs plus
-    Governance-governed metadata: relation, scope, rank, org_role, validity
-    windows, is_primary, and active. Uniqueness and indexed ordering over
-    (sponsor_ulid, relation, scope, rank/is_primary) support "who do we call?"
-    lookups without duplicating names, emails, or phone numbers.
-
-Ownership and boundaries:
-
-* The Sponsors slice owns these tables and is responsible for keeping PII in
-  the Entity slice and detailed pledge/capability data in SponsorHistory.
-  Other slices must interact via services/contracts using ULIDs and normalized
-  keys, not by importing these models directly.
-* Governance defines sponsor capability taxonomies, pledge and allocation
-  policies, MOU semantics, and who can approve allocations; Sponsors applies
-  that policy when updating histories, indexes, and Allocation rows.
-* Finance is responsible for recording the monetary side of pledges and
-  allocations in the journal; Sponsors stores only structured references and
-  high-level numbers.
-* Ledger and logging must continue to record only ULIDs and normalized labels;
-  any narrative or sensitive notes live in snapshot JSON or external systems,
-  not in logs or the ledger.
-
-In short, this module provides the structural backbone for "who funds what, on
-what terms, and to which customers" while keeping identity and detailed pledge
-terms in the appropriate slices.
-"""
-
 from __future__ import annotations
 
 from sqlalchemy import (
@@ -154,6 +77,11 @@ class Sponsor(db.Model, ULIDPK, IsoTimestamps):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    funding_prospects: Mapped[list["FundingProspect"]] = relationship(
+        "FundingProspect",
+        back_populates="sponsor",
+        cascade="all, delete-orphan",
+    )
 
 
 class SponsorHistory(db.Model, ULIDPK, IsoTimestamps):
@@ -212,6 +140,86 @@ class SponsorCapabilityIndex(db.Model, ULIDPK, IsoTimestamps):
     )
 
 
+class FundingProspect(db.Model, ULIDPK, IsoTimestamps):
+    """
+    Pre-pledge fundraising prospect linked to a Sponsor.
+
+    This models “we think this Sponsor might fund X for Y project type with
+    an estimated range”, without promising that the money will ever arrive.
+
+    All fields are PII-free and keyed by ULIDs and normalized governance keys.
+    Detailed notes should live in external docs or a future snapshot store,
+    not here.
+    """
+
+    __tablename__ = "sponsor_funding_prospect"
+
+    sponsor_ulid: Mapped[str] = ULIDFK(
+        "sponsor_sponsor", index=True, nullable=False
+    )
+
+    # Governance-backed keys (validated by policy_semantics in services)
+    project_type_key: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True
+    )  # e.g. "stand_down", "operations"
+    fund_archetype_key: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True
+    )  # e.g. "grant_advance", "general_unrestricted"
+
+    # Human-facing short label, for UIs/reports (PII-free)
+    label: Mapped[str] = mapped_column(
+        String(80), nullable=False
+    )  # e.g. "Elks Freedom Grant 2025"
+
+    # Coarse estimate range (cents); both optional but non-negative if present
+    est_min_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    est_max_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Confidence 0-100 (rough probability this will land)
+    confidence: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=50
+    )
+
+    # Lifecycle of the prospect (no money yet, just pipeline state)
+    status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="prospect",
+        index=True,
+    )  # prospect|approach|active|closed|lost
+
+    # Realized total so far (from Finance Journal), in integer cents.
+    # This is updated by Finance when actual donations are recorded.
+    realized_total_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+
+    sponsor: Mapped["Sponsor"] = relationship(
+        "Sponsor",
+        backref="funding_prospects",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "est_min_cents IS NULL OR est_min_cents >= 0",
+            name="ck_funding_prospect_min_nonneg",
+        ),
+        CheckConstraint(
+            "est_max_cents IS NULL OR est_max_cents >= 0",
+            name="ck_funding_prospect_max_nonneg",
+        ),
+        CheckConstraint(
+            "confidence >= 0 AND confidence <= 100",
+            name="ck_funding_prospect_confidence_range",
+        ),
+        CheckConstraint(
+            # if both bounds present, enforce min <= max
+            "est_min_cents IS NULL OR est_max_cents IS NULL OR est_min_cents <= est_max_cents",
+            name="ck_funding_prospect_min_le_max",
+        ),
+    )
+
+
 class SponsorPledgeIndex(db.Model, ULIDPK, IsoTimestamps):
     """
     Projection summary for pledges (no sensitive notes; minimal numbers for dashboards).
@@ -243,47 +251,6 @@ class SponsorPledgeIndex(db.Model, ULIDPK, IsoTimestamps):
 
     sponsor: Mapped["Sponsor"] = relationship(
         "Sponsor", back_populates="pledges"
-    )
-
-
-class Allocation(db.Model, ULIDPK, IsoTimestamps):
-    """
-    Sponsor allocation to a Customer.
-    PII-free. ISO-8601 Z string timestamps via IsoTimestamps.
-    """
-
-    __tablename__ = "sponsor_allocation"
-
-    sponsor_ulid: Mapped[str] = ULIDFK(
-        "sponsor_sponsor", index=True, nullable=False
-    )
-    customer_ulid: Mapped[str] = ULIDFK(
-        "entity_entity", index=True, nullable=False
-    )
-
-    state: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="committed", index=True
-    )
-    # cents, non-negative
-    amount_authorized_cents: Mapped[int] = mapped_column(
-        nullable=False, default=0
-    )
-    approved_by_ulid: Mapped[str | None] = mapped_column(
-        String(26), nullable=True, index=True
-    )
-
-    # keep expiry as ISO string to stay consistent with the rest of the slice
-    expires_on_utc: Mapped[str | None] = mapped_column(
-        String(30), nullable=True
-    )
-
-    # relationships (optional, for convenience)
-    sponsor = relationship("Sponsor", backref="allocations")
-
-    __table_args__ = (
-        CheckConstraint(
-            "amount_authorized_cents >= 0", name="ck_alloc_amount_nonneg"
-        ),
     )
 
 

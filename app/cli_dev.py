@@ -163,6 +163,7 @@ from flask.cli import with_appcontext
 from sqlalchemy import select
 
 from app.cli import echo_db_banner
+from app.extensions.errors import ContractError
 from app.slices.logistics.sku import (
     classification_key_for,
     parse_sku,
@@ -1837,3 +1838,76 @@ def dev_list_sponsor_capabilities():
     except Exception:
         pass
     click.echo("No capability listing available for Sponsors.")
+
+
+# -----------------
+# Sponsor/Calendar/Finance
+# flow test
+# -----------------
+
+
+@dev_group.command("sponsor-allocation-spend")
+@with_appcontext
+@click.option("--allocation-ulid", required=True, help="Allocation ULID")
+@click.option(
+    "--amount-cents",
+    type=int,
+    default=None,
+    help="Amount in cents (default: full allocation)",
+)
+@click.option(
+    "--occurred-on",
+    default=None,
+    help="ISO timestamp; default is now in UTC if omitted",
+)
+@click.option(
+    "--category",
+    default="allocation_spend",
+    help="Expense category (default: allocation_spend)",
+)
+@click.option(
+    "--vendor",
+    default=None,
+    help="Override vendor/payee (default: sponsor name)",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Simulate only; do not write Journal rows",
+)
+@with_appcontext
+def sponsor_allocation_spend_cmd(
+    allocation_ulid: str,
+    amount_cents: int | None,
+    occurred_on: str | None,
+    category: str,
+    vendor: str | None,
+    dry_run: bool,
+) -> None:
+    """Dev helper to exercise Sponsors → Finance allocation spending."""
+    echo_db_banner("sponsor-allocation-spend")
+    from app.extensions.contracts import sponsors_v2
+
+    try:
+        result = sponsors_v2.allocation_spend(
+            allocation_ulid=allocation_ulid,
+            amount_cents=amount_cents,
+            occurred_on=occurred_on,
+            category=category,
+            vendor=vendor,
+            actor_ulid=None,
+            dry_run=dry_run,
+        )
+    except ContractError as exc:
+        import click
+
+        click.echo(f"ERROR: {exc.code}: {exc.message}")
+        raise SystemExit(1)
+
+    import click
+
+    click.echo(f"Dry run:        {result['dry_run']}")
+    click.echo(f"Allocation ULID: {result['allocation_ulid']}")
+    click.echo(f"Journal ULID:    {result['journal_id']}")
+    click.echo(f"Amount cents:    {result['amount_cents']}")

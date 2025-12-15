@@ -1,5 +1,17 @@
 {
   "version": 1,
+  "fund_archetypes": [
+    { "key": "general_unrestricted", "restriction": "unrestricted", "label": "General Unrestricted" },
+    { "key": "grant_advance",        "restriction": "temporarily_restricted", "label": "Grant (advance funds)" },
+    { "key": "grant_reimbursement",  "restriction": "temporarily_restricted", "label": "Grant (reimbursement)" },
+    { "key": "vet_only",             "restriction": "temporarily_restricted", "label": "Veteran-only" },
+    { "key": "local_only",           "restriction": "temporarily_restricted", "label": "Local-only" },
+    { "key": "local_vet_only",       "restriction": "temporarily_restricted", "label": "Local veteran-only" },
+    { "key": "match_funds",          "restriction": "temporarily_restricted", "label": "Match funds" },
+    { "key": "inkind_tracking",      "restriction": "unrestricted", "label": "In-kind tracking only" }
+  ],
+
+
   "projects": {
     "01K8F...PROJECT": {
       "allow_classifications": ["basic_needs.*", "housing.sleeping_gear.*"]

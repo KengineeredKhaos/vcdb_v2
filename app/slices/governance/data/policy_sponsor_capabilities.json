@@ -5,6 +5,12 @@
       "code": "funding",
       "label": "Monetary funding",
       "keys": [
+
+        {
+          "code": "cash",
+          "label": "Dead Presidents",
+          "description": "Private Party Cash or Check"
+        }
         {
           "code": "cash_grant",
           "label": "Cash grant",

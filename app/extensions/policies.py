@@ -64,6 +64,9 @@ POLICY_SCHEMA_MAP: dict[str, str] = {
     "policy_sponsor_lifecycle.json": "policy_sponsor_lifecycle.schema.json",
     "policy_sponsor_pledge.json": "policy_sponsor_pledge.schema.json",
     "policy_state_machine.json": "policy_state_machine.schema.json",
+    "policy_projects.json": "policy_projects.schema.json",
+    "policy_journal_flags.json": "policy_journal_flags.schema.json",
+    "policy_budget.json": "policy_budget.schema.json",
 }
 
 
@@ -129,6 +132,26 @@ def load_policy_domain() -> dict:
 
 def load_policy_calendar() -> dict:
     basename = "policy_calendar.json"
+    return _load_and_cache(GOV_DATA / basename)
+
+
+def load_policy_projects() -> dict:
+    basename = "policy_projects.json"
+    return _load_and_cache(GOV_DATA / basename)
+
+
+def load_policy_journal_flags() -> dict:
+    basename = "policy_journal_flags.json"
+    return _load_and_cache(GOV_DATA / basename)
+
+
+def load_policy_budget() -> dict:
+    basename = "policy_budget.json"
+    return _load_and_cache(GOV_DATA / basename)
+
+
+def load_policy_funding() -> dict:
+    basename = "policy_funding.json"
     return _load_and_cache(GOV_DATA / basename)
 
 
@@ -262,6 +285,10 @@ __all__ = [
     "load_policy_rbac",
     "load_policy_sku_constraints",  # logistics.services.
     "load_policy_locations",  # logistics.services.
+    "load_policy_projects",
+    "load_policy_journal_flags",
+    "load_policy_budget",
+    "load_policy_funding",
     "save_policy",
     "load_policy",
 ]

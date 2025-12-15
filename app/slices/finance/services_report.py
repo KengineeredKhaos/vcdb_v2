@@ -7,6 +7,27 @@ from sqlalchemy import text
 
 from app.extensions import db
 
+"""
+Canonical Mental Model:
+services_report → Reads from everything and summarizes.
+
+TL;DR:
+if it’s
+    query-only
+    returns summaries/aggregates
+it belongs in services_report.
+
+In future:
+“Budget vs actuals by fund/project.”
+“Sponsor utilization summaries.”
+“Period summary metrics.”
+
+I’d not move writers like record_stat_metric here;
+they’re better in services_journal or a future services_stats.py.
+
+
+"""
+
 # NOTE: This is intentionally written using SQL text for portability across
 # whatever model helpers you finalize later.
 # It assumes the following minimal columns exist:

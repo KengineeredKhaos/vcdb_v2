@@ -1,4 +1,4 @@
-# app/slices/finance/services.py
+# app/slices/finance/services_journal.py
 from __future__ import annotations
 
 from collections import defaultdict
@@ -7,6 +7,17 @@ from typing import Iterable, Optional
 from sqlalchemy import select
 
 from app.extensions import db, event_bus
+from app.extensions.contracts.finance_v2 import (
+    ActivitiesReportDTO,
+    BudgetDTO,
+    DonationDTO,
+    ExpenseDTO,
+    FundDTO,
+    GrantDTO,
+    ProjectDTO,
+    ReceiptDTO,
+    ReimbursementDTO,
+)
 from app.lib.chrono import now_iso8601_ms
 from app.slices.finance.models import (
     Account,
@@ -22,8 +33,53 @@ from app.slices.finance.models import (
 ALLOWED_TYPES = {"asset", "liability", "net_assets", "revenue", "expense"}
 ALLOWED_PERIOD_STATUS = {"open", "soft_closed", "closed"}
 
+"""
+Canonical Mental Model:
+services_journal → Writes rows into GL tables and projections.
 
-# -------- helpers -----------------------------------------------------------
+TL;DR:
+if it writes Journal, JournalLine, BalanceMonthly, or StatMetric,
+it belongs in services_journal.py.
+
+Functions and helpers this file should contain:
+ALLOWED_TYPES
+ALLOWED_PERIOD_STATUS
+
+Internal Helper Functions
+(essential internal helpers imported elsewhere in finance.services_XXX)
+_period_key_from(...) chk
+_ensure_open_period(...) chk
+ensure_account(...) chk
+ensure_fund(...) chk
+ensure_project(...) chk
+
+Core journal operations:
+post_journal(...) – the one true way to write GL entries. chk
+reverse_journal(...) – “undo” a journal by posting an opposite entry. chk
+
+All of these are “convenience wrappers” that call post_journal:
+log_expense(payload, dry_run=False) -> ExpenseDTO chk
+log_donation(payload, dry_run=False) -> DonationDTO chk
+record_receipt(payload, dry_run=False) -> ReceiptDTO (TODO)
+record_inkind(...) -> str chk
+release_restriction(...) -> str chk
+
+These are part of the write-path projection:
+_apply_to_balances(lines, period_key) chk
+rebuild_balances(period_from, period_to) chk
+– it rewrites BalanceMonthly using journal lines.
+
+Stats
+record_stat_metric(...) -> str – it’s “off-GL” chk
+but conceptually still a write, so it’s fine staying here for now.
+
+"""
+
+# -----------------
+# Helpers & Ref's
+# exported to other
+# finance services
+# -----------------
 
 
 def _period_key_from(ts_iso: str) -> str:
@@ -44,9 +100,6 @@ def _ensure_open_period(period_key: str) -> None:
         raise ValueError(f"period {period_key} is closed")
     # 'soft_closed' is allowed, but your contracts can require
     # an override flag if needed
-
-
-# -------- reference ensure --------------------------------------------------
 
 
 def ensure_account(*, code: str, name: str, type: str) -> str:
@@ -97,7 +150,20 @@ def ensure_project(*, name: str) -> str:
     return p.ulid
 
 
-# -------- journals ----------------------------------------------------------
+def _external_restriction_type(internal: str) -> str:
+    """Map internal Fund.restriction -> external DTO string."""
+    mapping = {
+        "unrestricted": "unrestricted",
+        "temp": "temporarily_restricted",
+        "perm": "permanently_restricted",
+    }
+    return mapping.get(internal, "unrestricted")
+
+
+# -----------------
+# journal Entries
+# Keep this here
+# -----------------
 
 
 def post_journal(
@@ -193,6 +259,12 @@ def post_journal(
     return j.ulid
 
 
+# -----------------
+# Reverse Journal Entry
+# Keep this here
+# -----------------
+
+
 def reverse_journal(
     *, journal_ulid: str, created_by_actor: Optional[str]
 ) -> str:
@@ -234,7 +306,276 @@ def reverse_journal(
     )
 
 
-# -------- inkind & restrictions (policy-aware) ------------------------------
+# -----------------
+# Log Expense
+# Keep this here
+# -----------------
+
+
+def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:
+    """Slice implementation for finance_v2.log_expense(...).
+
+    IMPORTANT:
+      This function assumes any Governance / budget / policy checks have
+      already been performed (for example via
+      ``governance_v2.preview_spend_decision`` or a Finance helper).
+      It MUST NOT perform policy decisions itself; its sole responsibility
+      is to persist the approved expense as Finance facts (Journal rows).
+
+    MVP behaviour:
+      * require fund_id, project_id, occurred_on, vendor, amount_cents, category
+      * post a balanced Journal entry (expense vs cash/bank)
+      * return an ExpenseDTO summarising the entry
+
+    Expected payload keys (matching finance_v2 contract docstring):
+
+      Required:
+        - fund_id:      ULID of fin_fund
+        - project_id:   ULID of calendar project (or similar “bucket”)
+        - occurred_on:  ISO-8601 date or datetime string
+        - vendor:       free-text payee (or 'N/A')
+        - amount_cents: integer cents (> 0)
+        - category:     free-text category label
+
+      Optional (honoured if present):
+        - bank_account_code:    COA code for the cash/bank account (default '1000')
+        - expense_account_code: COA code for the expense account (default '5200')
+        - memo:                 free-text memo to attach to the Journal
+        - external_ref_id:      ULID of related object (e.g. Allocation)
+        - created_by_actor:     actor ULID
+        - source:               free-text source label (default 'calendar')
+
+    Raises:
+        ValueError: if required fields are missing or malformed
+                    (e.g. non-integer amount, amount <= 0).
+        LookupError: if the referenced fund_id cannot be found.
+
+    Returns:
+        ExpenseDTO: PII-free summary of the (real or simulated) expense.
+    """
+    # ---- Required fields ----
+    try:
+        fund_id = payload["fund_id"]
+        project_id = payload["project_id"]
+        occurred_on = payload["occurred_on"]
+        vendor = (payload.get("vendor") or "").strip()
+        category = (payload.get("category") or "").strip()
+        amount_raw = payload["amount_cents"]
+    except KeyError as exc:
+        # Let the contract layer classify this as bad_argument via _as_contract_error
+        raise ValueError(f"missing required field: {exc.args[0]}") from exc
+
+    try:
+        amount_cents = int(amount_raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("amount_cents must be an integer") from exc
+
+    if amount_cents <= 0:
+        raise ValueError("amount_cents must be > 0")
+
+    fund = db.session.get(Fund, fund_id)
+    if not fund:
+        # Let the contract layer classify this as not_found via _as_contract_error
+        raise LookupError(f"unknown fund_id {fund_id!r}")
+
+    # Normalise timestamp. post_journal expects an ISO-8601 string and will
+    # derive any period information from it, so we pass this through unchanged.
+    happened_at_utc = occurred_on
+
+    # ---- Optional fields / defaults ----
+    bank_account_code = payload.get("bank_account_code", "1000")  # Cash/bank
+    expense_account_code = payload.get(
+        "expense_account_code", "5200"
+    )  # Supplies/expense
+    memo = payload.get("memo") or (
+        f"{category} — {vendor}" if vendor else category
+    )
+    external_ref_ulid = payload.get("external_ref_id")
+    created_by_actor = payload.get("created_by_actor")
+    source = payload.get("source", "calendar")
+
+    # Dry-run: no DB writes, just a DTO that says what would happen
+    if dry_run:
+        return ExpenseDTO(
+            id="DRY-RUN",
+            fund_id=fund.ulid,
+            project_id=project_id,
+            occurred_on=happened_at_utc,
+            vendor=vendor,
+            amount_cents=amount_cents,
+            category=category,
+            approved_by_ulid=None,
+            flags=["dry_run"],
+        )
+
+    # Build balanced journal lines: DR expense, CR cash/bank.
+    # NOTE: post_journal already enforces period & balance rules and updates
+    # BalanceMonthly, so we keep this thin.
+    lines = [
+        {
+            "account_code": expense_account_code,
+            "fund_code": fund.code,
+            "project_ulid": project_id,
+            "amount_cents": amount_cents,
+            "memo": memo,
+        },
+        {
+            "account_code": bank_account_code,
+            "fund_code": fund.code,
+            "project_ulid": project_id,
+            "amount_cents": -amount_cents,
+            "memo": memo,
+        },
+    ]
+
+    journal_ulid = post_journal(
+        happened_at_utc=happened_at_utc,
+        source=source,
+        description=memo or f"{category} expense",
+        fund_code=fund.code,
+        project_ulid=project_id,
+        external_ref_ulid=external_ref_ulid,
+        created_by_actor=created_by_actor,
+        lines=lines,
+    )
+
+    return ExpenseDTO(
+        id=journal_ulid,
+        fund_id=fund.ulid,
+        project_id=project_id,
+        occurred_on=happened_at_utc,
+        vendor=vendor,
+        amount_cents=amount_cents,
+        category=category,
+        approved_by_ulid=None,
+        flags=[],
+    )
+
+
+# -----------------
+# Log Donation
+# Keep this here
+# -----------------
+
+
+def log_donation(payload: dict, *, dry_run: bool = False) -> DonationDTO:
+    """Slice implementation for finance_v2.log_donation(...).
+
+    MVP behaviour:
+      * require sponsor_ulid, fund_id, happened_at_utc, amount_cents
+      * post a balanced Journal entry (cash/bank vs revenue)
+      * return a DonationDTO summarising the entry
+      * governance checks (fund archetypes, flags, restrictions) can be layered later
+
+    Expected payload keys (matching finance_v2 contract docstring):
+
+      Required:
+        - sponsor_ulid:   ULID of the sponsor (from Sponsors slice)
+        - fund_id:        ULID of fin_fund
+        - happened_at_utc: ISO-8601 UTC timestamp string
+        - amount_cents:   integer cents (> 0)
+
+      Optional (honoured if present):
+        - bank_account_code:     COA code for the cash/bank account (default '1000')
+        - revenue_account_code:  COA code for the revenue account (default '4100')
+        - memo:                  free-text memo to attach to the Journal
+        - external_ref_ulid:     ULID of related object (e.g. pledge, receipt image)
+        - created_by_actor:      actor ULID
+        - source:                free-text source label (default 'sponsor')
+        - flags:                 list[str] of tags (e.g. ['pledge_realization'])
+
+    Raises:
+        ValueError: if required fields are missing or malformed
+                    (e.g. non-integer amount, amount <= 0).
+        LookupError: if the referenced fund_id cannot be found.
+
+    Returns:
+        DonationDTO: PII-free summary of the (real or simulated) donation.
+    """
+    # ---- Required fields ----
+    try:
+        sponsor_ulid = payload["sponsor_ulid"]
+        fund_id = payload["fund_id"]
+        happened_at_utc = payload["happened_at_utc"]
+        amount_raw = payload["amount_cents"]
+    except KeyError as exc:
+        raise ValueError(f"missing required field: {exc.args[0]}") from exc
+
+    try:
+        amount_cents = int(amount_raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("amount_cents must be an integer") from exc
+
+    if amount_cents <= 0:
+        raise ValueError("amount_cents must be > 0")
+
+    fund = db.session.get(Fund, fund_id)
+    if not fund:
+        # _as_contract_error will map this to code="not_found"
+        raise LookupError(f"unknown fund_id {fund_id!r}")
+
+    # ---- Optional fields / defaults ----
+    bank_account_code = payload.get("bank_account_code", "1000")  # Cash/bank
+    revenue_account_code = payload.get(
+        "revenue_account_code", "4100"
+    )  # Contributions
+    memo = payload.get("memo") or "Donation"
+    external_ref_ulid = payload.get("external_ref_ulid")
+    created_by_actor = payload.get("created_by_actor")
+    source = payload.get("source", "sponsor")
+    flags_list = list(payload.get("flags") or [])
+
+    # Dry-run: no DB writes, just a DTO that says what would happen
+    if dry_run:
+        return DonationDTO(
+            id="DRY-RUN",
+            sponsor_ulid=sponsor_ulid,
+            fund_id=fund.ulid,
+            happened_at_utc=happened_at_utc,
+            amount_cents=amount_cents,
+            flags=flags_list + ["dry_run"],
+        )
+
+    # Build balanced journal lines: DR cash/bank, CR contribution revenue.
+    lines = [
+        {
+            "account_code": bank_account_code,
+            "fund_code": fund.code,
+            "amount_cents": amount_cents,
+            "memo": memo,
+        },
+        {
+            "account_code": revenue_account_code,
+            "fund_code": fund.code,
+            "amount_cents": -amount_cents,
+            "memo": memo,
+        },
+    ]
+
+    journal_ulid = post_journal(
+        source=source,
+        external_ref_ulid=external_ref_ulid,
+        happened_at_utc=happened_at_utc,
+        currency="USD",
+        memo=memo,
+        lines=lines,
+        created_by_actor=created_by_actor,
+    )
+
+    return DonationDTO(
+        id=journal_ulid,
+        sponsor_ulid=sponsor_ulid,
+        fund_id=fund.ulid,
+        happened_at_utc=happened_at_utc,
+        amount_cents=amount_cents,
+        flags=flags_list,
+    )
+
+
+# -----------------
+# Record inkind Donation
+# Keep this here
+# -----------------
 
 
 def record_inkind(
@@ -285,6 +626,23 @@ def record_inkind(
     )
 
 
+# -----------------
+# Record Receipt
+# NEW FUNCTION
+# Keep this here
+# -----------------
+
+
+def record_receipt():
+    pass
+
+
+# -----------------
+# Release Restriction
+# Keep this here
+# -----------------
+
+
 def release_restriction(
     *,
     happened_at_utc: str,
@@ -329,7 +687,10 @@ def release_restriction(
     )
 
 
-# -------- balances projection -----------------------------------------------
+# -----------------
+# Balances Projection
+# Keep this here
+# -----------------
 
 
 def _apply_to_balances(*, lines: Iterable[dict], period_key: str) -> None:
@@ -368,6 +729,12 @@ def _apply_to_balances(*, lines: Iterable[dict], period_key: str) -> None:
             row.credits_cents += -net
         row.net_cents += net
         row.updated_at_utc = now
+
+
+# -----------------
+# Rebuild Balances
+# Keep this here
+# -----------------
 
 
 def rebuild_balances(*, period_from: str, period_to: str) -> dict:
@@ -422,35 +789,11 @@ def rebuild_balances(*, period_from: str, period_to: str) -> dict:
     return {"rows": len(lines), "periods": len(buckets)}
 
 
-# -------- periods -----------------------------------------------------------
-
-
-def set_period_status(*, period_key: str, status: str) -> None:
-    status = status.strip().lower()
-    if status not in ALLOWED_PERIOD_STATUS:
-        raise ValueError("invalid period status")
-    p = db.session.execute(
-        select(Period).where(Period.period_key == period_key)
-    ).scalar_one_or_none()
-    if not p:
-        p = Period(period_key=period_key, status=status)
-        db.session.add(p)
-    else:
-        p.status = status
-    db.session.commit()
-    event_bus.emit(
-        domain="finance",
-        operation="period.status_changed",
-        request_id="-",
-        actor_ulid=None,
-        target_ulid=period_key,
-        happened_at_utc=now_iso8601_ms(),
-        refs={"status": status},
-        chain_key="finance.period",
-    )
-
-
-# -------- statistical metrics (DRMO non-monetary) ---------------------------
+# -----------------
+# statistical metrics
+# (DRMO non-monetary)
+# Keep this here
+# -----------------
 
 
 def record_stat_metric(

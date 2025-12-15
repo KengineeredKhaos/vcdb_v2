@@ -2,22 +2,25 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, select
 
 from app.extensions import db, event_bus
+from app.extensions.contracts import finance_v2
 from app.extensions.contracts.governance_v2 import (
     get_sponsor_capability_policy,
     get_sponsor_lifecycle_policy,
     get_sponsor_pledge_policy,
 )
 from app.lib.chrono import now_iso8601_ms
+from app.lib.ids import new_ulid
 from app.lib.jsonutil import stable_dumps
-from app.lib.logging import get_logger
 from app.services import poc as poc_svc
 
 from .models import (
+    Allocation,
     Sponsor,
     SponsorCapabilityIndex,
     SponsorHistory,
@@ -29,7 +32,7 @@ from .models import (
 # Wrappers & Helpers
 # -----------------
 
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
 
 # History sections (these labels are part of our own internal structure;
 # the *allowed values* within those sections come from Board policy.)
@@ -131,6 +134,30 @@ def _flatten_caps_payload(
                 raise ValueError("invalid capability payload value")
 
     return flat
+
+
+def get_allocation_by_ulid(allocation_ulid: str) -> Allocation:
+    """
+    Slice-local helper to look up an Allocation by ULID.
+
+    The Extensions contract (sponsors_v2.allocation_spend) calls this
+    so it doesn't have to reach into the Sponsors tables directly.
+    """
+    if not allocation_ulid:
+        raise ValueError("allocation_ulid is required")
+
+    row = db.session.execute(
+        select(Allocation).where(Allocation.ulid == allocation_ulid)
+    ).scalar_one_or_none()
+    if not row:
+        raise ValueError(f"allocation {allocation_ulid} not found")
+
+    return row
+
+
+# -----------------
+# Validate Caps
+# -----------------
 
 
 def _validate_caps(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -639,6 +666,174 @@ def _latest_pledges(sponsor_ulid: str) -> Dict[str, dict]:
     return json.loads(h.data_json) if h else {}
 
 
+# -----------------
+# Prospect Realizations
+# -----------------
+
+PROSPECT_REAL_SECTION = "sponsor:prospect_realization:v1"
+
+
+def _latest_prospect_realizations(sponsor_ulid: str) -> dict:
+    """
+    Load the latest Funding Prospect realization snapshot for this sponsor.
+
+    Shape (data_json):
+        {
+          "<prospect_ulid>": {
+            "realized_total_cents": int,
+            "entries": [
+              {
+                "amount_cents": int,
+                "happened_at_utc": str,
+                "journal_ulid": str | None,
+                "source": str | None,
+              },
+              ...
+            ],
+          },
+          ...
+        }
+    """
+    h = (
+        db.session.query(SponsorHistory)
+        .filter_by(sponsor_ulid=sponsor_ulid, section=PROSPECT_REAL_SECTION)
+        .order_by(desc(SponsorHistory.version))
+        .first()
+    )
+    return json.loads(h.data_json) if h else {}
+
+
+def record_prospect_realization(
+    *,
+    sponsor_ulid: str,
+    prospect_ulid: str,
+    amount_cents: int,
+    request_id: str,
+    actor_ulid: Optional[str],
+    journal_ulid: Optional[str] = None,
+    source: Optional[str] = None,
+    happened_at_utc: Optional[str] = None,
+) -> dict:
+    """
+    Record realized income against a Sponsor Funding Prospect / Pledge.
+
+    This function does **not** move money and does not touch Finance tables.
+    It is purely CRM bookkeeping on the Sponsors side:
+
+      - Validates sponsor exists.
+      - (Optionally) sanity-checks that prospect_ulid matches an existing pledge.
+      - Appends a realization entry into SponsorHistory (prospect section).
+      - Recomputes realized_total_cents for that prospect.
+      - Emits a sponsors.prospect.realization event.
+
+    The expectation is that callers will:
+
+      1) Log the inbound donation in Finance via finance_v2.log_donation(...).
+      2) Call this function with the same sponsor_ulid / prospect_ulid /
+         amount_cents and (optionally) the Finance journal_ulid.
+    """
+    _ensure_reqid(request_id)
+
+    # 1) Validate sponsor
+    s = db.session.get(Sponsor, sponsor_ulid)
+    if not s:
+        raise ValueError("sponsor not found")
+
+    # 2) Basic amount validation
+    if not isinstance(amount_cents, int):
+        raise ValueError("amount_cents must be an int")
+    if amount_cents <= 0:
+        raise ValueError("amount_cents must be > 0")
+
+    # 3) Optional pledge sanity check: if we have a pledge index row, ensure it
+    #    belongs to this sponsor. If not found, we still allow the realization.
+    pledge_row = (
+        db.session.query(SponsorPledgeIndex)
+        .filter_by(pledge_ulid=prospect_ulid)
+        .first()
+    )
+    if pledge_row and pledge_row.sponsor_ulid != sponsor_ulid:
+        raise ValueError("prospect/pledge does not belong to sponsor")
+
+    as_of = happened_at_utc or now_iso8601_ms()
+
+    # 4) Load latest snapshot and append realization
+    latest = _latest_prospect_realizations(sponsor_ulid)
+    merged = {k: dict(v) for k, v in latest.items()}
+
+    record = dict(merged.get(prospect_ulid) or {})
+    total = int(record.get("realized_total_cents") or 0)
+    entries = list(record.get("entries") or [])
+
+    entry = {
+        "amount_cents": int(amount_cents),
+        "happened_at_utc": as_of,
+        "journal_ulid": journal_ulid,
+        "source": source,
+    }
+    entries.append(entry)
+    total += int(amount_cents)
+
+    record["realized_total_cents"] = total
+    record["entries"] = entries
+    merged[prospect_ulid] = record
+
+    changed = stable_dumps(merged) != stable_dumps(latest)
+    now = now_iso8601_ms()
+
+    if not changed:
+        # Nothing mutated; still touch sponsor for freshness.
+        s.last_touch_utc = now
+        db.session.commit()
+        return {
+            "sponsor_ulid": sponsor_ulid,
+            "prospect_ulid": prospect_ulid,
+            "realized_total_cents": total,
+            "last_amount_cents": int(amount_cents),
+            "history_ulid": None,
+        }
+
+    ver = _next_version(sponsor_ulid, PROSPECT_REAL_SECTION)
+    hist = SponsorHistory(
+        sponsor_ulid=sponsor_ulid,
+        section=PROSPECT_REAL_SECTION,
+        version=ver,
+        data_json=stable_dumps(merged),
+        created_by_actor=actor_ulid,
+    )
+    db.session.add(hist)
+
+    s.last_touch_utc = now
+    db.session.commit()
+
+    # Emit a Sponsors-side CRM event (no money moves here)
+    event_bus.emit(
+        domain="sponsors",
+        operation="prospect.realization",
+        actor_ulid=actor_ulid,
+        target_ulid=sponsor_ulid,
+        request_id=request_id,
+        happened_at_utc=now_iso8601_ms(),
+        refs={
+            "prospect_ulid": prospect_ulid,
+            "history_ulid": hist.ulid,
+            "journal_ulid": journal_ulid,
+        },
+        changed={
+            "amount_cents": int(amount_cents),
+            "realized_total_cents": total,
+        },
+    )
+
+    return {
+        "sponsor_ulid": sponsor_ulid,
+        "prospect_ulid": prospect_ulid,
+        "realized_total_cents": total,
+        "last_amount_cents": int(amount_cents),
+        "history_ulid": hist.ulid,
+    }
+
+
 def _validate_pledge_payload(p: dict) -> dict:
     """
     Normalise and validate a pledge payload against Board policy.
@@ -850,7 +1045,113 @@ def set_pledge_status(
     )
 
 
-# ---------------- views/search ----------------
+# -----------------
+# FLOW: allocation spend → finance journal
+# -----------------
+
+
+def spend_allocation(
+    *,
+    allocation_ulid: str,
+    amount_cents: int,
+    request_id: str,
+    actor_ulid: str | None = None,
+    category: str | None = None,
+    vendor: str | None = None,
+    occurred_on: str | None = None,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """
+    Spend against a Sponsor Allocation, posting an expense to Finance and
+    emitting a ledger event.
+
+    This is real wiring:
+      - Looks up the Allocation row.
+      - Builds a Finance expense payload (fund + project).
+      - Calls finance_v2.log_expense (journal entry).
+      - Emits sponsors.allocation.spent into the Ledger.
+
+    Policy checks (caps, status, RBAC spending authority) can layer on
+    later, but this function should never be a stub.
+    """
+    as_of = occurred_on or now_iso8601_ms()
+
+    # 1) Load the Allocation row (slice owns the SQL)
+    alloc = db.session.execute(
+        select(Allocation).where(Allocation.ulid == allocation_ulid)
+    ).scalar_one_or_none()
+    if not alloc:
+        raise LookupError(f"allocation {allocation_ulid} not found")
+
+    # FIXME: align these attribute names to your real model
+    fund_id = alloc.fund_ulid  # finance_fund.ulid
+    project_id = alloc.project_ulid  # calendar.project_ulid
+    sponsor_ulid = alloc.sponsor_ulid  # sponsor_allocation.ulid
+
+    if amount_cents <= 0:
+        raise ValueError("amount_cents must be > 0")
+
+    # 2) Build Finance expense payload
+    payload = {
+        "fund_id": fund_id,
+        "project_id": project_id,
+        "occurred_on": as_of,
+        "vendor": vendor or "allocation-spend",
+        "amount_cents": int(amount_cents),
+        "category": category or "sponsor_allocation",
+        # Optional: tie back to this allocation in Finance
+        "external_ref": allocation_ulid,
+        "memo": f"Sponsor allocation {allocation_ulid} spend",
+    }
+
+    # 3) Call Finance contract: real journal entry
+    expense = finance_v2.log_expense(payload, dry_run=dry_run)
+
+    # 4) (Optional but recommended) update allocation totals / status
+    # FIXME: match your real allocation fields here
+    if not dry_run:
+        if hasattr(alloc, "spent_cents"):
+            alloc.spent_cents = int(getattr(alloc, "spent_cents") or 0) + int(
+                amount_cents
+            )
+        db.session.add(alloc)
+        db.session.commit()
+
+        # 5) Emit Ledger spine
+        event_bus.emit(
+            domain="sponsors",
+            operation="allocation.spent",
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+            target_ulid=sponsor_ulid,
+            refs={
+                "allocation_ulid": allocation_ulid,
+                "fund_id": fund_id,
+                "project_id": project_id,
+                "journal_id": expense.id,
+            },
+            changed={"amount_cents": int(amount_cents)},
+            meta={
+                "category": expense.category,
+                "occurred_on": expense.occurred_on,
+            },
+            happened_at_utc=as_of,
+            chain_key="finance",
+        )
+
+    return {
+        "allocation_ulid": allocation_ulid,
+        "amount_cents": int(amount_cents),
+        "expense_id": expense.id,
+        "fund_id": fund_id,
+        "project_id": project_id,
+        "dry_run": bool(dry_run),
+    }
+
+
+# -----------------
+# views/search
+# -----------------
 
 
 def sponsor_view(sponsor_ulid: str) -> Optional[dict]:

@@ -1,0 +1,76 @@
+{
+  "project": [
+    { "key": "operations", "description": "general office operations & supplies" },
+    { "key": "overhead", "description": "recurring costs, D&O ins, lease, utilities, phone service, web hosting" },
+    { "key": "travel", "description": "travel & per diem costs" },
+    { "key": "frieght", "description": shipping & frieght costs" },
+    { "key": "solicitation", "description": "fund raising costs, printing, envelops, postage"},
+    { "key": "recruitment", "description": "volunteer staff recruitment" },
+    { "key": "fund_raising", "description": "general fund raising event" },
+    { "key": "sponsor_recognition", "description": "sponsor recognition swag" },
+    { "key": "lateral", "description": "donation to other non-profit" },
+    { "key": "outreach", "description": "County-wide homeless outreach" },
+    { "key": "stand_down", "description": "annual Stand Down event" },
+    { "key": "memorial_ride", "description": "Rick Rice Memorial Ride" },
+    { "key": "veterans_ride", "description": "Frank Parker Veterans Ride" }
+    { "key": "label", "description": "verbiage" },
+  ]
+}
+}
+{
+  "fund_archetypes": [
+    { "key": "general_unrestricted", "restriction": "unrestricted" },
+    { "key": "grant_advance", "restriction": "temporarily_restricted" },
+    { "key": "grant_reimbursement", "restriction": "temporarily_restricted" },
+    { "key": "vet_only", "restriction": "temporarily_restricted" },
+    { "key": "local_only", "restriction": "temporarily_restricted" },
+    { "key": "local_vet_only", "restriction": "temporarily_restricted" },
+    { "key": "inkind_tracking", "restriction": "unrestricted" }
+  ]
+}
+{
+  "flags": [
+    { "key": "inkind", "description": "Non-cash in-kind donation" },
+    { "key": "reimbursable", "description": "Eligible for reimbursement from a sponsor" },
+    { "key": "grant_elks_freedom", "description": "Elks Freedom Grant tracking" },
+    { "key": "label", "description": "verbiage" },
+  ]
+}
+
+
+class Budget(...):
+    ulid             # ULIDPK
+    project_ulid     # which project
+    fund_ulid        # which bucket
+    period_label     # e.g. "FY2025" or "2025-07"
+    amount_cents     # planned or cap amount
+    kind             # "plan" or "cap" (start with "cap")
+    source           # "grant:ELKS_FREEDOM" | "board" | "donor:JOE_SNUFFY"
+
+
+Budget (estimated)        
+        
+fund  project Alloted Return  Source
+general   operations  $1,000.00 $0.00 
+general   overhead  $3,000.00 $0.00 
+general   travel  $250.00 $0.00 
+general   frieght $100.00 $0.00 
+general   solicitation  $500.00 $1,000.00 
+general   recruitment $100.00 $0.00 
+general   fund_raising  $500.00 $7,500.00 (Kearny 5K, Akin 2K, LWCC .5K)
+general   sponsor_recognition $500.00 $0.00 
+general   lateral transfer  $1,200.00 $0.00 (Wreaths Across America 200, OTM 1K)
+local_vet_only    outreach  $500.00 $0.00 
+grant_advance   stand_down_ops  $1,000.00 $1,000.00 Elks Grant 2k
+grant_advance   stand_down_fac  $1,000.00 $1,000.00 Elks Grant 2k
+inkind_tracking   Stand_down_food $2,000.00 $1,400.00 Sutter Lakeside in-kind food donation 1.3K
+inkind_tracking   memorial_ride $1,500.00 $1,000.00 Door prize sponsorship comp’s 1.5K
+match_funds   memorial_ride $500.00 $1,000.00 fac rent fund match
+general   memorial_ride $250.00 $1,000.00 rider registration fee
+inkind_tracking   veterans_ride $1,500.00 $1,000.00 Door prize sponsorship comp’s 1.5K
+match_funds   veterans_ride $500.00 $1,000.00 fac rent fund match
+general   veterans_ride $250.00 $1,000.00 rider registration fee
+        
+    $15,400.00  $15,900.00  
+        
+    $500.00   
