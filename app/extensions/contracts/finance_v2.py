@@ -93,7 +93,6 @@ def _require_int_ge(name: str, value: Any, minval: int = 0) -> int:
 # -----------------
 
 
-@dataclass
 class DonationDTO(TypedDict):
     """PII-free summary of a monetary donation journaled in Finance.
 
@@ -127,7 +126,6 @@ class DonationDTO(TypedDict):
     flags: List[str] = None
 
 
-@dataclass
 class FundDTO(TypedDict):
     id: str
     name: str
@@ -137,7 +135,6 @@ class FundDTO(TypedDict):
     balance_cents: int = 0
 
 
-@dataclass
 class GrantDTO(TypedDict):
     id: str
     fund_id: str
@@ -151,7 +148,6 @@ class GrantDTO(TypedDict):
     match_required_cents: int = 0
 
 
-@dataclass
 class ProjectDTO(TypedDict):
     id: str
     name: str
@@ -161,7 +157,6 @@ class ProjectDTO(TypedDict):
     is_active: bool = True
 
 
-@dataclass
 class BudgetDTO(TypedDict):
     id: str
     fund_id: str
@@ -171,7 +166,6 @@ class BudgetDTO(TypedDict):
     amount_cents: int
 
 
-@dataclass
 class ReceiptDTO(TypedDict):
     id: str
     fund_id: str
@@ -181,12 +175,11 @@ class ReceiptDTO(TypedDict):
     instrument: Optional[str] = None
 
 
-@dataclass
 class ExpenseDTO(TypedDict):
     id: str
     fund_id: str
     project_id: str
-    occurred_on: str
+    happened_at_utc: str
     vendor: str
     amount_cents: int
     category: str
@@ -194,7 +187,6 @@ class ExpenseDTO(TypedDict):
     flags: List[str] = None
 
 
-@dataclass
 class ReimbursementDTO(TypedDict):
     id: str
     grant_id: str
@@ -206,7 +198,6 @@ class ReimbursementDTO(TypedDict):
 
 
 # Reports
-@dataclass
 class ActivitiesReportDTO(TypedDict):
     period: str
     by_restriction: Dict[
@@ -220,7 +211,6 @@ class ActivitiesReportDTO(TypedDict):
     ]  # project_id -> {'name':..., 'revenue_cents':..., 'expense_cents':...}
 
 
-@dataclass
 class ExpensePreviewDTO(TypedDict):
     """
     PII-free preview of a proposed expense.
@@ -415,7 +405,7 @@ def log_expense(
     *,
     fund_id: str,
     project_id: str,
-    occurred_on: str,
+    happened_at_utc: str,
     vendor: str,
     amount_cents: int,
     category: str,
@@ -438,7 +428,7 @@ def log_expense(
     try:
         fund_id = _require_ulid("fund_id", fund_id)
         project_id = _require_ulid("project_id", project_id)
-        occurred_on = _require_str("occurred_on", occurred_on)
+        happened_at_utc = _require_str("happened_at_utc", happened_at_utc)
         vendor = _require_str("vendor", vendor)
         category = _require_str("category", category)
         amount_cents = _require_int_ge("amount_cents", amount_cents, minval=1)
@@ -448,7 +438,7 @@ def log_expense(
         payload: dict = {
             "fund_id": fund_id,
             "project_id": project_id,
-            "occurred_on": occurred_on,
+            "happened_at_utc": happened_at_utc,
             "vendor": vendor,
             "category": category,
             "amount_cents": amount_cents,
@@ -504,6 +494,7 @@ def create_fund(
     code: str,
     name: str,
     archetype_key: str,
+    restriction_type: str,
     starts_on: str | None = None,
     expires_on: str | None = None,
     actor_ulid: str,
@@ -520,18 +511,24 @@ def create_fund(
         code = _require_str("code", code)
         name = _require_str("name", name)
         archetype_key = _require_str("archetype_key", archetype_key)
+        restriction_type = _require_str("restriction_type", restriction_type)
+        actor_ulid = _require_ulid("actor_ulid", actor_ulid)
+        request_id = _require_str("request_id", request_id)
 
         from app.slices.finance import services_funds as svc
 
-        return svc.create_fund(
-            code=code,
-            name=name,
-            archetype_key=archetype_key,
-            starts_on=starts_on,
-            expires_on=expires_on,
-            actor_ulid=actor_ulid,
-            request_id=request_id,
-        )
+        payload: dict = {
+            "code": code,
+            "name": name,
+            "archetype_key": archetype_key,
+            "restriction_type": restriction_type,
+            "starts_on": starts_on,
+            "expires_on": expires_on,
+            "actor_ulid": actor_ulid,
+            "request_id": request_id,
+        }
+        return svc.create_fund(payload)
+
     except Exception as exc:
         raise _as_contract_error(where, exc)
 

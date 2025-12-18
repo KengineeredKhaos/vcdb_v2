@@ -133,9 +133,28 @@ def set_period_status(*, period_key: str, status: str) -> None:
 # -----------------
 
 
-def create_fund(payload: dict) -> FundDTO:
+def create_fund(
+    payload: dict | None = None,
+    *,
+    code: str | None = None,
+    name: str | None = None,
+    archetype_key: str | None = None,
+    restriction_type: str | None = None,
+    starts_on: str | None = None,
+    expires_on: str | None = None,
+    active: bool = True,
+    actor_ulid: str | None = None,
+    request_id: str | None = None,
+) -> FundDTO:
     """
     Slice implementation for finance_v2.create_fund(...).
+
+    Canonical input is (code, name, archetype_key).
+    We derive restriction_type from Governance policy_funding.json
+    fund_archetypes[].
+
+    Back-compat: if callers still pass payload with restriction_type,
+    we accept it.
 
     This helper creates or updates a Fund "bucket" that represents a pot
     of money with a particular restriction type (unrestricted, temporary,
@@ -178,19 +197,70 @@ def create_fund(payload: dict) -> FundDTO:
             initialised to 0. (Balance computation is handled by report
             helpers, not this function.)
     """
-    # ---- Extract and validate fields from payload ----
-    code = (payload.get("code") or "").strip()
-    name = (payload.get("name") or "").strip()
-    restriction_type = (payload.get("restriction_type") or "").strip()
-    active = bool(payload.get("active", True))
+    # ---- Accept legacy payload dict OR keyword args ----
+    if payload is not None:
+        if code is None:
+            code = payload.get("code")
+        if name is None:
+            name = payload.get("name")
+        if archetype_key is None:
+            archetype_key = payload.get("archetype_key")
+        if restriction_type is None:
+            restriction_type = payload.get("restriction_type")
+        if starts_on is None:
+            starts_on = payload.get("starts_on")
+        if expires_on is None:
+            expires_on = payload.get("expires_on")
+        active = bool(payload.get("active", active))
+        if actor_ulid is None:
+            actor_ulid = payload.get("actor_ulid")
+        if request_id is None:
+            request_id = payload.get("request_id")
+
+    code = (code or "").strip()
+    name = (name or "").strip()
+    archetype_key = (archetype_key or "").strip()
+    restriction_type = (restriction_type or "").strip()
 
     if not code:
         raise ValueError("code is required")
     if not name:
         raise ValueError("name is required")
 
-    # Map external restriction_type -> internal Fund.restriction
-    # Fund.restriction uses a short code: 'unrestricted' | 'temp' | 'perm'
+    # ---- Map archetype_key -> restriction_type using policy_funding.json ----
+    if archetype_key:
+        from pathlib import Path
+        import json
+
+        policy_path = (
+            Path(__file__).resolve().parents[1]
+            / "governance"
+            / "data"
+            / "policy_funding.json"
+        )
+        try:
+            data = json.loads(policy_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise ValueError(
+                f"unable to load policy_funding.json at {policy_path}"
+            ) from exc
+
+        archetypes = {
+            a.get("key"): a.get("restriction")
+            for a in (data.get("fund_archetypes") or [])
+            if isinstance(a, dict)
+        }
+        restriction_from_policy = archetypes.get(archetype_key)
+        if not restriction_from_policy:
+            raise ValueError(f"unknown archetype_key: {archetype_key!r}")
+        restriction_type = str(restriction_from_policy).strip()
+
+    if not restriction_type:
+        raise ValueError(
+            "must provide archetype_key (preferred) or restriction_type (legacy)"
+        )
+
+    # ---- External restriction_type -> internal Fund.restriction ----
     mapping = {
         "unrestricted": "unrestricted",
         "temporarily_restricted": "temp",
@@ -199,42 +269,37 @@ def create_fund(payload: dict) -> FundDTO:
     if restriction_type not in mapping:
         raise ValueError(
             "restriction_type must be one of: "
-            "'unrestricted', 'temporarily_restricted', "
-            "'permanently_restricted'"
+            "'unrestricted', 'temporarily_restricted', 'permanently_restricted'"
         )
     restriction_internal = mapping[restriction_type]
 
-    # ---- Ensure Fund row exists (idempotent upsert) ----
-    # This reuses the lower-level helper that enforces the internal
-    # restriction codes and handles re-activation.
-    fund_ulid = services_journal.ensure_fund(
-        code=code,
-        name=name,
-        restriction=restriction_internal,
-    )
-
-    fund = db.session.get(Fund, fund_ulid)
-    if not fund:
-        # Extremely unlikely if ensure_fund succeeded; treat as a hard error.
-        raise LookupError(
-            f"failed to load Fund after ensure_fund for code {code!r}"
+    # ---- Upsert by Fund.code ----
+    fund = db.session.execute(
+        select(Fund).where(Fund.code == code)
+    ).scalar_one_or_none()
+    if fund is None:
+        fund = Fund(
+            code=code,
+            name=name,
+            restriction=restriction_internal,
+            active=bool(active),
         )
+        db.session.add(fund)
+    else:
+        fund.name = name
+        fund.restriction = restriction_internal
+        fund.active = bool(active)
 
-    # Honour explicit 'active' flag if caller provided False.
-    if fund.active != active:
-        fund.active = active
-        db.session.commit()
+    db.session.commit()
 
-    # ---- Build DTO ----
     dto = FundDTO()
     dto.id = fund.ulid
     dto.name = fund.name
     dto.restriction_type = restriction_type
-    dto.starts_on = None
-    dto.expires_on = None
-    dto.balance_cents = 0  # actual balance is computed by reporting helpers
+    dto.starts_on = starts_on
+    dto.expires_on = expires_on
+    dto.balance_cents = 0
 
-    # Emit a generic event so Ledger / observers can track configuration changes.
     event_bus.emit(
         domain="finance",
         operation="fund.upserted",
@@ -242,8 +307,11 @@ def create_fund(payload: dict) -> FundDTO:
         entity_ulid=fund.ulid,
         meta={
             "code": fund.code,
+            "archetype_key": (archetype_key or None),
             "restriction_type": restriction_type,
             "active": fund.active,
+            "actor_ulid": actor_ulid,
+            "request_id": request_id,
         },
     )
 

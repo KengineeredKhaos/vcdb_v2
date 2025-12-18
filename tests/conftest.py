@@ -30,6 +30,15 @@ def app() -> Flask:
     )
     os.environ.setdefault("VCDB_ENV", "testing")
 
+    # Start each pytest session with a fresh file DB (avoids stale schema/data)
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        p = test_db_path + suffix
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+
     flask_app = create_app("config.TestConfig")
     # Force it so tests & app agree:
     flask_app.config["SQLALCHEMY_DATABASE_URI"] = os.environ[
@@ -52,7 +61,7 @@ def app_ctx(app: Flask):
         ctx.pop()
 
 
-# --- Engine + DB migration once per session -----------------------------------
+# --- Engine + test DB build once per session -------------------------------
 
 
 @pytest.fixture(scope="session")
@@ -74,19 +83,16 @@ def engine(app_ctx) -> Engine:  # depends on app_ctx so current_app is present
 
 
 @pytest.fixture(scope="session", autouse=True)
-def migrate_once(app_ctx, engine):
+def schema_once(app_ctx):
     """
-    Run Alembic upgrade exactly once for the session.
+    Create schema directly from SQLAlchemy models (no Alembic).
     """
-    from flask_migrate import upgrade as alembic_upgrade
+    # Ensure at least the models you test against are imported so metadata is populated.
+    # (Your smoke test imports Fund, but this makes it explicit and future-proof.)
+    from app.slices.finance import models as _finance_models  # noqa: F401
 
-    # Create all tables via Alembic migration
-    alembic_upgrade()
-
-    # Optional: sanity print to help debugging
-    from sqlalchemy import inspect
-
-    print("[TEST TABLES] first 10:", inspect(engine).get_table_names()[:10])
+    db.drop_all()
+    db.create_all()
 
 
 # --- Function-scoped transactional safety nets --------------------------------
@@ -95,49 +101,42 @@ def migrate_once(app_ctx, engine):
 @pytest.fixture(autouse=True)
 def _db_session_per_test(app_ctx, engine):
     """
-    For each test, run all ORM work inside a single DB transaction that is rolled
-    back at the end of the test.
-
-    Pattern:
-        connection = engine.connect()
-        transaction = connection.begin()
-        session = db.create_scoped_session(bind=connection)
-        db.session = session
-        yield
-        rollback + close
-
-    Effects:
-        - Tests can freely use `db.session.add/commit/flush` without worrying
-          about nesting `begin()` calls.
-        - Any data written during a test is rolled back when the test finishes.
-        - The underlying schema is managed once per session via Alembic in
-          the `migrate_once` fixture.
+    Each test runs inside an outer transaction + a SAVEPOINT.
+    Tests may call commit(); we keep isolation by restarting the SAVEPOINT.
     """
-    # 1. Open a dedicated connection for this test
+    from sqlalchemy import event
+
     connection = engine.connect()
-    transaction = connection.begin()
+    outer = connection.begin()
 
-    # 2. Bind a new scoped session to this connection
     options = dict(bind=connection, binds={})
-    session = db.create_scoped_session(options=options)
+    scoped = db.create_scoped_session(options=options)
 
-    # 3. Swap out the global session used by the app
     old_session = db.session
-    db.session = session
+    db.session = scoped
+
+    # Start a nested transaction (SAVEPOINT)
+    sess = scoped()
+    sess.begin_nested()
+
+    @event.listens_for(sess, "after_transaction_end")
+    def _restart_savepoint(session, transaction):
+        # If the SAVEPOINT ended (e.g., via commit), reopen it
+        if transaction.nested and not transaction._parent.nested:
+            session.begin_nested()
 
     try:
-        yield session
+        yield scoped
     finally:
-        # 4. Tear down: remove session, rollback transaction, close connection
         try:
-            session.remove()
+            scoped.remove()
         except Exception:
             pass
 
         db.session = old_session
 
         try:
-            transaction.rollback()
+            outer.rollback()
         except Exception:
             pass
 

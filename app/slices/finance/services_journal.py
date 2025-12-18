@@ -30,8 +30,225 @@ from app.slices.finance.models import (
     StatMetric,
 )
 
+# -----------------
+# Constants
+# Declarations
+# -----------------
+
 ALLOWED_TYPES = {"asset", "liability", "net_assets", "revenue", "expense"}
 ALLOWED_PERIOD_STATUS = {"open", "soft_closed", "closed"}
+
+# -----------------
+# Chart of Accounts
+# & rulebook (MVP)
+# (details below)
+# -----------------
+
+COA: dict[str, dict[str, str]] = {
+    # --------
+    # ASSETS
+    # --------
+    "cash": {
+        "code": "1000",
+        "name": "Cash - Operating Bank",
+        "type": "asset",
+    },
+    "petty_cash": {
+        "code": "1010",
+        "name": "Petty Cash",
+        "type": "asset",
+    },
+    "recv_grants_contrib": {
+        "code": "1100",
+        "name": "Grants & Contributions Receivable",
+        "type": "asset",
+    },
+    "undeposited_funds": {
+        "code": "1200",
+        "name": "Undeposited Funds",
+        "type": "asset",
+    },  # optional but handy
+    "prepaid_expenses": {
+        "code": "1300",
+        "name": "Prepaid Expenses",
+        "type": "asset",
+    },
+    "fixed_assets": {
+        "code": "1500",
+        "name": "Fixed Assets",
+        "type": "asset",
+    },
+    "accum_depr": {
+        "code": "1590",
+        "name": "Accumulated Depreciation",
+        "type": "asset",
+    },  # contra-asset
+    # -------------
+    # LIABILITIES
+    # -------------
+    "accounts_payable": {
+        "code": "2000",
+        "name": "Accounts Payable",
+        "type": "liability",
+    },
+    "accrued_liab": {
+        "code": "2100",
+        "name": "Accrued Liabilities",
+        "type": "liability",
+    },
+    "refundable_adv": {
+        "code": "2200",
+        "name": "Refundable Advances / Deferred Revenue",
+        "type": "liability",
+    },
+    # -----------
+    # NET ASSETS
+    # -----------
+    "na_without_dr": {
+        "code": "3000",
+        "name": "Net Assets Without Donor Restrictions",
+        "type": "net_assets",
+    },
+    "na_with_dr": {
+        "code": "3100",
+        "name": "Net Assets With Donor Restrictions",
+        "type": "net_assets",
+    },
+    # --------
+    # REVENUE
+    # --------
+    "contrib_revenue": {
+        "code": "4000",
+        "name": "Contributions",
+        "type": "revenue",
+    },
+    "grant_revenue": {
+        "code": "4100",
+        "name": "Grant Revenue",
+        "type": "revenue",
+    },
+    "program_rev": {
+        "code": "4200",
+        "name": "Program Service Revenue",
+        "type": "revenue",
+    },
+    "event_rev": {
+        "code": "4300",
+        "name": "Fundraising Event Revenue",
+        "type": "revenue",
+    },
+    "merch_rev": {
+        "code": "4400",
+        "name": "Merchandise Sales",
+        "type": "revenue",
+    },
+    "inkind_revenue": {
+        "code": "4500",
+        "name": "In-Kind Contributions",
+        "type": "revenue",
+    },
+    "other_income": {
+        "code": "4900",
+        "name": "Other Income",
+        "type": "revenue",
+    },
+    # ---------
+    # EXPENSES (NATURAL)
+    # ---------
+    "direct_program_costs": {
+        "code": "5000",
+        "name": "Direct Program Costs",
+        "type": "expense",
+    },
+    "supplies": {
+        "code": "5100",
+        "name": "Supplies",
+        "type": "expense",
+    },
+    "occupancy": {
+        "code": "5200",
+        "name": "Occupancy (Rent & Utilities)",
+        "type": "expense",
+    },
+    "insurance": {
+        "code": "5300",
+        "name": "Insurance",
+        "type": "expense",
+    },
+    "professional_fees": {
+        "code": "5400",
+        "name": "Professional Fees",
+        "type": "expense",
+    },
+    "software_it": {
+        "code": "5500",
+        "name": "Software & IT",
+        "type": "expense",
+    },
+    "postage_shipping": {
+        "code": "5600",
+        "name": "Postage, Freight & Shipping",
+        "type": "expense",
+    },
+    "travel_meetings": {
+        "code": "5700",
+        "name": "Travel & Meetings",
+        "type": "expense",
+    },
+    "market_cultivation": {
+        "code": "5800",
+        "name": "Marketing / Donor & Sponsor Cultivation",
+        "type": "expense",
+    },
+    "event_expense": {
+        "code": "5900",
+        "name": "Event Expenses",
+        "type": "expense",
+    },
+    "bank_merchant_fees": {
+        "code": "5950",
+        "name": "Bank & Merchant Processing Fees",
+        "type": "expense",
+    },
+    "cogs": {"code": "6000", "name": "Cost of Goods Sold", "type": "expense"},
+    "depreciation": {
+        "code": "6100",
+        "name": "Depreciation Expense",
+        "type": "expense",
+    },
+    "other_expense": {
+        "code": "6900",
+        "name": "Other Expense",
+        "type": "expense",
+    },
+}
+
+
+"""
+Always Balanced Pairs:
+assets-liability | revenue-expense
+
+- **1000–1999**: Assets (what we own)
+- **2000–2999**: Liabilities (what we owe)
+- **3000–3999**: Net Assets (what’s left over, unrestricted vs restricted)
+- **4000–4999**: Revenue (money / value coming in)
+- **5000–5999**: Expenses – Natural cost of doing busienss
+- **6000–6999**: Expenses – cost of goods, depreciation, misc
+"""
+
+
+def ensure_default_accounts() -> None:
+    """Ensure the core chart-of-accounts rows exist.
+
+    This is intended for CLI / test setup. It is *not* called on each request.
+    """
+    for spec in COA.values():
+        ensure_account(
+            code=spec["code"],
+            name=spec["name"],
+            type=spec["type"],
+        )
+
 
 """
 Canonical Mental Model:
@@ -120,27 +337,47 @@ def ensure_account(*, code: str, name: str, type: str) -> str:
     return a.ulid
 
 
-def ensure_fund(*, code: str, name: str, restriction: str) -> str:
-    restriction = {
+def ensure_fund(*, code: str, name: str, restriction: str) -> Fund:
+    """
+    Upsert a Fund by its *code* (human-stable key).
+
+    Internally we store restriction as:
+      - unrestricted
+      - temp
+      - perm
+
+    Accept common external spellings and normalize them.
+    """
+    restriction_raw = (restriction or "").strip()
+
+    mapping = {
         "unrestricted": "unrestricted",
         "temp": "temp",
+        "temporary": "temp",
+        "temporarily_restricted": "temp",
+        "perm": "perm",
         "permanent": "perm",
-    }.get(restriction, restriction)
-    if restriction not in {"unrestricted", "temp", "perm"}:
-        raise ValueError("invalid restriction")
-    f = db.session.execute(
+        "permanently_restricted": "perm",
+    }
+    restriction_norm = mapping.get(restriction_raw, restriction_raw)
+
+    if restriction_norm not in {"unrestricted", "temp", "perm"}:
+        raise ValueError(f"invalid restriction type: {restriction_raw}")
+
+    row = db.session.execute(
         select(Fund).where(Fund.code == code)
     ).scalar_one_or_none()
-    if f:
-        if not f.active:
-            f.active = True
-            f.name = name
-            f.restriction = restriction
-        return f.ulid
-    f = Fund(code=code, name=name, restriction=restriction, active=True)
-    db.session.add(f)
-    db.session.commit()
-    return f.ulid
+    if not row:
+        row = Fund(
+            code=code, name=name, restriction=restriction_norm, active=True
+        )
+        db.session.add(row)
+        db.session.flush()
+    else:
+        row.name = name
+        row.restriction = restriction_norm
+        db.session.flush()
+    return row
 
 
 def ensure_project(*, name: str) -> str:
@@ -176,46 +413,88 @@ def post_journal(
     lines: list[dict],
     created_by_actor: Optional[str],
 ) -> str:
-    """Validate and post a balanced USD journal."""
-    if (currency or "").upper() != "USD":
-        raise ValueError("only USD supported")
+    """
+    Write a balanced journal entry (header + lines) and update BalanceMonthly.
+
+    Conventions:
+      - Each line uses signed cents:
+          +amount_cents => debit
+          -amount_cents => credit
+      - Journal must balance: sum(amount_cents) == 0
+      - fund_code + account_code are *codes* (human-stable), not ULIDs.
+    """
+    if not source:
+        raise ValueError("source is required")
+    currency = (currency or "USD").upper()
+    if currency != "USD":
+        raise ValueError("only USD supported for now")
+
+    if not isinstance(lines, list) or not lines:
+        raise ValueError("lines must be a non-empty list")
+
     period_key = _period_key_from(happened_at_utc)
     _ensure_open_period(period_key)
 
-    if not lines or len(lines) < 2:
-        raise ValueError("journal requires at least two lines")
+    # Validate line shape + balance
+    total = 0
+    acct_codes: set[str] = set()
+    fund_codes: set[str] = set()
 
-    # pre-validate refs
-    acct_codes = {l["account_code"] for l in lines}
-    fund_codes = {l["fund_code"] for l in lines}
-    found_accts = {
-        r.code
-        for r in db.session.execute(
-            select(Account).where(Account.code.in_(list(acct_codes)))
-        ).scalars()
-    }
-    if acct_codes - found_accts:
-        raise ValueError(
-            f"unknown accounts: {sorted(acct_codes - found_accts)}"
-        )
-    found_funds = {
-        r.code
-        for r in db.session.execute(
-            select(Fund).where(Fund.code.in_(list(fund_codes)))
-        ).scalars()
-    }
-    if fund_codes - found_funds:
-        raise ValueError(f"unknown funds: {sorted(fund_codes - found_funds)}")
+    for i, l in enumerate(lines, start=1):
+        if not isinstance(l, dict):
+            raise ValueError(f"line {i} must be a dict")
+        acct = l.get("account_code")
+        fund = l.get("fund_code")
+        amt = l.get("amount_cents")
 
-    # balance check
-    total = sum(int(l["amount_cents"]) for l in lines)
+        if not acct or not isinstance(acct, str):
+            raise ValueError(f"line {i}: account_code is required")
+        if not fund or not isinstance(fund, str):
+            raise ValueError(f"line {i}: fund_code is required")
+        if amt is None:
+            raise ValueError(f"line {i}: amount_cents is required")
+
+        try:
+            amt_i = int(amt)
+        except Exception as exc:
+            raise ValueError(f"line {i}: amount_cents must be int") from exc
+
+        if amt_i == 0:
+            raise ValueError(f"line {i}: amount_cents cannot be 0")
+
+        total += amt_i
+        acct_codes.add(acct)
+        fund_codes.add(fund)
+
     if total != 0:
-        raise ValueError("journal not balanced (sum != 0)")
+        raise ValueError("journal not balanced (sum(amount_cents) != 0)")
 
+    # Verify referenced codes exist (fail fast with a helpful message)
+    existing_accts = set(
+        db.session.execute(
+            select(Account.code).where(Account.code.in_(acct_codes))
+        )
+        .scalars()
+        .all()
+    )
+    missing_accts = acct_codes - existing_accts
+    if missing_accts:
+        raise LookupError(f"unknown account_code(s): {sorted(missing_accts)}")
+
+    existing_funds = set(
+        db.session.execute(select(Fund.code).where(Fund.code.in_(fund_codes)))
+        .scalars()
+        .all()
+    )
+    missing_funds = fund_codes - existing_funds
+    if missing_funds:
+        raise LookupError(f"unknown fund_code(s): {sorted(missing_funds)}")
+
+    # Persist journal
     j = Journal(
         source=source,
         external_ref_ulid=external_ref_ulid,
-        currency="USD",
+        currency=currency,
         period_key=period_key,
         happened_at_utc=happened_at_utc,
         memo=(memo or None),
@@ -223,10 +502,9 @@ def post_journal(
         posted_at_utc=now_iso8601_ms(),
     )
     db.session.add(j)
-    db.session.flush()  # to get j.ulid
+    db.session.flush()  # assign j.ulid
 
-    seq = 1
-    for l in lines:
+    for seq, l in enumerate(lines, start=1):
         db.session.add(
             JournalLine(
                 journal_ulid=j.ulid,
@@ -239,23 +517,28 @@ def post_journal(
                 period_key=period_key,
             )
         )
-        seq += 1
 
-    # update balances projection incrementally
     _apply_to_balances(lines=lines, period_key=period_key)
-
     db.session.commit()
 
+    # Emit cross-slice audit (NOT the Finance journal)
     event_bus.emit(
         domain="finance",
         operation="journal.posted",
         request_id=j.ulid,
         actor_ulid=created_by_actor,
         target_ulid=j.ulid,
-        happened_at_utc=j.posted_at_utc,
-        refs={"lines_count": len(lines), "period_key": period_key},
+        happened_at_utc=now_iso8601_ms(),
+        refs={
+            "period_key": period_key,
+            "source": source,
+            "external_ref_ulid": external_ref_ulid,
+            "line_count": len(lines),
+            "fund_codes": sorted(fund_codes),
+        },
         chain_key="finance.journal",
     )
+
     return j.ulid
 
 
@@ -307,13 +590,52 @@ def reverse_journal(
 
 
 # -----------------
-# Log Expense
-# Keep this here
+# Expense Rule Helper
 # -----------------
 
 
+def _select_expense_accounts(*, category: str) -> tuple[str, str]:
+    """Decide which accounts to use for an expense.
+
+    MVP rule:
+      - Look at the category and map to a COA key (natural expense).
+      - Default to direct_program_costs if no match.
+      - Always credit cash.
+    """
+    cat = (category or "").strip()
+
+    # Fallback must be a real COA key
+    if cat is None:
+        expense_key = "direct_program_costs"
+    else:
+        expense_acct = cat
+
+    try:
+        expense_acct = COA[expense_key]["code"]
+    except KeyError as exc:
+        raise KeyError(
+            f"Unknown expense COA key {expense_key!r} for category {category!r}. "
+            f"select a proper category for the expense."
+        ) from exc
+
+    cash_acct = COA["cash"]["code"]
+    return expense_acct, cash_acct
+
+
+# -----------------
+# Log Expense
+# -----------------
+
+
+# ---- Required fields ----
 def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:
     """Slice implementation for finance_v2.log_expense(...).
+
+    Notes:
+      - This writes Finance facts only (Journal rows). It assumes any
+        governance/budget checks already happened upstream.
+      - `external_ref_ulid` is the canonical payload key.
+        (We also accept legacy `external_ref_id` for safety.)
 
     IMPORTANT:
       This function assumes any Governance / budget / policy checks have
@@ -323,16 +645,21 @@ def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:
       is to persist the approved expense as Finance facts (Journal rows).
 
     MVP behaviour:
-      * require fund_id, project_id, occurred_on, vendor, amount_cents, category
-      * post a balanced Journal entry (expense vs cash/bank)
-      * return an ExpenseDTO summarising the entry
+      * require fund_id, project_id, happened_at_utc, vendor, category, amount_cents
+      * choose an expense account based on `category`
+      * credit Operating Cash (1000) by default
+      * post a balanced Journal entry and return an ExpenseDTO
+
+    Callers MAY override:
+      * `bank_account_code` (e.g. petty cash 1010)
+      * `expense_account_code` (explicit COA code)
 
     Expected payload keys (matching finance_v2 contract docstring):
 
       Required:
         - fund_id:      ULID of fin_fund
         - project_id:   ULID of calendar project (or similar “bucket”)
-        - occurred_on:  ISO-8601 date or datetime string
+        - happened_at_utc:  ISO-8601 date or datetime string
         - vendor:       free-text payee (or 'N/A')
         - amount_cents: integer cents (> 0)
         - category:     free-text category label
@@ -353,16 +680,16 @@ def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:
     Returns:
         ExpenseDTO: PII-free summary of the (real or simulated) expense.
     """
+
     # ---- Required fields ----
     try:
         fund_id = payload["fund_id"]
         project_id = payload["project_id"]
-        occurred_on = payload["occurred_on"]
-        vendor = (payload.get("vendor") or "").strip()
-        category = (payload.get("category") or "").strip()
+        happened_at_utc = payload["happened_at_utc"]
+        vendor = payload["vendor"]
+        category = payload["category"]
         amount_raw = payload["amount_cents"]
     except KeyError as exc:
-        # Let the contract layer classify this as bad_argument via _as_contract_error
         raise ValueError(f"missing required field: {exc.args[0]}") from exc
 
     try:
@@ -375,32 +702,39 @@ def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:
 
     fund = db.session.get(Fund, fund_id)
     if not fund:
-        # Let the contract layer classify this as not_found via _as_contract_error
         raise LookupError(f"unknown fund_id {fund_id!r}")
 
-    # Normalise timestamp. post_journal expects an ISO-8601 string and will
-    # derive any period information from it, so we pass this through unchanged.
-    happened_at_utc = occurred_on
+    happened_at_utc = str(happened_at_utc)
 
     # ---- Optional fields / defaults ----
-    bank_account_code = payload.get("bank_account_code", "1000")  # Cash/bank
-    expense_account_code = payload.get(
-        "expense_account_code", "5200"
-    )  # Supplies/expense
-    memo = payload.get("memo") or (
-        f"{category} — {vendor}" if vendor else category
-    )
-    external_ref_ulid = payload.get("external_ref_id")
-    created_by_actor = payload.get("created_by_actor")
-    source = payload.get("source", "calendar")
+    bank_account_code = payload.get("bank_account_code")
+    expense_account_code = payload.get("expense_account_code")
 
-    # Dry-run: no DB writes, just a DTO that says what would happen
+    if bank_account_code is None or expense_account_code is None:
+        expense_acct, cash_acct = _select_expense_accounts(category=category)
+        if expense_account_code is None:
+            expense_account_code = expense_acct
+        if bank_account_code is None:
+            bank_account_code = cash_acct
+
+    memo = payload.get("memo") or (
+        f"{category} — {vendor}" if vendor else str(category)
+    )
+
+    # Canonical external ref key is external_ref_ulid; accept legacy too.
+    external_ref_ulid = payload.get("external_ref_ulid") or payload.get(
+        "external_ref_id"
+    )
+
+    created_by_actor = payload.get("created_by_actor")
+    source = payload.get("source", "expense")
+
     if dry_run:
         return ExpenseDTO(
             id="DRY-RUN",
             fund_id=fund.ulid,
             project_id=project_id,
-            occurred_on=happened_at_utc,
+            happened_at_utc=happened_at_utc,
             vendor=vendor,
             amount_cents=amount_cents,
             category=category,
@@ -408,9 +742,6 @@ def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:
             flags=["dry_run"],
         )
 
-    # Build balanced journal lines: DR expense, CR cash/bank.
-    # NOTE: post_journal already enforces period & balance rules and updates
-    # BalanceMonthly, so we keep this thin.
     lines = [
         {
             "account_code": expense_account_code,
@@ -429,21 +760,20 @@ def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:
     ]
 
     journal_ulid = post_journal(
-        happened_at_utc=happened_at_utc,
         source=source,
-        description=memo or f"{category} expense",
-        fund_code=fund.code,
-        project_ulid=project_id,
         external_ref_ulid=external_ref_ulid,
-        created_by_actor=created_by_actor,
+        happened_at_utc=happened_at_utc,
+        currency="USD",
+        memo=memo,
         lines=lines,
+        created_by_actor=created_by_actor,
     )
 
     return ExpenseDTO(
         id=journal_ulid,
         fund_id=fund.ulid,
         project_id=project_id,
-        occurred_on=happened_at_utc,
+        happened_at_utc=happened_at_utc,
         vendor=vendor,
         amount_cents=amount_cents,
         category=category,
@@ -453,8 +783,38 @@ def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:
 
 
 # -----------------
+# Donation Rule Helper
+# -----------------
+
+
+def _select_donation_accounts(
+    *, fund: Fund, flags: list[str] | None
+) -> tuple[str, str]:
+    """Decide which accounts to use for a donation.
+
+    - Defaults to DR cash, CR contributions revenue.
+    - If flags include grant-related tags, use grant revenue instead.
+    - If flags include "undeposited", debit Undeposited Funds instead of Cash.
+    - In-kind donations should use record_inkind(), not log_donation().
+    """
+    flag_set = set(flags or [])
+
+    if "inkind" in flag_set:
+        raise ValueError("inkind donations must use record_inkind(...)")
+
+    revenue_key = "contrib_revenue"
+    if "reimbursable" in flag_set or "grant_elks_freedom" in flag_set:
+        revenue_key = "grant_revenue"
+
+    cash_key = "undeposited_funds" if "undeposited" in flag_set else "cash"
+
+    cash_acct = COA[cash_key]["code"]
+    revenue_acct = COA[revenue_key]["code"]
+    return cash_acct, revenue_acct
+
+
+# -----------------
 # Log Donation
-# Keep this here
 # -----------------
 
 
@@ -465,7 +825,13 @@ def log_donation(payload: dict, *, dry_run: bool = False) -> DonationDTO:
       * require sponsor_ulid, fund_id, happened_at_utc, amount_cents
       * post a balanced Journal entry (cash/bank vs revenue)
       * return a DonationDTO summarising the entry
-      * governance checks (fund archetypes, flags, restrictions) can be layered later
+
+    Default account logic:
+      * Debit Operating Cash (1000) unless caller overrides `bank_account_code`.
+      * Credit Contributions – Cash Donations (4100) unless caller overrides
+        `revenue_account_code`. If you later want to distinguish restricted vs
+        unrestricted at the account level, you can swap the default here
+        based on `fund.restriction` or flags.
 
     Expected payload keys (matching finance_v2 contract docstring):
 
@@ -515,15 +881,26 @@ def log_donation(payload: dict, *, dry_run: bool = False) -> DonationDTO:
         raise LookupError(f"unknown fund_id {fund_id!r}")
 
     # ---- Optional fields / defaults ----
-    bank_account_code = payload.get("bank_account_code", "1000")  # Cash/bank
-    revenue_account_code = payload.get(
-        "revenue_account_code", "4100"
-    )  # Contributions
+    flags_list = list(payload.get("flags") or [])
+
+    bank_account_code = payload.get("bank_account_code")
+    revenue_account_code = payload.get("revenue_account_code")
+
+    if bank_account_code is None or revenue_account_code is None:
+        # Let the rulebook choose sensible defaults.
+        cash_acct, rev_acct = _select_donation_accounts(
+            fund=fund,
+            flags=flags_list,
+        )
+        if bank_account_code is None:
+            bank_account_code = cash_acct
+        if revenue_account_code is None:
+            revenue_account_code = rev_acct
+
     memo = payload.get("memo") or "Donation"
     external_ref_ulid = payload.get("external_ref_ulid")
     created_by_actor = payload.get("created_by_actor")
     source = payload.get("source", "sponsor")
-    flags_list = list(payload.get("flags") or [])
 
     # Dry-run: no DB writes, just a DTO that says what would happen
     if dry_run:
@@ -574,7 +951,6 @@ def log_donation(payload: dict, *, dry_run: bool = False) -> DonationDTO:
 
 # -----------------
 # Record inkind Donation
-# Keep this here
 # -----------------
 
 
@@ -583,23 +959,26 @@ def record_inkind(
     happened_at_utc: str,
     fund_code: str,
     amount_cents: int,
-    expense_acct: str = "5200",
-    revenue_acct: str = "4200",
+    expense_acct: str | None = None,
+    revenue_acct: str | None = None,
     memo: Optional[str],
     external_ref_ulid: Optional[str],
     created_by_actor: Optional[str],
     valuation_basis: str,
 ) -> str:
-    """
-    Record in-kind with reliable valuation.
-    DRMO 'no fair value' SHOULD NOT call this.
-    """
     if amount_cents is None or int(amount_cents) <= 0:
         raise ValueError("amount_cents must be > 0")
-    # Minimal validation that valuation_basis token is present;
-    # Governance can define allowed tokens later.
     if not valuation_basis or not str(valuation_basis).strip():
         raise ValueError("valuation_basis required")
+
+    if expense_acct is None:
+        expense_acct = COA["supplies"]["code"]  # donated consumables
+        # or COA["direct_program_costs"]["code"]  program items/consumables
+        # or COA["event_expenses"]["code"]  event-specific donations
+        # or COA["fixed_assets"]["code"]  hard goods/equip/durable assets
+        # or COA["professional_fees"]["code"]  professional services
+    if revenue_acct is None:
+        revenue_acct = COA["inkind_revenue"]["code"]
 
     lines = [
         {
@@ -629,7 +1008,6 @@ def record_inkind(
 # -----------------
 # Record Receipt
 # NEW FUNCTION
-# Keep this here
 # -----------------
 
 
@@ -639,7 +1017,6 @@ def record_receipt():
 
 # -----------------
 # Release Restriction
-# Keep this here
 # -----------------
 
 
@@ -689,7 +1066,6 @@ def release_restriction(
 
 # -----------------
 # Balances Projection
-# Keep this here
 # -----------------
 
 
@@ -705,9 +1081,11 @@ def _apply_to_balances(*, lines: Iterable[dict], period_key: str) -> None:
             select(BalanceMonthly).where(
                 BalanceMonthly.account_code == acct,
                 BalanceMonthly.fund_code == fund,
-                BalanceMonthly.project_ulid.is_(project)
-                if project is None
-                else BalanceMonthly.project_ulid == project,
+                (
+                    BalanceMonthly.project_ulid.is_(project)
+                    if project is None
+                    else BalanceMonthly.project_ulid == project
+                ),
                 BalanceMonthly.period_key == period_key,
             )
         ).scalar_one_or_none()
@@ -733,7 +1111,6 @@ def _apply_to_balances(*, lines: Iterable[dict], period_key: str) -> None:
 
 # -----------------
 # Rebuild Balances
-# Keep this here
 # -----------------
 
 
@@ -792,7 +1169,6 @@ def rebuild_balances(*, period_from: str, period_to: str) -> dict:
 # -----------------
 # statistical metrics
 # (DRMO non-monetary)
-# Keep this here
 # -----------------
 
 
