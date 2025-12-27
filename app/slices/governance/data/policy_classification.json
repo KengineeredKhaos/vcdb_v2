@@ -1,8 +1,0 @@
-{
-  "version": 1,
-  "classifications": {
-    "basic_needs.clothing.top": { "attributes": { "size": ["S","M","L","XL"] } },
-    "housing.sleeping_gear.bag": {}
-  },
-  "sku_code_regex": "^[A-Z]{2}-[A-Z]{2}-[A-Z]{2}-[A-Z*]-[A-Z*]-[A-Z]-\\d{3}$"
-}

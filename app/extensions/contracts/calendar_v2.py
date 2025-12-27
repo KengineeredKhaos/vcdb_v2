@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import typing as _t
-from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, TypedDict
 
 from app.extensions.errors import ContractError
@@ -88,12 +87,15 @@ class ProjectDTO(TypedDict):
     ulid: str
     title: str
     status: str
+    fund_profile_key: str
     phase_code: str | None
-    fund_ulid: str | None
-    fund: dict | None  # FundSummary, PII-free
     owner_ulid: str | None
     created_at_utc: str
     updated_at_utc: str
+
+
+class TaskDTO(TypedDict):
+    pass
 
 
 class CalendarGateDTO(TypedDict):
@@ -107,13 +109,16 @@ class ProjectFundingPlanDTO(TypedDict):
     project_ulid: str
     label: str
     source_kind: str | None
-    fund_archetype_key: str | None
     expected_amount_cents: int | None
     is_in_kind: bool
     expected_sponsor_hint: str | None
     notes: str | None
     created_at_utc: str
     updated_at_utc: str
+
+
+class ProjectBudgetSummaryDTO(TypedDict):
+    pass
 
 
 __schema__ = {
@@ -132,51 +137,23 @@ __schema__ = {
 
 
 def blackout_ok(when_iso: str | None = None) -> CalendarGateDTO:
-    """
-    Contract entry point: ask Calendar whether a given instant
-    is allowed for scheduling (global blackout gate).
-
-    Args:
-        when_iso:
-            ISO-8601 timestamp string (date or datetime). If omitted/None,
-            the Calendar slice will interpret "now" per its own helpers.
-
-    Returns:
-        CalendarGateDTO:
-            - ok: bool
-            - label: short human label (or None)
-            - reason: "ok" | "calendar_blackout" | "calendar_unavailable"
-
-    Raises:
-        ContractError:
-            - code="bad_argument" for malformed timestamps.
-            - code="internal_error" for unexpected failures.
-    """
     where = "calendar_v2.blackout_ok"
-
     try:
-        # Defer all policy/time handling to the slice service.
         from app.slices.calendar import services as svc
 
-        if when_iso is None:
-            # Let the service decide what "now" means; just pass None.
-            blocked = svc.is_blackout(project_ulid="", when_iso="")
-        else:
-            when_iso = when_iso.strip()
-            if not when_iso:
-                raise ValueError("when_iso must be non-empty if provided")
-            blocked = svc.is_blackout(project_ulid="", when_iso=when_iso)
+        when = when_iso.strip() if isinstance(when_iso, str) else None
+        if when == "":
+            raise ValueError("when_iso must be non-empty if provided")
 
-        if blocked:
-            return {
-                "ok": False,
-                "label": "blackout",
-                "reason": "calendar_blackout",
-            }
-
-        return {"ok": True, "label": None, "reason": "ok"}
-
-    except Exception as exc:  # noqa: BLE001 - boundary wrapper
+        blocked = svc.is_blackout(
+            when_iso=when
+        )  # <-- service should accept None
+        return {
+            "ok": not blocked,
+            "label": "blackout" if blocked else None,
+            "reason": "calendar_blackout" if blocked else "ok",
+        }
+    except Exception as exc:
         raise _as_contract_error(where, exc)
 
 
@@ -188,7 +165,7 @@ def blackout_ok(when_iso: str | None = None) -> CalendarGateDTO:
 def create_project(
     *,
     project_title: str,
-    fund_ulid: str | None = None,
+    fund_profile_key: str | None = None,
     owner_ulid: str | None = None,
     phase_code: str | None = None,
     status: str | None = None,
@@ -253,8 +230,6 @@ def create_project(
     where = "calendar_v2.create_project"
     try:
         project_title = _require_str("project_title", project_title)
-        if fund_ulid is not None:
-            fund_ulid = _require_ulid("fund_ulid", fund_ulid)
         if owner_ulid is not None:
             owner_ulid = _require_ulid("owner_ulid", owner_ulid)
         if status is None:
@@ -266,7 +241,7 @@ def create_project(
 
         payload = {
             "project_title": project_title,
-            "fund_ulid": fund_ulid,
+            "fund_profile_key": fund_profile_key,
             "owner_ulid": owner_ulid,
             "phase_code": phase_code,
             "status": status,
@@ -343,9 +318,8 @@ def create_project_funding_plan(
             "request_id": request_id,
         }
 
-        return _t.cast(
-            ProjectFundingPlanDTO,
-            svc.create_project_funding_plan(payload),
+        return svc.create_project_funding_plan(
+            payload, actor_ulid=actor_ulid, request_id=request_id
         )
 
     except Exception as exc:

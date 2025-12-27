@@ -11,7 +11,7 @@ from app.extensions.policies import GOV_DATA, _load_and_cache
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 
-from .models import Project, ProjectFundingPlan, Task
+from .models import Project, ProjectFundingPlan
 
 """Calendar services — business logic lives here.
 Projects, Tasks and Project Budgets orginate here as well.
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     # not actually used in code paths
 
 
-def is_blackout(*, when_iso: str | None) -> bool:
+def is_blackout(project_ulid: str, when_iso: str | None) -> bool:
     pol = _load_and_cache(
         GOV_DATA / "policy_calendar.json",
         "policy_calendar",
@@ -413,11 +413,6 @@ def list_tasks_for_project(project_ulid: str) -> list[dict]:
         .all()
     )
     return [task_view(r.ulid) for r in rows]
-
-
-def list_funding_plans_for_project(project_ulid: str) -> list[dict]:
-    # Contract expects this name.
-    return list_project_funding_plans(project_ulid)
 
 
 # -----------------

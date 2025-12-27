@@ -1,0 +1,176 @@
+{
+  "meta": {
+    "policy_key": "service_taxonomy",
+    "title": "Semantic Clues for Services",
+    "description": "This is the Kitchen Sink of JSON files",
+    "notes": ["Too many to list"],
+    "version": 1,
+    "status": "draft",
+    "effective_on": "2026-01-01",
+    "schema_version": 1
+  },
+  "classifications": {
+    "sku_code_regex": [
+      "^[A-Z]{2}-[A-Z]{2}-[A-Z]{2}-[A-Z*]-[A-Z*]-[A-Z]-\\d{3}$"
+    ],
+    "map": {
+      "basic_needs": {
+        "clothing": {
+          "shirt": {
+            "attributes": {
+              "size": [
+                "S",
+                "M",
+                "L",
+                "XL",
+                "2X",
+                "3x"
+              ]
+            }
+          }
+        },
+        "housing": {
+          "sleeping_gear": {
+            "bag": {},
+            "camp_gear": {}
+          }
+        }
+      }
+    },
+    "resource_capabilities": {
+      "by_domain": {
+        "veterans_affairs": [
+          "federal",
+          "state",
+          "local"
+        ],
+        "quartermaster": [
+          "dmro",
+          "regional_depot",
+          "regional_stand_down",
+          "local_civil_donations",
+          "local_commercial_discounts"
+        ],
+        "events": [
+          "event_coordination",
+          "promotions_print_radio",
+          "promotions_social_media",
+          "artwork_signage_fliers",
+          "facility_rental",
+          "equipment_rental",
+          "food_service",
+          "security_service",
+          "staffing_coordination",
+          "branded_swag"
+        ],
+        "basic_needs": [
+          "food_pantry",
+          "mobile_shower",
+          "shelter_temp_men",
+          "shelter_temp_women_children",
+          "clothing",
+          "barber"
+        ],
+        "health_wellness": [
+          "urgent_care",
+          "hospital",
+          "dental",
+          "vision",
+          "audiology",
+          "mobility_aids",
+          "in_home_health_care",
+          "service_animals"
+        ],
+        "counseling_services": [
+          "employment_counseling",
+          "education_counseling",
+          "behavioral_psychological",
+          "substance_abuse",
+          "domestic_violence",
+          "peer_group",
+          "financial_counseling",
+          "legal_criminal",
+          "legal_civil"
+        ],
+        "housing": [
+          "public_housing_coordination",
+          "rent_assistance",
+          "utilities_assistance",
+          "household_goods",
+          "internet_phone",
+          "childcare_assistance",
+          "handyman_general",
+          "yard_maintenance",
+          "weed_abatement",
+          "junk_trash_removal"
+        ],
+        "transportation": [
+          "public_transit",
+          "ride_share",
+          "medical_transport",
+          "auto_repair"
+        ],
+        "meta": [
+          "unclassified"
+        ]
+      }
+    },
+    "sponsor_capabilities": {
+      "domains": [
+        {
+          "code": "funding",
+          "label": "Monetary funding",
+          "keys": [
+            {
+              "code": "cash",
+              "label": "Dead Presidents",
+              "description": "Private Party Cash or Check"
+            },
+            {
+              "code": "cash_grant",
+              "label": "Cash grant",
+              "description": "Unrestricted or lightly restricted cash awards"
+            },
+            {
+              "code": "restricted_grant",
+              "label": "Restricted grant",
+              "description": "Tied to a specific program or use"
+            }
+          ]
+        },
+        {
+          "code": "in_kind",
+          "label": "In-kind support",
+          "keys": [
+            {
+              "code": "in_kind_goods",
+              "label": "Goods",
+              "description": "text placeholder"
+            },
+            {
+              "code": "in_kind_services",
+              "label": "Services",
+              "description": "text placeholder"
+            }
+          ]
+        },
+        {
+          "code": "meta",
+          "label": "Meta / flags",
+          "keys": [
+            {
+              "code": "unclassified",
+              "label": "Unclassified — requires admin review",
+              "description": "text placeholder"
+            }
+          ]
+        }
+      ],
+      "meta": {
+        "flat_key_prefix": "sponsor.capability",
+        "unclassified_key": "meta.unclassified"
+      }
+    }
+  }
+}
+

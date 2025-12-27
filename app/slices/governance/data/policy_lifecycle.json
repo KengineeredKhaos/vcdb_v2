@@ -1,0 +1,184 @@
+{
+  "meta": {
+    "policy_key": "lifecycle",
+    "title": "Machine State mechanism",
+    "description": "Allowable states and transistion sequence.",
+    "notes": [
+      "Machine state is a picture of the current status of a slice.",
+      "This policy determines what states are allowed and in what",
+      "sequence changes in state are allowed to occur (transitions)."
+    ],
+    "version": 1,
+    "status": "draft",
+    "effective_on": "2026-01-01",
+    "schema_version": 1
+  },
+  "machines": {
+    "logistics": {
+      "item_lifecycle": {
+        "states": [
+          "received",
+          "inspected",
+          "available",
+          "issued",
+          "returned"
+        ],
+        "transitions": {
+          "received": [
+            "inspected"
+          ],
+          "inspected": [
+            "available"
+          ],
+          "available": [
+            "issued"
+          ],
+          "issued": [
+            "returned"
+          ],
+          "returned": [
+            "inspected"
+          ]
+        }
+      }
+    },
+    "resource": {
+      "readiness": [
+        "draft",
+        "review",
+        "active",
+        "suspended"
+      ],
+      "mou_status_allowed": [
+        "none",
+        "pending",
+        "active",
+        "expired",
+        "terminated"
+      ]
+    },
+    "sponsor": {
+      "readiness": {
+        "default": "draft",
+        "statuses": [
+          {
+            "code": "draft",
+            "label": "Draft",
+            "can_issue": false
+          },
+          {
+            "code": "review",
+            "label": "Under review",
+            "can_issue": false
+          },
+          {
+            "code": "active",
+            "label": "Active",
+            "can_issue": true
+          },
+          {
+            "code": "suspended",
+            "label": "Suspended",
+            "can_issue": false
+          }
+        ]
+      },
+      "mou": {
+        "default": "none",
+        "statuses": [
+          {
+            "code": "none",
+            "label": "No MOU",
+            "can_issue": false
+          },
+          {
+            "code": "pending",
+            "label": "MOU pending",
+            "can_issue": false
+          },
+          {
+            "code": "active",
+            "label": "Active MOU",
+            "can_issue": true
+          },
+          {
+            "code": "expired",
+            "label": "Expired MOU",
+            "can_issue": false
+          },
+          {
+            "code": "terminated",
+            "label": "Terminated",
+            "can_issue": false
+          }
+        ]
+      },
+      "pledge": {
+        "statuses": [
+          {
+            "code": "proposed",
+            "label": "Proposed"
+          },
+          {
+            "code": "active",
+            "label": "Active"
+          },
+          {
+            "code": "fulfilled",
+            "label": "Fulfilled"
+          },
+          {
+            "code": "cancelled",
+            "label": "Cancelled"
+          }
+        ]
+      },
+      "transitions": {
+        "readiness": {
+          "draft": [
+            "review",
+            "suspended"
+          ],
+          "review": [
+            "active",
+            "suspended"
+          ],
+          "active": [
+            "suspended"
+          ],
+          "suspended": [
+            "review",
+            "active"
+          ]
+        },
+        "mou": {
+          "none": [
+            "pending"
+          ],
+          "pending": [
+            "active",
+            "none"
+          ],
+          "active": [
+            "expired",
+            "terminated"
+          ],
+          "expired": [
+            "active",
+            "terminated"
+          ]
+        },
+        "pledge": {
+          "proposed": [
+            "active",
+            "cancelled"
+          ],
+          "active": [
+            "fulfilled",
+            "cancelled"
+          ]
+        }
+      }
+    }
+  }
+}

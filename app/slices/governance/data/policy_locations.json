@@ -1,5 +1,15 @@
 {
-  "version": 1,
+  "meta": {
+    "policy_key": "locations",
+    "title": "Storage Location Taxonomy",
+    "description": "Where the hell did I put that damn thing?",
+    "notes": [],
+    "version": 1,
+    "status": "draft",
+    "effective_on": "2026-01-01",
+    "schema_version": 1
+  },
+
   "kinds": ["warehouse", "rackbin", "satellite", "vehicle"],
   "locations": [
     { "code": "MAIN", "kind": "warehouse", "name": "Main Warehouse" },

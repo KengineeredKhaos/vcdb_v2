@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://vcdb.local/schemas/policy_locations.schema.json",
-  "title": "Locations Policy Schema",
-  "description": "Validates policy_locations.json (location kinds, locations list, and code patterns).",
+  "$id": "https://vcdb.local/schemas/policy_customer.schema.json",
+  "title": "Customer Policy Schema",
+  "description": "Validates policy_customer.json (eligibility, needs tiers, verification methods).",
   "type": "object",
   "$defs": {
     "token": {
@@ -111,9 +111,9 @@
   "additionalProperties": false,
   "required": [
     "meta",
-    "kinds",
-    "locations",
-    "patterns"
+    "veteran_verification",
+    "needs_tiers",
+    "eligibility"
   ],
   "properties": {
     "meta": {
@@ -130,7 +130,7 @@
       ],
       "properties": {
         "policy_key": {
-          "const": "locations"
+          "const": "customer"
         },
         "title": {
           "$ref": "#/$defs/singleLine"
@@ -168,44 +168,92 @@
         }
       }
     },
-    "kinds": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "$ref": "#/$defs/token"
-      }
-    },
-    "locations": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "code",
-          "kind",
-          "name"
-        ],
-        "properties": {
-          "code": {
-            "$ref": "#/$defs/singleLine"
-          },
-          "kind": {
+    "veteran_verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "methods"
+      ],
+      "properties": {
+        "methods": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
             "$ref": "#/$defs/token"
-          },
-          "name": {
-            "$ref": "#/$defs/singleLine"
           }
         }
       }
     },
-    "patterns": {
+    "needs_tiers": {
       "type": "object",
-      "description": "Optional regex patterns to validate codes by kind.",
-      "additionalProperties": {
-        "type": "string",
-        "minLength": 1,
-        "pattern": "^[^\\n\\r]+$"
+      "additionalProperties": false,
+      "required": [
+        "tier1",
+        "tier2",
+        "tier3"
+      ],
+      "properties": {
+        "tier1": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/token"
+          }
+        },
+        "tier2": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/token"
+          }
+        },
+        "tier3": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/token"
+          }
+        }
+      }
+    },
+    "eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "defaults",
+        "map"
+      ],
+      "properties": {
+        "defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tier1_min",
+            "tier2_min",
+            "tier3_min"
+          ],
+          "properties": {
+            "tier1_min": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tier2_min": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tier3_min": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "map": {
+          "type": "object",
+          "description": "Maps semantic eligibility qualifiers to slice-owned factor keys (string identifiers).",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\n\\r]+$"
+          }
+        }
       }
     }
   }

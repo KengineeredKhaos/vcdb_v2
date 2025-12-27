@@ -1,0 +1,84 @@
+{
+  "meta": {
+    "policy_key": "finance_controls",
+    "title": "Finance Controls Policy",
+    "description": "Spending authority, caps, and budget periods.",
+    "notes": [
+      "Caps are authoritative; do not duplicate in other policies.",
+      "All values are PII-free; identifiers are ULIDs only."
+    ],
+    "version": 1,
+    "status": "draft",
+    "effective_on": "2026-01-01",
+    "schema_version": 1
+  },
+  "budget": {
+    "periods": [
+      {
+        "period_label": "FY2025",
+        "lines": [
+          {
+            "fund_archetype_key": "grant_advance",
+            "fund_code": "ELKS-FREEDOM-2025",
+            "project_type_key": "stand_down",
+            "project_code": "Stand-Down-2025",
+            "amount_cents": 200000,
+            "source": "grant:ELKS_FREEDOM",
+            "status": "adopted"
+          }
+        ]
+      },
+      {
+        "period_label": "FY2026",
+        "lines": [
+          {
+            "fund_archetype_key": "local_only",
+            "fund_code": "cash",
+            "project_type_key": "operations",
+            "project_code": "office_supplies",
+            "amount_cents": 100000,
+            "source": "unfunded",
+            "status": "unfunded"
+          }
+        ]
+      }
+    ]
+  },
+  "spending": {
+    "staff_cap_cents": 20000,
+    "class_caps": {
+      "basic_needs": {
+        "clothing": {
+          "top": {
+            "cap_cents": 5000
+          },
+          "pants": {
+            "cap_cents": 5000
+          },
+          "jacket": {
+            "cap_cents": 5000
+          }
+        },
+        "camping_gear": {
+          "tarp": {
+            "cap_cents": 1000
+          },
+          "tent": {
+            "cap_cents": 7500
+          },
+          "lamp": {
+            "cap_cents": 2500
+          }
+        }
+      }
+    },
+    "approvers": {
+      "level1": [
+        "president, vice_president, treasurer"
+      ],
+      "level2": [
+        "governor"
+      ]
+    }
+  }
+}

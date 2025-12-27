@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, TypedDict
+from typing import Any, Dict, List, Mapping, NotRequired, Optional, TypedDict
 
 from app.extensions.errors import ContractError
 
@@ -123,16 +123,16 @@ class DonationDTO(TypedDict):
     fund_id: str
     happened_at_utc: str
     amount_cents: int
-    flags: List[str] = None
+    flags: []
 
 
 class FundDTO(TypedDict):
     id: str
     name: str
     restriction_type: str  # 'unrestricted'|'temporarily_restricted'|'permanently_restricted'
-    starts_on: Optional[str]
-    expires_on: Optional[str]
-    balance_cents: int = 0
+    starts_on: NotRequired[str]
+    expires_on: NotRequired[str]
+    balance_cents: int
 
 
 class GrantDTO(TypedDict):
@@ -145,16 +145,16 @@ class GrantDTO(TypedDict):
     reporting_frequency: str
     # 'monthly'|'quarterly'|'semiannual'|'annual'|'end_of_term'
     allowable_categories: List[str]
-    match_required_cents: int = 0
+    match_required_cents: int
 
 
 class ProjectDTO(TypedDict):
     id: str
     name: str
-    code: Optional[str]
-    starts_on: Optional[str]
-    ends_on: Optional[str]
-    is_active: bool = True
+    code: NotRequired[str]
+    starts_on: NotRequired[str]
+    ends_on: NotRequired[str]
+    is_active: bool
 
 
 class BudgetDTO(TypedDict):
@@ -172,7 +172,7 @@ class ReceiptDTO(TypedDict):
     received_on: str
     source: str
     amount_cents: int
-    instrument: Optional[str] = None
+    instrument: NotRequired[str]
 
 
 class ExpenseDTO(TypedDict):
@@ -182,9 +182,9 @@ class ExpenseDTO(TypedDict):
     happened_at_utc: str
     vendor: str
     amount_cents: int
-    category: str
-    approved_by_ulid: Optional[str] = None
-    flags: List[str] = None
+    expense_type: str
+    approved_by_ulid: NotRequired[str | None]
+    flags: NotRequired[list[str]]
 
 
 class ReimbursementDTO(TypedDict):

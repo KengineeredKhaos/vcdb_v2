@@ -53,7 +53,7 @@ POLICY_SCHEMA_MAP: dict[str, str] = {
     "policy_customer_needs.json": "policy_customer_needs.schema.json",
     "policy_domain.json": "policy_domain.schema.json",
     "policy_eligibility.json": "policy_eligibility.schema.json",
-    "policy_funding.json": "policy_funding.schema.json",
+    "policy_fund_archetype.json": "policy_fund_archetype.schema.json",
     "policy_issuance.json": "policy_issuance.schema.json",
     "policy_poc.json": "policy_poc.schema.json",
     "policy_resource_capabilities.json": "policy_resource_capabilities.schema.json",
@@ -150,8 +150,8 @@ def load_policy_budget() -> dict:
     return _load_and_cache(GOV_DATA / basename)
 
 
-def load_policy_funding() -> dict:
-    basename = "policy_funding.json"
+def load_policy_fund_archetype() -> dict:
+    basename = "policy_fund_archetype.json"
     return _load_and_cache(GOV_DATA / basename)
 
 
@@ -288,7 +288,7 @@ __all__ = [
     "load_policy_projects",
     "load_policy_journal_flags",
     "load_policy_budget",
-    "load_policy_funding",
+    "load_policy_fund_archetype",
     "save_policy",
     "load_policy",
 ]

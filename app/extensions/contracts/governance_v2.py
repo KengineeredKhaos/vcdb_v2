@@ -378,8 +378,7 @@ __schema__ = {
 }
 
 
-@dataclass(frozen=True)
-class IssueDecision:
+class IssueDecision(TypedDict):
     allowed: bool
     reason: str | None
     approver_required: str | None  # e.g., "Treasurer" if over cap
@@ -387,8 +386,7 @@ class IssueDecision:
     limit_window_label: str | None  # e.g., "per_year", "per_quarter"
 
 
-@dataclass(frozen=True)
-class RestrictionContext:
+class RestrictionContext(TypedDict):
     customer_ulid: str
     sku_code: str
     classification_key: str
@@ -397,8 +395,7 @@ class RestrictionContext:
     project_ulid: str | None = None
 
 
-@dataclass(frozen=True)
-class DecisionDTO:
+class DecisionDTO(TypedDict):
     customer_ulid: str
     is_veteran_verified: bool
     is_homeless_verified: bool
@@ -413,7 +410,6 @@ class DecisionDTO:
     as_of_iso: str
 
 
-@dataclass
 class ResourceCapsPolicy:
     note_max: int
     classifications: Dict[str, List[str]]

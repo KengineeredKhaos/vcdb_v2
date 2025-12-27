@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "policy_key": "entity_roles",
+    "title": "Domain Roles & POC Scopes",
+    "description": "Allowed domain role - RBAC combinations - POC scope",
+    "notes": [
+      "This policy concerns Domain roles, rules & constraints",
+      "See Auth slice for RBAC roles and rules.",
+      "Point Of Contact roles are respective to parent organization."
+    ],
+    "version": 1,
+    "status": "draft",
+    "effective_on": "2026-01-01",
+    "schema_version": 1
+  },
+  "domain_roles": [
+    "governor",
+    "staff",
+    "customer",
+    "resource",
+    "sponsor",
+    "civilian"
+  ],
+  "assignment_rules": {
+    "rbac_can_assign": {
+      "admin": [
+        "governor",
+        "staff",
+        "customer",
+        "resource",
+        "sponsor",
+        "civilian"
+      ],
+      "staff": [
+        "governor"
+      ],
+      "user": [
+        "customer",
+        "resource",
+        "sponsor",
+        "civilian"
+      ],
+      "auditor": [
+        "staff"
+      ]
+    },
+    "must_include_when_rbac": {
+      "admin": [
+        "governor"
+      ],
+      "staff": [
+        "governor"
+      ]
+    },
+    "forbidden_pairs": [
+      [
+        "civilian",
+        "governor"
+      ]
+    ],
+    "domain_disallows_rbac": [
+      "civilian"
+    ]
+  },
+  "poc_rules": {
+
+    "poc_scopes": [
+      "ops",
+      "billing",
+      "scheduling",
+      "finance",
+      "admin",
+      "promotions",
+      "social_media",
+      "graphics",
+      "event_coor"
+    ],
+    "default_scope": "ops",
+    "max_rank": 9
+  }
+}

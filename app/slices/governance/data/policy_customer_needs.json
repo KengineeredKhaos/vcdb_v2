@@ -1,8 +1,0 @@
-{
-  "veteran_verification_methods": ["dd214", "va_id", "state_dl_veteran", "other"],
-  "tiers": {
-    "tier1": ["food", "hygiene", "health", "housing", "clothing"],
-    "tier2": ["income", "employment", "transportation", "education"],
-    "tier3": ["family", "peergroup", "tech"]
-  }
-}

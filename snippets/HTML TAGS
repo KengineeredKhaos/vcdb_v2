@@ -1,0 +1,231 @@
+HTML TAGS:
+
+<button> defines a clickable button.
+By itself, the button does nothing until you add an action to it.
+
+
+HTML LINKS:
+<a> tag defines a hyperlink. It has the following syntax:
+<a href="url">link text</a>
+The most important attribute of the <a> element is the "href" attribute
+which indicates the link's destination.
+The link text is the part that will be visible to the reader.
+Clicking on the link text, will send the reader to the specified URL address.
+By default, links will appear as follows in all browsers:
+
+An unvisited link is underlined and blue
+A visited link is underlined and purple
+An active link is underlined and red
+
+
+HTML BLOCK ELEMENTS:
+
+Two commonly used block elements are: <p> and <div>.
+The <p> element defines a paragraph in an HTML document.
+The <div> element defines a division or a section in an HTML document
+that takes all available width, and comes with line breaks before and after.
+
+The main difference between <div> & <section> is semantics:
+<section> is a semantic element used to define a distinct, thematic section
+<div> is non-semantic, generic container used for styling or layout purposes
+
+<span> an inline container used to mark up a part of a text
+has no "required" attributes, but style, class and id are common.
+
+Here are the block-level elements in HTML:
+<address>  contact information for the author/owner of a document
+<blockquote>  contact information for the author/owner of a document
+<canvas>  used to draw graphics, on the fly, via scripting
+<dd>  a description/value of a term in a description list
+<dl>  a description list
+<dt>  a term/name in a description list
+<em>  emphasized text
+<form>  an HTML form for user input
+<h1>-<h6>  HTML headings
+<hr>  a thematic change in the content
+<li>  a list item
+<noscript>
+<ol>  an ordered list
+<pre>  preformatted text
+<ul>  an unordered list
+
+
+HTML INLINE ELEMENTS:
+Note: An inline element cannot contain a block-level element!
+
+<abbr>   an abbreviation or an acronym
+<b>  BOLD text
+<br>  a line break
+<cite>  the title of a work
+<code>  a piece of computer code
+<input>  an input control
+<label>  a label for an <input> element
+<object>  a container for an external application
+<output>  the result of a calculation
+<q>  a short quotation
+<samp>  sample output from a computer program
+<script>  a client-side script
+<select>  a drop-down list
+<small>  smaller text
+<strong>  important text
+<sub>  subscripted text
+<sup>  superscripted text
+<textarea>  a multiline input control (text area)
+<var>  a variable
+
+
+SEMANTIC TAGS:
+
+Quick & Dirty Tag Description:
+<article> Defines independent, self-contained content
+<aside> Defines content aside from the page content
+<details> Defines additional details that the user can view or hide
+<figcaption>  Defines a caption for a <figure> element
+<figure>  Specifies self-contained content, like illustrations, diagrams, photos, code listings, etc.
+<footer>  Defines a footer for a document or section
+<header>  Specifies a header for a document or section
+<main>  Specifies the main content of a document
+<mark>  Defines marked/highlighted text
+<nav> Defines navigation links
+<section> Defines a section in a document
+<summary> Defines a visible heading for a <details> element
+<time>  Defines a date/time
+
+
+<title> defines a title in the browser toolbar, provides a title for the page
+when it is added to favorites & displays a title for the page in
+search engine-results.
+Try to make the title as accurate and meaningful as possible!
+
+
+<section> A section is a thematic grouping of content.
+Examples of where a <section> element can be used:
+Chapters
+Introduction
+News items
+Contact information
+
+
+<article> An article should make sense on its own.
+Examples of where the <article> element can be used:
+Forum posts
+Blog posts
+User comments
+Product cards
+Newspaper articles
+
+
+<aside> defines some content aside from the content it is placed in
+(like a sidebar).
+The <aside> content should be indirectly related to the surrounding content.
+Use CSS to style the <aside> element
+
+
+<details> Defines additional details that the user can view or hide.
+<summary> Defines a visible heading for a <details> element
+
+
+<figure> & <figcaption> & <img>
+<figure> self-contained content, diagrams, photos, code listings, etc.
+<figcaption> defines a caption for a <figure> element.
+<img> defines the actual image/illustration.
+
+
+
+<header> represents a container for introductory content or a set of
+navigational links.
+A <header> element typically contains:
+one or more heading elements (<h1> - <h6>)
+logo or icon
+authorship information
+Note: You can have several <header> elements in one HTML document.
+However, <header> cannot be placed within a <footer>, <address> or
+another <header> element.
+
+
+<footer> defines a footer for a document or section.
+A <footer> element typically contains:
+authorship information
+copyright information
+contact information
+sitemap
+back to top links
+related documents
+You can have several <footer> elements in one document.
+
+
+<nav> defines a set of navigation links.
+<nav>
+  <a href="/html/">HTML</a> |
+  <a href="/css/">CSS</a> |
+  <a href="/js/">JavaScript</a> |
+  <a href="/jquery/">jQuery</a>
+</nav>
+
+
+<main> Specifies the main content of a document
+
+<mark> Defines marked/highlighted text
+
+<time> If you can't figure this one out, you're just silly.
+
+
+HTML TABLES:
+
+<table> Table Definition
+<tr> Table Rows
+<td> Table Data for that cell in that row
+<th> Table Header.
+In some cases you want your cells to be table header cells.
+Use the <th> tag instead of the <td> tag inside that row.
+By default, the text in <th> elements are bold and centered
+
+Example:
+<table>
+  <tr>
+    <th>Company</th>
+    <th>Contact</th>
+    <th>Country</th>
+  </tr>
+  <tr>
+    <td>Alfreds Futterkiste</td>
+    <td>Maria Anders</td>
+    <td>Germany</td>
+  </tr>
+  <tr>
+    <td>Centro comercial Moctezuma</td>
+    <td>Francisco Chang</td>
+    <td>Mexico</td>
+  </tr>
+</table>
+
+Other Table Tags:
+<caption> Defines a table caption
+<colgroup>  Specifies a group of one or more columns in a table for formatting
+<col> Specifies column properties for each column within a <colgroup> element
+<thead> Groups the header content in a table
+<tbody> Groups the body content in a table
+<tfoot> Groups the footer content in a table
+<colgroup> used to style specific columns of a table
+<colspan> represents the number of columns to span for a cell.
+<rowspan> represents the number of rows to span for a cell
+These two factors can be used in various combinations to create any table.
+
+<table>
+  <tr>
+    <th colspan="2">Name</th>
+    <th>Age</th>
+  </tr>
+  <tr>
+    <td>Jill</td>
+    <td>Smith</td>
+    <td>43</td>
+  </tr>
+  <tr>
+    <th rowspan="2">Phone</th>
+    <td>555-1234</td>
+  </tr>
+  <tr>
+    <td>555-8745</td>
+</tr>
+</table>

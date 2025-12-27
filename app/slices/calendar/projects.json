@@ -1,0 +1,232 @@
+{
+  "version": 1,
+  "notes": [
+    "Calendar Projects and Project Tasks with cost estimates in USD cents.",
+    "task_kind is a semantic token (NOT a COA key and NOT an account code).",
+    "Governance policy maps task_kind -> allowed expense_type (COA key).",
+    "Finance receives expense_type (COA key) and maps it to an account code via COA.",
+    "estimate_cents is a planning hint only; actual posting uses user-entered amount_cents."
+  ],
+  "projects": [
+    {
+      "project_title": "office_ops_annual",
+      "project_tasks": [
+        {
+          "task_name": "Office rent",
+          "task_kind": "rent_office",
+          "estimate_cents": 1800000
+        },
+        {
+          "task_name": "Utilities",
+          "task_kind": "utilities_office",
+          "estimate_cents": 360000
+        },
+        {
+          "task_name": "Internet service",
+          "task_kind": "internet_office",
+          "estimate_cents": 144000
+        },
+        {
+          "task_name": "Phone service",
+          "task_kind": "phone_office",
+          "estimate_cents": 60000
+        },
+        {
+          "task_name": "Office supplies",
+          "task_kind": "office_supplies",
+          "estimate_cents": 250000
+        },
+        {
+          "task_name": "Postage & shipping",
+          "task_kind": "postage_shipping",
+          "estimate_cents": 80000
+        },
+        {
+          "task_name": "D&O / general insurance",
+          "task_kind": "insurance_annual",
+          "estimate_cents": 150000
+        },
+        {
+          "task_name": "Accounting / professional services",
+          "task_kind": "professional_services",
+          "estimate_cents": 300000
+        },
+        {
+          "task_name": "Software subscriptions",
+          "task_kind": "software_subscriptions",
+          "estimate_cents": 120000
+        },
+        {
+          "task_name": "Bank / merchant fees",
+          "task_kind": "merchant_fees",
+          "estimate_cents": 30000
+        }
+      ]
+    },
+    {
+      "project_title": "stand_down_annual",
+      "project_tasks": [
+        {
+          "task_name": "Permits & venue fees",
+          "task_kind": "event_permits",
+          "estimate_cents": 50000
+        },
+        {
+          "task_name": "Event insurance",
+          "task_kind": "event_insurance",
+          "estimate_cents": 80000
+        },
+        {
+          "task_name": "Catering / food service",
+          "task_kind": "event_catering",
+          "estimate_cents": 1200000
+        },
+        {
+          "task_name": "Portable toilets / sanitation",
+          "task_kind": "event_sanitation",
+          "estimate_cents": 250000
+        },
+        {
+          "task_name": "Printing (flyers, forms)",
+          "task_kind": "event_printing",
+          "estimate_cents": 150000
+        },
+        {
+          "task_name": "Signage / banners",
+          "task_kind": "event_signage",
+          "estimate_cents": 100000
+        },
+        {
+          "task_name": "Equipment rentals (tents/tables)",
+          "task_kind": "event_equipment_rental",
+          "estimate_cents": 600000
+        },
+        {
+          "task_name": "Security",
+          "task_kind": "event_security",
+          "estimate_cents": 200000
+        },
+        {
+          "task_name": "Medical / first-aid supplies",
+          "task_kind": "program_medical_supplies",
+          "estimate_cents": 100000
+        },
+        {
+          "task_name": "Volunteer swag",
+          "task_kind": "volunteer_swag",
+          "estimate_cents": 150000
+        },
+        {
+          "task_name": "Fuel / transport",
+          "task_kind": "program_transport",
+          "estimate_cents": 120000
+        }
+      ]
+    },
+    {
+      "project_title": "motorcycle_ride_annual",
+      "project_tasks": [
+        {
+          "task_name": "Permits",
+          "task_kind": "event_permits",
+          "estimate_cents": 50000
+        },
+        {
+          "task_name": "Event insurance",
+          "task_kind": "event_insurance",
+          "estimate_cents": 80000
+        },
+        {
+          "task_name": "Tickets / printing",
+          "task_kind": "event_printing",
+          "estimate_cents": 60000
+        },
+        {
+          "task_name": "Marketing / ads",
+          "task_kind": "event_marketing",
+          "estimate_cents": 150000
+        },
+        {
+          "task_name": "Venue rental",
+          "task_kind": "event_venue_rental",
+          "estimate_cents": 200000
+        },
+        {
+          "task_name": "Sound system rental",
+          "task_kind": "event_equipment_rental",
+          "estimate_cents": 150000
+        },
+        {
+          "task_name": "Food / refreshments",
+          "task_kind": "event_catering",
+          "estimate_cents": 300000
+        },
+        {
+          "task_name": "Cleanup / sanitation",
+          "task_kind": "event_sanitation",
+          "estimate_cents": 80000
+        },
+        {
+          "task_name": "Card processing fees",
+          "task_kind": "merchant_fees",
+          "estimate_cents": 50000
+        }
+      ]
+    },
+    {
+      "project_title": "fundraising_mailer_q4",
+      "project_tasks": [
+        {
+          "task_name": "Graphic design",
+          "task_kind": "fundraising_design",
+          "estimate_cents": 80000
+        },
+        {
+          "task_name": "Printing",
+          "task_kind": "fundraising_printing",
+          "estimate_cents": 200000
+        },
+        {
+          "task_name": "Envelopes / inserts",
+          "task_kind": "fundraising_supplies",
+          "estimate_cents": 50000
+        },
+        {
+          "task_name": "Postage",
+          "task_kind": "fundraising_postage",
+          "estimate_cents": 250000
+        }
+      ]
+    },
+    {
+      "project_title": "merch_inventory_restocks",
+      "project_tasks": [
+        {
+          "task_name": "Purchase caps",
+          "task_kind": "merch_inventory_purchase",
+          "estimate_cents": 400000
+        },
+        {
+          "task_name": "Purchase shirts",
+          "task_kind": "merch_inventory_purchase",
+          "estimate_cents": 600000
+        },
+        {
+          "task_name": "Inbound freight",
+          "task_kind": "inbound_freight",
+          "estimate_cents": 80000
+        },
+        {
+          "task_name": "Packaging supplies",
+          "task_kind": "packaging_supplies",
+          "estimate_cents": 50000
+        },
+        {
+          "task_name": "Merchant processing fees",
+          "task_kind": "merchant_fees",
+          "estimate_cents": 60000
+        }
+      ]
+    }
+  ]
+}

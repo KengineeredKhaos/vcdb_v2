@@ -44,10 +44,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Tuple
 
-from app.extensions.policies import (  # if you have these
+from app.extensions.policies import (
     load_policy_budget,
     load_policy_domain,
-    load_policy_funding,
+    load_policy_fund_archetype,
     load_policy_issuance,
     load_policy_journal_flags,
     load_policy_projects,
@@ -377,18 +377,22 @@ def validate_issuance_semantics(doc: dict) -> list[str]:
 
 
 def _load_sku_constraints() -> dict:
-    path = "app/slices/governance/data/policy_sku_constraints.json"
-    schema = "app/slices/governance/data/schemas/policy_sku_constraints.schema.json"
-    data = read_json_file(path, default={})
-    if not data:
-        return {"rules": []}
-    # optional schema validation
+    """
+    Canon loader wrapper.
+
+    Policy semantics should not hard-code file paths.
+    We keep permissive behavior here: if the policy is missing/invalid,
+    return an empty ruleset and let policy-health surface the details.
+    """
     try:
-        validate_json_payload(data, schema)
+        from app.extensions.policies import load_policy_sku_constraints
+
+        data = load_policy_sku_constraints()
+        if not data:
+            return {"rules": []}
+        return data
     except Exception:
-        # keep permissive during dev; policy-health will surface details
-        pass
-    return data
+        return {"rules": []}
 
 
 def check_sku_constraints(parts: dict) -> tuple[bool, str | None]:
@@ -451,12 +455,12 @@ def list_project_types() -> list[dict]:
 
 def list_fund_archetypes() -> list[dict]:
     """
-    Return the canonical list of fund archetypes from policy_funding.json.
+    Return the canonical list of fund archetypes from policy_fund_archetype.json.
 
     Shape:
       [{ "key": str, "restriction": str, "label": str? }, ...]
     """
-    pol = load_policy_funding()
+    pol = load_policy_fund_achetype()
     return list(pol.get("fund_archetypes") or [])
 
 

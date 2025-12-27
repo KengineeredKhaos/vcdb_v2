@@ -399,7 +399,6 @@ def _external_restriction_type(internal: str) -> str:
 
 # -----------------
 # journal Entries
-# Keep this here
 # -----------------
 
 
@@ -594,28 +593,16 @@ def reverse_journal(
 # -----------------
 
 
-def _select_expense_accounts(*, category: str) -> tuple[str, str]:
-    """Decide which accounts to use for an expense.
-
-    MVP rule:
-      - Look at the category and map to a COA key (natural expense).
-      - Default to direct_program_costs if no match.
-      - Always credit cash.
-    """
-    cat = (category or "").strip()
-
-    # Fallback must be a real COA key
-    if cat is None:
-        expense_key = "direct_program_costs"
-    else:
-        expense_acct = cat
+def _select_expense_accounts(*, expense_type: str) -> tuple[str, str]:
+    key = (expense_type or "").strip()
+    if not key:
+        key = "direct_program_costs"
 
     try:
-        expense_acct = COA[expense_key]["code"]
+        expense_acct = COA[key]["code"]
     except KeyError as exc:
         raise KeyError(
-            f"Unknown expense COA key {expense_key!r} for category {category!r}. "
-            f"select a proper category for the expense."
+            f"Unknown expense COA key {key!r}. Select a valid expense_type."
         ) from exc
 
     cash_acct = COA["cash"]["code"]
@@ -662,7 +649,7 @@ def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:
         - happened_at_utc:  ISO-8601 date or datetime string
         - vendor:       free-text payee (or 'N/A')
         - amount_cents: integer cents (> 0)
-        - category:     free-text category label
+        - expense_type: free-text category label
 
       Optional (honoured if present):
         - bank_account_code:    COA code for the cash/bank account (default '1000')
@@ -687,7 +674,7 @@ def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:
         project_id = payload["project_id"]
         happened_at_utc = payload["happened_at_utc"]
         vendor = payload["vendor"]
-        category = payload["category"]
+        expense_type = payload["expense_type"]
         amount_raw = payload["amount_cents"]
     except KeyError as exc:
         raise ValueError(f"missing required field: {exc.args[0]}") from exc
@@ -711,14 +698,17 @@ def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:
     expense_account_code = payload.get("expense_account_code")
 
     if bank_account_code is None or expense_account_code is None:
-        expense_acct, cash_acct = _select_expense_accounts(category=category)
+        expense_acct, cash_acct = _select_expense_accounts(
+            expense_type=expense_type
+        )
+
         if expense_account_code is None:
             expense_account_code = expense_acct
         if bank_account_code is None:
             bank_account_code = cash_acct
 
     memo = payload.get("memo") or (
-        f"{category} — {vendor}" if vendor else str(category)
+        f"{expense_type} — {vendor}" if vendor else str(expense_type)
     )
 
     # Canonical external ref key is external_ref_ulid; accept legacy too.
@@ -730,56 +720,59 @@ def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:
     source = payload.get("source", "expense")
 
     if dry_run:
-        return ExpenseDTO(
-            id="DRY-RUN",
-            fund_id=fund.ulid,
-            project_id=project_id,
+        dto: ExpenseDTO = {
+            "id": "DRY-RUN",
+            "fund_id": fund.ulid,
+            "project_id": project_id,
+            "happened_at_utc": happened_at_utc,
+            "vendor": vendor,
+            "amount_cents": amount_cents,
+            "expense_type": expense_type,
+            "approved_by_ulid": None,
+            "flags": ["dry_run"],
+        }
+        return dto
+
+    else:
+        lines = [
+            {
+                "account_code": expense_account_code,
+                "fund_code": fund.code,
+                "project_ulid": project_id,
+                "amount_cents": amount_cents,
+                "memo": memo,
+            },
+            {
+                "account_code": bank_account_code,
+                "fund_code": fund.code,
+                "project_ulid": project_id,
+                "amount_cents": -amount_cents,
+                "memo": memo,
+            },
+        ]
+
+        journal_ulid = post_journal(
+            source=source,
+            external_ref_ulid=external_ref_ulid,
             happened_at_utc=happened_at_utc,
-            vendor=vendor,
-            amount_cents=amount_cents,
-            category=category,
-            approved_by_ulid=None,
-            flags=["dry_run"],
+            currency="USD",
+            memo=memo,
+            lines=lines,
+            created_by_actor=created_by_actor,
         )
 
-    lines = [
-        {
-            "account_code": expense_account_code,
-            "fund_code": fund.code,
-            "project_ulid": project_id,
+        dto: ExpenseDTO = {
+            "id": journal_ulid,
+            "fund_id": fund.ulid,
+            "project_id": project_id,
+            "happened_at_utc": happened_at_utc,
+            "vendor": vendor,
             "amount_cents": amount_cents,
-            "memo": memo,
-        },
-        {
-            "account_code": bank_account_code,
-            "fund_code": fund.code,
-            "project_ulid": project_id,
-            "amount_cents": -amount_cents,
-            "memo": memo,
-        },
-    ]
-
-    journal_ulid = post_journal(
-        source=source,
-        external_ref_ulid=external_ref_ulid,
-        happened_at_utc=happened_at_utc,
-        currency="USD",
-        memo=memo,
-        lines=lines,
-        created_by_actor=created_by_actor,
-    )
-
-    return ExpenseDTO(
-        id=journal_ulid,
-        fund_id=fund.ulid,
-        project_id=project_id,
-        happened_at_utc=happened_at_utc,
-        vendor=vendor,
-        amount_cents=amount_cents,
-        category=category,
-        approved_by_ulid=None,
-        flags=[],
-    )
+            "expense_type": expense_type,
+            "approved_by_ulid": None,
+            "flags": ["posted"],
+        }
+        return dto
 
 
 # -----------------

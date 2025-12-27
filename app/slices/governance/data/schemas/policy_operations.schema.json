@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://vcdb.local/schemas/policy_locations.schema.json",
-  "title": "Locations Policy Schema",
-  "description": "Validates policy_locations.json (location kinds, locations list, and code patterns).",
+  "$id": "https://vcdb.local/schemas/policy_operations.schema.json",
+  "title": "Operations Policy Schema",
+  "description": "Validates policy_operations.json (task kinds, finance hints, and project blackout rules).",
   "type": "object",
   "$defs": {
     "token": {
@@ -106,14 +106,70 @@
           "$ref": "#/$defs/singleLine"
         }
       }
+    },
+    "weekday": {
+      "type": "string",
+      "enum": [
+        "MON",
+        "TUE",
+        "WED",
+        "THU",
+        "FRI",
+        "SAT",
+        "SUN"
+      ]
+    },
+    "blackoutRule": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "days"
+          ],
+          "properties": {
+            "type": {
+              "const": "weekday"
+            },
+            "days": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/weekday"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "start",
+            "end"
+          ],
+          "properties": {
+            "type": {
+              "const": "date_range"
+            },
+            "start": {
+              "$ref": "#/$defs/dateISO"
+            },
+            "end": {
+              "$ref": "#/$defs/dateISO"
+            }
+          }
+        }
+      ]
     }
   },
   "additionalProperties": false,
   "required": [
     "meta",
-    "kinds",
-    "locations",
-    "patterns"
+    "defaults",
+    "task_kinds",
+    "projects"
   ],
   "properties": {
     "meta": {
@@ -130,7 +186,7 @@
       ],
       "properties": {
         "policy_key": {
-          "const": "locations"
+          "const": "operations"
         },
         "title": {
           "$ref": "#/$defs/singleLine"
@@ -168,44 +224,88 @@
         }
       }
     },
-    "kinds": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "$ref": "#/$defs/token"
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finance_hints"
+      ],
+      "properties": {
+        "finance_hints": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "expense_kinds"
+          ],
+          "properties": {
+            "expense_kinds": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/token"
+              }
+            }
+          }
+        }
       }
     },
-    "locations": {
+    "task_kinds": {
       "type": "array",
       "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "code",
-          "kind",
-          "name"
+          "key",
+          "label",
+          "finance_hints"
         ],
         "properties": {
-          "code": {
-            "$ref": "#/$defs/singleLine"
-          },
-          "kind": {
+          "key": {
             "$ref": "#/$defs/token"
           },
-          "name": {
+          "label": {
             "$ref": "#/$defs/singleLine"
+          },
+          "finance_hints": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "expense_kinds"
+            ],
+            "properties": {
+              "expense_kinds": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/$defs/token"
+                }
+              }
+            }
           }
         }
       }
     },
-    "patterns": {
+    "projects": {
       "type": "object",
-      "description": "Optional regex patterns to validate codes by kind.",
+      "propertyNames": {
+        "$ref": "#/$defs/ulid"
+      },
       "additionalProperties": {
-        "type": "string",
-        "minLength": 1,
-        "pattern": "^[^\\n\\r]+$"
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "blackout_rules"
+        ],
+        "properties": {
+          "blackout_rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/blackoutRule"
+            },
+            "default": []
+          }
+        }
       }
     }
   }

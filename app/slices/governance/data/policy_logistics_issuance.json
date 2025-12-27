@@ -1,0 +1,139 @@
+{
+  "meta": {
+    "policy_key": "logistics_issuance",
+    "title": "Logistics Issuance Policy",
+    "description": "Issuance criteria and cadence rules for inventory SKUs.",
+    "notes": [
+      "Customer qualifications and issuance frequency limits.",
+      "See logistics/sku.py for SKU construction/breakdown.",
+      "To add new sources, update logistics/sku.py NEW_RE first.",
+      "No override provisions yet; anticipated in later revisions."
+    ],
+    "version": 1,
+    "status": "draft",
+    "effective_on": "2026-01-01",
+    "schema_version": 1
+  },
+  "issuance": {
+    "defaults": {
+      "cadence": {
+        "scope": "classification",
+        "period_days": 30,
+        "max_per_period": 1,
+        "label": "default-per-30"
+      }
+    },
+    "rules": [
+      {
+        "if": {
+          "source": "DR"
+        },
+        "then": {
+          "issuance_class": "V"
+        },
+        "why": "All DRMO items are veteran-only"
+      },
+      {
+        "if": {
+          "category": "CG",
+          "subcategory": "SL",
+          "source": "LC"
+        },
+        "then": {
+          "issuance_class": "H"
+        },
+        "why": "Commercial sleeping gear reserved for homeless issuance"
+      }
+    ]
+  },
+  "sku_constraints": {
+    "allowed_units": [
+      "each",
+      "lbs",
+      "kit",
+      "box",
+      "pack"
+    ],
+    "allowed_sources": [
+      "DR",
+      "LC"
+    ],
+    "rules": [
+      {
+        "match": {
+          "sku_parts": {
+            "source": "DR"
+          }
+        },
+        "qualifiers": {
+          "veteran_required": true
+        }
+      },
+      {
+        "match": {
+          "sku_parts": {
+            "category": "CG",
+            "subcategory": "SL",
+            "source": "LC"
+          }
+        },
+        "qualifiers": {
+          "homeless_required": true
+        }
+      },
+      {
+        "match": {
+          "classification_key": "UW/TP"
+        },
+        "cadence": {
+          "scope": "classification",
+          "period_days": 30,
+          "max_per_period": 1
+        }
+      },
+      {
+        "match": {
+          "classification_key": "CG/SL"
+        },
+        "cadence": {
+          "scope": "classification",
+          "period_days": 90,
+          "max_per_period": 1
+        }
+      },
+      {
+        "match": {
+          "sku_parts": {
+            "category": "CG",
+            "subcategory": "SL",
+            "source": "DR"
+          }
+        },
+        "qualifiers": {
+          "homeless_required": true,
+          "veteran_required": true
+        },
+        "cadence": {
+          "scope": "sku",
+          "period_days": 90,
+          "max_per_period": 1,
+          "label": "bag-per-90d"
+        }
+      },
+      {
+        "match": {
+          "classification_key": "welcome_home.kit"
+        },
+        "qualifiers": {
+          "veteran_required": true
+        },
+        "cadence": {
+          "scope": "classification",
+          "period_days": 180,
+          "max_per_period": 1,
+          "label": "WHK-per-180d"
+        }
+      }
+    ]
+  }
+}

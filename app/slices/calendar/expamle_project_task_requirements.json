@@ -1,0 +1,10 @@
+{
+  "staffing": {
+    "roles": [
+      {"role": "volunteer", "count": 6, "hours_each": 90},
+      {"role": "driver", "count": 1, "hours_each": 120}
+    ]
+  },
+  "logistics": {"truck": true, "tables": 10, "canopy": true},
+  "materials": {"flyers": 500}
+}

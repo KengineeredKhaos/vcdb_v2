@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://vcdb.local/schemas/policy_locations.schema.json",
-  "title": "Locations Policy Schema",
-  "description": "Validates policy_locations.json (location kinds, locations list, and code patterns).",
+  "$id": "https://vcdb.local/schemas/policy_entity_roles.schema.json",
+  "title": "Entity Roles Policy Schema",
+  "description": "Validates policy_entity_roles.json (domain roles, assignment rules, and POC scopes).",
   "type": "object",
   "$defs": {
     "token": {
@@ -111,9 +111,9 @@
   "additionalProperties": false,
   "required": [
     "meta",
-    "kinds",
-    "locations",
-    "patterns"
+    "domain_roles",
+    "assignment_rules",
+    "poc_rules"
   ],
   "properties": {
     "meta": {
@@ -130,7 +130,7 @@
       ],
       "properties": {
         "policy_key": {
-          "const": "locations"
+          "const": "entity_roles"
         },
         "title": {
           "$ref": "#/$defs/singleLine"
@@ -168,44 +168,86 @@
         }
       }
     },
-    "kinds": {
+    "domain_roles": {
       "type": "array",
       "minItems": 1,
       "items": {
         "$ref": "#/$defs/token"
       }
     },
-    "locations": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "code",
-          "kind",
-          "name"
-        ],
-        "properties": {
-          "code": {
-            "$ref": "#/$defs/singleLine"
-          },
-          "kind": {
+    "assignment_rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rbac_can_assign",
+        "must_include_when_rbac",
+        "forbidden_pairs",
+        "domain_disallows_rbac"
+      ],
+      "properties": {
+        "rbac_can_assign": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 0,
+            "items": {
+              "$ref": "#/$defs/token"
+            }
+          }
+        },
+        "must_include_when_rbac": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/token"
+            }
+          }
+        },
+        "forbidden_pairs": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "$ref": "#/$defs/token"
+            }
+          }
+        },
+        "domain_disallows_rbac": {
+          "type": "array",
+          "items": {
             "$ref": "#/$defs/token"
-          },
-          "name": {
-            "$ref": "#/$defs/singleLine"
           }
         }
       }
     },
-    "patterns": {
+    "poc_rules": {
       "type": "object",
-      "description": "Optional regex patterns to validate codes by kind.",
-      "additionalProperties": {
-        "type": "string",
-        "minLength": 1,
-        "pattern": "^[^\\n\\r]+$"
+      "additionalProperties": false,
+      "required": [
+        "poc_scopes",
+        "default_scope",
+        "max_rank"
+      ],
+      "properties": {
+        "poc_scopes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/token"
+          }
+        },
+        "default_scope": {
+          "$ref": "#/$defs/token"
+        },
+        "max_rank": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99
+        }
       }
     }
   }

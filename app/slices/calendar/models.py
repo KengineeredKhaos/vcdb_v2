@@ -115,13 +115,23 @@ class Project(db.Model, ULIDPK, IsoTimestamps):
         String(100), nullable=False, default="untitled"
     )
 
-    # Finance link (legacy; may be retired later)
+    # DEPRECATED Finance link (legacy; will be retired later)
     fund_ulid: Mapped[str | None] = mapped_column(String(26), nullable=True)
+
+    # NEW
+    # semantic key-> Governance policy: allowed fund archetypes-> Finance: COA
+    # replaces fund_ulid with semantic policy key rather than a
+    # direct finance slice reference.
+    # funding constraints / reporting / allowed funding archetypes
+    funding_profile_key: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )
 
     # Ownership
     owner_ulid: Mapped[str | None] = ULIDFK(
         "entity_entity",
         nullable=True,
+        ondelete="SET NULL",
     )
 
     # Optional: phase/status for projects themselves
@@ -135,6 +145,7 @@ class Project(db.Model, ULIDPK, IsoTimestamps):
         "ProjectFundingPlan",
         back_populates="project",
         cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     __table_args__ = (
@@ -142,23 +153,47 @@ class Project(db.Model, ULIDPK, IsoTimestamps):
         Index("ix_project_fund", "fund_ulid"),
         Index("ix_project_owner", "owner_ulid"),
         Index("ix_project_status", "status"),
+        Index("ix_project_funding_profile", "funding_profile_key"),
     )
 
 
 class Task(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "project_task"
 
+    # Belongs to a project (required)
+    project_ulid: Mapped[str | None] = ULIDFK(
+        "project_project",
+        nullable=False,
+    )
+
+    # NEW: Task -> Project relationship
+    project: Mapped["Project"] = relationship(
+        "Project",
+        back_populates="tasks",
+        passive_deletes=True,
+    )
+
     task_title: Mapped[str] = mapped_column(
         String(100), nullable=False, default="untitled"
     )
+
     task_detail: Mapped[str | None] = mapped_column(
         String(254), nullable=True
     )
 
-    # Belongs to a project
-    project_ulid: Mapped[str | None] = ULIDFK(
-        "project_project",
-        nullable=False,
+    # Sematic token -> Governance policy -> Finance COA
+    # This is an "expense routing" clue for Governance
+    task_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    # Planning fields (use integers for math)
+    estimate_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hours_est_minutes: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+
+    notes: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    requirements_json: Mapped[dict | list | None] = mapped_column(
+        JSON, nullable=True
     )
 
     # Assignment
@@ -179,17 +214,26 @@ class Task(db.Model, ULIDPK, IsoTimestamps):
         Index("ix_task_project", "project_ulid"),
         Index("ix_task_assignee", "assigned_to_ulid"),
         Index("ix_task_status", "status"),
+        Index("ix_task_kind", "task_kind"),
+        CheckConstraint(
+            "estimate_cents IS NULL OR estimate_cents >= 0",
+            name="ck_task_estimate_nonneg",
+        ),
+        CheckConstraint(
+            "hours_est_minutes IS NULL OR hours_est_minutes >= 0",
+            name="ck_task_hours_nonneg",
+        ),
     )
 
 
 class ProjectFundingPlan(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "funding_plan"
 
-    # Link: each funding plan row belongs to a single Calendar Project.
-    project_ulid: Mapped[str] = ULIDFK(
-        "project_project",
-        nullable=False,
-        ondelete="CASCADE",
+    # Relationship back to project (handy in services)
+    project: Mapped["Project"] = relationship(
+        "Project",
+        back_populates="funding_plans",
+        passive_deletes=True,
     )
 
     # Human-facing short label, similar to FundingProspect.label
@@ -199,11 +243,11 @@ class ProjectFundingPlan(db.Model, ULIDPK, IsoTimestamps):
 
     # Governance / reporting classifications
     source_kind: Mapped[str | None] = mapped_column(
-        String(32), nullable=True, index=True
+        String(32), nullable=True
     )  # e.g. grant_reimbursement|matching_funds|internal_operations
 
     fund_archetype_key: Mapped[str | None] = mapped_column(
-        String(32), nullable=True, index=True
+        String(32), nullable=True
     )  # e.g. grant_reimbursement|general_unrestricted
 
     # Planned amount (cents). Optional, but non-negative if present.
@@ -213,7 +257,7 @@ class ProjectFundingPlan(db.Model, ULIDPK, IsoTimestamps):
 
     # True for in-kind; False/NULL for purely monetary
     is_in_kind: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, index=True
+        Boolean, nullable=False, default=False
     )
 
     # Optional hint for who we expect this from (PII-free)
@@ -225,6 +269,7 @@ class ProjectFundingPlan(db.Model, ULIDPK, IsoTimestamps):
     notes: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Optional relationship back to Project (handy in services)
+    # Link: each funding plan row belongs to a single Calendar Project.
     project: Mapped["Project"] = relationship(
         "Project",
         back_populates="funding_plans",
@@ -235,6 +280,7 @@ class ProjectFundingPlan(db.Model, ULIDPK, IsoTimestamps):
         Index("ix_funding_plan_project", "project_ulid"),
         Index("ix_funding_plan_source_kind", "source_kind"),
         Index("ix_funding_plan_archetype", "fund_archetype_key"),
+        Index("ix_funding_plan_is_in_kind", "is_in_kind"),
         CheckConstraint(
             "expected_amount_cents IS NULL OR expected_amount_cents >= 0",
             name="ck_funding_plan_expected_nonneg",

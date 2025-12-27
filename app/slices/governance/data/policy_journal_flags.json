@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "flags": [
-    { "key": "cash",            "label": "unrestricted cash donation"},
-    { "key": "inkind",          "label": "Non-cash in-kind donation" },
-    { "key": "reimbursable",    "label": "Eligible for sponsor reimbursement" },
-    { "key": "grant_elks_freedom", "label": "Elks Freedom Grant tracking" }
-  ]
-}
