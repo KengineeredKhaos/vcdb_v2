@@ -210,26 +210,26 @@ def create_app(config_object="config.DevConfig"):
     # routes
     # -------------
 
-    env = (flask_app.config.get("ENV") or "").lower()
-    # Always ok to mount in dev/testing; harmless if also mounted in dev
-    if env in {"dev", "development", "test", "testing"}:
-        from app.slices.devtools.routes import (
-            bp as devtools_bp,
-        )
-        from app.slices.devtools.routes import (
-            bp_api as devtools_api_bp,
-        )
-        from app.slices.devtools.routes import (
-            bp_api_public as devtools_api_public_bp,
-        )
-        from app.slices.devtools.routes import (
-            bp_api_v2 as devtools_api_v2_bp,
-        )
+    # env = (flask_app.config.get("ENV") or "").lower()
+    # # Always ok to mount in dev/testing; harmless if also mounted in dev
+    # if env in {"dev", "development", "test", "testing"}:
+    #     from app.slices.devtools.routes import (
+    #         bp as devtools_bp,
+    #     )
+    #     from app.slices.devtools.routes import (
+    #         bp_api as devtools_api_bp,
+    #     )
+    #     from app.slices.devtools.routes import (
+    #         bp_api_public as devtools_api_public_bp,
+    #     )
+    #     from app.slices.devtools.routes import (
+    #         bp_api_v2 as devtools_api_v2_bp,
+    #     )
 
-        flask_app.register_blueprint(devtools_bp)  # /dev/...
-        flask_app.register_blueprint(devtools_api_bp)  # /api/dev/...
-        flask_app.register_blueprint(devtools_api_public_bp)  # /api/...
-        flask_app.register_blueprint(devtools_api_v2_bp)
+    # flask_app.register_blueprint(devtools_bp)  # /dev/...
+    # flask_app.register_blueprint(devtools_api_bp)  # /api/dev/...
+    # flask_app.register_blueprint(devtools_api_public_bp)  # /api/...
+    # flask_app.register_blueprint(devtools_api_v2_bp)
 
     # -------------
     # Register remaining

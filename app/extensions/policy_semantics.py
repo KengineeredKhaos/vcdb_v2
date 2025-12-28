@@ -1,43 +1,20 @@
-# app/extensions/policy_semantics.py
-
 """
-Semantic validation and cross-file checks for Governance policies.
+Semantic validation and cross-file checks for Governance policies (Policy Catalog v2.0).
 
-This module is where we do the deeper, cross-cutting reasoning about
-policy files beyond simple JSON Schema validation:
+JSON Schema validates structure. This module validates business meaning and
+cross-file invariants, without leaking slice schemas or PII.
 
-- Domain & RBAC:
-    * `check_domain_policy()`: sanity checks for policy_domain.json
-      (domain roles, forbidden_pairs, domain_disallows_rbac).
-    * `check_rbac_policy()`: sanity checks for policy_rbac.json.
-    * `check_rbac_domain_relationship()`: cross-file rules like
-      "admin/staff must imply governor" and "civilian disallows RBAC".
+Key checks:
+- RBAC policy sanity (Auth-owned).
+- Entity roles policy sanity (domain roles + assignment rules + POC).
+- RBAC ↔ domain relationship constraints.
+- Logistics issuance policy sanity and coverage vs Logistics catalog.
+- Finance taxonomy/controls sanity (light checks only in v2; deepen later).
+- Operations policy sanity (finance hint tokens reference taxonomy).
 
-- Issuance vs catalog:
-    * `check_issuance_policy_against_catalog()`: loads policy_issuance
-      and compares it to the Logistics inventory catalog to ensure
-      cadence settings are sane and classification_keys have coverage.
-
-- SKU constraints:
-    * `_load_sku_constraints()`, `check_sku_constraints()`,
-      `assert_sku_constraints_ok()`: optional layer that ties SKU
-      parsing to governance-defined constraints on issuance_class, etc.
-
-- Cadence helpers:
-    * `resolve_cadence(policy, rule)`: merges rule-level cadence,
-      presets, and defaults into a single concrete cadence dict.
-
-- Aggregates:
-    * `policy_health_report()`: high-level entry point used by dev/admin
-      tools; returns (warnings, infos) and raises PolicyError on fatal
-      issues.
-
-Future Dev:
-- Add new semantic checks here rather than sprinkling them through
-  slices. The goal is: Schemas validate structure; this module validates
-  business meaning.
-- Keep this module PII-free and modular so it can safely run in CLI,
-  tests, and admin tools without touching live flows.
+This module is safe to run in CLI/tests/admin tooling:
+- PII-free outputs
+- Read-only (except optional DB reads for coverage checks)
 """
 
 from __future__ import annotations
@@ -45,27 +22,26 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Tuple
 
 from app.extensions.policies import (
-    load_policy_budget,
-    load_policy_domain,
-    load_policy_fund_archetype,
-    load_policy_issuance,
-    load_policy_journal_flags,
-    load_policy_projects,
+    load_policy_entity_roles,
+    load_policy_finance_controls,
+    load_policy_finance_taxonomy,
+    load_policy_logistics_issuance,
+    load_policy_operations,
     load_policy_rbac,
+    load_policy_service_taxonomy,
 )
-from app.extensions.validate import validate_json_payload
-from app.lib.jsonutil import read_json_file  # or your existing util
 
 
 class PolicyError(ValueError):
-    ...
+    """Fatal policy problem. Treat as a hard stop for startup/admin save."""
 
 
 class PolicyWarning(Warning):
-    ...
+    """Non-fatal policy problem. Surface in policy-health output."""
 
 
 _PART_KEY_MAP = {
+    # policy keys -> parsed sku part keys
     "category": "cat",
     "subcategory": "sub",
     "source": "src",
@@ -98,47 +74,82 @@ def _uniq(seq: Iterable[str]) -> List[str]:
 
 
 def policy_health_report() -> Tuple[List[str], List[str]]:
-    """Returns (warnings, infos). Raises PolicyError on fatal issues."""
+    """
+    Returns (warnings, infos). Raises PolicyError on fatal issues.
+
+    Intended to be called by CLI/admin tooling.
+    """
     infos: List[str] = []
     warns: List[str] = []
+
     infos += check_rbac_policy()
-    infos += check_domain_policy()
+    infos += check_entity_roles_policy()
     infos += check_rbac_domain_relationship()
+
+    # Light finance + operations sanity checks (no DB required)
+    infos += check_finance_taxonomy_policy()
+    infos += check_finance_controls_policy()
+    infos += check_operations_policy()
+
+    # Logistics coverage checks may require DB; keep non-fatal here
     try:
-        infos += check_issuance_policy_against_catalog()
+        infos += check_logistics_issuance_policy_against_catalog()
     except Exception as e:
-        warns.append(f"issuance check: {e}")
+        warns.append(f"logistics issuance coverage: {e}")
+
     return (warns, infos)
 
 
 # -----------------
-# Roles Related
-# Policy Semantics
+# Roles Related Semantics
 # -----------------
 
 
-def check_domain_policy() -> list[str]:
-    """Pure semantic checks for policy_domain.json.
+def _domain_role_codes(pol: dict) -> set[str]:
+    """
+    Domain roles may be represented as:
+      - list[str]
+      - list[{"code": "..."}]
+    Return a set[str] of codes.
+    """
+    raw = pol.get("domain_roles") or []
+    out: set[str] = set()
+    for r in raw:
+        if isinstance(r, str):
+            out.add(r)
+        elif isinstance(r, dict) and isinstance(r.get("code"), str):
+            out.add(r["code"])
+    return out
+
+
+def check_entity_roles_policy() -> list[str]:
+    """
+    Pure semantic checks for policy_entity_roles.json.
+
     Returns list of human messages.
-    Raises PolicyError on fatal issues."""
+    Raises PolicyError on fatal issues.
+    """
     msgs: List[str] = []
-    pol = load_policy_domain()
-    roles = _as_set(pol.get("domain_roles"))
+    pol = load_policy_entity_roles()
+    roles = _domain_role_codes(pol)
     rules = pol.get("assignment_rules") or {}
 
-    # 1) forbidden_pairs exist in catalog
+    if not roles:
+        raise PolicyError("entity_roles.domain_roles cannot be empty")
+
+    # forbidden_pairs exist in catalog
     for pair in rules.get("forbidden_pairs", []):
-        if len(pair) != 2:
+        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
             raise PolicyError(
-                f"forbidden_pairs entry must have exactly 2 items: {pair}"
+                f"forbidden_pairs entry must have exactly 2 items: {pair!r}"
             )
         a, b = pair
         if a not in roles or b not in roles:
             raise PolicyError(
-                f"forbidden pair references unknown domain role(s): {pair}"
+                f"forbidden_pairs references unknown domain role(s): {pair!r}"
             )
 
-    # 2) domain_disallows_rbac exist in catalog
+    # domain_disallows_rbac exist in catalog
     dis = _as_set(rules.get("domain_disallows_rbac"))
     missing = [r for r in dis if r not in roles]
     if missing:
@@ -159,16 +170,18 @@ def check_rbac_policy() -> list[str]:
 
 
 def check_rbac_domain_relationship() -> list[str]:
-    """Cross-file constraints that reflect business rules:
+    """
+    Cross-file constraints that reflect business rules:
     - admin/staff RBAC must imply domain governor requirement.
-    - civilian disallows any RBAC.
+    - civilian disallows any RBAC (recommended hint if missing).
     """
     msgs: List[str] = []
     rbac = _as_set(load_policy_rbac().get("rbac_roles"))
-    dom = load_policy_domain()
+    dom = load_policy_entity_roles()
     rules = dom.get("assignment_rules") or {}
     must = rules.get("must_include_when_rbac", {}) or {}
     dis = _as_set(rules.get("domain_disallows_rbac"))
+    roles = _domain_role_codes(dom)
 
     # ensure admin/staff present in rbac catalog when referenced
     for r in ("admin", "staff"):
@@ -179,14 +192,18 @@ def check_rbac_domain_relationship() -> list[str]:
 
     # ensure governor is listed as required for admin/staff
     for r in ("admin", "staff"):
-        if "governor" not in _as_set(must.get(r)):
+        req = _as_set(must.get(r))
+        if "governor" not in req:
             raise PolicyError(
                 f"RBAC '{r}' must include domain 'governor' in must_include_when_rbac"
             )
+        if "governor" not in roles:
+            raise PolicyError(
+                "entity_roles.domain_roles must include 'governor'"
+            )
 
-    # civilian disallows RBAC
-    # (we only check presence; enforcement is elsewhere)
-    if "civilian" not in dis:
+    # civilian disallows RBAC (soft hint)
+    if "civilian" in roles and "civilian" not in dis:
         msgs.append(
             "hint: Add 'civilian' to domain_disallows_rbac to prevent RBAC linkage."
         )
@@ -195,89 +212,141 @@ def check_rbac_domain_relationship() -> list[str]:
     return msgs
 
 
-def validate_rbac_semantics(doc: dict) -> list[str]:
-    """
-    Soft semantic checks for policy_rbac.json.
+# -----------------
+# Finance + Operations sanity
+# -----------------
 
-    This is meant for admin/dev tooling (e.g. the policy editor) and
-    should only ever return *hints*, not raise. Hard failures (missing
-    keys, wrong types, etc.) are handled by JSON Schema validation.
 
-    Current expectations (v1):
+def check_finance_taxonomy_policy() -> list[str]:
+    pol = load_policy_finance_taxonomy()
+    msgs: list[str] = []
 
-      - doc.get("rbac_roles") should be a list of non-empty strings.
-      - we recommend lower-case, trimmed role codes because the Auth
-        contract normalises them to that shape.
-    """
-    hints: list[str] = []
-
-    roles = doc.get("rbac_roles")
-    if roles is None:
-        # Schema (or check_rbac_policy) will complain if this is truly
-        # required; here we just surface a soft hint.
-        hints.append("rbac_roles is missing (expected a list of role codes).")
-        return hints
-
-    if not isinstance(roles, list):
-        hints.append("rbac_roles should be a list of strings.")
-        return hints
-
-    # Non-string / empty entries
-    for r in roles:
-        if not isinstance(r, str):
-            hints.append(f"rbac_roles entry is not a string: {r!r}")
-        elif not r.strip():
-            hints.append(
-                "rbac_roles contains an empty/whitespace-only entry."
-            )
-
-    # Normalisation hints
-    for r in roles:
-        if not isinstance(r, str):
-            continue
-        trimmed = r.strip()
-        if trimmed != r:
-            hints.append(
-                f"role '{r}' has leading/trailing whitespace; "
-                f"it will be normalised to '{trimmed.lower()}' at runtime."
-            )
-        elif trimmed.lower() != trimmed:
-            hints.append(
-                f"role '{r}' will be normalised to lower-case "
-                f"('{trimmed.lower()}') at runtime."
-            )
-
-    # Duplicate detection (Schema may enforce uniqueItems later, but this
-    # keeps the hint logic explicit).
-    seen: set[str] = set()
-    dup: set[str] = set()
-    for r in roles:
-        if not isinstance(r, str):
-            continue
-        key = r.strip().lower()
-        if key in seen:
-            dup.add(key)
-        else:
-            seen.add(key)
-    if dup:
-        hints.append(
-            "duplicate roles (case-insensitive) in rbac_roles: "
-            + ", ".join(sorted(dup))
+    fa = pol.get("fund_archetypes") or []
+    if not isinstance(fa, list) or not fa:
+        raise PolicyError(
+            "finance_taxonomy.fund_archetypes must be a non-empty list"
         )
 
-    return hints
+    jf = pol.get("journal_flags") or []
+    if not isinstance(jf, list):
+        raise PolicyError("finance_taxonomy.journal_flags must be a list")
+
+    ek = pol.get("expense_kinds") or []
+    if ek and not isinstance(ek, list):
+        raise PolicyError(
+            "finance_taxonomy.expense_kinds must be a list when present"
+        )
+
+    msgs.append(
+        f"finance taxonomy: fund_archetypes={len(fa)} journal_flags={len(jf)} expense_kinds={len(ek)}"
+    )
+    return msgs
+
+
+def check_finance_controls_policy() -> list[str]:
+    pol = load_policy_finance_controls()
+    msgs: list[str] = []
+
+    spending = pol.get("spending") or {}
+    staff_cap = spending.get("staff_cap_cents")
+    if staff_cap is None:
+        raise PolicyError(
+            "finance_controls.spending.staff_cap_cents is required"
+        )
+    try:
+        staff_cap_int = int(staff_cap)
+    except Exception as e:
+        raise PolicyError(
+            f"finance_controls.spending.staff_cap_cents must be an int: {e}"
+        )
+    if staff_cap_int < 0:
+        raise PolicyError(
+            "finance_controls.spending.staff_cap_cents must be >= 0"
+        )
+
+    budget = pol.get("budget") or {}
+    periods = budget.get("periods") or []
+    if not isinstance(periods, list):
+        raise PolicyError("finance_controls.budget.periods must be a list")
+
+    msgs.append(
+        f"finance controls: staff_cap_cents={staff_cap_int} budget_periods={len(periods)}"
+    )
+    return msgs
+
+
+def _expense_kind_keys() -> set[str]:
+    pol = load_policy_finance_taxonomy()
+    ek = pol.get("expense_kinds") or []
+    out: set[str] = set()
+    for item in ek:
+        if isinstance(item, str):
+            out.add(item)
+        elif isinstance(item, dict) and isinstance(item.get("key"), str):
+            out.add(item["key"])
+    return out
+
+
+def check_operations_policy() -> list[str]:
+    pol = load_policy_operations()
+    msgs: list[str] = []
+
+    task_kinds = pol.get("task_kinds") or []
+    if not isinstance(task_kinds, list) or not task_kinds:
+        raise PolicyError("operations.task_kinds must be a non-empty list")
+
+    valid_expense_kinds = _expense_kind_keys()
+    if not valid_expense_kinds:
+        msgs.append(
+            "hint: finance_taxonomy.expense_kinds is empty; cannot validate operations.finance_hints.expense_kinds"
+        )
+
+    bad_refs: list[str] = []
+    for tk in task_kinds:
+        if not isinstance(tk, dict):
+            continue
+        fh = tk.get("finance_hints") or {}
+        exp = fh.get("expense_kinds") or []
+        if not valid_expense_kinds:
+            continue
+        for k in exp:
+            if k not in valid_expense_kinds:
+                bad_refs.append(f"{tk.get('key','<no-key>')} -> {k}")
+
+    if bad_refs:
+        raise PolicyError(
+            "operations task_kinds reference unknown expense_kinds: "
+            + ", ".join(bad_refs[:10])
+        )
+
+    msgs.append(
+        f"operations: task_kinds={len(task_kinds)} projects={len((pol.get('projects') or {}).keys())}"
+    )
+    return msgs
 
 
 # -----------------
-# Logistics Related
-# Policy Semantics
+# Logistics: issuance vs catalog + SKU constraints
 # -----------------
 
 
-def check_issuance_policy_against_catalog() -> list[str]:
+def _cadence_sanity(cad: dict, *, where: str) -> None:
+    try:
+        max_per = int(cad.get("max_per_period", 1))
+        period = int(cad.get("period_days", 365))
+    except Exception as e:
+        raise PolicyError(f"{where}: cadence fields must be ints: {e}")
+    if max_per < 1:
+        raise PolicyError(f"{where}: cadence.max_per_period must be >= 1")
+    if period < 1:
+        raise PolicyError(f"{where}: cadence.period_days must be >= 1")
+
+
+def check_logistics_issuance_policy_against_catalog() -> list[str]:
     """
-    Sanity checks for issuance policy:
-    cadence sanity & coverage vs catalog.
+    Sanity checks for logistics_issuance:
+    - cadence sanity (defaults + any rule cadence)
+    - coverage (classification_key) vs Logistics inventory catalog
     """
     from sqlalchemy import distinct, select
 
@@ -285,127 +354,106 @@ def check_issuance_policy_against_catalog() -> list[str]:
     from app.slices.logistics.models import InventoryItem
 
     msgs: List[str] = []
-    pol = load_policy_issuance()
-    default_behavior = (pol.get("default_behavior") or "deny").lower()
-    msgs.append(f"issuance default_behavior: {default_behavior}")
-    rules: List[Dict[str, Any]] = pol.get("rules", [])
+    pol = load_policy_logistics_issuance()
 
-    # cadence sanity
+    issuance = pol.get("issuance") or {}
+    defaults = issuance.get("defaults") or {}
+    default_cad = defaults.get("cadence") or {}
+    if default_cad:
+        _cadence_sanity(default_cad, where="issuance.defaults.cadence")
+
+    sku_constraints = pol.get("sku_constraints") or {}
+    rules: List[Dict[str, Any]] = list(sku_constraints.get("rules") or [])
+
     for i, r in enumerate(rules):
         cad = r.get("cadence") or {}
-        max_per = int(cad.get("max_per_period", 1))
-        period = int(cad.get("period_days", 365))
-        if max_per < 1:
-            raise PolicyError(
-                f"rules[{i}].cadence.max_per_period must be >=1"
-            )
-        if period < 1:
-            raise PolicyError(f"rules[{i}].cadence.period_days must be >=1")
+        if cad:
+            _cadence_sanity(cad, where=f"sku_constraints.rules[{i}].cadence")
 
-    # coverage (classification_key) — simple first pass
     rule_keys = {
         (r.get("match") or {}).get("classification_key") for r in rules
     }
     rule_keys.discard(None)
 
+    attr = getattr(InventoryItem, "classification_key", None) or getattr(
+        InventoryItem, "category"
+    )
     cats = [
         c[0]
-        for c in db.session.execute(
-            select(distinct(InventoryItem.category))
-        ).all()
+        for c in db.session.execute(select(distinct(attr))).all()
         if c and c[0]
     ]
 
     uncovered = sorted(set(cats) - rule_keys)
     if uncovered:
         msgs.append(
-            f"warn: {len(uncovered)} active classification_keys not covered by rules: "
-            f"{uncovered[:10]}{'...' if len(uncovered)>10 else ''}"
+            f"warn: {len(uncovered)} active classification keys not covered by cadence rules: "
+            f"{uncovered[:10]}{'...' if len(uncovered) > 10 else ''}"
         )
     else:
         msgs.append(
-            "all active classification_keys are covered by issuance rules (or default applies)"
+            "all active classification keys are covered by cadence rules (or default applies)"
         )
+
     return msgs
 
 
+def _service_classification_codes() -> set[str]:
+    """
+    Return known classification codes from service_taxonomy policy.
+    """
+    pol = load_policy_service_taxonomy()
+    cls = pol.get("classifications") or {}
+    if isinstance(cls, dict) and isinstance(cls.get("map"), dict):
+        return set(cls["map"].keys())
+    if isinstance(cls, dict):
+        return {k for k in cls.keys() if "/" in k or "." in k or k.isupper()}
+    return set()
+
+
 def validate_issuance_semantics(doc: dict) -> list[str]:
-    hints = []
+    """
+    Soft semantic checks for logistics_issuance policy payload.
 
-    # rule ids unique
-    ids = [r.get("id") for r in doc.get("rules", []) if r.get("id")]
-    dup = {i for i in ids if ids.count(i) > 1}
-    if dup:
-        hints.append(f"duplicate rule ids: {', '.join(sorted(dup))}")
+    Returns hints only; hard failures are handled elsewhere.
+    """
+    hints: list[str] = []
+    sku_constraints = doc.get("sku_constraints") or {}
+    rules = sku_constraints.get("rules") or []
+    if not isinstance(rules, list):
+        return ["sku_constraints.rules should be a list"]
 
-    # classification_key sanity:
-    # must be one of governance.service_classifications
-    from app.slices.governance.services import list_service_classifications
-
-    valid_ck = {r["code"] for r in list_service_classifications()}
-    for r in doc.get("rules", []):
-        ck = r.get("match", {}).get("classification_key")
-        if ck and ck not in valid_ck:
-            hints.append(f"unknown classification_key: {ck}")
-
-    # cadence label presence recommended
-    for r in doc.get("rules", []):
-        cad = r.get("cadence", {})
-        if cad and "label" not in cad:
-            hints.append(
-                f"rule {r.get('id','<no-id>')} cadence has no label (ok, but recommended)"
-            )
-
-    # qualifier expressions format
-    import re
-
-    pat = re.compile(r"^[a-z_]+<=\d+$")
-    for r in doc.get("rules", []):
-        for expr in r.get("qualifiers", {}).get("tier1_any_of", []) or []:
-            if not pat.match(expr):
+    valid_ck = _service_classification_codes()
+    if valid_ck:
+        for r in rules:
+            if not isinstance(r, dict):
+                continue
+            ck = (r.get("match") or {}).get("classification_key")
+            if ck and ck not in valid_ck:
                 hints.append(
-                    f"bad tier expr in rule {r.get('id','<no-id>')}: {expr}"
+                    f"unknown classification_key in cadence rule: {ck}"
                 )
+    else:
+        hints.append(
+            "hint: service_taxonomy classifications not available; cannot validate classification_key references"
+        )
 
     return hints
 
 
-# -----------------
-# SKU related
-# Policy Semantics
-# -----------------
-
-
-def _load_sku_constraints() -> dict:
-    """
-    Canon loader wrapper.
-
-    Policy semantics should not hard-code file paths.
-    We keep permissive behavior here: if the policy is missing/invalid,
-    return an empty ruleset and let policy-health surface the details.
-    """
-    try:
-        from app.extensions.policies import load_policy_sku_constraints
-
-        data = load_policy_sku_constraints()
-        if not data:
-            return {"rules": []}
-        return data
-    except Exception:
-        return {"rules": []}
+def _issuance_rules_for_sku_constraints() -> list[dict]:
+    """Rules that constrain SKU issuance_class based on SKU parts."""
+    pol = load_policy_logistics_issuance()
+    issuance = pol.get("issuance") or {}
+    return list(issuance.get("rules") or [])
 
 
 def check_sku_constraints(parts: dict) -> tuple[bool, str | None]:
     """
-    parts keys come from sku.parse_sku():
-    cat, sub, src, size, col, issuance_class
-    Policy 'if' keys use:
-    category, subcategory, source, size, color, issuance_class.
+    Enforce issuance_class constraints based on SKU parts.
     """
-    pol = _load_sku_constraints()
-    for r in pol.get("rules", []):
+    for r in _issuance_rules_for_sku_constraints():
         cond = r.get("if", {}) or {}
-        # translate policy keys to parsed-part keys
         if all(parts.get(_map_part_key(k)) == v for k, v in cond.items()):
             expected = (r.get("then") or {}).get("issuance_class")
             if expected and parts.get("issuance_class") != expected:
@@ -422,70 +470,47 @@ def assert_sku_constraints_ok(parts: dict) -> None:
 
 def resolve_cadence(policy: dict, rule: dict) -> dict:
     """
-    Return a concrete cadence dict for a rule:
-    - rule.cadence wins
-    - else rule.cadence_preset maps via policy.defaults.cadence_presets[name]
-    - else policy.defaults.cadence
+    Return a concrete cadence dict for a cadence-bearing rule in logistics_issuance.
     """
     if rule.get("cadence"):
         return rule["cadence"]
     preset = rule.get("cadence_preset")
     if preset:
-        presets = (policy.get("defaults") or {}).get("cadence_presets") or {}
+        presets = ((policy.get("issuance") or {}).get("defaults") or {}).get(
+            "cadence_presets"
+        ) or {}
         if preset in presets:
             return presets[preset]
-    return ((policy.get("defaults") or {}).get("cadence")) or {}
+    return (
+        ((policy.get("issuance") or {}).get("defaults") or {}).get("cadence")
+    ) or {}
 
 
 # -----------------
-# Funding / Projects / Journal flags
+# Finance helper accessors (v2)
 # -----------------
-
-
-def list_project_types() -> list[dict]:
-    """
-    Return the canonical list of project types from policy_projects.json.
-
-    Shape:
-      [{ "key": str, "label": str }, ...]
-    """
-    pol = load_policy_projects()
-    return list(pol.get("project_types") or [])
 
 
 def list_fund_archetypes() -> list[dict]:
-    """
-    Return the canonical list of fund archetypes from policy_fund_archetype.json.
-
-    Shape:
-      [{ "key": str, "restriction": str, "label": str? }, ...]
-    """
-    pol = load_policy_fund_achetype()
+    pol = load_policy_finance_taxonomy()
     return list(pol.get("fund_archetypes") or [])
 
 
 def list_journal_flag_keys() -> list[str]:
-    """
-    Return the set of allowed Finance journal flag keys from policy_journal_flags.json.
-    """
-    pol = load_policy_journal_flags()
-    return [
-        f["key"]
-        for f in pol.get("flags") or []
-        if isinstance(f, dict) and "key" in f
-    ]
+    pol = load_policy_finance_taxonomy()
+    flags = pol.get("journal_flags") or []
+    out: list[str] = []
+    for f in flags:
+        if isinstance(f, str):
+            out.append(f)
+        elif isinstance(f, dict) and isinstance(f.get("key"), str):
+            out.append(f["key"])
+    return _uniq(out)
 
 
 def assert_journal_flags_ok(flags: list[str] | None) -> None:
-    """
-    Validate that all journal flags used in a Finance Journal entry are
-    defined in policy_journal_flags.json.
-
-    Raises PolicyError if any unknown flags are present.
-    """
     if not flags:
         return
-
     allowed = set(list_journal_flag_keys())
     unknown = sorted(set(flags) - allowed)
     if unknown:
@@ -501,19 +526,11 @@ def find_budget_cap(
     project_code: str | None = None,
 ) -> dict | None:
     """
-    Look up a single budget cap line from policy_budget.json
-    matching the given period + fund/project identifiers.
-
-    Matching strategy (v1, simple):
-      - Find the period with matching period_label.
-      - Within that period, prefer exact fund_code/project_code
-        matches if provided; otherwise fall back to archetype/type
-        only.
-
-    Returns the raw 'line' dict, or None if no budget is defined.
+    Look up a single budget cap line from finance_controls.
     """
-    pol = load_policy_budget()
-    for period in pol.get("periods") or []:
+    pol = load_policy_finance_controls()
+    periods = ((pol.get("budget") or {}).get("periods")) or []
+    for period in periods:
         if period.get("period_label") != period_label:
             continue
         for line in period.get("lines") or []:
@@ -535,3 +552,15 @@ def find_budget_cap(
 
             return line
     return None
+
+
+# -----------------
+# Legacy aliases (temporary)
+# -----------------
+# Keep old function names alive while the rest of the app is refactored.
+# Delete these once all call sites are migrated.
+
+check_domain_policy = check_entity_roles_policy
+check_issuance_policy_against_catalog = (
+    check_logistics_issuance_policy_against_catalog
+)

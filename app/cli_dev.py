@@ -591,12 +591,12 @@ def _scan_issuance_coverage():
     from types import SimpleNamespace as NS
 
     from app.extensions import db
-    from app.extensions.policies import load_policy_issuance
+    from app.extensions.policies import load_policy_logistics_issuance
     from app.slices.governance.services import _rule_matches
     from app.slices.logistics.models import InventoryItem
     from app.slices.logistics.sku import parse_sku
 
-    pol = load_policy_issuance()
+    pol = load_policy_logistics_issuance()
     rules = list(pol.get("rules") or [])
     default_behavior = (pol.get("default_behavior") or "deny").lower()
 
@@ -749,7 +749,7 @@ def dev_issuance_debug(
     """
     from types import SimpleNamespace
 
-    from app.extensions.policies import load_policy_issuance
+    from app.extensions.policies import load_policy_logistics_issuance
     from app.lib.chrono import now_iso8601_ms
     from app.slices.governance.services import _rule_matches, decide_issue
 
@@ -765,7 +765,7 @@ def dev_issuance_debug(
     # Canonical classification key (e.g. 'CG/SL')
     ckey = classification_key_for(sku_code)
 
-    policy = load_policy_issuance()
+    policy = load_policy_logistics_issuance()
     default_behavior = policy.get("default", {})
     rules = policy.get("rules", [])
 
@@ -897,7 +897,7 @@ def dev_issuance_tripwires(
 
     from app.extensions import db
     from app.extensions.policies import (
-        load_policy_issuance,
+        load_policy_logistics_issuance,
     )
     from app.lib.chrono import now_iso8601_ms
     from app.lib.ids import new_ulid
@@ -917,7 +917,7 @@ def dev_issuance_tripwires(
     )
     from app.slices.logistics.sku import parse_sku
 
-    pol = load_policy_issuance()
+    pol = load_policy_logistics_issuance()
     rules = list(pol.get("rules") or [])
     if not rules:
         click.echo("No issuance rules loaded.")
@@ -1098,9 +1098,9 @@ def dev_issuance_tripwires(
 
     def _blackout_when_from_calendar() -> str | None:
         try:
-            from app.extensions.policies import load_policy_calendar
+            from app.extensions.policies import load_policy_operations
 
-            cal = load_policy_calendar()
+            cal = load_policy_operations()
         except Exception:
             return None
 

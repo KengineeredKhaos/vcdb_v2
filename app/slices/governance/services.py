@@ -74,7 +74,7 @@ Current families (2025-11, v2 build-out):
          ``governance/data/``; target is a Policy row family
          (e.g. ``family="issuance"``).
    * Helpers here:
-       - ``load_policy_issuance()`` (JSON -> in-memory policy object),
+       - ``load_policy_logitics_issuance()`` (JSON -> in-memory policy object),
        - private helpers (``_rule_matches``, ``_check_qualifiers``,
          ``_apply_cadence``, etc.),
        - ``decide_issue(ctx)``: core decision engine.
@@ -185,7 +185,7 @@ from app.extensions import db, event_bus
 from app.extensions.contracts import logistics_v2
 from app.extensions.policies import (
     load_policy,
-    load_policy_issuance,
+    load_policy_logistics_issuance,
 )
 from app.lib.chrono import add_years_utc, as_naive_utc, now_iso8601_ms
 from app.lib.errors import PolicyError
@@ -2006,7 +2006,7 @@ def decide_issue(ctx):
     """
     from app.extensions.enforcers import calendar_blackout_ok
 
-    pol = load_policy_issuance()
+    pol = load_policy_logistics_issuance()
     default_behavior = (pol.get("default_behavior") or "deny").lower()
 
     # 1) Calendar blackout

@@ -147,6 +147,12 @@ class Project(db.Model, ULIDPK, IsoTimestamps):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    tasks: Mapped[list["Task"]] = relationship(
+        "Task",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     __table_args__ = (
         Index("ix_project_title", "project_title"),
@@ -229,13 +235,6 @@ class Task(db.Model, ULIDPK, IsoTimestamps):
 class ProjectFundingPlan(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "funding_plan"
 
-    # Relationship back to project (handy in services)
-    project: Mapped["Project"] = relationship(
-        "Project",
-        back_populates="funding_plans",
-        passive_deletes=True,
-    )
-
     # Human-facing short label, similar to FundingProspect.label
     label: Mapped[str] = mapped_column(
         String(80), nullable=False, default="unnamed"
@@ -273,6 +272,18 @@ class ProjectFundingPlan(db.Model, ULIDPK, IsoTimestamps):
     project: Mapped["Project"] = relationship(
         "Project",
         back_populates="funding_plans",
+        passive_deletes=True,
+    )
+    project_ulid: Mapped[str] = ULIDFK(
+        "project_project",
+        nullable=False,
+        ondelete="CASCADE",  # or SET NULL if you want it nullable
+    )
+
+    project: Mapped["Project"] = relationship(
+        "Project",
+        back_populates="funding_plans",
+        foreign_keys=[project_ulid],
         passive_deletes=True,
     )
 

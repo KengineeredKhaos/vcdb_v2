@@ -6,9 +6,8 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from app.extensions.policies import (
-    load_policy_budget,
-    load_policy_funding,
-    load_policy_journal_flags,
+    load_policy_finance_controls,
+    load_policy_finance_taxonomy,
 )
 
 # -----------------
@@ -165,7 +164,7 @@ def classify_donation_intent(
         raise ValueError("amount_cents must be > 0")
 
     # --- funding policy ---
-    funding = load_policy_funding()
+    funding = load_policy_finance_controls()
     archetypes = {a["key"]: a for a in funding.get("fund_archetypes", [])}
 
     # Default fund archetype if caller omitted it (configurable later)
@@ -181,7 +180,7 @@ def classify_donation_intent(
         )
 
     # --- journal flags policy ---
-    flags_policy = load_policy_journal_flags()
+    flags_policy = load_policy_finance_taxonomy()
     valid_flag_keys = {f["key"] for f in flags_policy.get("flags", [])}
 
     journal_flags: list[str] = []
@@ -203,7 +202,7 @@ def classify_donation_intent(
     # we can leave this empty and flesh it out when Calendar is ready.
     # Example future logic:
     #
-    #   budget = load_policy_budget()
+    #   budget = load_policy_finance_controls()
     #   ... scan for lines with this fund_archetype_key to infer a set of
     #   project_type_keys to which this fund is typically applied.
 
@@ -243,7 +242,7 @@ def compute_budget_position(
     cap_cents: Optional[int] = None
 
     try:
-        _budget = load_policy_budget()
+        _budget = load_policy_finance_controls()
         # TODO: when policy_budget.json is finalized, derive `cap_cents`
         # for the (fund_archetype_key, project_type_key, period_label)
         # combination from `_budget`.

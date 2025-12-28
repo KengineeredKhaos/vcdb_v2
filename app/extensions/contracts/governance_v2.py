@@ -142,7 +142,6 @@ from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
 from app.slices.governance import services as gov_svc
 from app.slices.governance import services_budget as svc_budget
-from app.slices.governance.services import decide_issue
 from app.slices.governance.services_admin import (
     commit_update_impl,
     get_policy_impl,
@@ -422,6 +421,19 @@ class ResourceCapsPolicy:
             for code in codes:
                 out.add(f"{domain}.{code}")
         return out
+
+
+# -----------------
+# Band Aid
+# -----------------
+
+
+def decide_issue(*args, **kwargs):
+    # Lazy import to avoid circular import:
+    # governance.services -> logistics_v2 -> issuance_services -> governance_v2 -> governance.services
+    from app.slices.governance.services import decide_issue as _decide_issue
+
+    return _decide_issue(*args, **kwargs)
 
 
 # -----------------

@@ -1,5 +1,4 @@
 # app/slices/admin/services.py
-
 """
 VCDB v2 — Admin slice services
 
@@ -62,11 +61,13 @@ The rule of thumb is:
 Over time other Admin-only flows (cron dashboards, diagnostics, etc.)
 should also live here.
 """
-from __future__ import annotations
+
+from __future__ import annotations  # noqa: E402, F404
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
 
@@ -74,12 +75,14 @@ from app.extensions import db, event_bus
 from app.extensions.policies import (
     AUTH_DATA,
     GOV_DATA,
-    canonicalize_json,
-    save_policy,
-    validate_json_schema,
+    load_policy_governance_index,
+    reload_policy_catalog,
+    save_governance_policy,
 )
+from app.extensions.validate import validate_json_payload
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
+from app.lib.jsonutil import canonical_hash, read_json_file
 
 # Optional semantic validators (safe to import if you added them)
 try:  # pragma: no cover - import guard only
@@ -94,6 +97,50 @@ except Exception:  # pragma: no cover
 
     def validate_rbac_semantics(doc: dict) -> list[str]:
         return []
+
+
+# -----------------
+# policy mapping helper
+# -----------------
+
+
+def _policy_key_and_schema_for_path(
+    policy_path: Path,
+) -> tuple[str, Optional[Path], str]:
+    """
+    Returns (policy_key, schema_path, root) where root is 'governance' or 'auth'.
+
+    Uses the governance_index manifest for governance files.
+    """
+    p = policy_path.resolve()
+    gov_root = GOV_DATA.resolve()
+    auth_root = AUTH_DATA.resolve()
+
+    if str(p).startswith(str(gov_root)):
+        idx = load_policy_governance_index()
+        for entry in idx.get("policies", []):
+            if entry.get("filename") == policy_path.name:
+                policy_key = entry["policy_key"]
+                schema_fn = entry.get("schema_filename")
+                schema_path = (GOV_DATA / schema_fn) if schema_fn else None
+                return policy_key, schema_path, "governance"
+        raise ValueError(
+            f"Unknown governance policy filename: {policy_path.name}"
+        )
+
+    if str(p).startswith(str(auth_root)):
+        if policy_path.name == "policy_rbac.json":
+            schema_path = AUTH_DATA / "schemas" / "policy_rbac.schema.json"
+            return (
+                "rbac",
+                schema_path if schema_path.exists() else None,
+                "auth",
+            )
+        raise ValueError(
+            f"Unsupported auth policy filename: {policy_path.name}"
+        )
+
+    raise FileNotFoundError("Policy not under allowed data roots")
 
 
 # -----------------
@@ -151,18 +198,6 @@ def load_policy_text_for_edit(policy_path: Path) -> str:
 def validate_policy_raw(
     policy_path: Path, raw: str
 ) -> PolicyValidationResult:
-    """
-    Perform schema + semantic validation for a policy edit.
-
-    This mirrors the legacy logic that lived in routes.py so behaviour
-    stays identical, but centralised in one place.
-
-    Returns a PolicyValidationResult with:
-      - ok:     overall status (no hard errors)
-      - errors: hard failures (schema/parse/etc.)
-      - hints:  soft warnings (coverage hints, rule checks, etc.)
-      - doc:    parsed JSON object (or None on parse failure)
-    """
     try:
         doc = json.loads(raw)
     except Exception as e:
@@ -173,28 +208,26 @@ def validate_policy_raw(
             doc=None,
         )
 
-    _ensure_policy_path(policy_path)
+    p = _ensure_policy_path(policy_path)
 
-    name = policy_path.name
     errors: List[str] = []
     hints: List[str] = []
 
     try:
-        if name == "policy_issuance.json":
-            # issuance: schema + extra semantic hints
-            errors += validate_json_schema("policy_issuance.schema.json", doc)
+        policy_key, schema_path, root = _policy_key_and_schema_for_path(p)
+
+        # Schema validation (if known)
+        if schema_path is not None and schema_path.exists():
+            validate_json_payload(doc, schema_path)
+
+        # Semantic hints (optional)
+        # Keep these keyed off policy_key, not filename.
+
+        if policy_key == "logistics_issuance":
             hints += validate_issuance_semantics(doc)
-        elif name == "policy_rbac.json":
-            # RBAC policy lives under the auth slice
-            errors += validate_json_schema(
-                "policy_rbac.schema.json",
-                doc,
-                base_dir="app/slices/auth/data/schemas",
-            )
+        elif policy_key == "rbac":
             hints += validate_rbac_semantics(doc)
-        else:
-            # generic governance/auth policy – make sure it round-trips
-            canonicalize_json(doc)
+
     except Exception as e:
         errors.append(f"validation error: {e}")
 
@@ -207,30 +240,33 @@ def validate_policy_raw(
 
 
 def save_policy_raw(
-    policy_path: Path,
-    raw: str,
-    *,
-    actor_ulid: str | None,
+    policy_path: Path, raw: str, *, actor_ulid: str | None
 ) -> PolicyValidationResult:
-    """
-    Full save pipeline for policy edits:
-
-      - schema + semantic validation
-      - (on success) save canonical JSON via extensions.policies.save_policy
-      - emit a minimal ledger event under domain="admin"
-
-    The caller (route) is responsible for how errors/hints are surfaced
-    to the user; this function just returns the result.
-    """
     result = validate_policy_raw(policy_path, raw)
     if not result.ok or result.doc is None:
-        # caller will surface errors + hints
         return result
 
-    # Persist canonical JSON; schema validation already done above.
-    save_policy(str(policy_path), result.doc)
+    p = _ensure_policy_path(policy_path)
+    policy_key, schema_path, root = _policy_key_and_schema_for_path(p)
 
-    # Emit a simple audit event – names only, no policy body.
+    # capture before/after hashes for the ledger event
+    old_doc = read_json_file(p, default=None)
+    old_hash = canonical_hash(old_doc) if old_doc else None
+
+    if root == "governance":
+        # Uses manifest schema (already validated above, but this re-validates if schema exists)
+        save_governance_policy(policy_key, result.doc)
+    else:
+        # auth/rbac write-path (keep simple for now)
+        p.write_text(
+            json.dumps(result.doc, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    # hard reload step (your “last step”)
+    reload_policy_catalog()
+
+    # emit ledger event (names only)
     event_bus.emit(
         domain="admin",
         operation="policy.saved",
@@ -238,7 +274,12 @@ def save_policy_raw(
         actor_ulid=actor_ulid,
         target_ulid=None,
         happened_at_utc=now_iso8601_ms(),
-        refs={"path": str(policy_path.name)},
+        refs={
+            "policy_key": policy_key,
+            "filename": p.name,
+            "old_hash": old_hash,
+            "new_hash": canonical_hash(result.doc),
+        },
     )
     db.session.commit()
 

@@ -267,7 +267,9 @@ try:
         PolicyError,
         policy_health_report,
     )
-except Exception:  # pragma: no cover - still useful even if semantics module not present yet
+except (
+    Exception
+):  # pragma: no cover - still useful even if semantics module not present yet
     PolicyError = RuntimeError  # type: ignore
 
     def policy_health_report():  # type: ignore
@@ -338,7 +340,9 @@ def _policy_paths_for_entry(
     schema_path = (policy_base / entry["schema_filename"]).resolve()
     if not schema_path.exists():
         # fallback: schema_base/<basename>
-        schema_path = (schema_base / Path(entry["schema_filename"]).name).resolve()
+        schema_path = (
+            schema_base / Path(entry["schema_filename"]).name
+        ).resolve()
     return policy_path, schema_path
 
 
@@ -374,11 +378,15 @@ def _validate_policies_v2(
     keys = [e.get("policy_key") for e in entries]
     dupes = {k for k in keys if k and keys.count(k) > 1}
     if dupes:
-        fatals.append(f"Duplicate policy_key(s) in index: {', '.join(sorted(dupes))}")
+        fatals.append(
+            f"Duplicate policy_key(s) in index: {', '.join(sorted(dupes))}"
+        )
 
     for entry in entries:
         pkey = entry.get("policy_key") or "<?>"
-        ppath, spath = _policy_paths_for_entry(policy_base, schema_base, entry)
+        ppath, spath = _policy_paths_for_entry(
+            policy_base, schema_base, entry
+        )
 
         if not ppath.exists():
             fatals.append(f"{pkey}: missing policy file {ppath}")
@@ -396,7 +404,9 @@ def _validate_policies_v2(
         try:
             schema = _load_json_file(spath)
         except Exception as ex:
-            fatals.append(f"{pkey}: invalid JSON schema in {spath.name}: {ex}")
+            fatals.append(
+                f"{pkey}: invalid JSON schema in {spath.name}: {ex}"
+            )
             continue
 
         # Entry ↔ file meta agreement
@@ -432,7 +442,9 @@ def _load_policy_by_key(policy_base: Path, key: str) -> dict:
     for entry in index.get("policies") or []:
         if entry.get("policy_key") == key:
             return _load_json_file(policy_base / entry["filename"])
-    raise KeyError(f"Unknown policy_key {key!r} (not present in governance_index)")
+    raise KeyError(
+        f"Unknown policy_key {key!r} (not present in governance_index)"
+    )
 
 
 def _issuance_rule_matches(rule: dict, sku_code: str, parts: dict) -> bool:
@@ -472,7 +484,9 @@ def _scan_logistics_issuance_coverage(policy_base: Path):
     rules = list(((pol.get("sku_constraints") or {}).get("rules")) or [])
 
     rows = (
-        db.session.execute(select(InventoryItem.sku).order_by(InventoryItem.sku))
+        db.session.execute(
+            select(InventoryItem.sku).order_by(InventoryItem.sku)
+        )
         .scalars()
         .all()
     )
@@ -572,7 +586,9 @@ def _print_sku_policy_summary_v2(policy_base: Path) -> None:
     click.echo("InventoryItem sources (from SKU):")
     src_counts: dict[str, int] = {}
     skus = (
-        db.session.execute(select(InventoryItem.sku).order_by(InventoryItem.sku))
+        db.session.execute(
+            select(InventoryItem.sku).order_by(InventoryItem.sku)
+        )
         .scalars()
         .all()
     )
@@ -588,7 +604,11 @@ def _print_sku_policy_summary_v2(policy_base: Path) -> None:
             bad_src.append(src)
 
     for src in sorted(src_counts):
-        flag = "  (! not in policy)" if (allowed_sources and src not in allowed_sources) else ""
+        flag = (
+            "  (! not in policy)"
+            if (allowed_sources and src not in allowed_sources)
+            else ""
+        )
         click.echo(f"  {src!r:4s}  {src_counts[src]:5d}{flag}")
 
     if bad_units:
@@ -599,7 +619,9 @@ def _print_sku_policy_summary_v2(policy_base: Path) -> None:
 
     if bad_src:
         click.echo("")
-        click.echo("WARN: SKU sources present in DB but not allowed by policy:")
+        click.echo(
+            "WARN: SKU sources present in DB but not allowed by policy:"
+        )
         for s in sorted(set(bad_src)):
             click.echo(f"  - {s!r}")
 
@@ -615,7 +637,9 @@ def _print_location_policy_summary_v2(policy_base: Path) -> None:
     kinds = pol.get("kinds") or []
     loc_specs = pol.get("locations") or []
     patterns = pol.get("patterns") or {}
-    rackbin_pattern = re.compile(patterns.get("rackbin", r"$^"))  # match nothing if missing
+    rackbin_pattern = re.compile(
+        patterns.get("rackbin", r"$^")
+    )  # match nothing if missing
 
     allowed_codes = {spec["code"] for spec in loc_specs if "code" in spec}
 
@@ -655,7 +679,9 @@ def _print_location_policy_summary_v2(policy_base: Path) -> None:
 
     if bad_codes:
         click.echo("")
-        click.echo("WARN: Location codes not covered by policy or rackbin pattern:")
+        click.echo(
+            "WARN: Location codes not covered by policy or rackbin pattern:"
+        )
         for c in sorted(set(bad_codes)):
             click.echo(f"  - {c!r}")
 
@@ -675,7 +701,9 @@ def _print_location_policy_summary_v2(policy_base: Path) -> None:
     default=None,
     help="Override the schema base directory (folder that contains *.schema.json)",
 )
-def dev_policy_health(as_json: bool, base: Path | None, schema_base: Path | None):
+def dev_policy_health(
+    as_json: bool, base: Path | None, schema_base: Path | None
+):
     """Policy health (v2).
 
     What this does:
@@ -708,13 +736,21 @@ def dev_policy_health(as_json: bool, base: Path | None, schema_base: Path | None
     coverage_summary = None
     coverage_per_rule = None
     try:
-        coverage_summary, coverage_per_rule = _scan_logistics_issuance_coverage(pol_base)
+        (
+            coverage_summary,
+            coverage_per_rule,
+        ) = _scan_logistics_issuance_coverage(pol_base)
     except Exception as ex:
         warns.append(f"Coverage scan skipped: {ex}")
 
     if fatals:
         if as_json:
-            click.echo(json.dumps({"infos": infos, "warnings": warns, "fatals": fatals}, indent=2))
+            click.echo(
+                json.dumps(
+                    {"infos": infos, "warnings": warns, "fatals": fatals},
+                    indent=2,
+                )
+            )
         else:
             for i in infos:
                 click.echo(f"INFO: {i}")
@@ -743,19 +779,33 @@ def dev_policy_health(as_json: bool, base: Path | None, schema_base: Path | None
     if coverage_summary is not None:
         click.echo("")
         click.echo("Logistics issuance — coverage over InventoryItem catalog")
-        click.echo(f"  total_items        : {coverage_summary['total_items']}")
-        click.echo(f"  matched_any_rule   : {coverage_summary['matched_any_rule']}")
-        click.echo(f"  unmatched_any_rule : {coverage_summary['unmatched_any_rule']}")
+        click.echo(
+            f"  total_items        : {coverage_summary['total_items']}"
+        )
+        click.echo(
+            f"  matched_any_rule   : {coverage_summary['matched_any_rule']}"
+        )
+        click.echo(
+            f"  unmatched_any_rule : {coverage_summary['unmatched_any_rule']}"
+        )
         click.echo(f"  bad_skus           : {coverage_summary['bad_skus']}")
         if coverage_summary["bad_skus"]:
-            click.echo("  bad_sku_samples    : " + ", ".join(coverage_summary["bad_sku_samples"]))
+            click.echo(
+                "  bad_sku_samples    : "
+                + ", ".join(coverage_summary["bad_sku_samples"])
+            )
         if coverage_summary["unmatched_any_rule"]:
-            click.echo("  unmatched samples  : " + ", ".join(coverage_summary["unmatched_samples"]))
+            click.echo(
+                "  unmatched samples  : "
+                + ", ".join(coverage_summary["unmatched_samples"])
+            )
 
         if coverage_per_rule:
             click.echo("  per-rule match counts:")
             for r in coverage_per_rule:
-                click.echo(f"    #{r['index']:02}  {r['selector']}  → {r['match_count']}")
+                click.echo(
+                    f"    #{r['index']:02}  {r['selector']}  → {r['match_count']}"
+                )
 
     click.echo("")
     _print_sku_policy_summary_v2(pol_base)
@@ -789,7 +839,13 @@ def dev_policy_health(as_json: bool, base: Path | None, schema_base: Path | None
     help="Override the schema base directory (folder that contains *.schema.json)",
 )
 @click.option("--print-paths", is_flag=True, help="Print resolved file paths")
-def dev_policy_lint(which: str, fix: bool, base: Path | None, schema_base: Path | None, print_paths: bool):
+def dev_policy_lint(
+    which: str,
+    fix: bool,
+    base: Path | None,
+    schema_base: Path | None,
+    print_paths: bool,
+):
     """Validate governance policy JSON files against their schemas (v2).
 
     - Uses policy_governance_index.json as the single source of truth.
@@ -807,7 +863,11 @@ def dev_policy_lint(which: str, fix: bool, base: Path | None, schema_base: Path 
     if which != "all":
         entries = [e for e in entries if e.get("policy_key") == which]
         if not entries:
-            known = ", ".join(sorted(e.get("policy_key") for e in (index.get("policies") or [])))
+            known = ", ".join(
+                sorted(
+                    e.get("policy_key") for e in (index.get("policies") or [])
+                )
+            )
             raise SystemExit(f"Unknown policy key: {which!r}. Known: {known}")
 
     had_error = False
@@ -820,11 +880,15 @@ def dev_policy_lint(which: str, fix: bool, base: Path | None, schema_base: Path 
             click.echo(f"{'':18s} schema : {spath}")
 
         if not ppath.exists():
-            click.secho(f"FAIL — {pkey}: missing policy file {ppath}", fg="red")
+            click.secho(
+                f"FAIL — {pkey}: missing policy file {ppath}", fg="red"
+            )
             had_error = True
             continue
         if not spath.exists():
-            click.secho(f"FAIL — {pkey}: missing schema file {spath}", fg="red")
+            click.secho(
+                f"FAIL — {pkey}: missing schema file {spath}", fg="red"
+            )
             had_error = True
             continue
 
@@ -835,7 +899,9 @@ def dev_policy_lint(which: str, fix: bool, base: Path | None, schema_base: Path 
             click.secho(f"OK — {pkey} valid: {ppath.name}", fg="green")
 
             if fix:
-                text = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False)
+                text = json.dumps(
+                    payload, indent=2, sort_keys=True, ensure_ascii=False
+                )
                 ppath.write_text(text + "\n", encoding="utf-8")
         except Exception as ex:
             had_error = True
@@ -844,6 +910,7 @@ def dev_policy_lint(which: str, fix: bool, base: Path | None, schema_base: Path 
 
     if had_error:
         raise SystemExit(1)
+
 
 # -----------------
 # issuance coverage
@@ -855,12 +922,12 @@ def _scan_issuance_coverage():
     from types import SimpleNamespace as NS
 
     from app.extensions import db
-    from app.extensions.policies import load_policy_issuance
+    from app.extensions.policies import load_policy_logistics_issuance
     from app.slices.governance.services import _rule_matches
     from app.slices.logistics.models import InventoryItem
     from app.slices.logistics.sku import parse_sku
 
-    pol = load_policy_issuance()
+    pol = load_policy_logistics_issuance()
     rules = list(pol.get("rules") or [])
     default_behavior = (pol.get("default_behavior") or "deny").lower()
 
@@ -1013,7 +1080,7 @@ def dev_issuance_debug(
     """
     from types import SimpleNamespace
 
-    from app.extensions.policies import load_policy_issuance
+    from app.extensions.policies import load_policy_logistics_issuance
     from app.lib.chrono import now_iso8601_ms
     from app.slices.governance.services import _rule_matches, decide_issue
 
@@ -1029,7 +1096,7 @@ def dev_issuance_debug(
     # Canonical classification key (e.g. 'CG/SL')
     ckey = classification_key_for(sku_code)
 
-    policy = load_policy_issuance()
+    policy = load_policy_logistics_issuance()
     default_behavior = policy.get("default", {})
     rules = policy.get("rules", [])
 
@@ -1161,7 +1228,7 @@ def dev_issuance_tripwires(
 
     from app.extensions import db
     from app.extensions.policies import (
-        load_policy_issuance,
+        load_policy_logistics_issuance,
     )
     from app.lib.chrono import now_iso8601_ms
     from app.lib.ids import new_ulid
@@ -1181,7 +1248,7 @@ def dev_issuance_tripwires(
     )
     from app.slices.logistics.sku import parse_sku
 
-    pol = load_policy_issuance()
+    pol = load_policy_logistics_issuance()
     rules = list(pol.get("rules") or [])
     if not rules:
         click.echo("No issuance rules loaded.")
@@ -1362,9 +1429,9 @@ def dev_issuance_tripwires(
 
     def _blackout_when_from_calendar() -> str | None:
         try:
-            from app.extensions.policies import load_policy_calendar
+            from app.extensions.policies import load_policy_operations
 
-            cal = load_policy_calendar()
+            cal = load_policy_operations()
         except Exception:
             return None
 
