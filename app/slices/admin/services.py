@@ -350,7 +350,7 @@ def trigger_cron_job(
     """
     Trigger a cron job "now" from the Admin UI:
 
-      - emit an admin:cron.job.trigged ledger event
+      - emit an admin:cron.job.triggered ledger event
       - delegate to a scheduler stub (_enqueue_job)
 
     Returns a CronRunResult so the caller can decide whether to flash
@@ -361,7 +361,7 @@ def trigger_cron_job(
 
     event_bus.emit(
         domain="admin",
-        operation="cron.job.trigged",  # spelling preserved for now
+        operation="cron.job.triggered",
         request_id=new_ulid(),
         actor_ulid=actor_ulid,
         target_ulid=None,

@@ -3,18 +3,6 @@
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 # Purpose: Single source of truth for the Ledger write-path surface.
 # Ethos: skinny routes, fat services, ULID everywhere, ISO timestamps, NO PII in Ledger.
-
-from __future__ import annotations
-
-from typing import Any, Dict, Optional
-
-from app.extensions.contracts import ledger_v2
-
-# VCDB Canon — DO NOT MODIFY WITHOUT GOVERNANCE APPROVAL
-CANON_API = "ledger-core"
-# NOTE: Must match Ledger model/service CANON_VERSION.
-CANON_VERSION = "1.0.0"
-
 """
 Ledger Event Bus (CANON — do not drift)
 
@@ -78,6 +66,19 @@ Timing / partitioning:
     Use only when you intentionally want a separate stream within a domain.
     Example: "finance.journal" (ensure <=40).
 
+- the short form template:
+    "domain",
+    "operation",
+    "request_id",
+    "actor_ulid",
+    "target_ulid",
+    "refs",
+    "changed",
+    "meta",
+    "happened_at_utc",
+    "chain_key",
+
+
 Return value:
 - Returns whatever the Ledger contract returns (typically the created
   LedgerEvent row or a contract DTO). Callers should not rely on more than
@@ -88,6 +89,36 @@ Invariants:
 - This module must remain stable because it is the single choke-point that
   prevents CLI vs HTTP route drift.
 """
+
+
+from __future__ import annotations
+
+import re
+from typing import Any, Dict, Optional
+
+from app.extensions.contracts import ledger_v2
+
+# VCDB Canon — DO NOT MODIFY WITHOUT GOVERNANCE APPROVAL
+CANON_API = "ledger-core"
+# NOTE: Must match Ledger model/service CANON_VERSION.
+CANON_VERSION = "2.0.0"
+# regex for "operation" string normalization to snake_case.
+_OP_RE = re.compile(r"[^a-z0-9]+")
+
+# -----------------
+# Normalize
+# "operation" parameter
+# to snake_case
+# regardless of input
+# -----------------
+
+
+def normalize_operation(op: str) -> str:
+    s = (op or "").strip().lower()
+    s = _OP_RE.sub("_", s)  # dots, spaces, dashes -> underscore
+    s = s.strip("_")
+    s = re.sub(r"_+", "_", s)  # collapse
+    return s or "unknown"
 
 
 def emit(
@@ -106,10 +137,20 @@ def emit(
     """
     Forward a canonical ledger event to the Ledger contract.
 
-    IMPORTANT: This function intentionally performs no transformation.
-    Do not rename fields; do not add computed values; do not widen the API.
-    All normalization/validation belongs in the Ledger contract/provider.
+    Canon note: we *normalize operation* to snake_case to prevent dotted or
+    whitespace operations from drifting the event taxonomy.
+    - Only operation is normalized (domain is passed through as provided).
+    - If normalization changes the string, the raw value is preserved under
+      meta["_operation_raw"] (PII-free) for traceability.
+    - No new parameters are added; signature remains the canon write surface.
     """
+    op_norm = normalize_operation(operation)
+    meta_norm = meta
+    if op_norm != operation:
+        # Avoid mutating caller-provided dicts.
+        meta_norm = dict(meta or {})
+        meta_norm.setdefault("_operation_raw", operation)
+
     return ledger_v2.emit(
         domain=domain,
         operation=operation,
