@@ -181,28 +181,25 @@ def get_profile(customer_ulid: str) -> CustomerProfileDTO:
 
 
 def get_needs_profile(customer_ulid: str) -> NeedsProfileDTO:
-    """
-    Minimal surface for Governance decisioning.
-    Never raises if customer exists but has no eligibility row yet
-    (returns conservative defaults).
-    """
-    snap = cust_svc.get_eligibility_snapshot(customer_ulid)
-    # We also want method for Governance (e.g., to branch on 'other');
-    # fetch via dashboard for method,
-    # but keep this DTO minimal. We'll read dashboard and merge only method
-    # if available.
-    dv = cust_svc.get_dashboard_view(customer_ulid)
-    veteran_method = dv.veteran_method if dv else None
-    return NeedsProfileDTO(
-        customer_ulid=snap.customer_ulid,
-        is_veteran_verified=snap.is_veteran_verified,
-        veteran_method=veteran_method,
-        is_homeless_verified=snap.is_homeless_verified,
-        tier1_min=snap.tier1_min,
-        tier2_min=snap.tier2_min,
-        tier3_min=snap.tier3_min,
-        as_of_iso=now_iso8601_ms(),
-    )
+    where = "customers_v2.get_needs_profile"
+    try:
+        dv = cust_svc.get_dashboard_view(customer_ulid)
+        if dv is None:
+            raise LookupError("customer not found")
+
+        snap = cust_svc.get_eligibility_snapshot(customer_ulid)
+        return NeedsProfileDTO(
+            customer_ulid=snap.customer_ulid,
+            is_veteran_verified=snap.is_veteran_verified,
+            is_homeless_verified=snap.is_homeless_verified,
+            tier1_min=snap.tier1_min,
+            tier2_min=snap.tier2_min,
+            tier3_min=snap.tier3_min,
+            veteran_method=dv.veteran_method,
+            as_of_iso=now_iso8601_ms(),
+        )
+    except Exception as e:
+        raise _as_contract_error(where, e)
 
 
 def get_dashboard_view(customer_ulid: str) -> DashboardDTO | None:

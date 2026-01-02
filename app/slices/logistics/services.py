@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from typing import Any, Dict, Optional
 
 from sqlalchemy import and_, func, select
 
-from app.extensions import db, event_bus
-from app.extensions.contracts import governance_v2
+from app.extensions import db
 from app.extensions.policies import (
     load_policy_locations,
     load_policy_sku_constraints,
@@ -18,7 +15,6 @@ from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 from app.lib.jsonutil import pretty_dumps
 from app.slices.logistics.sku import (
-    classification_key_for,
     parse_sku,
     validate_sku,
 )
@@ -427,3 +423,42 @@ def count_issues_in_window(
 
     q = select(func.count()).select_from(Issue).where(and_(*preds))
     return int(db.session.execute(q).scalar_one() or 0)
+
+
+def nth_oldest_issue_at_in_window(
+    customer_ulid: str,
+    n: int,
+    classification_key: str | None = None,
+    sku_code: str | None = None,
+    window_start_iso: str | None = None,
+    as_of_iso: str | None = None,
+) -> str | None:
+    """
+    Return the Nth-oldest Issue.issued_at (1-based) within [window_start_iso, as_of_iso],
+    filtered by sku_code (preferred) or classification_key.
+
+    Used to compute next-eligible time when cadence is maxed.
+    """
+    if n <= 0:
+        return None
+    if not as_of_iso:
+        as_of_iso = now_iso8601_ms()
+
+    preds = [Issue.customer_ulid == customer_ulid]
+    if window_start_iso:
+        preds.append(Issue.issued_at >= window_start_iso)
+    if as_of_iso:
+        preds.append(Issue.issued_at <= as_of_iso)
+    if sku_code:
+        preds.append(Issue.sku_code == sku_code)
+    elif classification_key:
+        preds.append(Issue.classification_key == classification_key)
+
+    q = (
+        select(Issue.issued_at)
+        .where(and_(*preds))
+        .order_by(Issue.issued_at.asc())
+        .offset(n - 1)
+        .limit(1)
+    )
+    return db.session.execute(q).scalar_one_or_none()

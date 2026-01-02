@@ -324,6 +324,12 @@ def dev_policy_health(as_json: bool):
         click.echo(
             "  unmatched samples: " + ", ".join(summary["unmatched_samples"])
         )
+    click.echo(f"  rules_loaded    : {summary.get('rules_loaded', 0)}")
+    if summary["total_items"] and not summary.get("rules_loaded"):
+        click.echo(
+            "FATAL: issuance rules loaded == 0 while catalog has items"
+        )
+        raise SystemExit(1)
 
     if per_rule:
         click.echo("  per-rule match counts (first-match wins):")
@@ -422,31 +428,31 @@ def _print_location_policy_summary() -> None:
 @with_appcontext
 @click.option(
     "--which",
-    type=click.Choice(["issuance", "eligibility", "calendar", "all"]),
     default="all",
     show_default=True,
+    help="all | policy_key (from governance_index) | alias: issuance, eligibility, calendar",
 )
 @click.option(
     "--fix",
     is_flag=True,
-    help="Rewrite file with canonical formatting (sorted keys, 2-space indent)",
+    help="Rewrite policy JSON with canonical formatting (sorted keys, 2-space indent)",
 )
 @click.option(
     "--base",
     type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
-    help="Override the policies base directory (folder that contains the *.json policy files)",
+    help="Override the policies base directory (folder that contains policy_governance_index.json)",
 )
 @click.option(
     "--schema-base",
     type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
-    help="Override the schema base directory (folder that contains the *.schema.json files)",
+    help="Override the schema base directory (root used to resolve schema_filename paths)",
 )
 @click.option("--print-paths", is_flag=True, help="Print resolved file paths")
 def dev_policy_lint(
     which, fix, base: Path | None, schema_base: Path | None, print_paths: bool
 ):
     """
-    Validate governance policy JSON files against their schemas.
+    Validate governance policy JSON files against their schemas (Policy Catalog v2).
     On --fix, pretty-print and sort keys so diffs stay clean.
     """
     echo_db_banner("policy-lint")
@@ -454,131 +460,255 @@ def dev_policy_lint(
 
     from flask import current_app
     from jsonschema import Draft202012Validator
+    from jsonschema.exceptions import ValidationError
 
     from app.extensions.validate import load_json, load_json_schema
 
-    # -------- resolve bases --------
+    # -------- resolve base --------
     app_root = Path(current_app.root_path)
-    policy_bases = (
-        [base]
-        if base
-        else [
-            app_root / "slices" / "governance" / "data",
-            app_root / "slices" / "governance",  # fallback
-            app_root / "slices" / "governance" / "policies",  # fallback
-        ]
-    )
-    resolved_base = next((p for p in policy_bases if p and p.exists()), None)
-    if not resolved_base:
+    resolved_base = base or (app_root / "slices" / "governance" / "data")
+    if not resolved_base.exists():
         click.secho(
-            "ERROR: could not find a policies base directory.", fg="red"
+            f"ERROR: policies base directory not found: {resolved_base}",
+            fg="red",
         )
-        for p in policy_bases:
-            click.echo(f"  tried: {p}")
         raise SystemExit(1)
 
-    if not schema_base:
-        # prefer <base>/schema, else try <base>, else <governance>/data/schema
-        candidates = [
-            resolved_base / "schema",
-            resolved_base,
-            app_root / "slices" / "governance" / "data" / "schema",
-        ]
-        schema_base = next(
-            (p for p in candidates if p.exists()), resolved_base
-        )
+    manifest_path = resolved_base / "policy_governance_index.json"
+    if not manifest_path.exists():
+        click.secho("ERROR: policy manifest not found:", fg="red")
+        click.echo(f"  expected: {manifest_path}")
+        raise SystemExit(1)
+
+    # schema_base is a *root* for resolving schema_filename. Default to resolved_base,
+    # because schema_filename already includes "schemas/..." in the manifest.
+    schema_root = schema_base or resolved_base
 
     click.secho(f"[policy-lint] base={resolved_base}", fg="cyan")
-    click.secho(f"[policy-lint] schema_base={schema_base}", fg="cyan")
+    click.secho(f"[policy-lint] schema_root={schema_root}", fg="cyan")
 
-    targets = {
-        "issuance": (
-            "policy_issuance.json",
-            "policy_issuance.schema.json",
-        ),
-        "eligibility": (
-            "policy_eligibility.json",
-            "policy_eligibility.schema.json",
-        ),
-        "calendar": (
-            "policy_calendar.json",
-            "policy_calendar.schema.json",
-        ),
-        "classification": (
-            "policy_classification.json",
-            "policy_classification.schema.json",
-        ),
-        "funding": (
-            "policy_funding.json",
-            "policy_funding.schema.json",
-        ),
-        "spending": (
-            "policy_spending.json",
-            "policy_spending.schema.json",
-        ),
-        "state_machine": (
-            "policy_state_machine.json",
-            "policy_state_machine.schema.json",
-        ),
+    # -------- load manifest --------
+    manifest = load_json(manifest_path)
+    entries = manifest.get("policies") or []
+    by_key = {e.get("policy_key"): e for e in entries if e.get("policy_key")}
+
+    if not by_key:
+        click.secho("ERROR: manifest has no policies[] entries.", fg="red")
+        raise SystemExit(1)
+
+    # -------- selection / aliases --------
+    alias_map = {
+        # legacy CLI groups
+        "issuance": ["logistics_issuance"],
+        "eligibility": ["customer", "entity_roles"],
+        "calendar": ["operations", "lifecycle"],
+        "all": list(by_key.keys()),
     }
 
-    todo = targets.items() if which == "all" else [(which, targets[which])]
+    if which in alias_map:
+        selected_keys = alias_map[which]
+    else:
+        # treat as explicit policy_key
+        selected_keys = [which]
 
-    def _find_schema(sname: str) -> Path | None:
-        # Try schema_base/sname, then resolved_base/sname, then recursive glob
-        direct = schema_base / sname
-        if direct.exists():
-            return direct
-        alt = resolved_base / sname
-        if alt.exists():
-            return alt
-        # final fallback: glob anywhere under schema_base or resolved_base
-        for root in [schema_base, resolved_base]:
-            hits = list(root.rglob(sname))
-            if hits:
-                return hits[0]
-        return None
+    missing_keys = [k for k in selected_keys if k not in by_key]
+    if missing_keys:
+        click.secho("ERROR: unknown policy_key(s):", fg="red")
+        for k in missing_keys:
+            click.echo(f"  - {k}")
+        click.echo("Available policy_key values (from manifest):")
+        for k in sorted(by_key.keys()):
+            click.echo(f"  - {k}")
+        raise SystemExit(1)
 
+    # -------- helper: resolve schema path robustly --------
+    def _resolve_schema(schema_filename: str) -> Path:
+        rel = Path(schema_filename)
+
+        # 1) schema_root / rel  (works when schema_root is the policy base)
+        p1 = schema_root / rel
+        if p1.exists():
+            return p1
+
+        # 2) schema_root / basename  (works when schema_root points directly at ./schemas)
+        p2 = schema_root / rel.name
+        if p2.exists():
+            return p2
+
+        # 3) resolved_base / rel  (backup)
+        p3 = resolved_base / rel
+        if p3.exists():
+            return p3
+
+        # 4) resolved_base / "schemas" / basename (backup)
+        p4 = resolved_base / "schemas" / rel.name
+        if p4.exists():
+            return p4
+
+        return p1  # return best guess for printing
+
+    # -------- validate --------
     had_error = False
-    for name, (fname, sname) in todo:
+
+    for key in selected_keys:
+        entry = by_key[key]
+        fname = entry["filename"]
+        sname = entry["schema_filename"]
+
         fpath = resolved_base / fname
-        spath = _find_schema(sname)
+        spath = _resolve_schema(sname)
 
         if print_paths:
-            click.echo(f"{name:11s} json   : {fpath}")
-            click.echo(
-                f"{'':11s} schema : {spath if spath else '(not found)'}"
-            )
+            click.echo(f"{key:18s} json   : {fpath}")
+            click.echo(f"{'':18s} schema : {spath}")
+            click.echo("")
 
         missing = []
         if not fpath.exists():
-            missing.append(str(fpath))
-        if not spath or not spath.exists():
-            missing.append(str(schema_base / sname))
+            missing.append(f"policy:  {fpath}")
+        if not spath.exists():
+            missing.append(f"schema:  {spath}")
 
         if missing:
             had_error = True
-            click.secho(f"FAIL — {name} files not found:", fg="red")
+            click.secho(f"FAIL — {key} missing files:", fg="red")
             for m in missing:
                 click.echo(f"  - {m}")
             continue
 
         try:
             payload = load_json(fpath)
+
+            # extra drift check: policy meta.policy_key must match manifest policy_key
+            meta_key = (payload.get("meta") or {}).get("policy_key")
+            if meta_key and meta_key != key:
+                had_error = True
+                click.secho(
+                    f"FAIL — {key} meta.policy_key mismatch:", fg="red"
+                )
+                click.echo(f"  manifest key: {key}")
+                click.echo(f"  file meta.policy_key: {meta_key}")
+                continue
+
             schema = load_json_schema(spath)
             Draft202012Validator(schema).validate(payload)
-            click.secho(f"OK — {name} valid: {fname}", fg="green")
+
+            click.secho(f"OK — {key} valid: {fname}", fg="green")
+
             if fix:
                 text = json.dumps(
                     payload, indent=2, sort_keys=True, ensure_ascii=False
                 )
                 fpath.write_text(text + "\n", encoding="utf-8")
+
+        except ValidationError as e:
+            had_error = True
+            click.secho(f"FAIL — {key} schema validation error:", fg="red")
+            click.echo(f"  message: {e.message}")
+            if e.absolute_path:
+                click.echo(
+                    f"  path:    /"
+                    + "/".join(str(p) for p in e.absolute_path)
+                )
         except Exception as e:
             had_error = True
-            _print_json_error(e, fname)
+            click.secho(f"FAIL — {key} error:", fg="red")
+            click.echo(f"  {type(e).__name__}: {e}")
 
     if had_error:
         raise SystemExit(1)
+
+
+# ---------------------------------------------------------------------------
+# Issuance CLI spine (Policy Catalog v2)
+# One place to:
+#   - load issuance policy (v2 shape)
+#   - derive SKU facts
+#   - build a rule-match ctx that _rule_matches can actually use
+# ---------------------------------------------------------------------------
+
+
+def _issuance_policy_v2():
+    """Return (default_behavior, defaults, rules) for logistics_issuance (v2 policy shape)."""
+    from app.extensions.policies import load_governance_policy
+
+    doc = load_governance_policy("logistics_issuance")
+    issuance = doc.get("issuance") or {}
+
+    defaults = issuance.get("defaults") or {}
+    rules = list(issuance.get("rules") or [])
+
+    # Support either location for default behavior (keep this tolerant)
+    default_behavior = (
+        issuance.get("default_behavior") or defaults.get("behavior") or "deny"
+    )
+    default_behavior = str(default_behavior).lower()
+
+    return default_behavior, defaults, rules
+
+
+def _sku_facts_from_code(sku_code: str) -> dict:
+    """
+    Extract facts from SKU code using the canonical segment format:
+      CAT-SUB-SRC-SIZE-COLOR-CLASS-SEQ
+    """
+    segs = sku_code.split("-")
+    cat = segs[0] if len(segs) > 0 else None
+    sub = segs[1] if len(segs) > 1 else None
+    src = segs[2] if len(segs) > 2 else None
+    size = segs[3] if len(segs) > 3 else None
+    color = segs[4] if len(segs) > 4 else None
+    issuance_class = segs[5] if len(segs) > 5 else None
+    seq = segs[6] if len(segs) > 6 else None
+
+    classification = f"{cat}/{sub}" if cat and sub else None
+
+    return {
+        "category": cat,
+        "subcategory": sub,
+        "source": src,
+        "size": size,
+        "color": color,
+        "issuance_class": issuance_class,
+        "seq": seq,
+        "classification": classification,
+    }
+
+
+def _issuance_match_ctx(
+    sku_code: str,
+    *,
+    when_iso: str | None = None,
+    project_ulid: str | None = None,
+    customer_ulid: str | None = None,
+):
+    """
+    Build a ctx object for _rule_matches() with ALL commonly used selector fields present.
+    This is the core fix: never let matching silently degrade due to missing ctx attrs.
+    """
+    from types import SimpleNamespace as NS
+    from app.slices.logistics.sku import parse_sku
+
+    facts = _sku_facts_from_code(sku_code)
+
+    return NS(
+        customer_ulid=customer_ulid,
+        sku_code=sku_code,
+        # Your matcher uses this name in a few places
+        classification=facts["classification"],
+        # Always present; useful for richer rules
+        sku_parts=parse_sku(sku_code),
+        when_iso=when_iso,
+        project_ulid=project_ulid,
+        # IMPORTANT: selector keys in rules often rely on these
+        category=facts["category"],
+        subcategory=facts["subcategory"],
+        source=facts["source"],
+        size=facts["size"],
+        color=facts["color"],
+        issuance_class=facts["issuance_class"],
+        seq=facts["seq"],
+    )
 
 
 # -----------------
@@ -588,17 +718,18 @@ def dev_policy_lint(
 
 
 def _scan_issuance_coverage():
-    from types import SimpleNamespace as NS
+    """
+    Scan InventoryItem SKUs and count first-match rule hits.
+    Items with no rule match are 'denied by default' (default_behavior).
+    """
+    from sqlalchemy import select
 
     from app.extensions import db
-    from app.extensions.policies import load_policy_logistics_issuance
-    from app.slices.governance.services import _rule_matches
+    from app.slices.logistics.issuance_services import _rule_matches
     from app.slices.logistics.models import InventoryItem
-    from app.slices.logistics.sku import parse_sku
 
-    pol = load_policy_logistics_issuance()
-    rules = list(pol.get("rules") or [])
-    default_behavior = (pol.get("default_behavior") or "deny").lower()
+    default_behavior, defaults, rules = _issuance_policy_v2()
+    rules_loaded = len(rules)
 
     rows = (
         db.session.execute(
@@ -609,24 +740,19 @@ def _scan_issuance_coverage():
     )
 
     per_rule = [
-        {"index": i + 1, "selector": (r.get("match") or {}), "match_count": 0}
+        {"index": i + 1, "selector": (r.get("if") or {}), "match_count": 0}
         for i, r in enumerate(rules)
     ]
 
     matched_any = 0
-    unmatched_samples = []
-    for code in rows:
-        ctx = NS(
-            customer_ulid=None,
-            sku_code=code,
-            classification=classification_key_for(code),
-            sku_parts=parse_sku(code),
-            when_iso=None,
-            project_ulid=None,
-        )
+    unmatched_samples: list[str] = []
+
+    for sku_code in rows:
+        ctx = _issuance_match_ctx(sku_code)
+
         hit = False
-        for i, r in enumerate(rules):
-            if _rule_matches(r, ctx):
+        for i, rule in enumerate(rules):
+            if _rule_matches(rule, ctx):
                 per_rule[i]["match_count"] += 1
                 hit = True
                 break
@@ -634,13 +760,15 @@ def _scan_issuance_coverage():
         if hit:
             matched_any += 1
         elif len(unmatched_samples) < 10:
-            unmatched_samples.append(code)
+            unmatched_samples.append(sku_code)
 
     summary = {
         "total_items": len(rows),
         "matched_items": matched_any,
         "unmatched_items": len(rows) - matched_any,
         "default_behavior": default_behavior,
+        "rules_loaded": rules_loaded,
+        "defaults": defaults,
         "unmatched_samples": unmatched_samples,
     }
     return summary, per_rule
@@ -654,11 +782,20 @@ def _print_sku_policy_summary() -> None:
     - Shows InventoryItem.unit usage and flags any units not allowed by policy
     """
     from sqlalchemy import func
+
     from app.extensions import db
     from app.extensions.policies import load_policy_sku_constraints
+    from app.slices.logistics.issuance_services import _rule_matches
+
     from app.slices.logistics.models import InventoryItem
 
-    pol = load_policy_sku_constraints()
+    pol = load_policy_logistics_issuance()
+    rules = (pol.get("sku_constraints") or {}).get("rules") or []
+    default_behavior = (
+        (pol.get("issuance") or {}).get("default_behavior")
+        or pol.get("default_behavior")
+        or "deny"
+    ).lower()
     allowed_units = set(pol.get("allowed_units") or [])
     allowed_sources = set(pol.get("allowed_sources") or [])
 
@@ -749,9 +886,9 @@ def dev_issuance_debug(
     """
     from types import SimpleNamespace
 
-    from app.extensions.policies import load_policy_logistics_issuance
+    from app.extensions.policies import load_governance_policy
     from app.lib.chrono import now_iso8601_ms
-    from app.slices.governance.services import _rule_matches, decide_issue
+    from app.slices.logistics.issuance_services import _rule_matches, decide_issue
 
     try:
         parts = parse_sku(sku_code)
@@ -765,9 +902,11 @@ def dev_issuance_debug(
     # Canonical classification key (e.g. 'CG/SL')
     ckey = classification_key_for(sku_code)
 
-    policy = load_policy_logistics_issuance()
-    default_behavior = policy.get("default", {})
-    rules = policy.get("rules", [])
+    # NEW SHAPE: policy doc -> issuance section -> defaults/rules
+    doc = load_governance_policy("logistics_issuance")
+    issuance = doc.get("issuance") or {}
+    defaults = issuance.get("defaults") or {}
+    rules = list(issuance.get("rules") or [])
 
     click.echo(f"=== Issuance debug for SKU {sku_code} ===")
     click.echo(f"classification_key = {ckey}")
@@ -775,45 +914,52 @@ def dev_issuance_debug(
     click.echo(f"project_ulid      = {project_ulid or '-'}")
     click.echo("")
 
-    # Show default behavior
-    click.echo("Default behavior:")
-    show_default(default_behavior)
+    # In v2, “behavior” is typically implicit deny unless a rule/then allows.
+    # show_default() already defaults behavior to "deny" if missing.
+    click.echo("Defaults:")
+    show_default(
+        defaults
+    )  # expects {"cadence": ...} and optional {"behavior": ...}
+    click.echo(f"Rules loaded: {len(rules)}")
     click.echo("")
 
     # Build a context object for rule matching (as expected by _rule_matches)
-    ctx_match = SimpleNamespace(
-        customer_ulid="DEBUG-CUSTOMER",
-        sku_code=sku_code,
-        classification=ckey,  # _rule_matches uses 'classification'
-        sku_parts=parts,
+    segs = sku_code.split("-")
+    src = segs[2] if len(segs) >= 3 else None
+    cat, sub = ckey.split("/", 1) if "/" in ckey else (None, None)
+
+    ctx_match = _issuance_match_ctx(
+        sku_code,
         when_iso=when_iso,
         project_ulid=project_ulid,
+        customer_ulid="DEBUG-CUSTOMER",
     )
 
     # Show matching rules
     click.echo("Matching rules:")
     any_match = False
-    for rule in rules:
+    for i, rule in enumerate(rules, start=1):
         if _rule_matches(rule, ctx_match):
             any_match = True
-            click.echo(
-                f"- {rule.get('key', '<no key>')}: scope={rule.get('scope')!r}"
+            label = (
+                rule.get("why")
+                or rule.get("id")
+                or rule.get("key")
+                or f"rule#{i}"
             )
+            click.echo(f"- {label}")
+            click.echo(f"    if  : {rule.get('if')}")
+            click.echo(f"    then: {rule.get('then')}")
     if not any_match:
-        click.echo("  (no rules matched this classification)")
+        click.echo("  (no rules matched this SKU/classification)")
     click.echo("")
 
     # Evaluate decision via canonical governance path
-    ctx_decide = SimpleNamespace(
-        customer_ulid="DEBUG-CUSTOMER",
-        sku_code=sku_code,
-        classification_key=ckey,  # decide_issue uses 'classification_key'
-        sku_parts=parts,
+    ctx_match = _issuance_match_ctx(
+        sku_code,
         when_iso=when_iso,
         project_ulid=project_ulid,
-        force_blackout=False,
-        qualifiers={},
-        defaults_cadence=None,
+        customer_ulid="DEBUG-CUSTOMER",
     )
 
     decision = decide_issue(ctx_decide)
@@ -822,7 +968,6 @@ def dev_issuance_debug(
     else:
         click.echo(f"DENIED ({decision.reason})")
 
-    # Pretty JSON payload for deeper debugging — only fields that exist today
     payload = {
         "allowed": getattr(decision, "allowed", None),
         "reason": getattr(decision, "reason", None),
@@ -893,39 +1038,45 @@ def dev_issuance_tripwires(
     """
     echo_db_banner("issuance-tripwires")
     import json
+    from datetime import datetime, timedelta, timezone
     from types import SimpleNamespace as NS
 
+    import click
+    from sqlalchemy import select
+
     from app.extensions import db
-    from app.extensions.policies import (
-        load_policy_logistics_issuance,
-    )
+    from app.extensions.policies import load_governance_policy
     from app.lib.chrono import now_iso8601_ms
     from app.lib.ids import new_ulid
-    from app.slices.governance.services import _rule_matches, decide_issue
+    from app.slices.logistics.issuance_services import _rule_matches, decide_issue
     from app.slices.logistics.models import InventoryItem
-
-    # InventoryBatch might not exist in some branches; tolerate absence
-    try:
-        from app.slices.logistics.models import InventoryBatch  # type: ignore
-    except Exception:  # pragma: no cover
-        InventoryBatch = None  # type: ignore[assignment]
-
     from app.slices.logistics.services import (
         ensure_item,
         ensure_location,
         receive_inventory,
     )
-    from app.slices.logistics.sku import parse_sku
+    from app.slices.logistics.sku import (
+        classification_key_for,
+        parse_sku,
+        validate_sku,
+    )
 
-    pol = load_policy_logistics_issuance()
-    rules = list(pol.get("rules") or [])
+    # ---- load v2 issuance policy (canonical) ----
+    doc = load_governance_policy("logistics_issuance")
+    issuance = doc.get("issuance") or {}
+    defaults = issuance.get("defaults") or {}
+    rules = list(issuance.get("rules") or [])
+    defaults_cadence = defaults.get("cadence")
+
     if not rules:
         click.echo("No issuance rules loaded.")
         return
 
-    # Ensure a test customer (create a minimal person-entity, then Customer)
+    # Ensure location exists (and capture ulid once)
+    loc_ulid = ensure_location(code=location, name=location)
+
+    # ---- ensure a test customer (minimal person entity -> customer) ----
     if not customer_ulid:
-        from app.lib.ids import new_ulid
         from app.slices.customers.services import ensure_customer
         from app.slices.entity.services import ensure_person
 
@@ -947,138 +1098,37 @@ def dev_issuance_tripwires(
             f"Created test person entity {ent_ulid} → customer {customer_ulid}"
         )
 
-    # Helper: pick/create a SKU that matches a rule (and return loc+batch)
-    def pick_or_fabricate_sku(rule):
-        # 1) scan existing catalog
-        rows = db.session.execute(select(InventoryItem.sku)).scalars().all()
-        for code in rows:
-            ctx = NS(
-                customer_ulid=customer_ulid,
-                sku_code=code,
-                classification_key="-".join(code.split("-")[:2]),
-                sku_parts=parse_sku(code),
-                when_iso=now_iso8601_ms(),
-                project_ulid=None,
-            )
-            if _rule_matches(rule, ctx):
-                # also resolve location + recent batch for cadence step
-                it_ulid = db.session.execute(
-                    select(InventoryItem.ulid).where(
-                        InventoryItem.sku == code
-                    )
-                ).scalar_one_or_none()
-                loc_ulid = ensure_location(code=location, name=location)
-                batch_ulid = None
-                if InventoryBatch is not None:
-                    batch_ulid = (
-                        db.session.execute(
-                            select(InventoryBatch.ulid)
-                            .where(
-                                InventoryBatch.item_ulid == it_ulid,
-                                InventoryBatch.location_ulid == loc_ulid,
-                            )
-                            .order_by(InventoryBatch.ulid.desc())
-                        )
-                        .scalars()
-                        .first()
-                    )
-                return code, False, loc_ulid, batch_ulid  # found existing
-
-        # 2) fabricate a minimal matching SKU
-        m = rule.get("match") or {}
-        parts = {
-            "cat": "FW",
-            "sub": "HT",
-            "src": "LC",
-            "size": "NA",
-            "col": "BK",
-            "issuance_class": "U",
-            "seq": "Z9Z",
-        }
-        # apply any sku_parts constraints from the rule
-        for human_k, v in (m.get("sku_parts") or {}).items():
-            key = {
-                "category": "cat",
-                "subcategory": "sub",
-                "source": "src",
-                "size": "size",
-                "color": "col",
-                "issuance_class": "issuance_class",
-                "seq": "seq",
-            }.get(human_k, human_k)
-            parts[key] = v
-
-        # enforce qualifiers-derived constraints (e.g., homeless/veteran)
-        q = rule.get("qualifiers") or {}
-        if q.get("homeless_required"):
-            parts["issuance_class"] = "H"
-        elif q.get("veteran_required"):
-            parts["issuance_class"] = "V"
-
-        # DRMO constraint: any DR item must be V
-        if parts.get("src") == "DR":
-            parts["issuance_class"] = "V"
-
-        sku = (
-            f"{parts['cat']}-{parts['sub']}-{parts['src']}-"
-            f"{parts['size']}-{parts['col']}-{parts['issuance_class']}-{parts['seq']}"
-        )
-        if not validate_sku(sku):
-            return None, False, None, None
-
-        loc_ulid = ensure_location(code=location, name=location)
-        try:
-            item_ulid = ensure_item(
-                category=f"{parts['cat']}/{parts['sub']}",
-                name=f"tripwire {sku}",
-                unit="each",
-                condition="new",
-                sku=sku,
-            )
-        except ValueError:
-            # policy constraints rejected this SKU; give up on this rule
-            return None, False, None, None
-
-        recv = receive_inventory(
-            item_ulid=item_ulid,
-            quantity=per_sku,
-            unit="each",
-            source="donation",
-            received_at_utc=now_iso8601_ms(),
-            location_ulid=loc_ulid,
-            note="seed:tripwire",
-            actor_ulid=None,
-            source_entity_ulid=None,
-        )
-        db.session.commit()
-        return sku, True, loc_ulid, recv.get("batch_ulid")
-
-    # Helper: mutate eligibility flags on the customer
-    def set_flags(veteran: bool | None = None, homeless: bool | None = None):
+    # ---- helper: mutate eligibility flags on the customer ----
+    def set_flags(
+        veteran: bool | None = None, homeless: bool | None = None
+    ) -> None:
         from app.slices.customers.services import set_verification_flags
 
         set_verification_flags(
-            customer_ulid=customer_ulid, veteran=veteran, homeless=homeless
+            customer_ulid=customer_ulid,
+            veteran=veteran,
+            homeless=homeless,
         )
 
-    # Helper: call decide_issue with a constructed ctx (no DB writes)
-    def eval_ctx(sku_code: str, when_iso: str, force_blackout: bool = False):
+    # ---- helper: call decide_issue with a constructed ctx (no DB writes) ----
+    def eval_ctx(
+        sku_code: str, when_iso: str, force_blackout_flag: bool = False
+    ):
         ctx = NS(
             customer_ulid=customer_ulid,
             sku_code=sku_code,
-            classification=classification_key_for(sku_code),
+            classification_key=classification_key_for(sku_code),
             sku_parts=parse_sku(sku_code),
             when_iso=when_iso,
             project_ulid=None,
-            force_blackout=force_blackout,  # enforcer may ignore if unsupported
+            force_blackout=force_blackout_flag,
+            qualifiers={},
+            defaults_cadence=defaults_cadence,
         )
         return decide_issue(ctx)
 
-    # Pick a blackout instant if your calendar defines explicit blackout dates
-    from datetime import datetime, timedelta, timezone
-
+    # ---- blackout helpers (best effort; safe fallbacks) ----
     def _iso(d: datetime) -> str:
-        # ISO8601 with microseconds + Z, matching your app’s style
         return (
             d.replace(tzinfo=timezone.utc)
             .isoformat(timespec="microseconds")
@@ -1086,7 +1136,6 @@ def dev_issuance_tripwires(
         )
 
     def _next_weekday_noon_utc(target_wd: int) -> str:
-        # Monday=0 … Sunday=6
         now = datetime.now(timezone.utc)
         days_ahead = (target_wd - now.weekday()) % 7
         if days_ahead == 0:
@@ -1097,20 +1146,17 @@ def dev_issuance_tripwires(
         return _iso(dt)
 
     def _blackout_when_from_calendar() -> str | None:
+        # Operations policy is catalog-managed too; try to pick any explicit blackout start.
         try:
-            from app.extensions.policies import load_policy_operations
-
-            cal = load_policy_operations()
+            cal = load_governance_policy("operations")
         except Exception:
             return None
 
-        # Try explicit date ranges first
         projects = cal.get("projects") or {}
         for _pid, pdata in projects.items():
             for rule in pdata.get("blackout_rules", []):
                 t = (rule.get("type") or "").lower()
                 if t == "date_range" and rule.get("start"):
-                    # pick the start date at noon UTC
                     try:
                         start = datetime.fromisoformat(
                             rule["start"]
@@ -1128,7 +1174,6 @@ def dev_issuance_tripwires(
                     )
                     return _iso(dt)
                 if t == "weekday" and rule.get("days"):
-                    # pick the first weekday specified (SAT/SUN/etc.)
                     wd_map = {
                         "MON": 0,
                         "TUE": 1,
@@ -1139,134 +1184,16 @@ def dev_issuance_tripwires(
                         "SUN": 6,
                     }
                     for day in rule["days"]:
-                        wd = wd_map.get(day.upper())
+                        wd = wd_map.get(str(day).upper())
                         if wd is not None:
                             return _next_weekday_noon_utc(wd)
         return None
 
-    # --- choose blackout instant
-    blackout_when = _blackout_when_from_calendar()
-    if not blackout_when:
-        # fallback: next Saturday at noon UTC
-        blackout_when = _next_weekday_noon_utc(5)
+    blackout_when = _blackout_when_from_calendar() or _next_weekday_noon_utc(
+        5
+    )  # next Saturday noon UTC
 
-    rows_out = []
-    for idx, rule in enumerate(rules, 1):
-        sku_code, created, loc_ulid, batch_ulid = pick_or_fabricate_sku(rule)
-        selector = rule.get("match") or {}
-        if not sku_code:
-            rows_out.append(
-                (
-                    idx,
-                    json.dumps(selector),
-                    "n/a",
-                    "n/a",
-                    "n/a",
-                    "n/a",
-                    "no_matching_sku",
-                )
-            )
-            continue
-
-        # 1) blackout
-        set_flags(False, False)
-
-        # blackout column
-        dec_bl = eval_ctx(
-            sku_code, blackout_when, force_blackout=force_blackout
-        )
-        if show_json:
-            click.echo(f"    blackout_decision={dec_bl!r}")
-
-        if force_blackout:
-            # when forcing, expect a calendar block; if allowed, show reason (usually "ok")
-            blackout = (
-                "calendar_blackout"
-                if (
-                    not dec_bl.allowed
-                    and dec_bl.reason == "calendar_blackout"
-                )
-                else (dec_bl.reason or "ok")
-            )
-        else:
-            # when not forcing, "ok" is the expected happy path
-            blackout = (
-                "ok"
-                if dec_bl.allowed
-                else (dec_bl.reason or "calendar_blackout")
-            )
-
-        reason_bl = getattr(dec_bl, "reason", None)
-        if getattr(dec_bl, "allowed", False):
-            reason_bl = "unexpected_ok"
-
-        # 2) qualifiers missing
-        set_flags(False, False)
-        dec_qmiss = eval_ctx(sku_code, now_iso8601_ms())
-        reason_qmiss = getattr(dec_qmiss, "reason", None)
-
-        # 3) qualifiers satisfied (set both; engine will only require what it needs)
-        set_flags(True, True)
-        dec_ok = eval_ctx(sku_code, now_iso8601_ms())
-        reason_ok = getattr(dec_ok, "reason", None)
-        ok_allowed = getattr(dec_ok, "allowed", False)
-
-        # --- 4) cadence check (optionally force by writing one policy-only Issue)
-        dec_cad = eval_ctx(
-            sku_code, when_iso=now_iso8601_ms(), force_blackout=False
-        )
-
-        if twice and ok_allowed:
-            try:
-                from app.slices.logistics.services import (
-                    issue_inventory_policy,
-                )
-
-                # write a policy-only Issue, then re-check cadence
-                _ = issue_inventory_policy(
-                    customer_ulid=customer_ulid,
-                    sku_code=sku_code,
-                    when_iso=None,
-                    project_ulid=None,
-                    actor_ulid=None,
-                    quantity=1,
-                )
-                dec_cad = eval_ctx(
-                    sku_code, when_iso=now_iso8601_ms(), force_blackout=False
-                )
-            except Exception:
-                # keep original dec_cad if anything fails
-                pass
-
-        if show_json:
-            click.echo(f"    cadence_decision={dec_cad!r}")
-
-        # unify cadence label
-        cadence = dec_cad.reason or (
-            "ok" if getattr(dec_cad, "allowed", False) else "cadence_limit"
-        )
-
-        # --- build output row using the computed labels
-        rows_out.append(
-            (
-                idx,
-                json.dumps(selector),
-                sku_code,
-                blackout,  # computed above
-                (reason_qmiss or "ok"),  # qualifiers-missing column
-                ("ok" if ok_allowed else "denied"),  # allowed column
-                cadence,  # final cadence label
-            )
-        )
-
-    # Print a compact table
-    click.echo(
-        "rule  selector                              sku                        blackout           q-missing        allowed  cadence"
-    )
-    for r in rows_out:
-        click.echo(
-            f"{r[0]:>4}  {r[1]:<36}  {r[2]:<24}  {r[3]:<16}  {r[4]:<16}  {r[5]:<7}  {r[6]}"
-        )
+    #
 
 
 # -----------------
@@ -1312,7 +1239,7 @@ def dev_decide_issue(
     from types import SimpleNamespace
 
     from app.lib.chrono import now_iso8601_ms
-    from app.slices.governance.services import decide_issue
+    from app.slices.logistics.issuance_services import decide_issue
 
     try:
         parts = parse_sku(sku_code)
@@ -1426,7 +1353,7 @@ def dev_list_stock(loc_code: str, limit: int):
 
 
 # -----------------
-# Issuance Policy Check
+# Issuance Policy Check (demo)
 # -----------------
 
 
@@ -1441,43 +1368,66 @@ def dev_list_stock(loc_code: str, limit: int):
     "--sku",
     "sku_code",
     required=False,
-    help="If omitted, picks the first available at location.",
+    help="If omitted, picks the first available SKU at the location.",
 )
-@click.option("--location", "loc_code", default="LOC-MAIN", show_default=True)
-@click.option("--actor-ulid", default=None)
+@click.option(
+    "--location",
+    "loc_code",
+    default="MAIN",
+    show_default=True,
+    help="Location.code to issue from (e.g. MAIN, MAIN-A1-2).",
+)
+@click.option(
+    "--actor-ulid",
+    default=None,
+    help="Actor ULID (if omitted, generates one for dev tracing).",
+)
 @click.option("--quantity", type=int, default=1, show_default=True)
+@click.option(
+    "--request-id",
+    default=None,
+    help="Optional correlation id (if omitted, generates one).",
+)
 def dev_demo_issue(
     customer_ulid: str | None,
     sku_code: str | None,
     loc_code: str,
     actor_ulid: str | None,
     quantity: int,
+    request_id: str | None,
 ):
     """
     Issue one unit from baseline stock:
       - picks first SKU at the location if --sku omitted
       - uses a throwaway ULID for the customer if none provided
+      - always uses a request_id so you can trace ledger events
     """
     echo_db_banner("demo-issue")
+
+    if quantity <= 0:
+        raise SystemExit("--quantity must be >= 1")
+
+    from sqlalchemy import select
 
     from app.extensions import db
     from app.lib.chrono import now_iso8601_ms
     from app.lib.ids import new_ulid
+    from app.slices.logistics.issuance_services import decide_and_issue_one
     from app.slices.logistics.models import (
         InventoryBatch,
         InventoryItem,
         InventoryStock,
         Location,
     )
-    from app.slices.logistics.services import issue_inventory
 
+    # ---- resolve location ----
     loc = db.session.execute(
         select(Location).where(Location.code == loc_code)
     ).scalar_one_or_none()
     if not loc:
         raise SystemExit(f"Unknown location code: {loc_code}")
 
-    # pick a SKU if not provided
+    # ---- pick a SKU if not provided ----
     if not sku_code:
         pick = (
             db.session.execute(
@@ -1489,7 +1439,7 @@ def dev_demo_issue(
                 )
                 .where(
                     InventoryStock.location_ulid == loc.ulid,
-                    InventoryStock.quantity > 0,
+                    InventoryStock.quantity >= quantity,
                 )
                 .order_by(InventoryItem.sku)
                 .limit(1)
@@ -1498,54 +1448,72 @@ def dev_demo_issue(
             .first()
         )
         if not pick:
-            raise SystemExit("No stock to issue at this location.")
+            raise SystemExit(
+                f"No stock to issue at location {loc_code} (need qty={quantity})."
+            )
         sku_code = pick
 
-    # ensure there is a batch for that item at location (seed created one)
+    # ---- resolve item ulid ----
     it_ulid = db.session.execute(
         select(InventoryItem.ulid).where(InventoryItem.sku == sku_code)
     ).scalar_one_or_none()
     if not it_ulid:
         raise SystemExit(f"Unknown SKU: {sku_code}")
 
+    # ---- pick/resolve batch at that location with enough qty ----
     batch_ulid = (
         db.session.execute(
             select(InventoryBatch.ulid)
             .where(
                 InventoryBatch.item_ulid == it_ulid,
                 InventoryBatch.location_ulid == loc.ulid,
+                InventoryBatch.qty_each >= quantity,
             )
             .order_by(InventoryBatch.ulid.desc())
+            .limit(1)
         )
         .scalars()
         .first()
     )
     if not batch_ulid:
         raise SystemExit(
-            "No batch found for that SKU at the location (seed first)."
+            f"No batch with qty_each >= {quantity} for SKU={sku_code} at location={loc_code}."
         )
 
     cust = customer_ulid or new_ulid()
+    actor = actor_ulid or new_ulid()
+    req_id = request_id or new_ulid()
 
-    res = issue_inventory(
+    res = decide_and_issue_one(
         customer_ulid=cust,
         sku_code=sku_code,
         quantity=quantity,
         when_iso=now_iso8601_ms(),
         project_ulid=None,
-        actor_ulid=actor_ulid,
+        actor_ulid=actor,
         location_ulid=loc.ulid,
         batch_ulid=batch_ulid,
+        request_id=req_id,
+        reason="dev_demo_issue",
+        note=None,
     )
 
-    if not res["ok"]:
-        click.echo(f"DENIED: {res['reason']}")
+    click.echo("")
+    click.echo(f"request_id={req_id}")
+    click.echo(f"customer_ulid={cust}")
+    click.echo(f"actor_ulid={actor}")
+    click.echo(f"location={loc.code} ({loc.ulid})")
+    click.echo(f"sku={sku_code} qty={quantity}")
+
+    if not res.get("ok"):
+        click.secho(f"DENIED: {res.get('reason')}", fg="red")
         if "decision" in res:
             click.echo(f"decision={res['decision']}")
         return
 
-    click.echo(f"OK movement={res['movement_ulid']}")
-    click.echo(f"decision={res['decision']}")
+    click.secho("OK", fg="green")
+    click.echo(f"movement_ulid={res.get('movement_ulid')}")
+    click.echo(f"decision={res.get('decision')}")
 
 
 # -----------------
@@ -1566,85 +1534,108 @@ def dev_demo_issue(
     required=True,
     help="Location.code to issue from (e.g. MAIN, MAIN-A1-2).",
 )
+@click.option(
+    "--actor-ulid",
+    default=None,
+    help="Actor ULID (if omitted, generates one for dev tracing).",
+)
 def dev_ledger_issuance_trace(
     customer_ulid: str,
     sku_code: str,
     location_code: str,
+    actor_ulid: str | None,
 ) -> None:
     """
-    Issue a single item and show all ledger events generated for it.
-
-    This is a dev-only trace tool:
-      - resolves a Location by code (using Logistics ensure_location),
-      - generates a correlation request_id,
-      - calls Logistics decide_and_issue_one(...),
-      - then queries the Ledger by that request_id and prints the events.
-
-    Use this to understand “how many ledger events does one issuance create?”
-    and which domains/operations are involved.
+    Issue a single item and show all *Ledger slice* events generated for it,
+    correlated by request_id.
     """
     echo_db_banner("ledger-issuance-trace")
 
     from sqlalchemy import select
 
     from app.extensions import db
+    from app.lib.chrono import now_iso8601_ms
     from app.lib.ids import new_ulid
     from app.slices.logistics.issuance_services import decide_and_issue_one
+    from app.slices.logistics.models import InventoryBatch, InventoryItem
     from app.slices.logistics.services import ensure_location
 
-    # TODO: adjust this import to match your actual Ledger model path/name.
-    # Common patterns in this project would be something like:
-    #   from app.slices.ledger.models import LedgerEvent
-    #
-    # For now, assume LedgerEvent with fields:
-    #   request_id, domain, operation, target_ulid, chain_key, happened_at_utc.
+    # Ledger slice model import (adjust if your model name differs)
     try:
         from app.slices.ledger.models import LedgerEvent  # type: ignore
-    except ImportError as e:  # pragma: no cover - dev helper
-        click.echo(f"FATAL: could not import LedgerEvent: {e}", err=True)
+    except ImportError as e:
+        click.echo(
+            f"FATAL: could not import LedgerEvent from ledger slice: {e}",
+            err=True,
+        )
         raise SystemExit(1)
 
-    # Resolve location ULID by code (No-Garbage-In enforced via policy)
+    # Resolve (or create) location ULID
     loc_ulid = ensure_location(code=location_code, name=location_code)
 
-    # Correlation id for this issuance
-    req_id = new_ulid()
-    click.echo(f"Using request_id={req_id}")
+    # Resolve item_ulid
+    it_ulid = db.session.execute(
+        select(InventoryItem.ulid).where(InventoryItem.sku == sku_code)
+    ).scalar_one_or_none()
+    if not it_ulid:
+        raise SystemExit(f"Unknown SKU: {sku_code}")
 
-    # Do the issuance
-    result = decide_and_issue_one(
+    # Pick a batch at the location with stock
+    batch_ulid = (
+        db.session.execute(
+            select(InventoryBatch.ulid)
+            .where(
+                InventoryBatch.item_ulid == it_ulid,
+                InventoryBatch.location_ulid == loc_ulid,
+                InventoryBatch.qty_each >= 1,
+            )
+            .order_by(InventoryBatch.ulid.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    if not batch_ulid:
+        raise SystemExit(
+            f"No batch with qty_each >= 1 for SKU={sku_code} at location={location_code}."
+        )
+
+    req_id = new_ulid()
+    actor = actor_ulid or new_ulid()
+
+    click.echo(f"Using request_id={req_id}")
+    click.echo(f"actor_ulid={actor}")
+
+    res = decide_and_issue_one(
         customer_ulid=customer_ulid,
         sku_code=sku_code,
         quantity=1,
-        when_iso=None,
+        when_iso=now_iso8601_ms(),
         project_ulid=None,
-        actor_ulid=None,
+        actor_ulid=actor,
         location_ulid=loc_ulid,
-        batch_ulid=None,
+        batch_ulid=batch_ulid,
         request_id=req_id,
+        reason="dev_ledger_issuance_trace",
+        note=None,
     )
 
     click.echo(
-        f"Decision: ok={result.get('ok')} reason={result.get('reason')} "
-        f"movement_ulid={result.get('movement_ulid')}"
+        f"Result: ok={res.get('ok')} reason={res.get('reason')} movement_ulid={res.get('movement_ulid')}"
     )
-    if not result.get("ok"):
-        # If issuance failed, there may still be some ledger events (e.g. policy checks),
-        # but usually far fewer.
-        click.echo(
-            "Issuance denied or failed; continuing to trace ledger events.\n"
-        )
+    if res.get("decision") is not None:
+        click.echo(f"decision={res.get('decision')}")
 
     # Fetch all ledger events for this request_id
-    events = (
-        db.session.execute(
-            select(LedgerEvent)
-            .where(LedgerEvent.request_id == req_id)
-            .order_by(LedgerEvent.happened_at_utc)
-        )
-        .scalars()
-        .all()
+    order_col = getattr(LedgerEvent, "happened_at_utc", None) or getattr(
+        LedgerEvent, "happened_at", None
     )
+
+    q = select(LedgerEvent).where(LedgerEvent.request_id == req_id)
+    if order_col is not None:
+        q = q.order_by(order_col)
+
+    events = db.session.execute(q).scalars().all()
 
     click.echo("")
     click.echo(f"Ledger events for request_id={req_id}: {len(events)}")
@@ -1653,12 +1644,10 @@ def dev_ledger_issuance_trace(
         return
 
     for ev in events:
-        # Adjust attribute names if your LedgerEvent model uses different ones.
         click.echo(
-            f"  - {ev.domain}.{ev.operation} "
+            f"  - {getattr(ev, 'domain', None)}.{getattr(ev, 'operation', None)} "
             f"target={getattr(ev, 'target_ulid', None)} "
-            f"chain={getattr(ev, 'chain_key', None)} "
-            f"ts={getattr(ev, 'happened_at_utc', None)}"
+            f"ts={getattr(ev, 'happened_at_utc', None) or getattr(ev, 'happened_at', None)}"
         )
 
 

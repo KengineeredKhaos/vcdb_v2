@@ -153,13 +153,13 @@ def emit(
 
     return ledger_v2.emit(
         domain=domain,
-        operation=operation,
+        operation=op_norm,
         request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=target_ulid,
         refs=refs,
         changed=changed,
-        meta=meta,
+        meta=meta_norm,
         happened_at_utc=happened_at_utc,
         chain_key=chain_key,
     )

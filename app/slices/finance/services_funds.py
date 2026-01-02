@@ -117,7 +117,7 @@ def set_period_status(*, period_key: str, status: str) -> None:
     db.session.commit()
     event_bus.emit(
         domain="finance",
-        operation="period.status_changed",
+        operation="period_status_changed",
         request_id="-",
         actor_ulid=None,
         target_ulid=period_key,
@@ -302,7 +302,7 @@ def create_fund(
 
     event_bus.emit(
         domain="finance",
-        operation="fund.upserted",
+        operation="fund_upserted",
         entity="fund",
         entity_ulid=fund.ulid,
         meta={

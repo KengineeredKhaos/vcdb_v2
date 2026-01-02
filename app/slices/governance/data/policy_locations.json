@@ -1,21 +1,37 @@
 {
-  "meta": {
-    "policy_key": "locations",
-    "title": "Storage Location Taxonomy",
-    "description": "Where the hell did I put that damn thing?",
-    "notes": [],
-    "version": 1,
-    "status": "draft",
-    "effective_on": "2026-01-01",
-    "schema_version": 1
-  },
-
-  "kinds": ["warehouse", "rackbin", "satellite", "vehicle"],
-  "locations": [
-    { "code": "MAIN", "kind": "warehouse", "name": "Main Warehouse" },
-    { "code": "VAN-01", "kind": "vehicle", "name": "Outreach Van 1" },
-    { "code": "SAT-NORTH", "kind": "satellite", "name": "North Satellite Closet" }
+  "kinds": [
+    "warehouse",
+    "rackbin",
+    "satellite",
+    "vehicle"
   ],
+  "locations": [
+    {
+      "code": "MAIN",
+      "kind": "warehouse",
+      "name": "Main Warehouse"
+    },
+    {
+      "code": "VAN-01",
+      "kind": "vehicle",
+      "name": "Outreach Van 1"
+    },
+    {
+      "code": "SAT-NORTH",
+      "kind": "satellite",
+      "name": "North Satellite Closet"
+    }
+  ],
+  "meta": {
+    "description": "Where the hell did I put that damn thing?",
+    "effective_on": "2026-01-01",
+    "notes": [],
+    "policy_key": "locations",
+    "schema_version": 1,
+    "status": "draft",
+    "title": "Storage Location Taxonomy",
+    "version": 1
+  },
   "patterns": {
     "rackbin": "^MAIN-[A-F][1-3]-[1-3]$"
   }

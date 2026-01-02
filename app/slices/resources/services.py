@@ -2,17 +2,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
 from app.extensions import db, event_bus
-from app.extensions.contracts.governance_v2 import (
-    get_poc_policy,
-    get_resource_capabilities_policy,
-    get_resource_lifecycle_policy,
-)
 from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
@@ -25,16 +20,38 @@ from app.slices.resources.models import (
 )
 
 # -----------------
-# Controlled
-# Vocabulary
-# (MVP)
+# Constants & conventions
 # -----------------
 
-SECTION = "resource:capability:v1"
+CAPS_SECTION = "resource:capability:v1"
 POC_RELATION = "poc"  # table-level convention, not board policy
 
 # -----------------
-# Contract Errors
+# Policy access (lazy imports)
+# -----------------
+
+
+def _poc_policy() -> dict:
+    from app.extensions.contracts import governance_v2
+
+    return governance_v2.get_poc_policy()
+
+
+def _caps_policy():
+    from app.extensions.contracts import governance_v2
+
+    return governance_v2.get_resource_capabilities_policy()
+
+
+def _lifecycle_policy() -> dict:
+    from app.extensions.contracts import governance_v2
+
+    return governance_v2.get_resource_lifecycle_policy()
+
+
+# -----------------
+# Contract Error
+# normalization
 # -----------------
 
 
@@ -166,49 +183,46 @@ def resource_list_pocs(*, org_ulid: str) -> list[dict]:
     )
 
 
-# ---------------- helpers ----------------
+# -----------------
+# Helpers: validation
+# -----------------
 
 
 def _ensure_reqid(rid: Optional[str]) -> str:
     if not rid or not str(rid).strip():
         raise ValueError("request_id must be non-empty")
-    return str(rid)
+    return str(rid).strip()
 
 
-def _resource_caps_policy():
-    """
-    Thin wrapper so the rest of this module doesn’t care where policy lives.
-    Returns the ResourceCapsPolicy DTO from governance_v2.
-    """
-    return get_resource_capabilities_policy()
+# -----------------
+# Helpers: capability history snapshots
+# -----------------
 
 
-def allowed_resource_capability_codes() -> list[str]:
-    """
-    Convenience: all <domain>.<code> capability keys from Board policy,
-    sorted for U.I. / CLI use.
-    """
-    policy = _resource_caps_policy()
-    return sorted(policy.all_codes)
-
-
-def _latest_snapshot(resource_ulid: str) -> Dict[str, dict]:
+def _latest_snapshot(resource_ulid: str) -> dict[str, dict]:
     h = (
         db.session.query(ResourceHistory)
-        .filter_by(resource_ulid=resource_ulid, section=SECTION)
+        .filter_by(resource_ulid=resource_ulid, section=CAPS_SECTION)
         .order_by(desc(ResourceHistory.version))
         .first()
     )
     return json.loads(h.data_json) if h else {}
 
 
-def _next_version(resource_ulid: str) -> int:
+def _next_version(
+    resource_ulid: str,
+) -> int:
     cur = (
         db.session.query(func.max(ResourceHistory.version))
-        .filter_by(resource_ulid=resource_ulid, section=SECTION)
+        .filter_by(resource_ulid=resource_ulid, section=CAPS_SECTION)
         .scalar()
     )
     return int(cur or 0) + 1
+
+
+# -----------------
+# Helpers: capability payload normalization/validation
+# -----------------
 
 
 def _split(flat_key: str) -> tuple[str, str]:
@@ -217,7 +231,13 @@ def _split(flat_key: str) -> tuple[str, str]:
             f"invalid classification key '{flat_key}'; expected 'domain.key'"
         )
     domain, key = flat_key.split(".", 1)
-    return domain.strip(), key.strip()
+    domain = domain.strip()
+    key = key.strip()
+    if not domain or not key:
+        raise ValueError(
+            f"invalid classification key '{flat_key}'; expected 'domain.key'"
+        )
+    return domain, key
 
 
 def _flatten_caps_payload(
@@ -226,36 +246,23 @@ def _flatten_caps_payload(
     """
     Normalise capability payload into flat keys.
 
-    Accepts two shapes:
+    Accepts:
+      1) Flat:   {"basic_needs.food_pantry": true, ...}
+      2) Nested: {"basic_needs": {"food_pantry": true, ...}, ...}
 
-      1) Flat:
-         {
-             "basic_needs.food_pantry": true,
-             "housing.rent_assistance": {"has": false, "note": "..." },
-         }
-
-      2) Nested:
-         {
-             "basic_needs": {
-                 "food_pantry": true,
-                 "clothing": {"has": true, "note": "Seasonal drive"},
-             },
-             "housing": {
-                 "rent_assistance": {"has": false},
-             },
-         }
-
-    Returns a mapping of flat keys to objects of the form:
-        { "<domain>.<code>": {"has": bool, "note": str?}, ... }
+    Returns:
+      { "<domain>.<code>": {"has": bool, "note": str?}, ... }
     """
     flat: dict[str, dict[str, object]] = {}
     if not payload:
         return flat
 
-    policy = _resource_caps_policy()
-    note_max = policy.note_max
+    policy = _caps_policy()
+    note_max = int(policy.note_max)
 
     for key, value in payload.items():
+        key = str(key).strip()
+
         # Shape 1: already "domain.code"
         if "." in key:
             items = [(key, value)]
@@ -269,143 +276,110 @@ def _flatten_caps_payload(
             items = [(f"{domain}.{sub}", sv) for sub, sv in value.items()]
 
         for flat_key, obj in items:
+            domain, code = _split(str(flat_key))
+            norm_key = f"{domain}.{code}"
+
             if isinstance(obj, bool):
-                flat[flat_key] = {"has": bool(obj)}
-            elif isinstance(obj, dict):
+                flat[norm_key] = {"has": bool(obj)}
+                continue
+
+            if isinstance(obj, dict):
                 out: dict[str, object] = {}
-                if "has" in obj:
-                    out["has"] = bool(obj["has"])
-                else:
-                    # default has=True if omitted but something else is present
-                    out["has"] = True
+
+                # has defaults True when omitted but other fields exist
+                out["has"] = bool(obj.get("has", True))
+
                 note_raw = obj.get("note")
                 if note_raw is not None:
                     note = str(note_raw).strip()
                     if note:
                         out["note"] = note[:note_max]
-                flat[flat_key] = out
-            else:
-                raise ValueError("invalid capability payload value")
+
+                flat[norm_key] = out
+                continue
+
+            raise ValueError("invalid capability payload value")
 
     return flat
 
 
 def _validate_caps(
-    payload: dict[str, object],
+    payload: dict[str, object]
 ) -> dict[str, dict[str, object]]:
     """
-    Validate and normalise a resource capability payload against Board policy.
+    Validate and normalise a capability payload against Board policy.
 
-    - Normalises nested/flat payload shapes.
-    - Ensures every capability code is in policy_resource_capabilities.json.
-    - Trims note fields to policy.note_max chars.
+    - Accepts nested/flat shapes.
+    - Ensures every capability is allowed by policy.
+    - Trims note fields to policy.note_max.
 
-    Returns a dict keyed by flat capability code, for example:
-
-        {
-          "basic_needs.food_pantry": {"has": True, "note": "Staffed weekly"},
-          "housing.rent_assistance": {"has": False},
-        }
+    Returns:
+        { "domain.code": {"has": bool, "note": str?}, ... }
     """
+    # NOTE: keep copy-shaped with sponsors/resources _validate_caps()
+
     flat = _flatten_caps_payload(payload)
     if not flat:
         return flat
 
-    policy = _resource_caps_policy()
-    allowed = set(policy.all_codes)
+    caps = _caps_policy()
+    allowed = set(caps.all_codes)
+    note_max = caps.note_max
 
     norm: dict[str, dict[str, object]] = {}
     for flat_key, obj in flat.items():
-        domain, code = _split(flat_key)
         if flat_key not in allowed:
-            raise ValueError(f"unknown capability '{domain}.{code}'")
+            raise ValueError(f"unknown capability '{flat_key}'")
 
         if not isinstance(obj, dict):
             raise ValueError(f"invalid payload for '{flat_key}'")
 
-        has = bool(obj.get("has", True))
+        out: dict[str, object] = {"has": bool(obj.get("has", True))}
+
         note = obj.get("note")
-        out: dict[str, object] = {"has": has}
         if note is not None:
             note_str = str(note).strip()
             if note_str:
-                out["note"] = note_str[: policy.note_max]
+                out["note"] = note_str[:note_max]
+
         norm[flat_key] = out
 
     return norm
 
 
-def _resource_lifecycle_policy():
-    """
-    Governance Board policy for resource readiness & MOU lifecycle.
-    """
-    return get_resource_lifecycle_policy()
-
-
 # -----------------
-# Policy-backed helpers
-# (Board Policy
-# via Governance)
+# Policy-backed helpers (Board policy via Governance)
 # -----------------
 
 
-def _caps_policy():
-    """
-    Board policy: resource capabilities & taxonomy.
-
-    Backed by `policy_resource_capabilities.json` / Policy table via
-    governance_v2.get_resource_capabilities_policy().
-    """
-    return get_resource_capabilities_policy()
-
-
-def _lifecycle_policy() -> dict:
-    """
-    Board policy: resource readiness + MOU vocab.
-
-    Backed by `policy_resource_lifecycle.json` / Policy table via
-    governance_v2.get_resource_lifecycle_policy().
-    """
-    return get_resource_lifecycle_policy()
-
-
-def all_classification_codes() -> list[str]:
-    """
-    Flattened 'domain.key' codes from the capabilities policy.
-
-    Replaces the old CLASSIFICATIONS constant.
-    """
+def allowed_capability_codes() -> list[str]:
     caps = _caps_policy()
-    # caps is a ResourceCapsPolicy dataclass with .all_codes property
     return sorted(caps.all_codes)
 
 
 def readiness_allowed() -> set[str]:
-    """
-    Allowed readiness states for Resource.readiness_status.
-
-    Replaces READINESS_ALLOWED constant.
-    """
     pol = _lifecycle_policy()
     return set(pol["readiness_allowed"])
 
 
 def mou_allowed() -> set[str]:
-    """
-    Allowed MOU states for Resource.mou_status.
-
-    Replaces MOU_ALLOWED constant.
-    """
     pol = _lifecycle_policy()
     return set(pol["mou_allowed"])
 
 
 def note_max() -> int:
-    """
-    Max length for capability notes; replaces NOTE_MAX constant.
-    """
     caps = _caps_policy()
     return int(caps.note_max)
+
+
+def _default_readiness() -> str:
+    pol = _lifecycle_policy()
+    return str(pol["readiness_allowed"][0])
+
+
+def _default_mou() -> str:
+    pol = _lifecycle_policy()
+    return str(pol["mou_allowed"][0])
 
 
 # -----------------
@@ -416,21 +390,18 @@ def note_max() -> int:
 def ensure_resource(
     *, entity_ulid: str, request_id: str, actor_ulid: Optional[str]
 ) -> str:
-    """
-    Idempotently ensure a Resource row exists for this entity.
-    (No cross-slice service calls; caller is responsible for entity lifecycle.)
-    """
     _ensure_reqid(request_id)
 
     r = db.session.query(Resource).filter_by(entity_ulid=entity_ulid).first()
+    now = now_iso8601_ms()
+
     if not r:
-        now = now_iso8601_ms()
         r = Resource(
             entity_ulid=entity_ulid,
             first_seen_utc=now,
             last_touch_utc=now,
-            readiness_status="draft",
-            mou_status="none",
+            readiness_status=_default_readiness(),
+            mou_status=_default_mou(),
         )
         db.session.add(r)
         db.session.commit()
@@ -441,27 +412,20 @@ def ensure_resource(
             actor_ulid=actor_ulid,
             target_ulid=r.ulid,
             request_id=request_id,
-            happened_at_utc=now_iso8601_ms(),
+            happened_at_utc=now,
             refs={"entity_ulid": entity_ulid},
         )
-    else:
-        r.last_touch_utc = now_iso8601_ms()
-        db.session.commit()
+        return r.ulid
+
+    r.last_touch_utc = now
+    db.session.commit()
     return r.ulid
-
-
-def allowed_capabilities() -> list[str]:
-    """
-    Returns canonical capability keys like 'basic_needs.food_pantry'.
-    Useful for seeds/tools; read-only, PII-free.
-    """
-    return allowed_resource_capability_codes()
 
 
 def upsert_capabilities(
     *,
     resource_ulid: str,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     request_id: str,
     actor_ulid: Optional[str],
     idempotency_key: Optional[str] = None,
@@ -501,7 +465,7 @@ def upsert_capabilities(
     version = _next_version(resource_ulid)
     hist = ResourceHistory(
         resource_ulid=resource_ulid,
-        section=SECTION,
+        section=CAPS_SECTION,
         version=version,
         data_json=stable_dumps(norm),
         created_by_actor=actor_ulid,
@@ -582,10 +546,10 @@ def upsert_capabilities(
     return hist.ulid
 
 
-def _normalize_policy(
+def _normalize_poc_args(
     scope: Optional[str], rank: Optional[int]
 ) -> tuple[str, int, dict]:
-    policy = get_poc_policy()
+    policy = _poc_policy()
     scopes = policy["poc_scopes"]
     default = policy["default_scope"]
     max_rank = policy["max_rank"]
@@ -655,6 +619,7 @@ def find_resources(
 ) -> tuple[list[dict], int]:
     """
     Search by capability keys quickly via the projection table.
+    “optimize later” (SQL UNION / exists / group by having count patterns)
     """
     q = db.session.query(Resource)
 
@@ -705,28 +670,37 @@ def find_resources(
     return [resource_view(r.ulid) for r in rows], total
 
 
+# -----------------
+# Readiness/MOU helpers
+# -----------------
+
+
 def set_readiness_status(
     *,
     resource_ulid: str,
     status: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
     request_id: str,
 ) -> None:
     _ensure_reqid(request_id)
-    policy = _resource_lifecycle_policy()
+    status = (status or "").strip().lower()
 
-    if status not in policy.readiness_states:
+    allowed = readiness_allowed()
+    if status not in allowed:
         raise ValueError(f"invalid readiness_status '{status}'")
 
     res = db.session.get(Resource, resource_ulid)
     if not res:
         raise ValueError("resource not found")
 
+    if res.readiness_status == status:
+        return
+
     prev = res.readiness_status
+    now = now_iso8601_ms()
     res.readiness_status = status
-    res.last_touch_utc = now_iso8601_ms()
+    res.last_touch_utc = now
     db.session.commit()
-    # (emit ledger event as you already do)
 
     event_bus.emit(
         domain="resources",
@@ -734,7 +708,7 @@ def set_readiness_status(
         actor_ulid=actor_ulid,
         target_ulid=resource_ulid,
         request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
+        happened_at_utc=now,
         changed={"readiness_status": status, "prev": prev},
     )
 
@@ -743,24 +717,28 @@ def set_mou_status(
     *,
     resource_ulid: str,
     status: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
     request_id: str,
 ) -> None:
     _ensure_reqid(request_id)
-    policy = _resource_lifecycle_policy()
+    status = (status or "").strip().lower()
 
-    if status not in policy.mou_states:
+    allowed = mou_allowed()
+    if status not in allowed:
         raise ValueError(f"invalid mou_status '{status}'")
 
     res = db.session.get(Resource, resource_ulid)
     if not res:
         raise ValueError("resource not found")
 
-    prev = res.readiness_status
+    if res.mou_status == status:
+        return
+
+    prev = res.mou_status
+    now = now_iso8601_ms()
     res.mou_status = status
-    res.last_touch_utc = now_iso8601_ms()
+    res.last_touch_utc = now
     db.session.commit()
-    # (emit ledger event as you already do)
 
     event_bus.emit(
         domain="resources",
@@ -768,7 +746,7 @@ def set_mou_status(
         actor_ulid=actor_ulid,
         target_ulid=resource_ulid,
         request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
+        happened_at_utc=now,
         changed={"mou_status": status, "prev": prev},
     )
 
@@ -819,7 +797,7 @@ def rebuild_capability_index(
         actor_ulid=actor_ulid,
         target_ulid=resource_ulid,
         request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
+        happened_at_utc=now,
         refs={"rows": count},
     )
     return count
@@ -829,7 +807,8 @@ def promote_readiness_if_clean(
     *, resource_ulid: str, request_id: str, actor_ulid: str | None
 ) -> bool:
     """
-    Convenience: if no 'meta.unclassified' and currently 'review', promote to 'active'.
+    Convenience: if no 'meta.unclassified' and currently 'review',
+    promote to 'active'.
     Returns True if promoted.
     """
     _ensure_reqid(request_id)
@@ -925,7 +904,7 @@ def patch_capabilities(
     version = _next_version(resource_ulid)
     hist = ResourceHistory(
         resource_ulid=resource_ulid,
-        section=SECTION,
+        section=CAPS_SECTION,
         version=version,
         data_json=stable_dumps(merged),
         created_by_actor=actor_ulid,
@@ -977,7 +956,7 @@ def patch_capabilities(
             actor_ulid=actor_ulid,
             target_ulid=resource_ulid,
             request_id=request_id,
-            happened_at_utc=now_iso8601_ms(),
+            happened_at_utc=now_iso8601_ms,
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
         )
     for flat in removed:

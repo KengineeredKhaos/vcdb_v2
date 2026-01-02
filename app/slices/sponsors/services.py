@@ -2,20 +2,14 @@
 from __future__ import annotations
 
 import json
-import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import desc, func, select
 
 from app.extensions import db, event_bus
 from app.extensions.contracts import finance_v2
-from app.extensions.contracts.governance_v2 import (
-    get_sponsor_capability_policy,
-    get_sponsor_lifecycle_policy,
-    get_sponsor_pledge_policy,
-)
+from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
-from app.lib.ids import new_ulid
 from app.lib.jsonutil import stable_dumps
 from app.services import poc as poc_svc
 
@@ -29,194 +23,81 @@ from .models import (
 )
 
 # -----------------
-# Wrappers & Helpers
-# -----------------
+# Constants and conventions
+# ------------------
 
-log = logging.getLogger(__name__)
-
-# History sections (these labels are part of our own internal structure;
-# the *allowed values* within those sections come from Board policy.)
 CAPS_SECTION = "sponsor:capability:v1"
 PLEDGE_SECTION = "sponsor:pledge:v1"
-NOTE_MAX = 120  # shared misc cap for short-string notes
-
-
-def _ensure_reqid(request_id: str) -> None:
-    if not request_id or not isinstance(request_id, str):
-        raise ValueError("request_id required")
-    if len(request_id) < 8:
-        # just a sanity guard; IDs come from caller (usually contracts)
-        raise ValueError("request_id too short")
-
-
-def _split(flat_key: str) -> Tuple[str, str]:
-    """
-    Split 'domain.key' into ('domain', 'key').
-    """
-    if "." not in flat_key:
-        raise ValueError("flat capability key must be 'domain.code'")
-    d, k = flat_key.split(".", 1)
-    d = d.strip()
-    k = k.strip()
-    if not d or not k:
-        raise ValueError("invalid flat capability key")
-    return d, k
-
-
-def _flatten_caps_payload(
-    payload: Dict[str, Any]
-) -> Dict[str, Dict[str, Any]]:
-    """
-    Normalise capability payload into flat keys.
-
-    Accepts two shapes:
-
-      1) Flat:
-         {
-             "funding.cash_grant": true,
-             "in_kind.in_kind_goods": {"has": false, "note": "..." },
-         }
-
-      2) Nested:
-         {
-             "funding": {
-                 "cash_grant": true,
-                 "restricted_grant": {"has": true, "note": "Board restricted"},
-             },
-             "in_kind": {
-                 "in_kind_goods": {"has": false},
-             },
-         }
-
-    Returns a mapping of flat keys to objects of the form:
-        { "<domain>.<code>": {"has": bool, "note": str?}, ... }
-    """
-    flat: Dict[str, Dict[str, Any]] = {}
-
-    if not payload:
-        return flat
-
-    for key, value in payload.items():
-        # Shape 1: already "domain.code"
-        if "." in key:
-            flat_key = key
-            obj = value
-            items = [(flat_key, obj)]
-        else:
-            # Shape 2: nested by domain
-            domain = key
-            if not isinstance(value, dict):
-                raise ValueError(
-                    "nested capabilities must be objects per domain"
-                )
-            items = []
-            for sub_key, sub_val in value.items():
-                items.append((f"{domain}.{sub_key}", sub_val))
-
-        for flat_key, obj in items:
-            # Normalise to {"has": bool, "note": str?}
-            if isinstance(obj, bool):
-                flat[flat_key] = {"has": bool(obj)}
-            elif isinstance(obj, dict):
-                out: Dict[str, Any] = {}
-                if "has" in obj:
-                    out["has"] = bool(obj["has"])
-                else:
-                    # default missing "has" → True
-                    out["has"] = True
-                note_raw = obj.get("note")
-                if note_raw is not None:
-                    note = str(note_raw).strip()
-                    if note:
-                        out["note"] = note[:NOTE_MAX]
-                flat[flat_key] = out
-            else:
-                raise ValueError("invalid capability payload value")
-
-    return flat
-
-
-def get_allocation_by_ulid(allocation_ulid: str) -> Allocation:
-    """
-    Slice-local helper to look up an Allocation by ULID.
-
-    The Extensions contract (sponsors_v2.allocation_spend) calls this
-    so it doesn't have to reach into the Sponsors tables directly.
-    """
-    if not allocation_ulid:
-        raise ValueError("allocation_ulid is required")
-
-    row = db.session.execute(
-        select(Allocation).where(Allocation.ulid == allocation_ulid)
-    ).scalar_one_or_none()
-    if not row:
-        raise ValueError(f"allocation {allocation_ulid} not found")
-
-    return row
+POC_RELATION = "poc"  # table-level convention, not board policy
+PROSPECT_REAL_SECTION = "sponsor:prospect_realization:v1"
 
 
 # -----------------
-# Validate Caps
+# Policy access (lazy imports)
 # -----------------
 
 
-def _validate_caps(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    """
-    Validate and normalise a sponsor capability payload against Board policy.
+def _caps_policy():
+    from app.extensions.contracts import governance_v2
 
-    - Normalises nested/flat payload shapes.
-    - Ensures every capability code is in the Governance capability policy.
-    - Trims note fields to NOTE_MAX chars.
-
-    Returns a dict keyed by flat capability code, for example:
-
-        {
-          "funding.cash_grant": {"has": True, "note": "Board approved"},
-          "in_kind.volunteer_hours": {"has": False},
-        }
-    """
-    flat = _flatten_caps_payload(payload)
-    if not flat:
-        return flat
-
-    policy = get_sponsor_capability_policy()
-    # Governance policy exposes *flat* capability codes, e.g. "funding.cash_grant".
-    # (See policy_sponsor_capabilities.json + governance_v2.SponsorCapsDTO.)
-    allowed_flat: set[str] = policy.all_codes  # set of strings
-
-    unknown = sorted(k for k in flat.keys() if k not in allowed_flat)
-    if unknown:
-        raise ValueError(f"invalid capability keys: {', '.join(unknown)}")
-
-    return flat
+    return governance_v2.get_sponsor_capability_policy()
 
 
-def _latest_caps(sponsor_ulid: str) -> Dict[str, dict]:
-    h = (
-        db.session.query(SponsorHistory)
-        .filter_by(sponsor_ulid=sponsor_ulid, section=CAPS_SECTION)
-        .order_by(desc(SponsorHistory.version))
-        .first()
+def _lifecycle_policy():
+    from app.extensions.contracts import governance_v2
+
+    return governance_v2.get_sponsor_lifecycle_policy()
+
+
+def _pledge_policy() -> dict:
+    from app.extensions.contracts import governance_v2
+
+    return governance_v2.get_sponsor_pledge_policy()
+
+
+# -----------------
+# Contract Error
+# normalization
+# -----------------
+
+
+def _as_contract_error(where: str, exc: Exception) -> ContractError:
+    # If we’re already looking at a ContractError, just bubble it up unchanged
+    if isinstance(exc, ContractError):
+        return exc
+
+    msg = str(exc) or exc.__class__.__name__
+
+    if isinstance(exc, ValueError):
+        return ContractError(
+            code="bad_argument",
+            where=where,
+            message=msg,
+            http_status=400,
+        )
+    if isinstance(exc, PermissionError):
+        return ContractError(
+            code="permission_denied",
+            where=where,
+            message=msg,
+            http_status=403,
+        )
+    if isinstance(exc, LookupError):
+        return ContractError(
+            code="not_found",
+            where=where,
+            message=msg,
+            http_status=404,
+        )
+
+    # Fallback: unexpected system/runtime error
+    return ContractError(
+        code="internal_error",
+        where=where,
+        message="unexpected error in contract; see logs",
+        http_status=500,
+        data={"exc_type": exc.__class__.__name__},
     )
-    return json.loads(h.data_json) if h else {}
-
-
-def _next_version(sponsor_ulid: str, section: str) -> int:
-    cur = (
-        db.session.query(func.max(SponsorHistory.version))
-        .filter_by(sponsor_ulid=sponsor_ulid, section=section)
-        .scalar()
-    )
-    return int(cur or 0) + 1
-
-
-def allowed_capabilities() -> List[str]:
-    """
-    Convenience helper: return all allowed flat capability codes from policy,
-    sorted for U.I. / CLI.
-    """
-    policy = get_sponsor_capability_policy()
-    return sorted(policy.all_codes)
 
 
 # -----------------
@@ -306,6 +187,208 @@ def sponsor_list_pocs(*, org_ulid: str) -> list[dict]:
     return poc_svc.list_pocs(
         db.session, POCModel=SponsorPOC, org_ulid=org_ulid
     )
+
+
+# -----------------
+# Wrappers & Helpers
+# -----------------
+
+
+def _ensure_reqid(rid: str | None) -> str:
+    if not rid or not str(rid).strip():
+        raise ValueError("request_id must be non-empty")
+    return str(rid).strip()
+
+
+def _split(flat_key: str) -> Tuple[str, str]:
+    """
+    Split 'domain.key' into ('domain', 'key').
+    """
+    if "." not in flat_key:
+        raise ValueError("flat capability key must be 'domain.code'")
+    d, k = flat_key.split(".", 1)
+    d = d.strip()
+    k = k.strip()
+    if not d or not k:
+        raise ValueError("invalid flat capability key")
+    return d, k
+
+
+def _flatten_caps_payload(
+    payload: Dict[str, Any]
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Normalise capability payload into flat keys.
+
+    Accepts two shapes:
+
+      1) Flat:
+         {
+             "funding.cash_grant": true,
+             "in_kind.in_kind_goods": {"has": false, "note": "..." },
+         }
+
+      2) Nested:
+         {
+             "funding": {
+                 "cash_grant": true,
+                 "restricted_grant": {"has": true, "note": "Board restricted"},
+             },
+             "in_kind": {
+                 "in_kind_goods": {"has": false},
+             },
+         }
+
+    Returns a mapping of flat keys to objects of the form:
+        { "<domain>.<code>": {"has": bool, "note": str?}, ... }
+    """
+    flat: Dict[str, Dict[str, Any]] = {}
+
+    if not payload:
+        return flat
+
+    for key, value in payload.items():
+        # Shape 1: already "domain.code"
+        if "." in key:
+            flat_key = key
+            obj = value
+            items = [(flat_key, obj)]
+        else:
+            # Shape 2: nested by domain
+            domain = key
+            if not isinstance(value, dict):
+                raise ValueError(
+                    "nested capabilities must be objects per domain"
+                )
+            items = []
+            for sub_key, sub_val in value.items():
+                items.append((f"{domain}.{sub_key}", sub_val))
+
+        for flat_key, obj in items:
+            # Normalise to {"has": bool, "note": str?}
+            if isinstance(obj, bool):
+                flat[flat_key] = {"has": bool(obj)}
+            elif isinstance(obj, dict):
+                out: Dict[str, Any] = {}
+                if "has" in obj:
+                    out["has"] = bool(obj["has"])
+                else:
+                    # default missing "has" → True
+                    out["has"] = True
+                note_raw = obj.get("note")
+                if note_raw is not None:
+                    note = str(note_raw).strip()
+                    if note:
+                        out["note"] = note[:note_max]
+                flat[flat_key] = out
+            else:
+                raise ValueError("invalid capability payload value")
+
+    return flat
+
+
+def get_allocation_by_ulid(allocation_ulid: str) -> Allocation:
+    """
+    Slice-local helper to look up an Allocation by ULID.
+
+    The Extensions contract (sponsors_v2.allocation_spend) calls this
+    so it doesn't have to reach into the Sponsors tables directly.
+    """
+    if not allocation_ulid:
+        raise ValueError("allocation_ulid is required")
+
+    row = db.session.execute(
+        select(Allocation).where(Allocation.ulid == allocation_ulid)
+    ).scalar_one_or_none()
+    if not row:
+        raise ValueError(f"allocation {allocation_ulid} not found")
+
+    return row
+
+
+# -----------------
+# History
+# -----------------
+
+
+def _latest_snapshot(sponsor_ulid: str, section: str) -> dict[str, dict]:
+    h = (
+        db.session.query(SponsorHistory)
+        .filter_by(sponsor_ulid=sponsor_ulid, section=section)
+        .order_by(desc(SponsorHistory.version))
+        .first()
+    )
+    data = json.loads(h.data_json) if h else {}
+    return data if isinstance(data, dict) else {}
+
+
+# -----------------
+# Validate Caps
+# -----------------
+
+
+def _validate_caps(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    # NOTE: keep copy-shaped with sponsors/resources _validate_caps()
+    flat = _flatten_caps_payload(payload)
+    if not flat:
+        return flat
+
+    caps = _caps_policy()
+    allowed_flat = set(caps.all_codes)
+
+    unknown = sorted(k for k in flat if k not in allowed_flat)
+    if unknown:
+        raise ValueError(f"invalid capability keys: {', '.join(unknown)}")
+
+    return flat
+
+
+def _latest_caps(sponsor_ulid: str) -> dict[str, dict]:
+    return _latest_snapshot(sponsor_ulid, CAPS_SECTION)
+
+
+def _next_version(sponsor_ulid: str, section: str) -> int:
+    cur = (
+        db.session.query(func.max(SponsorHistory.version))
+        .filter_by(sponsor_ulid=sponsor_ulid, section=section)
+        .scalar()
+    )
+    return int(cur or 0) + 1
+
+
+# -----------------
+# Policy-backed helpers (Board policy via Governance)
+# -----------------
+
+
+def allowed_capability_codes() -> list[str]:
+    caps = _caps_policy()
+    return sorted(caps.all_codes)
+
+
+def readiness_allowed() -> set[str]:
+    pol = _lifecycle_policy()
+    return set(pol["readiness_allowed"])
+
+
+def mou_allowed() -> set[str]:
+    pol = _lifecycle_policy()
+    return set(pol["mou_allowed"])
+
+
+def note_max() -> int:
+    caps = _caps_policy()
+    return int(caps.note_max)
+
+
+def _default_readiness() -> str:
+    pol = _lifecycle_policy()
+    return str(pol["readiness_allowed"][0])
+
+
+def _default_mou() -> str:
+    pol = _lifecycle_policy()
+    return str(pol["mou_allowed"][0])
 
 
 # -----------------
@@ -428,7 +511,7 @@ def upsert_capabilities(
             actor_ulid=actor_ulid,
             target_ulid=sponsor_ulid,
             request_id=request_id,
-            happened_at_utc=now_iso8601_ms(),
+            happened_at_utc=now,
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
         )
     for flat in removed:
@@ -439,7 +522,7 @@ def upsert_capabilities(
             actor_ulid=actor_ulid,
             target_ulid=sponsor_ulid,
             request_id=request_id,
-            happened_at_utc=now_iso8601_ms(),
+            happened_at_utc=now,
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
         )
     return hist.ulid
@@ -469,7 +552,7 @@ def patch_capabilities(
             if note is None or str(note).strip() == "":
                 merged[flat].pop("note", None)
             else:
-                merged[flat]["note"] = str(note)[:NOTE_MAX]
+                merged[flat]["note"] = str(note)[:note_max]
     if stable_dumps(merged) == stable_dumps(last):
         s.last_touch_utc = now_iso8601_ms()
         db.session.commit()
@@ -524,11 +607,11 @@ def patch_capabilities(
         d, k = _split(flat)
         event_bus.emit(
             domain="sponsors",
-            operation="capablity_add",
+            operation="capability_add",
             actor_ulid=actor_ulid,
             target_ulid=sponsor_ulid,
             request_id=request_id,
-            happened_at_utc=now_iso8601_ms(),
+            happened_at_utc=now,
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
         )
     for flat in removed:
@@ -539,7 +622,7 @@ def patch_capabilities(
             actor_ulid=actor_ulid,
             target_ulid=sponsor_ulid,
             request_id=request_id,
-            happened_at_utc=now_iso8601_ms(),
+            happened_at_utc=now,
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
         )
     return hist.ulid
@@ -556,7 +639,7 @@ def set_readiness_status(
     sponsor_ulid: str,
     status: str,
     request_id: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
 ) -> None:
     _ensure_reqid(request_id)
     s = db.session.get(Sponsor, sponsor_ulid)
@@ -564,18 +647,16 @@ def set_readiness_status(
         raise ValueError("sponsor not found")
 
     status = (status or "").strip().lower()
-
-    lifecycle = get_sponsor_lifecycle_policy()
-    allowed_readiness = set(lifecycle["readiness_allowed"])
-    if status not in allowed_readiness:
+    if status not in readiness_allowed():
         raise ValueError("invalid readiness_status")
 
     if s.readiness_status == status:
         return
 
     prev = s.readiness_status
+    now = now_iso8601_ms()
     s.readiness_status = status
-    s.last_touch_utc = now_iso8601_ms()
+    s.last_touch_utc = now
     db.session.commit()
 
     event_bus.emit(
@@ -584,7 +665,7 @@ def set_readiness_status(
         actor_ulid=actor_ulid,
         target_ulid=sponsor_ulid,
         request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
+        happened_at_utc=now,
         changed={"readiness_status": status, "prev": prev},
     )
 
@@ -594,7 +675,7 @@ def set_mou_status(
     sponsor_ulid: str,
     status: str,
     request_id: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
 ) -> None:
     _ensure_reqid(request_id)
     s = db.session.get(Sponsor, sponsor_ulid)
@@ -602,18 +683,16 @@ def set_mou_status(
         raise ValueError("sponsor not found")
 
     status = (status or "").strip().lower()
-
-    lifecycle = get_sponsor_lifecycle_policy()
-    allowed_mou = set(lifecycle["mou_allowed"])
-    if status not in allowed_mou:
+    if status not in mou_allowed():
         raise ValueError("invalid mou_status")
 
     if s.mou_status == status:
         return
 
     prev = s.mou_status
+    now = now_iso8601_ms()
     s.mou_status = status
-    s.last_touch_utc = now_iso8601_ms()
+    s.last_touch_utc = now
     db.session.commit()
 
     event_bus.emit(
@@ -622,7 +701,7 @@ def set_mou_status(
         actor_ulid=actor_ulid,
         target_ulid=sponsor_ulid,
         request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
+        happened_at_utc=now,
         changed={"mou_status": status, "prev": prev},
     )
 
@@ -630,18 +709,6 @@ def set_mou_status(
 # -----------------
 # Pledges
 # -----------------
-
-
-def _pledge_policy() -> dict:
-    """
-    Thin wrapper around Governance pledge policy.
-
-    Returns a dict with:
-      - types:     list of {code, label}
-      - statuses:  list of {code, label}
-      - transitions: optional {status -> [next...]}
-    """
-    return get_sponsor_pledge_policy()
 
 
 def _allowed_pledge_types() -> set[str]:
@@ -656,51 +723,17 @@ def _allowed_pledge_statuses() -> set[str]:
     return {s["code"] for s in policy.get("statuses", [])}
 
 
-def _latest_pledges(sponsor_ulid: str) -> Dict[str, dict]:
-    h = (
-        db.session.query(SponsorHistory)
-        .filter_by(sponsor_ulid=sponsor_ulid, section=PLEDGE_SECTION)
-        .order_by(desc(SponsorHistory.version))
-        .first()
-    )
-    return json.loads(h.data_json) if h else {}
+def _latest_pledges(sponsor_ulid: str) -> dict[str, dict]:
+    return _latest_snapshot(sponsor_ulid, PLEDGE_SECTION)
 
 
 # -----------------
 # Prospect Realizations
 # -----------------
 
-PROSPECT_REAL_SECTION = "sponsor:prospect_realization:v1"
-
 
 def _latest_prospect_realizations(sponsor_ulid: str) -> dict:
-    """
-    Load the latest Funding Prospect realization snapshot for this sponsor.
-
-    Shape (data_json):
-        {
-          "<prospect_ulid>": {
-            "realized_total_cents": int,
-            "entries": [
-              {
-                "amount_cents": int,
-                "happened_at_utc": str,
-                "journal_ulid": str | None,
-                "source": str | None,
-              },
-              ...
-            ],
-          },
-          ...
-        }
-    """
-    h = (
-        db.session.query(SponsorHistory)
-        .filter_by(sponsor_ulid=sponsor_ulid, section=PROSPECT_REAL_SECTION)
-        .order_by(desc(SponsorHistory.version))
-        .first()
-    )
-    return json.loads(h.data_json) if h else {}
+    return _latest_snapshot(sponsor_ulid, PROSPECT_REAL_SECTION)
 
 
 def record_prospect_realization(
@@ -809,7 +842,7 @@ def record_prospect_realization(
     # Emit a Sponsors-side CRM event (no money moves here)
     event_bus.emit(
         domain="sponsors",
-        operation="prospect.realization",
+        operation="prospect_realization",
         actor_ulid=actor_ulid,
         target_ulid=sponsor_ulid,
         request_id=request_id,
@@ -872,7 +905,7 @@ def _validate_pledge_payload(p: dict) -> dict:
     out["status"] = st
 
     out["notes"] = (
-        str(p.get("notes")).strip()[:NOTE_MAX] if p.get("notes") else None
+        str(p.get("notes")).strip()[:note_max] if p.get("notes") else None
     )
 
     # Restriction (optional)
@@ -1111,7 +1144,7 @@ def spend_allocation(
     # FIXME: match your real allocation fields here
     if not dry_run:
         if hasattr(alloc, "spent_cents"):
-            alloc.spent_cents = int(getattr(alloc, "spent_cents") or 0) + int(
+            alloc.spent_cents = int(alloc.spent_cents or 0) + int(
                 amount_cents
             )
         db.session.add(alloc)
@@ -1120,7 +1153,7 @@ def spend_allocation(
         # 5) Emit Ledger spine
         event_bus.emit(
             domain="sponsors",
-            operation="allocation.spent",
+            operation="allocation_spent",
             request_id=request_id,
             actor_ulid=actor_ulid,
             target_ulid=sponsor_ulid,

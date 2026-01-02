@@ -268,7 +268,7 @@ def ensure_person(
     # PII-safe, canon emit
     event_bus.emit(
         domain="entity",
-        operation="person.created" if created else "person.upserted",
+        operation="person_created" if created else "person_upserted",
         request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=ent.ulid,
@@ -353,7 +353,7 @@ def ensure_org(
     # PII-safe, canon emit
     event_bus.emit(
         domain="entity",
-        operation="org.created" if created else "org.upserted",
+        operation="org_created" if created else "org_upserted",
         request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=ent.ulid,
@@ -405,7 +405,7 @@ def upsert_contacts(
     if changed:
         event_bus.emit(
             domain="entity",
-            operation="contact.upserted",
+            operation="contact_upserted",
             request_id=request_id,
             actor_ulid=actor_ulid,
             target_ulid=entity_ulid,
@@ -477,7 +477,7 @@ def upsert_address(
 
     event_bus.emit(
         domain="entity",
-        operation="address.upserted",
+        operation="address_upserted",
         request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=entity_ulid,
@@ -527,7 +527,7 @@ def ensure_role(
     # attached
     event_bus.emit(
         domain="entity",
-        operation="role.attached",
+        operation="role_attached",
         request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=entity_ulid,
@@ -567,7 +567,7 @@ def remove_role(
     # removed
     event_bus.emit(
         domain="entity",
-        operation="role.removed",
+        operation="role_removed",
         request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=entity_ulid,

@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
 from app.extensions import db
+from app.extensions.policies import (
+    load_policy_entity_roles,
+    load_policy_rbac,
+)
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 
@@ -26,13 +30,10 @@ def _load_json(p: Path) -> dict:
 
 def seed_rbac_from_policy() -> int:
     """Idempotently seed RBAC role codes from auth policy JSON."""
-    policy = _load_json(
-        BASE / "slices" / "auth" / "data" / "policy_rbac.json"
-    )
-    codes: Iterable[str] = policy.get("rbac_roles", [])
+    policy = load_policy_rbac()
+    codes = policy.get("rbac_roles", []) or []
     count = 0
     for code in codes:
-        # upsert-ish: try get or create
         obj = Role.query.filter_by(code=code).one_or_none()
         if not obj:
             db.session.add(Role(code=code))
@@ -42,11 +43,17 @@ def seed_rbac_from_policy() -> int:
 
 
 def seed_domain_from_policy() -> int:
-    """Idempotently seed Domain role codes from governance policy JSON."""
-    policy = _load_json(
-        BASE / "slices" / "governance" / "data" / "policy_domain.json"
-    )
-    codes: Iterable[str] = policy.get("domain_roles", [])
+    """Idempotently seed Domain role codes from governance policy JSON (v2)."""
+    policy = load_policy_entity_roles()
+
+    raw = policy.get("domain_roles", []) or []
+    codes: list[str] = []
+    for r in raw:
+        if isinstance(r, str):
+            codes.append(r)
+        elif isinstance(r, dict) and isinstance(r.get("code"), str):
+            codes.append(r["code"])
+
     count = 0
     for code in codes:
         obj = RoleCode.query.filter_by(code=code).one_or_none()

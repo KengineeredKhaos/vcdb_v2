@@ -189,7 +189,7 @@ def link_poc(
 
     event_bus.emit(
         domain=domain,
-        operation="poc.linked",
+        operation="poc_linked",
         target_ulid=org_ulid,
         actor_ulid=actor_ulid,
         request_id=request_id,
@@ -268,7 +268,7 @@ def update_poc(
 
     event_bus.emit(
         domain=domain,
-        operation="poc.updated",
+        operation="poc_updated",
         target_ulid=org_ulid,
         actor_ulid=actor_ulid,
         request_id=request_id,
@@ -325,7 +325,7 @@ def unlink_poc(
 
     event_bus.emit(
         domain=domain,
-        operation="poc.unlinked",
+        operation="poc_unlinked",
         target_ulid=org_ulid,
         actor_ulid=actor_ulid,
         request_id=request_id,

@@ -11,6 +11,14 @@ and demos.
 Fresh dev DB recipe:
 
     rm -f var/app-instance/dev.db
+
+    # Ensure that you set the environment before each flask command:
+
+    export VCDB_ENV=dev | export VCDB_ENV=test
+
+    # because dev and test databases live in two different places.
+
+    flask --app manage_vcdb.py db migrate
     flask --app manage_vcdb.py db upgrade
     flask --app manage_vcdb.py seed seed-foundation
     # optional extras:
@@ -28,7 +36,12 @@ Typical usage from the project root::
     flask --app manage_vcdb.py seed seed-smoke
 
     # (If present) one-shot kitchen-sink bootstrap
+    rm -f var/app-instance/dev.db
+    export VCDB_ENV=dev
+    flask --app manage_vcdb.py db migrate -m "freshbaseline"
+    flask --app manage_vcdb.py db upgrade
     flask --app manage_vcdb.py seed bootstrap
+
 
 
 Commands (core)
@@ -334,17 +347,17 @@ def seed_bootstrap(
     echo_db_banner("seed-bootstrap")
 
     # 1) role codes
-    seed_role_codes()
+    seed_role_codes.callback()
 
     # 2) core foundation (resources/sponsors/POCs/customers)
-    seed_foundation(
+    seed_foundation.callback(
         customers=customers,
         resources=resources,
         sponsors=sponsors,
     )
 
     # 3) canonical Logistics SKUs + stock
-    seed_logistics_canonical(
+    seed_logistics_canonical.callback(
         count=skus,
         per_sku=per_sku,
         loc_code="MAIN",
@@ -352,9 +365,9 @@ def seed_bootstrap(
     )
 
     # 4) demo customers/resources/sponsors for UI/demo flows
-    seed_demo_customers(prefix="Demo")
-    seed_demo_resources(prefix="DemoOrg")
-    seed_demo_sponsors(prefix="DemoSponsor")
+    seed_demo_customers.callback(prefix="Demo")
+    seed_demo_resources.callback(prefix="DemoOrg")
+    seed_demo_sponsors.callback(prefix="DemoSponsor")
 
     click.echo("OK — dev bootstrap complete.")
 

@@ -302,7 +302,7 @@ def commit_update_impl(
     # emit single ledger event (names only; no PII)
     event_bus.emit(
         domain="governance",
-        operation="governance.policy.updated",
+        operation="governance_policy_updated",
         request_id=new_ulid(),
         actor_ulid=actor_ulid,
         target_ulid=None,

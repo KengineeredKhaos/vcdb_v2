@@ -1,18 +1,4 @@
 {
-  "meta": {
-    "policy_key": "lifecycle",
-    "title": "Machine State mechanism",
-    "description": "Allowable states and transistion sequence.",
-    "notes": [
-      "Machine state is a picture of the current status of a slice.",
-      "This policy determines what states are allowed and in what",
-      "sequence changes in state are allowed to occur (transitions)."
-    ],
-    "version": 1,
-    "status": "draft",
-    "effective_on": "2026-01-01",
-    "schema_version": 1
-  },
   "machines": {
     "logistics": {
       "item_lifecycle": {
@@ -24,17 +10,17 @@
           "returned"
         ],
         "transitions": {
-          "received": [
-            "inspected"
+          "available": [
+            "issued"
           ],
           "inspected": [
             "available"
           ],
-          "available": [
-            "issued"
-          ],
           "issued": [
             "returned"
+          ],
+          "received": [
+            "inspected"
           ],
           "returned": [
             "inspected"
@@ -43,73 +29,48 @@
       }
     },
     "resource": {
-      "readiness": [
-        "draft",
-        "review",
-        "active",
-        "suspended"
-      ],
       "mou_status_allowed": [
         "none",
         "pending",
         "active",
         "expired",
         "terminated"
+      ],
+      "readiness": [
+        "draft",
+        "review",
+        "active",
+        "suspended"
       ]
     },
     "sponsor": {
-      "readiness": {
-        "default": "draft",
-        "statuses": [
-          {
-            "code": "draft",
-            "label": "Draft",
-            "can_issue": false
-          },
-          {
-            "code": "review",
-            "label": "Under review",
-            "can_issue": false
-          },
-          {
-            "code": "active",
-            "label": "Active",
-            "can_issue": true
-          },
-          {
-            "code": "suspended",
-            "label": "Suspended",
-            "can_issue": false
-          }
-        ]
-      },
       "mou": {
         "default": "none",
         "statuses": [
           {
+            "can_issue": false,
             "code": "none",
-            "label": "No MOU",
-            "can_issue": false
+            "label": "No MOU"
           },
           {
+            "can_issue": false,
             "code": "pending",
-            "label": "MOU pending",
-            "can_issue": false
+            "label": "MOU pending"
           },
           {
+            "can_issue": true,
             "code": "active",
-            "label": "Active MOU",
-            "can_issue": true
+            "label": "Active MOU"
           },
           {
+            "can_issue": false,
             "code": "expired",
-            "label": "Expired MOU",
-            "can_issue": false
+            "label": "Expired MOU"
           },
           {
+            "can_issue": false,
             "code": "terminated",
-            "label": "Terminated",
-            "can_issue": false
+            "label": "Terminated"
           }
         ]
       },
@@ -133,8 +94,63 @@
           }
         ]
       },
+      "readiness": {
+        "default": "draft",
+        "statuses": [
+          {
+            "can_issue": false,
+            "code": "draft",
+            "label": "Draft"
+          },
+          {
+            "can_issue": false,
+            "code": "review",
+            "label": "Under review"
+          },
+          {
+            "can_issue": true,
+            "code": "active",
+            "label": "Active"
+          },
+          {
+            "can_issue": false,
+            "code": "suspended",
+            "label": "Suspended"
+          }
+        ]
+      },
       "transitions": {
+        "mou": {
+          "active": [
+            "expired",
+            "terminated"
+          ],
+          "expired": [
+            "active",
+            "terminated"
+          ],
+          "none": [
+            "pending"
+          ],
+          "pending": [
+            "active",
+            "none"
+          ]
+        },
+        "pledge": {
+          "active": [
+            "fulfilled",
+            "cancelled"
+          ],
+          "proposed": [
+            "active",
+            "cancelled"
+          ]
+        },
         "readiness": {
+          "active": [
+            "suspended"
+          ],
           "draft": [
             "review",
             "suspended"
@@ -143,42 +159,26 @@
             "active",
             "suspended"
           ],
-          "active": [
-            "suspended"
-          ],
           "suspended": [
             "review",
             "active"
           ]
-        },
-        "mou": {
-          "none": [
-            "pending"
-          ],
-          "pending": [
-            "active",
-            "none"
-          ],
-          "active": [
-            "expired",
-            "terminated"
-          ],
-          "expired": [
-            "active",
-            "terminated"
-          ]
-        },
-        "pledge": {
-          "proposed": [
-            "active",
-            "cancelled"
-          ],
-          "active": [
-            "fulfilled",
-            "cancelled"
-          ]
         }
       }
     }
+  },
+  "meta": {
+    "description": "Allowable states and transistion sequence.",
+    "effective_on": "2026-01-01",
+    "notes": [
+      "Machine state is a picture of the current status of a slice.",
+      "This policy determines what states are allowed and in what",
+      "sequence changes in state are allowed to occur (transitions)."
+    ],
+    "policy_key": "lifecycle",
+    "schema_version": 1,
+    "status": "draft",
+    "title": "Machine State mechanism",
+    "version": 1
   }
 }

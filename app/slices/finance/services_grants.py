@@ -207,7 +207,7 @@ def create_grant(payload: dict) -> GrantDTO:
     # Emit a lightweight event for observability / ledger fan-out
     event_bus.emit(
         domain="finance",
-        operation="grant.created",
+        operation="grant_created",
         entity="grant",
         entity_ulid=grant.ulid,
         meta={
@@ -330,7 +330,7 @@ def submit_reimbursement(payload: dict) -> ReimbursementDTO:
     # event_bus signature is canonical: (domain, operation, request_id, actor_ulid, target_ulid, ...)
     event_bus.emit(
         domain="finance",
-        operation="grant.reimbursement_submitted",
+        operation="grant_reimbursement_submitted",
         request_id=request_id or reimbursement.ulid,
         actor_ulid=actor_ulid,
         target_ulid=reimbursement.ulid,
@@ -428,7 +428,7 @@ def mark_disbursed(payload: dict) -> ReimbursementDTO:
     # Ledger hook – status change only; no money moves here.
     event_bus.emit(
         domain="finance",
-        operation="grant.reimbursement_status_changed",
+        operation="grant_reimbursement_status_changed",
         request_id=request_id or reimbursement.ulid,
         actor_ulid=actor_ulid,
         target_ulid=reimbursement.ulid,

@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Optional, TypedDict
 
 from app.slices.logistics.issuance_services import available_skus_for_customer
-from app.slices.logistics.services import count_issues_in_window
+from app.slices.logistics.services import (
+    count_issues_in_window,
+    nth_oldest_issue_at_in_window,
+)
 
 
 class CadenceGateDTO(TypedDict, total=False):
@@ -37,9 +40,18 @@ def get_sku_cadence(customer_ulid: str, sku: str) -> CadenceGateDTO:
     }
 
 
+def decide_issue(ctx):
+    # thin contract wrapper; Logistics owns the implementation
+    from app.slices.logistics.issuance_services import decide_issue as _decide
+
+    return _decide(ctx)
+
+
 __all__ = [
     "available_skus_for_customer",
     "count_issues_in_window",
+    "nth_oldest_issue_at_in_window",
+    "decide_issue",
 ]
 
 

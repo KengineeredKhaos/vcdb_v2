@@ -1,8 +1,19 @@
 {
+  "eligibility": {
+    "defaults": {
+      "tier1_min": 0,
+      "tier2_min": 0,
+      "tier3_min": 0
+    },
+    "map": {
+      "homeless_required": "customer.is_homeless_verified",
+      "tier1_any_of": "customer.tier1_min",
+      "veteran_required": "customer.is_veteran_verified"
+    }
+  },
   "meta": {
-    "policy_key": "customer",
-    "title": "Customer Eligibility & Needs Profile",
     "description": "Customer services qualification & eligibility.",
+    "effective_on": "2026-01-01",
     "notes": [
       "Policy requires Customers complete the vetting process.",
       "Customer status verified & needs profile assessment completed.",
@@ -11,18 +22,11 @@
       "Tier 2 - sociological needs.",
       "Teir 3 - pyscological needs."
     ],
-    "version": 1,
+    "policy_key": "customer",
+    "schema_version": 1,
     "status": "draft",
-    "effective_on": "2026-01-01",
-    "schema_version": 1
-  },
-  "veteran_verification": {
-    "methods": [
-      "dd214",
-      "va_id",
-      "state_dl_veteran",
-      "other"
-    ]
+    "title": "Customer Eligibility & Needs Profile",
+    "version": 1
   },
   "needs_tiers": {
     "tier1": [
@@ -44,16 +48,12 @@
       "tech"
     ]
   },
-  "eligibility": {
-    "map": {
-      "veteran_required": "customer.is_veteran_verified",
-      "homeless_required": "customer.is_homeless_verified",
-      "tier1_any_of": "customer.tier1_min"
-    },
-    "defaults": {
-      "tier1_min": 0,
-      "tier2_min": 0,
-      "tier3_min": 0
-    }
+  "veteran_verification": {
+    "methods": [
+      "dd214",
+      "va_id",
+      "state_dl_veteran",
+      "other"
+    ]
   }
 }

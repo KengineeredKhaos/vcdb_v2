@@ -123,7 +123,7 @@ def upload_register(
             backend.put(storage_key, src=BinaryIOAdapter(data))
         event_bus.emit(
             domain="attachments",
-            operation="attachment.uploaded",
+            operation="attachment_uploaded",
             actor_ulid=actor_ulid,
             target_ulid=att.ulid,
             request_id=request_id,
@@ -195,7 +195,7 @@ def link_attachment(
     event_bus.emit(
         type="",
         domain="attachments",
-        operation="attachment.linked",
+        operation="attachment_linked",
         actor_ulid=actor_ulid,
         target_ulid=link.ulid,
         request_id=request_id,
@@ -227,7 +227,7 @@ def unlink_attachment(
 
     event_bus.emit(
         domain="attachments",
-        operation="attachment.unlinked",
+        operation="attachment_unlinked",
         actor_ulid=actor_ulid,
         target_ulid=link.ulid,
         request_id=request_id,
@@ -258,7 +258,7 @@ def sign_url(
     url = get_backend().sign_url(att.storage_key, ttl_seconds=ttl_seconds)
     event_bus.emit(
         domain="attachments",
-        operation="attachment.url.signed",
+        operation="attachment_url_signed",
         actor_ulid=actor_ulid,
         target_ulid=attachment_ulid,
         request_id=request_id,

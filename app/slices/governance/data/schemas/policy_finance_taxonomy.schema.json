@@ -1,265 +1,180 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://vcdb.local/schemas/policy_finance_taxonomy.schema.json",
-  "title": "Finance Taxonomy Policy Schema",
-  "description": "Validates policy_finance_taxonomy.json (fund archetypes, journal flags, and sponsor pledge types).",
-  "type": "object",
   "$defs": {
-    "token": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9_]{0,63}$"
-    },
-    "tokenUpper2": {
-      "type": "string",
-      "pattern": "^[A-Z]{2}$"
-    },
-    "ulid": {
-      "type": "string",
-      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
-    },
-    "singleLine": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^[^\\n\\r]+$"
-    },
-    "dateISO": {
-      "type": "string",
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
-    },
-    "meta": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "policy_key",
-        "title",
-        "description",
-        "version",
-        "status",
-        "effective_on",
-        "schema_version"
-      ],
-      "properties": {
-        "policy_key": {
-          "$ref": "#/$defs/token"
-        },
-        "title": {
-          "$ref": "#/$defs/singleLine"
-        },
-        "description": {
-          "$ref": "#/$defs/singleLine"
-        },
-        "notes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "maxLength": 70,
-            "pattern": "^[^\\n\\r]*$"
-          },
-          "default": []
-        },
-        "version": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "draft",
-            "adopted",
-            "deprecated"
-          ]
-        },
-        "effective_on": {
-          "$ref": "#/$defs/dateISO"
-        },
-        "schema_version": {
-          "type": "integer",
-          "minimum": 1
-        }
-      }
-    },
     "cadence": {
-      "type": "object",
       "additionalProperties": false,
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/singleLine"
+        },
+        "max_per_period": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "period_days": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "scope": {
+          "enum": [
+            "classification",
+            "sku"
+          ],
+          "type": "string"
+        }
+      },
       "required": [
         "scope",
         "period_days",
         "max_per_period"
       ],
-      "properties": {
-        "scope": {
-          "type": "string",
-          "enum": [
-            "classification",
-            "sku"
-          ]
-        },
-        "period_days": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "max_per_period": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "label": {
-          "$ref": "#/$defs/singleLine"
-        }
-      }
-    }
-  },
-  "additionalProperties": false,
-  "required": [
-    "meta",
-    "fund_archetypes",
-    "journal_flags",
-    "sponsor"
-  ],
-  "properties": {
-    "meta": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "policy_key",
-        "title",
-        "description",
-        "version",
-        "status",
-        "effective_on",
-        "schema_version"
-      ],
-      "properties": {
-        "policy_key": {
-          "const": "finance_taxonomy"
-        },
-        "title": {
-          "$ref": "#/$defs/singleLine"
-        },
-        "description": {
-          "$ref": "#/$defs/singleLine"
-        },
-        "notes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "maxLength": 70,
-            "pattern": "^[^\\n\\r]*$"
+      "type": "object"
+    },
+    "dateISO": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    },
+    "expense_kinds": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "$ref": "#/$defs/token"
           },
-          "default": []
+          "label": {
+            "$ref": "#/$defs/singleLine"
+          }
         },
-        "version": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "draft",
-            "adopted",
-            "deprecated"
-          ]
-        },
-        "effective_on": {
-          "$ref": "#/$defs/dateISO"
-        },
-        "schema_version": {
-          "type": "integer",
-          "minimum": 1
-        }
-      }
+        "required": [
+          "key",
+          "label"
+        ],
+        "type": "object"
+      },
+      "type": "array"
     },
     "fund_archetypes": {
-      "type": "array",
-      "minItems": 1,
       "items": {
-        "type": "object",
         "additionalProperties": false,
+        "properties": {
+          "key": {
+            "$ref": "#/$defs/token"
+          },
+          "label": {
+            "$ref": "#/$defs/singleLine"
+          },
+          "payment_timing": {
+            "enum": [
+              "upfront",
+              "reimbursement"
+            ],
+            "type": "string"
+          },
+          "restriction_type": {
+            "enum": [
+              "unrestricted",
+              "temporarily_restricted"
+            ],
+            "type": "string"
+          }
+        },
         "required": [
           "key",
           "label",
           "restriction_type",
           "payment_timing"
         ],
-        "properties": {
-          "key": {
-            "$ref": "#/$defs/token"
-          },
-          "label": {
-            "$ref": "#/$defs/singleLine"
-          },
-          "restriction_type": {
-            "type": "string",
-            "enum": [
-              "unrestricted",
-              "temporarily_restricted"
-            ]
-          },
-          "payment_timing": {
-            "type": "string",
-            "enum": [
-              "upfront",
-              "reimbursement"
-            ]
-          }
-        }
-      }
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
     },
     "journal_flags": {
-      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "$ref": "#/$defs/token"
+          },
+          "label": {
+            "$ref": "#/$defs/singleLine"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "type": "object"
+      },
       "minItems": 1,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "key",
-          "label"
-        ],
-        "properties": {
-          "key": {
-            "$ref": "#/$defs/token"
-          },
-          "label": {
-            "$ref": "#/$defs/singleLine"
-          }
-        }
-      }
+      "type": "array"
     },
-    "expense_kinds": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "key",
-          "label"
-        ],
-        "properties": {
-          "key": {
-            "$ref": "#/$defs/token"
+    "meta": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "$ref": "#/$defs/singleLine"
+        },
+        "effective_on": {
+          "$ref": "#/$defs/dateISO"
+        },
+        "notes": {
+          "default": [],
+          "items": {
+            "maxLength": 70,
+            "pattern": "^[^\\n\\r]*$",
+            "type": "string"
           },
-          "label": {
-            "$ref": "#/$defs/singleLine"
-          }
+          "type": "array"
+        },
+        "policy_key": {
+          "const": "finance_taxonomy",
+          "type": "string"
+        },
+        "schema_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/policyStatus"
+        },
+        "title": {
+          "$ref": "#/$defs/singleLine"
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
         }
-      }
+      },
+      "required": [
+        "policy_key",
+        "effective_on",
+        "description",
+        "version",
+        "schema_version",
+        "title",
+        "status"
+      ],
+      "type": "object"
+    },
+    "policyStatus": {
+      "enum": [
+        "draft",
+        "active",
+        "deprecated"
+      ],
+      "type": "string"
+    },
+    "singleLine": {
+      "minLength": 1,
+      "pattern": "^[^\\n\\r]+$",
+      "type": "string"
     },
     "sponsor": {
-      "type": "object",
       "additionalProperties": false,
-      "required": [
-        "pledge_type"
-      ],
       "properties": {
         "pledge_type": {
-          "type": "array",
-          "minItems": 1,
           "items": {
-            "type": "object",
             "additionalProperties": false,
-            "required": [
-              "code",
-              "label"
-            ],
             "properties": {
               "code": {
                 "$ref": "#/$defs/token"
@@ -267,10 +182,62 @@
               "label": {
                 "$ref": "#/$defs/singleLine"
               }
-            }
-          }
+            },
+            "required": [
+              "code",
+              "label"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
         }
-      }
+      },
+      "required": [
+        "pledge_type"
+      ],
+      "type": "object"
+    },
+    "token": {
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "type": "string"
+    },
+    "tokenUpper2": {
+      "pattern": "^[A-Z]{2}$",
+      "type": "string"
+    },
+    "ulid": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "type": "string"
     }
-  }
+  },
+  "$id": "https://vcdb.local/schemas/policy_finance_taxonomy.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Validates policy_finance_taxonomy.json (fund archetypes, journal flags, and sponsor pledge types).",
+  "properties": {
+    "expense_kinds": {
+      "$ref": "#/$defs/expense_kinds"
+    },
+    "fund_archetypes": {
+      "$ref": "#/$defs/fund_archetypes"
+    },
+    "journal_flags": {
+      "$ref": "#/$defs/journal_flags"
+    },
+    "meta": {
+      "$ref": "#/$defs/meta"
+    },
+    "sponsor": {
+      "$ref": "#/$defs/sponsor"
+    }
+  },
+  "required": [
+    "meta",
+    "fund_archetypes",
+    "journal_flags",
+    "sponsor"
+  ],
+  "title": "Finance Taxonomy Policy Schema",
+  "type": "object"
 }

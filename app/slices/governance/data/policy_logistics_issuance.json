@@ -1,26 +1,11 @@
 {
-  "meta": {
-    "policy_key": "logistics_issuance",
-    "title": "Logistics Issuance Policy",
-    "description": "Issuance criteria and cadence rules for inventory SKUs.",
-    "notes": [
-      "Customer qualifications and issuance frequency limits.",
-      "See logistics/sku.py for SKU construction/breakdown.",
-      "To add new sources, update logistics/sku.py NEW_RE first.",
-      "No override provisions yet; anticipated in later revisions."
-    ],
-    "version": 1,
-    "status": "draft",
-    "effective_on": "2026-01-01",
-    "schema_version": 1
-  },
   "issuance": {
     "defaults": {
       "cadence": {
-        "scope": "classification",
-        "period_days": 30,
+        "label": "default-per-30",
         "max_per_period": 1,
-        "label": "default-per-30"
+        "period_days": 30,
+        "scope": "classification"
       }
     },
     "rules": [
@@ -36,27 +21,81 @@
       {
         "if": {
           "category": "CG",
-          "subcategory": "SL",
-          "source": "LC"
+          "source": "LC",
+          "subcategory": "SL"
         },
         "then": {
           "issuance_class": "H"
         },
         "why": "Commercial sleeping gear reserved for homeless issuance"
+      },
+      {
+        "if": {
+          "issuance_class": "V"
+        },
+        "then": {
+          "issuance_class": "V"
+        },
+        "why": "Fallback: use SKU issuance_class V"
+      },
+      {
+        "if": {
+          "issuance_class": "H"
+        },
+        "then": {
+          "issuance_class": "H"
+        },
+        "why": "Fallback: use SKU issuance_class H"
+      },
+      {
+        "if": {
+          "issuance_class": "U"
+        },
+        "then": {
+          "issuance_class": "U"
+        },
+        "why": "Fallback: use SKU issuance_class U"
+      },
+      {
+        "if": {
+          "issuance_class": "D"
+        },
+        "then": {
+          "issuance_class": "D"
+        },
+        "why": "Discretionary items: default deny until approval/override workflow exists"
       }
     ]
   },
+  "meta": {
+    "description": "Issuance criteria and cadence rules for inventory SKUs.",
+    "effective_on": "2026-01-01",
+    "notes": [
+      "Customer qualifications and issuance frequency limits.",
+      "See logistics/sku.py for SKU construction/breakdown.",
+      "To add new sources, update logistics/sku.py NEW_RE first.",
+      "No override provisions yet; anticipated in later revisions.",
+      "Ordering matters: overrides first, fallbacks last.",
+      "WHK is project-built PRN; NOT enforced via",
+      "logistics_issuance policy. Track via Finance/Calendar later."
+    ],
+    "policy_key": "logistics_issuance",
+    "schema_version": 1,
+    "status": "draft",
+    "title": "Logistics Issuance Policy",
+    "version": 1
+  },
   "sku_constraints": {
+    "allowed_sources": [
+      "DR",
+      "LC"
+    ],
     "allowed_units": [
       "each",
       "lbs",
       "kit",
       "box",
       "pack"
-    ],
-    "allowed_sources": [
-      "DR",
-      "LC"
     ],
     "rules": [
       {
@@ -72,9 +111,17 @@
       {
         "match": {
           "sku_parts": {
-            "category": "CG",
-            "subcategory": "SL",
-            "source": "LC"
+            "issuance_class": "V"
+          }
+        },
+        "qualifiers": {
+          "veteran_required": true
+        }
+      },
+      {
+        "match": {
+          "sku_parts": {
+            "issuance_class": "H"
           }
         },
         "qualifiers": {
@@ -83,55 +130,48 @@
       },
       {
         "match": {
-          "classification_key": "UW/TP"
-        },
-        "cadence": {
-          "scope": "classification",
-          "period_days": 30,
-          "max_per_period": 1
+          "sku_parts": {
+            "issuance_class": "U"
+          }
         }
       },
       {
+        "cadence": {
+          "max_per_period": 1,
+          "period_days": 30,
+          "scope": "classification"
+        },
+        "match": {
+          "classification_key": "UW/TP"
+        }
+      },
+      {
+        "cadence": {
+          "max_per_period": 1,
+          "period_days": 90,
+          "scope": "classification"
+        },
         "match": {
           "classification_key": "CG/SL"
-        },
-        "cadence": {
-          "scope": "classification",
-          "period_days": 90,
-          "max_per_period": 1
         }
       },
       {
+        "cadence": {
+          "label": "bag-per-90d",
+          "max_per_period": 1,
+          "period_days": 90,
+          "scope": "sku"
+        },
         "match": {
           "sku_parts": {
             "category": "CG",
-            "subcategory": "SL",
-            "source": "DR"
+            "source": "DR",
+            "subcategory": "SL"
           }
         },
         "qualifiers": {
           "homeless_required": true,
           "veteran_required": true
-        },
-        "cadence": {
-          "scope": "sku",
-          "period_days": 90,
-          "max_per_period": 1,
-          "label": "bag-per-90d"
-        }
-      },
-      {
-        "match": {
-          "classification_key": "welcome_home.kit"
-        },
-        "qualifiers": {
-          "veteran_required": true
-        },
-        "cadence": {
-          "scope": "classification",
-          "period_days": 180,
-          "max_per_period": 1,
-          "label": "WHK-per-180d"
         }
       }
     ]

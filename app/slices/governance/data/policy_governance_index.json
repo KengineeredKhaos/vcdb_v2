@@ -1,103 +1,111 @@
 {
+  "catalog_version": "2.0",
   "meta": {
-    "policy_key": "governance_index",
-    "title": "Governance Policy Index",
     "description": "Manifest of Governance policies and schemas (Policy Catalog v2.0).",
+    "effective_on": "2026-01-01",
     "notes": [
       "This file is the authoritative catalog of Governance policy files.",
       "Admin/CLI tooling loads policies by policy_key using this manifest.",
       "policy_key must match each policy file's meta.policy_key exactly.",
       "Schemas align in Phase 2; filenames here are intended targets.",
-      "No PII. No table/column names. Semantic tags only."
+      "No PII. No table/column names. Semantic tags only.",
+      "",
+      "POLICY+SCHEMA EDIT CHECKLIST:",
+      "1) Edit policy+schema together; rerun: flask dev policy-lint --fix",
+      "2) Use $defs + $ref (no duplicated meta blocks).",
+      "3) Keep schema self-contained (avoid cross-file $ref).",
+      "4) When adding keys: update schema + additionalProperties.",
+      "5) When adding enums: define in $defs; rerun policy-lint.",
+      "6) Verify policy_key + filenames match governance_index entries."
     ],
-    "version": 1,
+    "policy_key": "governance_index",
+    "schema_version": 1,
     "status": "draft",
-    "effective_on": "2026-01-01",
-    "schema_version": 1
+    "title": "Governance Policy Index",
+    "version": 1
   },
-  "catalog_version": "2.0",
   "policies": [
     {
-      "policy_key": "governance_index",
-      "filename": "policy_governance_index.json",
-      "schema_filename": "schemas/policy_governance_index.schema.json",
-      "owner_role_hint": "governor",
       "edit_cadence_hint": "rare",
+      "filename": "policy_governance_index.json",
       "notes": [
         "Manifest for Policy Catalog v2.0."
-      ]
+      ],
+      "owner_role_hint": "governor",
+      "policy_key": "governance_index",
+      "schema_filename": "schemas/policy_governance_index.schema.json"
     },
     {
-      "policy_key": "customer",
+      "edit_cadence_hint": "occasional",
       "filename": "policy_customer.json",
-      "schema_filename": "schemas/policy_customer.schema.json",
+      "notes": [],
       "owner_role_hint": "governor",
-      "edit_cadence_hint": "occasional",
-      "notes": []
+      "policy_key": "customer",
+      "schema_filename": "schemas/policy_customer.schema.json"
     },
     {
-      "policy_key": "entity_roles",
+      "edit_cadence_hint": "rare",
       "filename": "policy_entity_roles.json",
-      "schema_filename": "schemas/policy_entity_roles.schema.json",
+      "notes": [],
       "owner_role_hint": "governor",
-      "edit_cadence_hint": "rare",
-      "notes": []
+      "policy_key": "entity_roles",
+      "schema_filename": "schemas/policy_entity_roles.schema.json"
     },
     {
-      "policy_key": "finance_controls",
+      "edit_cadence_hint": "rare",
       "filename": "policy_finance_controls.json",
-      "schema_filename": "schemas/policy_finance_controls.schema.json",
+      "notes": [],
       "owner_role_hint": "governor",
-      "edit_cadence_hint": "rare",
-      "notes": []
+      "policy_key": "finance_controls",
+      "schema_filename": "schemas/policy_finance_controls.schema.json"
     },
     {
-      "policy_key": "finance_taxonomy",
+      "edit_cadence_hint": "rare",
       "filename": "policy_finance_taxonomy.json",
-      "schema_filename": "schemas/policy_finance_taxonomy.schema.json",
+      "notes": [],
       "owner_role_hint": "governor",
-      "edit_cadence_hint": "rare",
-      "notes": []
+      "policy_key": "finance_taxonomy",
+      "schema_filename": "schemas/policy_finance_taxonomy.schema.json"
     },
     {
-      "policy_key": "lifecycle",
+      "edit_cadence_hint": "rare",
       "filename": "policy_lifecycle.json",
-      "schema_filename": "schemas/policy_lifecycle.schema.json",
+      "notes": [],
       "owner_role_hint": "governor",
-      "edit_cadence_hint": "rare",
-      "notes": []
+      "policy_key": "lifecycle",
+      "schema_filename": "schemas/policy_lifecycle.schema.json"
     },
     {
-      "policy_key": "locations",
+      "edit_cadence_hint": "frequent",
       "filename": "policy_locations.json",
-      "schema_filename": "schemas/policy_locations.schema.json",
+      "notes": [],
       "owner_role_hint": "governor",
-      "edit_cadence_hint": "frequent",
-      "notes": []
+      "policy_key": "locations",
+      "schema_filename": "schemas/policy_locations.schema.json"
     },
     {
-      "policy_key": "logistics_issuance",
-      "filename": "policy_logistics_issuance.json",
-      "schema_filename": "schemas/policy_logistics_issuance.schema.json",
-      "owner_role_hint": "governor",
       "edit_cadence_hint": "occasional",
-      "notes": []
+      "filename": "policy_logistics_issuance.json",
+      "notes": [],
+      "owner_role_hint": "governor",
+      "policy_key": "logistics_issuance",
+      "schema_filename": "schemas/policy_logistics_issuance.schema.json"
     },
     {
-      "policy_key": "operations",
-      "filename": "policy_operations.json",
-      "schema_filename": "schemas/policy_operations.schema.json",
-      "owner_role_hint": "governor",
       "edit_cadence_hint": "frequent",
-      "notes": []
+      "filename": "policy_operations.json",
+      "notes": [],
+      "owner_role_hint": "governor",
+      "policy_key": "operations",
+      "schema_filename": "schemas/policy_operations.schema.json"
     },
     {
-      "policy_key": "service_taxonomy",
-      "filename": "policy_service_taxonomy.json",
-      "schema_filename": "schemas/policy_service_taxonomy.schema.json",
-      "owner_role_hint": "governor",
       "edit_cadence_hint": "rare",
-      "notes": []
+      "filename": "policy_service_taxonomy.json",
+      "notes": [],
+      "owner_role_hint": "governor",
+      "policy_key": "service_taxonomy",
+      "schema_filename": "schemas/policy_service_taxonomy.schema.json"
     }
   ]
 }

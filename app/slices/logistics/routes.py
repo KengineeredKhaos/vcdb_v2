@@ -6,6 +6,7 @@ from flask import Blueprint, jsonify, request
 from app.lib.request_ctx import get_actor_ulid
 
 from . import services as svc
+from .issuance_services import issue_inventory as issue_inventory_service
 
 bp = Blueprint("logistics", __name__, url_prefix="/logistics")
 
@@ -75,33 +76,37 @@ def receive():
 
 @bp.post("/issue")
 def issue():
+    """Issue an item to a customer (policy + stock enforced)."""
     try:
-        p = request.get_json(force=True)
-        res = svc.issue_inventory(
-            customer_ulid=customer_ulid,
+        p = request.get_json(force=True) or {}
+
+        sku_code = p.get("sku_code") or p.get("sku")
+        if not sku_code:
+            return _err("missing field: sku_code")
+
+        qty_each = int(p.get("quantity") or p.get("qty_each") or 1)
+
+        out = issue_inventory_service(
+            customer_ulid=p.get("customer_ulid"),
             sku_code=sku_code,
-            when_iso=when_iso,
-            project_ulid=project_ulid,
-            quantity=qty,
-            actor_ulid=actor_ulid,
-            location_ulid=location_ulid,
-            batch_ulid=batch_ulid,
+            qty_each=qty_each,
+            when_iso=p.get("when_iso"),
+            project_ulid=p.get("project_ulid"),
+            location_ulid=p.get("location_ulid"),
+            batch_ulid=p.get("batch_ulid"),
+            actor_ulid=get_actor_ulid(),
+            actor_domain_roles=p.get("actor_domain_roles") or [],
+            override_cadence=bool(p.get("override_cadence")),
+            request_id=p.get("request_id"),
+            reason=p.get("reason"),
+            note=p.get("note"),
         )
-        if not res.get("ok"):
-            # choose your web stack’s error style:
-            reason = res.get("reason") or "denied"
-            # Flask example:
-            return {"ok": False, "reason": reason, "decision": res.get("decision")}, 400
 
-        movement_ulid = res.get("movement_ulid")
-        issue_ulid = res.get("issue_ulid")
+        status = 200 if out.get("ok") else 400
+        return jsonify(out), status
 
-        return {
-            "ok": True,
-            "movement_ulid": movement_ulid,
-            "issue_ulid": issue_ulid,
-            "decision": res.get("decision"),
-        }, 200
+    except Exception as e:
+        return _err(e)
 
 
 

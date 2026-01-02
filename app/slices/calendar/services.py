@@ -182,7 +182,7 @@ def create_project(
     # PII-free event: only ULIDs + status-ish fields
     event_bus.emit(
         domain="calendar",
-        operation="project.created",
+        operation="project_created",
         request_id=rid,
         actor_ulid=actor_ulid,
         target_ulid=p.ulid,
@@ -304,7 +304,7 @@ def create_task(
     # Emit PII-free: do NOT include notes/requirements bodies
     event_bus.emit(
         domain="calendar",
-        operation="task.created",
+        operation="task_created",
         request_id=rid,
         actor_ulid=actor_ulid,
         target_ulid=t.ulid,
@@ -374,7 +374,7 @@ def create_project_funding_plan(
 
     event_bus.emit(
         domain="calendar",
-        operation="project_funding_plan.created",
+        operation="project_funding_plan_created",
         request_id=rid,
         actor_ulid=actor_ulid,
         target_ulid=fp.ulid,

@@ -523,7 +523,7 @@ def post_journal(
     # Emit cross-slice audit (NOT the Finance journal)
     event_bus.emit(
         domain="finance",
-        operation="journal.posted",
+        operation="journal_posted",
         request_id=j.ulid,
         actor_ulid=created_by_actor,
         target_ulid=j.ulid,
@@ -1144,7 +1144,7 @@ def rebuild_balances(*, period_from: str, period_to: str) -> dict:
     db.session.commit()
     event_bus.emit(
         domain="finance",
-        operation="balance.rebuild",
+        operation="balance_rebuild",
         request_id="-",
         actor_ulid=None,
         target_ulid="-",
@@ -1191,7 +1191,7 @@ def record_stat_metric(
     db.session.commit()
     event_bus.emit(
         domain="finance",
-        operation="stat.recorded",
+        operation="stat_recorded",
         request_id="-",
         actor_ulid=None,
         target_ulid=m.ulid,

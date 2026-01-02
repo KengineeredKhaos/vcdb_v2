@@ -173,32 +173,23 @@ Runtime rules
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from fnmatch import fnmatch
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
-from jsonschema import Draft202012Validator
-from jsonschema import ValidationError as JSONSchemaValidationError
-from sqlalchemy import asc, func, select
+from sqlalchemy import asc, select
 
 from app.extensions import db, event_bus
-from app.extensions.contracts import logistics_v2
-from app.extensions.policies import (
-    load_policy,
-    load_policy_logistics_issuance,
-)
-from app.lib.chrono import add_years_utc, as_naive_utc, now_iso8601_ms
+from app.extensions.policies import load_policy
+from app.lib.chrono import add_years_utc, now_iso8601_ms
 from app.lib.errors import PolicyError
 from app.lib.geo import us_states
 from app.lib.ids import new_ulid
 from app.lib.jsonutil import (
     canonical_hash,
-    is_json_equal,
     safe_loads,
     stable_dumps,
     stable_loads,
 )
-from app.slices.logistics.sku import parse_sku
 
 from .models import CanonicalState, Policy, RoleCode, ServiceClassification
 
@@ -211,10 +202,6 @@ _PART_KEY_MAP = {
     "issuance_class": "issuance_class",
     "seq": "seq",
 }
-
-
-def _map_part_key(k: str) -> str:
-    return _PART_KEY_MAP.get(k, k)
 
 
 class PolicyNotFoundError(ValueError):
@@ -243,26 +230,6 @@ def _iso(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(
         timezone.utc
     )
-
-
-# -----------------
-# Policy Loader Stack
-# returns specific
-# policy JSON as read
-# from Governance/data/
-# with eventual migration
-# to read policy from
-# governance.models.Polcy
-# dbase table policy cache
-# ------------------
-
-
-def get_resource_capabilities_policy() -> dict:
-    return _load_policy("policy_resource_capabilities.json")
-
-
-def get_resource_lifecycle_policy() -> dict:
-    return _load_policy("policy_resource_lifecycle.json")
 
 
 # -----------------
@@ -460,31 +427,6 @@ def svc_list_domain_roles_rows() -> List[RoleCode]:
 
 
 # -----------------
-# Internal:
-# fetch policy row value
-# -----------------
-
-
-def svc_get_policy_value(namespace: str, key: str) -> Optional[dict]:
-    """
-    Return JSON value for the active Policy(namespace,key)
-    or None if missing.
-    """
-
-    row = (
-        db.session.query(Policy)
-        .filter(
-            Policy.namespace == namespace,
-            Policy.key == key,
-            Policy.is_active.is_(True),
-        )
-        .order_by(Policy.version.desc())
-        .first()
-    )
-    return stable_loads(row.value_json) if row else None
-
-
-# -----------------
 # Registry
 # (schema + defaults)
 # Keep each value as
@@ -512,16 +454,6 @@ ROLES_SCHEMA: Dict[str, Any] = {
     },
 }
 ROLES_DEFAULT = {"roles": ["customer", "resource", "sponsor", "governor"]}
-
-POLICY_REGISTRY: Dict[str, tuple[Dict[str, Any], Dict[str, Any]]] = {
-    "governance.roles": (ROLES_SCHEMA, ROLES_DEFAULT),
-    # add more families here, e.g. "finance.chart_of_accounts", etc.
-}
-
-_VALIDATORS: dict[str, Draft202012Validator] = {
-    key: Draft202012Validator(schema)
-    for key, (schema, _default) in POLICY_REGISTRY.items()
-}
 
 
 # -----------------
@@ -610,12 +542,6 @@ def get_policy_value(family: str) -> Dict[str, Any]:
 
 
 # -----------------
-# Emit event to ledger
-# for "Set Policy"
-# -----------------
-
-
-# -----------------
 # Emit a governance.policy.* event
 # -----------------
 def _emit_policy_event(
@@ -678,248 +604,6 @@ def _emit_policy_event(
 
 
 # -----------------
-# Set Policy
-# -----------------
-
-
-# -----------------
-# Set/replace active
-# policy version
-# (with validation + event)
-# -----------------
-def set_policy(
-    namespace: str,
-    key: str,
-    value: Dict[str, Any],
-    actor_entity_ulid: str | None,
-    request_id: str | None = None,  # <— NEW (preferred)
-) -> Policy:
-    """
-    Normalize + validate input, retire current active (if any),
-    insert new active version, and emit a ledger event.
-    """
-    family = f"{namespace}.{key}"
-    if family not in POLICY_REGISTRY:
-        raise PolicyValidationError(f"unknown policy family {family}")
-
-    # normalize + validate
-    norm = _normalize_value(family, value)
-    try:
-        _VALIDATORS[family].validate(norm)
-    except JSONSchemaValidationError as e:
-        raise PolicyValidationError(str(e)) from e
-
-    # find current active (if any)
-    current = db.session.execute(
-        select(Policy).where(
-            Policy.namespace == namespace,
-            Policy.key == key,
-            Policy.is_active == True,  # noqa: E712
-        )
-    ).scalar_one_or_none()
-
-    if current:
-        prev_version = current.version
-        prev_value = stable_loads(current.value_json)
-        # retire current
-        current.is_active = False
-        current.updated_at_utc = now_iso8601_ms()
-        db.session.add(current)
-        next_ver = prev_version + 1
-        schema_json = current.schema_json or stable_dumps(
-            POLICY_REGISTRY[family][0]
-        )
-        op = "updated"
-    else:
-        prev_version = None
-        prev_value = None
-        max_ver = db.session.execute(
-            select(func.max(Policy.version)).where(
-                Policy.namespace == namespace, Policy.key == key
-            )
-        ).scalar_one_or_none()
-        next_ver = (int(max_ver) + 1) if max_ver else 1
-        schema_json = stable_dumps(POLICY_REGISTRY[family][0])
-        op = "created"
-
-    new_row = Policy(
-        namespace=namespace,
-        key=key,
-        version=next_ver,
-        value_json=stable_dumps(norm),
-        schema_json=schema_json,
-        is_active=True,
-        updated_by_actor_ulid=actor_entity_ulid,
-    )
-    db.session.add(new_row)
-    db.session.commit()  # commit first so the event reflects persisted state
-
-    # Emit governance policy event
-    _emit_policy_event(
-        op=op,
-        namespace=namespace,
-        key=key,
-        new_version=next_ver,
-        new_value=norm,
-        prev_version=prev_version,
-        prev_value=prev_value,
-        actor_entity_ulid=actor_entity_ulid,
-        request_id=request_id,
-    )
-
-    return new_row
-
-
-# -----------------
-# Generic Policy Upsert
-# (DB-backed)
-# (versioned; emits single event)
-# -----------------
-
-
-def _policy_upsert(
-    *,
-    namespace: str,
-    key: str,
-    version: int,
-    value: Dict[str, Any],
-    schema: Dict[str, Any] | None,
-    actor_ulid: str | None,
-    dry_run: bool,
-    emit_operation: str,
-    refs_extra: Dict[str, Any] | None = None,
-) -> Dict[str, Any]:
-    """
-    Create or update Policy(namespace,key,version);
-    returns a small “diff plan”, and emits a single governance event
-    on commit. Stores JSON strings in Policy.value_json / Policy.schema_json
-    (ISO-8601 timestamps already handled by model).
-    """
-    existing: Policy | None = Policy.query.filter_by(
-        namespace=namespace, key=key, version=version
-    ).first()
-    value_json = stable_dumps(value)
-    schema_json = stable_dumps(schema or {})
-
-    if existing:
-        # Compare normalized JSON
-        changed = (existing.value_json != value_json) or (
-            existing.schema_json != schema_json
-        )
-        if not changed:
-            return {
-                "added": [],
-                "removed": [],
-                "unchanged": [f"{namespace}:{key}@{version}"],
-                "changed": False,
-            }
-
-        if dry_run:
-            return {
-                "added": [f"update {namespace}:{key}@{version}"],
-                "removed": [],
-                "unchanged": [],
-                "changed": True,
-            }
-
-        existing_value = safe_loads(
-            existing.value_json or "null", default=None
-        )
-        existing_schema = safe_loads(
-            existing.schema_json or "null", default=None
-        )
-        changed = (not is_json_equal(existing_value, value)) or (
-            not is_json_equal(existing_schema, schema or {})
-        )
-        existing.value_json = value_json
-        existing.schema_json = schema_json
-        existing.updated_by_actor_ulid = actor_ulid
-        db.session.add(existing)
-        db.session.commit()
-
-        event_bus.emit(
-            domain="governance",
-            operation=emit_operation,
-            request_id=new_ulid(),
-            actor_ulid=actor_ulid,
-            target_ulid=None,
-            changed={
-                "namespace": namespace,
-                "key": key,
-                "version": version,
-                "diff_summary": "created" if not existing else "updated",
-                "content_hash": canonical_hash(
-                    {"value": value, "schema": schema or {}}
-                ),
-            },
-            refs={
-                "policy": {
-                    "namespace": namespace,
-                    "key": key,
-                    "version": version,
-                },
-                **(refs_extra or {}),
-            },
-            happened_at_utc=now_iso8601_ms(),
-        )
-        return {
-            "added": [f"update {namespace}:{key}@{version}"],
-            "removed": [],
-            "unchanged": [],
-            "changed": True,
-        }
-
-    # Create new
-    if dry_run:
-        return {
-            "added": [f"create {namespace}:{key}@{version}"],
-            "removed": [],
-            "unchanged": [],
-            "changed": True,
-        }
-
-    row = Policy(
-        namespace=namespace,
-        key=key,
-        version=version,
-        value_json=value_json,
-        schema_json=schema_json,
-        updated_by_actor_ulid=actor_ulid,
-    )
-    db.session.add(row)
-    db.session.commit()
-
-    event_bus.emit(
-        domain="governance",
-        operation=emit_operation,
-        request_id=new_ulid(),
-        actor_ulid=actor_ulid,
-        target_ulid=None,
-        changed={
-            "namespace": namespace,
-            "key": key,
-            "version": version,
-            "diff_summary": "created",
-        },
-        refs={
-            "policy": {
-                "namespace": namespace,
-                "key": key,
-                "version": version,
-            },
-            **(refs_extra or {}),
-        },
-        happened_at_utc=now_iso8601_ms(),
-    )
-    return {
-        "added": [f"create {namespace}:{key}@{version}"],
-        "removed": [],
-        "unchanged": [],
-        "changed": True,
-    }
-
-
-# -----------------
 # Public Services
 # used by the CLI
 # -----------------
@@ -973,7 +657,7 @@ def seed_domain_roles(
         schema=schema,
         actor_ulid=actor_ulid,
         dry_run=dry_run,
-        emit_operation="role.catalog.updated",
+        emit_operation="role_catalog_updated",
     )
 
 
@@ -1041,7 +725,7 @@ def seed_office_catalog(
         schema=schema,
         actor_ulid=actor_ulid,
         dry_run=dry_run,
-        emit_operation="officer.catalog.updated",
+        emit_operation="officer_catalog_updated",
     )
 
 
@@ -1105,7 +789,7 @@ def seed_spending_policy_v1(
         schema=schema,
         actor_ulid=actor_ulid,
         dry_run=dry_run,
-        emit_operation="spending.policy.updated",
+        emit_operation="spending_policy_updated",
     )
 
 
@@ -1153,7 +837,7 @@ def seed_restriction_policies_v1(
         schema=schema,
         actor_ulid=actor_ulid,
         dry_run=dry_run,
-        emit_operation="restriction.policy.updated",
+        emit_operation="restriction_policy_updated",
         refs_extra={"policy_key": policy_key},
     )
 
@@ -1262,7 +946,7 @@ def publish_state_machine(
         schema=schema,
         actor_ulid=actor_ulid,
         dry_run=dry_run,
-        emit_operation="state_machine.updated",
+        emit_operation="state_machine_updated",
         refs_extra={"policy_key": policy_key, "entity_kind": entity_kind},
     )
 
@@ -1404,7 +1088,7 @@ def _emit_domain_role_added_governor(
 ):
     event_bus.emit(
         domain="governance",
-        operation="role.domain.added",
+        operation="role_domain_added",
         request_id=new_ulid(),
         actor_ulid=actor_ulid,
         target_ulid=entity_ulid,
@@ -1421,7 +1105,7 @@ def _emit_domain_role_removed_governor(
 ):
     event_bus.emit(
         domain="governance",
-        operation="role.domain.removed",
+        operation="role_domain_removed",
         request_id=new_ulid(),
         actor_ulid=actor_ulid,
         target_ulid=entity_ulid,
@@ -1494,7 +1178,7 @@ def assign_officer(
         version=1,
         value=officers,
         actor_ulid=actor_ulid,
-        emit_operation="officer.assigned",
+        emit_operation="officer_assigned",
         diff_summary=f"{office_code}→{subject_ulid}",
         refs_extra={"grant_ulid": grant_ulid, "office_code": office_code},
     )
@@ -1550,7 +1234,7 @@ def revoke_officer(
         version=1,
         value=officers,
         actor_ulid=actor_ulid,
-        emit_operation="officer.revoked",
+        emit_operation="officer_revoked",
         diff_summary=f"grant {grant_ulid} ({reason})",
         refs_extra={
             "grant_ulid": grant_ulid,
@@ -1639,7 +1323,7 @@ def assign_pro_tem(
         version=1,
         value=protem,
         actor_ulid=actor_ulid,
-        emit_operation="pro_tem.assigned",
+        emit_operation="pro_tem_assigned",
         diff_summary=f"{office_code}→{subject_ulid}",
         refs_extra={"grant_ulid": grant_ulid, "office_code": office_code},
     )
@@ -1694,7 +1378,7 @@ def revoke_pro_tem(
         version=1,
         value=protem,
         actor_ulid=actor_ulid,
-        emit_operation="pro_tem.revoked",
+        emit_operation="pro_tem_revoked",
         diff_summary=f"grant {grant_ulid} ({reason})",
         refs_extra={
             "grant_ulid": grant_ulid,
@@ -1708,383 +1392,3 @@ def revoke_pro_tem(
         _emit_domain_role_removed_governor(subject_ulid, actor_ulid)
 
     return {"revoked_grant_ulid": grant_ulid, "reason": reason}
-
-
-# -----------------
-# Elements Under Test
-# (v2 evaluator)
-# -----------------
-
-
-@dataclass(frozen=True)
-class _Cadence:
-    max_per_period: int
-    period_days: int
-    label: str
-
-
-@dataclass(frozen=True)
-class _Rule:
-    id: str
-    match: Dict[str, Any]
-    qualifiers: Dict[str, Any]
-    cadence: _Cadence
-
-
-# --- Unda Test ---
-# Cadence calculator
-# (with defaults + scope)
-# --- Unda Test ---
-
-
-def _apply_cadence(rule, ctx):
-    """
-    Enforce rule/default cadence (period_days/max_per,
-    scope=sku|classification); returns (ok, window_label, next_eligible_iso?).
-    """
-
-    cad = rule.get("cadence") or {}
-    label = cad.get("label")
-    period_days = int(cad.get("period_days", 0) or 0)
-    max_per = int(cad.get("max_per_period", 0) or 0)
-    scope = cad.get("scope") or "classification"  # "classification" | "sku"
-
-    if not period_days or not max_per:
-        # no cadence => always ok
-        return True, label, None
-
-    # compute window start
-    as_of = (
-        getattr(ctx, "as_of_iso", None)
-        or getattr(ctx, "when_iso", None)
-        or now_iso8601_ms()
-    )
-    as_of_dt = as_naive_utc(as_of)  # or your existing parse
-    window_start_dt = as_of_dt - timedelta(days=period_days)
-    window_start_iso = (
-        window_start_dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z"
-    )  # match your format
-
-    # count issues per scope
-    if scope == "sku":
-        count = logistics_v2.count_issues_in_window(
-            customer_ulid=ctx.customer_ulid,
-            sku_code=ctx.sku_code,
-            window_start_iso=window_start_iso,
-            as_of_iso=as_of,
-        )
-    else:  # classification
-        count = logistics_v2.count_issues_in_window(
-            customer_ulid=ctx.customer_ulid,
-            classification_key=ctx.classification_key,
-            window_start_iso=window_start_iso,
-            as_of_iso=as_of,
-        )
-
-    if count < max_per:
-        # still within quota
-        return True, label, None
-
-    # over limit — compute next eligibility = end of window
-    next_eligible_dt = window_start_dt + timedelta(days=period_days)
-    next_eligible_iso = (
-        next_eligible_dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z"
-    )
-    return False, label, next_eligible_iso
-
-
-# --- Unda Test ---
-# Build cadence dict
-# from preset or rule,
-# inheriting defaults
-# --- Unda Test ---
-
-
-def _cadence_from(rule: dict, *, defaults: dict) -> dict:
-    """
-    Return a cadence dict merging preset/rule values with
-    policy.defaults.cadence (period_days, max_per_period, label, scope).
-    """
-
-    preset = rule.get("cadence_preset")
-    if preset:
-        mapping = {
-            "annual": {
-                "period_days": 365,
-                "max_per_period": 1,
-                "label": "annual",
-            },
-            "semiannual": {
-                "period_days": 182,
-                "max_per_period": 1,
-                "label": "semiannual",
-            },
-            "quarterly": {
-                "period_days": 90,
-                "max_per_period": 1,
-                "label": "quarterly",
-            },
-        }
-        c = dict(mapping[preset])
-    else:
-        c = dict(rule.get("cadence", {}))
-    # inherit defaults, then override
-    d = (defaults or {}).get("cadence", {})
-    c.setdefault("period_days", d.get("period_days", 365))
-    c.setdefault("max_per_period", d.get("max_per_period", 1))
-    c.setdefault("label", d.get("label"))
-    c.setdefault("scope", d.get("scope", "classification"))
-    return c
-
-
-# --- Unda Test ---
-# Rule Matching
-# scan for sku
-# rule matches
-# --- Unda Test ---
-
-
-def _rule_matches(rule: dict, ctx) -> bool:
-    """
-    Return True if ctx matches rule.match.
-    {classification_key, sku (glob), sku_parts}.
-    A missing key in the rule means "don't care" for that dimension.
-    """
-    m = rule.get("match") or {}
-
-    # 1) classification key (optional)
-    r_ckey = m.get("classification_key", None)
-    if r_ckey is not None:
-        if getattr(ctx, "classification_key", None) != r_ckey:
-            return False
-
-    # 2) sku glob (optional)
-    r_sku_glob = m.get("sku", None)
-    if r_sku_glob:
-        if not fnmatch(getattr(ctx, "sku_code", "") or "", r_sku_glob):
-            return False
-
-    # 3) sku_parts (optional; all listed parts must match exactly)
-    r_parts = m.get("sku_parts") or {}
-    if r_parts:
-        parts = getattr(ctx, "sku_parts", None) or parse_sku(
-            getattr(ctx, "sku_code", "") or ""
-        )
-        if not parts:
-            return False
-        for human_k, expected_v in r_parts.items():
-            pk = _PART_KEY_MAP.get(human_k, human_k)
-            if parts.get(pk) != expected_v:
-                return False
-
-    return True
-
-
-# --- Unda Test ---
-# Glob match for SKU codes
-# --- Unda Test ---
-
-
-def _sku_glob_match(code: str, pattern: str) -> bool:
-    """
-    Return fnmatch(code, pattern) for SKU strings like 'CG-SL-LC-*-*-H-*'.
-    """
-    import fnmatch
-
-    return fnmatch.fnmatch(code, pattern)
-
-
-# --- Unda Test ---
-# Per-SKU hard constraints
-# (hard and fast rules)
-# Check SKU for V | H
-# Vertran required: True
-# Homeless required: True
-# --- Unda Test ---
-
-
-def _check_sku_constraints(rule: dict, ctx):
-    if not ctx.sku_code:
-        return True, None
-
-    p = parse_sku(ctx.sku_code)  # {cat, sub, src, size, col, qual, seq}
-
-    # 1) Any 'DR' source requires issuance_class == 'V'
-    if p["src"] == "DR":
-        if p["issuance_class"] != "V":
-            return False, "sku_restricted"  # wrong issuance class
-
-    # 2) (CG, SL, LC) requires issuance_class == 'H'
-    if p["cat"] == "CG" and p["sub"] == "SL" and p["src"] == "LC":
-        if p["issuance_class"] != "H":
-            return False, "sku_restricted"
-
-    return True, None
-
-
-# -----------------
-# Decision Matrix
-# decide who can get
-# what and how often
-#
-# governance/services.py
-# (helpers near the top of the file)
-# -----------------
-
-# -----------------
-# Decision helper
-# typed IssueDecision
-# -----------------
-
-
-def _decision(
-    *,
-    ok: bool,
-    reason: str,
-    approver_required: str | None = None,
-    limit_window_label: str | None = None,
-    next_eligible_at_iso: str | None = None,
-):
-    """
-    Construct and return an IssueDecision DTO for a consistent caller surface.
-    """
-    # IssueDecision comes from extensions.contracts.governance_v2
-    from app.extensions.contracts.governance_v2 import IssueDecision
-
-    return IssueDecision(
-        allowed=ok,
-        reason=reason,
-        approver_required=approver_required,
-        limit_window_label=limit_window_label,
-        next_eligible_at_iso=next_eligible_at_iso,
-    )
-
-
-# -----------------
-# Gate Normalizer
-# this is aa band aid
-# applied while chasing
-# a bug that reports
-# Fail as okay
-# which is wrong,
-# Yet here we are
-# patching stupid
-# -----------------
-def _norm_gate(
-    ok: bool, why: str | dict | None, default_fail_reason: str
-) -> tuple[bool, str | None]:
-    """
-    Normalize a gate result:
-      - success → (True, None)
-      - failure → (False, reason or default_fail_reason)
-    Accepts why as str/dict/None (dict should have "reason").
-    """
-    if ok:
-        return True, None
-    # failure
-    if isinstance(why, dict):
-        why = why.get("reason") or default_fail_reason
-    elif isinstance(why, str):
-        why = why or default_fail_reason
-    else:
-        why = default_fail_reason
-    return False, why
-
-
-# -----------------
-# Entry point:
-# decide if an item
-# can be issued
-# to a customer now
-# -----------------
-
-
-def decide_issue(ctx):
-    """
-    Enforcer → rule match (or default posture) → hard SKU constraints → qualifiers → cadence.
-    Returns IssueDecision(ok/why, window label, next eligible).
-    """
-    from app.extensions.enforcers import calendar_blackout_ok
-
-    pol = load_policy_logistics_issuance()
-    default_behavior = (pol.get("default_behavior") or "deny").lower()
-
-    # 1) Calendar blackout
-    ok, meta = calendar_blackout_ok(ctx)
-    ok, why = _norm_gate(ok, meta, "calendar_blackout")
-    if not ok:
-        label = meta.get("label") if isinstance(meta, dict) else None
-        return _decision(ok=False, reason=why, limit_window_label=label)
-
-    # 2) First matching rule
-    matching = None
-    for r in pol.get("rules", []):
-        if _rule_matches(r, ctx):
-            matching = r
-            break
-
-    # 3) Hard SKU constraints always enforced
-    ok_sku, why_sku = _check_sku_constraints(matching or {}, ctx)
-    ok_sku, why_sku = _norm_gate(ok_sku, why_sku, "sku_restricted")
-    if not ok_sku:
-        return _decision(ok=False, reason=why_sku)
-
-    # 4) No rule matched → apply default posture
-    if not matching:
-        if default_behavior == "allow":
-            ctx.qualifiers = {}
-            ctx.defaults_cadence = (pol.get("defaults") or {}).get(
-                "cadence"
-            ) or {}
-            ok_cad, window_label, next_eligible = _apply_cadence({}, ctx)
-            ok_cad, why_cad = _norm_gate(ok_cad, None, "cadence_limit")
-            if not ok_cad:
-                return _decision(
-                    ok=False,
-                    reason=why_cad,
-                    limit_window_label=window_label,
-                    next_eligible_at_iso=next_eligible,
-                )
-            return _decision(ok=True, reason="ok")
-        return _decision(ok=False, reason="no_matching_rule")
-
-    # 5) Rule matched → qualifiers then cadence
-    ctx.qualifiers = matching.get("qualifiers") or {}
-    ctx.defaults_cadence = (pol.get("defaults") or {}).get("cadence") or {}
-
-    ok_q, why_q = _check_qualifiers(ctx)
-    ok_q, why_q = _norm_gate(ok_q, why_q, "qualifiers_not_met")
-    if not ok_q:
-        return _decision(ok=False, reason=why_q)
-
-    ok_cad, window_label, next_eligible = _apply_cadence(matching, ctx)
-    ok_cad, why_cad = _norm_gate(ok_cad, None, "cadence_limit")
-    if not ok_cad:
-        return _decision(
-            ok=False,
-            reason=why_cad,
-            limit_window_label=window_label,
-            next_eligible_at_iso=next_eligible,
-        )
-
-    return _decision(ok=True, reason="ok")
-
-
-def _check_qualifiers(ctx) -> tuple[bool, str | None]:
-    """
-    Returns (ok, reason_if_denied).
-    Uses the snapshot from customers_v2 (or your current customer_v2) contract.
-    """
-    from app.extensions.contracts import customer_v2
-
-    # your actual module name
-
-    snap = customer_v2.get_eligibility_snapshot(ctx.customer_ulid)
-
-    # If the rule requires veteran / homeless, ensure snapshot says so
-    req = getattr(ctx, "qualifiers", {}) or {}
-    if req.get("veteran_required") and not snap.is_veteran_verified:
-        return (False, "qualifiers_not_met")
-    if req.get("homeless_required") and not snap.is_homeless_verified:
-        return (False, "qualifiers_not_met")
-    return (True, None)

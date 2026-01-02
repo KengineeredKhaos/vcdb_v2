@@ -268,9 +268,11 @@ def load_policy_governance_index() -> dict:
 
 
 def load_policy_rbac() -> dict:
-    # No schema yet for auth; add mapping when you create one.
     path = AUTH_DATA / "policy_rbac.json"
-    return _load_and_cache(path, schema_path=None)
+    schema_path = AUTH_DATA / "schemas" / "policy_rbac.schema.json"
+    return _load_and_cache(
+        path, schema_path=schema_path if schema_path.exists() else None
+    )
 
 
 # -----------------
@@ -311,6 +313,14 @@ _LEGACY_ALIASES: dict[str, str] = {
     "policy_locations": "locations",
     "policy_locations.json": "locations",
 }
+
+
+_LEGACY_ALIASES.update(
+    {
+        "rbac": "rbac",  # (handled already, but harmless)
+        "policy_rbac": "rbac",
+    }
+)
 
 
 def load_policy(name: str) -> dict:

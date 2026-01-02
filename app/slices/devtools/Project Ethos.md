@@ -168,6 +168,38 @@ Future slices (e.g. Attachments, Web/public) plug into the same pattern.
 
 - Contracts wrap these into `ContractError`; services never raise `ContractError` themselves.
 
+- ## Canonical layout for service modules
+  
+  Use these section headers in this order.
+  
+  (Resources & Sponsors used in this example):
+  
+  1. **Module contract + imports**
+  
+  2. **Constants & conventions**
+  
+  3. **Policy access wrappers**
+  
+  4. **Error normalization**
+  
+  5. **Generic validators (pure)**
+  
+  6. **History helpers (latest snapshot, next version)**
+  
+  7. **POC wrappers (thin wrappers over app.services.poc)**
+  
+  8. **Read-only queries (view/search/list)**
+  
+  9. **Commands (mutations): ensure/create, set readiness/mou, capability upsert/patch**
+  
+  10. **(Sponsors-only) Pledges**
+  
+  11. **(Sponsors-only) Prospect realizations**
+  
+  12. **(Optional) cross-slice integration verbs (allocation→finance)**
+  
+  13. **Dev-only helpers**
+
 ---
 
 ## Events & Observability

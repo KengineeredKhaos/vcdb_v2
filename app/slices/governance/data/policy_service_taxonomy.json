@@ -1,18 +1,37 @@
 {
-  "meta": {
-    "policy_key": "service_taxonomy",
-    "title": "Semantic Clues for Services",
-    "description": "This is the Kitchen Sink of JSON files",
-    "notes": ["Too many to list"],
-    "version": 1,
-    "status": "draft",
-    "effective_on": "2026-01-01",
-    "schema_version": 1
-  },
   "classifications": {
-    "sku_code_regex": [
-      "^[A-Z]{2}-[A-Z]{2}-[A-Z]{2}-[A-Z*]-[A-Z*]-[A-Z]-\\d{3}$"
-    ],
+    "lifecycle": {
+      "resource": {
+        "mou_allowed": [
+          "none",
+          "pending",
+          "active",
+          "expired",
+          "terminated"
+        ],
+        "readiness_allowed": [
+          "draft",
+          "review",
+          "active",
+          "suspended"
+        ]
+      },
+      "sponsor": {
+        "mou_allowed": [
+          "none",
+          "pending",
+          "active",
+          "expired",
+          "terminated"
+        ],
+        "readiness_allowed": [
+          "draft",
+          "review",
+          "active",
+          "suspended"
+        ]
+      }
+    },
     "map": {
       "basic_needs": {
         "clothing": {
@@ -39,17 +58,24 @@
     },
     "resource_capabilities": {
       "by_domain": {
-        "veterans_affairs": [
-          "federal",
-          "state",
-          "local"
+        "basic_needs": [
+          "food_pantry",
+          "mobile_shower",
+          "shelter_temp_men",
+          "shelter_temp_women_children",
+          "clothing",
+          "barber"
         ],
-        "quartermaster": [
-          "dmro",
-          "regional_depot",
-          "regional_stand_down",
-          "local_civil_donations",
-          "local_commercial_discounts"
+        "counseling_services": [
+          "employment_counseling",
+          "education_counseling",
+          "behavioral_psychological",
+          "substance_abuse",
+          "domestic_violence",
+          "peer_group",
+          "financial_counseling",
+          "legal_criminal",
+          "legal_civil"
         ],
         "events": [
           "event_coordination",
@@ -63,14 +89,6 @@
           "staffing_coordination",
           "branded_swag"
         ],
-        "basic_needs": [
-          "food_pantry",
-          "mobile_shower",
-          "shelter_temp_men",
-          "shelter_temp_women_children",
-          "clothing",
-          "barber"
-        ],
         "health_wellness": [
           "urgent_care",
           "hospital",
@@ -80,17 +98,6 @@
           "mobility_aids",
           "in_home_health_care",
           "service_animals"
-        ],
-        "counseling_services": [
-          "employment_counseling",
-          "education_counseling",
-          "behavioral_psychological",
-          "substance_abuse",
-          "domestic_violence",
-          "peer_group",
-          "financial_counseling",
-          "legal_criminal",
-          "legal_civil"
         ],
         "housing": [
           "public_housing_coordination",
@@ -104,66 +111,81 @@
           "weed_abatement",
           "junk_trash_removal"
         ],
+        "meta": [
+          "unclassified"
+        ],
+        "quartermaster": [
+          "dmro",
+          "regional_depot",
+          "regional_stand_down",
+          "local_civil_donations",
+          "local_commercial_discounts"
+        ],
         "transportation": [
           "public_transit",
           "ride_share",
           "medical_transport",
           "auto_repair"
         ],
-        "meta": [
-          "unclassified"
+        "veterans_affairs": [
+          "federal",
+          "state",
+          "local"
         ]
       }
     },
+    "sku_code_regex": [
+      "^[A-Z]{2}-[A-Z]{2}-[A-Z]{2}-[A-Z*]-[A-Z*]-[A-Z]-\\d{3}$"
+    ],
     "sponsor_capabilities": {
       "domains": [
         {
           "code": "funding",
-          "label": "Monetary funding",
           "keys": [
             {
               "code": "cash",
-              "label": "Dead Presidents",
-              "description": "Private Party Cash or Check"
+              "description": "Private Party Cash or Check",
+              "label": "Dead Presidents"
             },
             {
               "code": "cash_grant",
-              "label": "Cash grant",
-              "description": "Unrestricted or lightly restricted cash awards"
+              "description": "Unrestricted or lightly restricted cash awards",
+              "label": "Cash grant"
             },
             {
               "code": "restricted_grant",
-              "label": "Restricted grant",
-              "description": "Tied to a specific program or use"
+              "description": "Tied to a specific program or use",
+              "label": "Restricted grant"
             }
-          ]
+          ],
+          "label": "Monetary funding"
         },
         {
           "code": "in_kind",
-          "label": "In-kind support",
           "keys": [
             {
               "code": "in_kind_goods",
-              "label": "Goods",
-              "description": "text placeholder"
+              "description": "text placeholder",
+              "label": "Goods"
             },
             {
               "code": "in_kind_services",
-              "label": "Services",
-              "description": "text placeholder"
+              "description": "text placeholder",
+              "label": "Services"
             }
-          ]
+          ],
+          "label": "In-kind support"
         },
         {
           "code": "meta",
-          "label": "Meta / flags",
           "keys": [
             {
               "code": "unclassified",
-              "label": "Unclassified — requires admin review",
-              "description": "text placeholder"
+              "description": "text placeholder",
+              "label": "Unclassified — requires admin review"
             }
-          ]
+          ],
+          "label": "Meta / flags"
         }
       ],
       "meta": {
@@ -171,6 +193,17 @@
         "unclassified_key": "meta.unclassified"
       }
     }
+  },
+  "meta": {
+    "description": "This is the Kitchen Sink of JSON files",
+    "effective_on": "2026-01-01",
+    "notes": [
+      "Too many to list"
+    ],
+    "policy_key": "service_taxonomy",
+    "schema_version": 1,
+    "status": "draft",
+    "title": "Semantic Clues for Services",
+    "version": 1
   }
 }
-

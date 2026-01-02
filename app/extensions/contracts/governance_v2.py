@@ -129,8 +129,9 @@ from typing import (
     Any,
     Dict,
     List,
+    NotRequired,
     Optional,
-    Set,
+    Required,
     TypedDict,
 )
 
@@ -139,6 +140,7 @@ from flask import current_app
 from app.extensions import event_bus
 from app.extensions.contracts import customers_v2
 from app.extensions.errors import ContractError
+from app.extensions.policies import load_governance_policy
 from app.lib.chrono import now_iso8601_ms
 from app.slices.governance import services as gov_svc
 from app.slices.governance import services_budget as svc_budget
@@ -158,22 +160,28 @@ __all__ = [
     "get_role_catalogs",
     "get_poc_policy",
     "get_sponsor_capability_policy",
-    "get_sponsor_lifecycle_policy",
     "get_sponsor_pledge_policy",
     # New budget / spend helpers (runtime-safe)
     "get_budget_position",
     "preview_spend_decision",
+    # Lifecycle policy
+    "get_resource_lifecycle_policy",
+    "get_sponsor_lifecycle_policy",
 ]
+
+
+def decide_issue(*args, **kwargs):
+    raise RuntimeError(
+        "DEPRECATED: Issuance decisioning moved to Logistics. "
+        "Use app.slices.logistics.issuance_services.decide_issue (local) "
+        "or app.extensions.contracts.logistics_v2.decide_issue (cross-slice)."
+    )
 
 
 # -----------------
 # Policy Paths
 # -----------------
 
-AUTH_RBAC_PATH = Path("slices") / "auth" / "data" / "policy_rbac.json"
-GOV_DOMAIN_PATH = (
-    Path("slices") / "governance" / "data" / "policy_domain.json"
-)
 POC_POLICY_PATH = Path("slices") / "governance" / "data" / "policy_poc.json"
 SPONSOR_CAPS_PATH = (
     Path("slices")
@@ -184,6 +192,7 @@ SPONSOR_CAPS_PATH = (
 SPONSOR_LIFECYCLE_PATH = (
     Path("slices") / "governance" / "data" / "policy_sponsor_lifecycle.json"
 )
+DEFAULT_CAP_NOTE_MAX = 120  # belt & suspenders
 
 
 # -----------------
@@ -235,10 +244,6 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
 # -----------------
 
 
-def _ok(payload: Mapping[str, Any] | None = None) -> dict:
-    return {"ok": True, "data": {} if payload is None else dict(payload)}
-
-
 def _one(name: str, value: Any) -> dict:
     return {"ok": True, "data": {name: value}}
 
@@ -269,7 +274,6 @@ def _require_int_ge(name: str, value: Any, minval: int = 0) -> int:
 # -----------------
 
 
-@dataclass
 class DonationIntentDTO:
     sponsor_ulid: str
     amount_cents: int
@@ -280,7 +284,6 @@ class DonationIntentDTO:
     notes: Optional[str] = None
 
 
-@dataclass
 class DonationClassificationDTO:
     ok: bool
     reason: str
@@ -298,16 +301,6 @@ class SpendingLimitsDTO(TypedDict):
 class ConstraintFlagsDTO(TypedDict):
     veteran_only: bool
     homeless_only: bool
-
-
-class SponsorCapsDTO(TypedDict):
-    caps: Dict[str, List[str]]
-    all_codes: List[str]
-
-
-class SponsorLifecycleDTO(TypedDict):
-    readiness_allowed: List[str]
-    mou_allowed: List[str]
 
 
 class ProjectBudgetDemandDTO(TypedDict):
@@ -409,31 +402,32 @@ class DecisionDTO(TypedDict):
     as_of_iso: str
 
 
+class LifecyclePolicyDTO(TypedDict):
+    readiness_allowed: Required[List[str]]
+    mou_allowed: Required[List[str]]
+
+    readiness_default: NotRequired[str]
+    mou_default: NotRequired[str]
+    transitions: NotRequired[Dict[str, Any]]
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityPolicyDTO:
+    note_max: int
+    all_codes: list[str]  # ["domain.key", ...]
+    by_domain: dict[str, list[str]]  # {"domain": ["key", ...], ...}
+
+
 class ResourceCapsPolicy:
     note_max: int
-    classifications: Dict[str, List[str]]
-
-    @property
-    def all_codes(self) -> Set[str]:
-        # e.g. {"basic_needs.food_pantry", "housing.rent_assistance", ...}
-        out: Set[str] = set()
-        for domain, codes in self.classifications.items():
-            for code in codes:
-                out.add(f"{domain}.{code}")
-        return out
+    all_codes: List[str]
+    by_domain: Dict[str, List[str]]
 
 
-# -----------------
-# Band Aid
-# -----------------
-
-
-def decide_issue(*args, **kwargs):
-    # Lazy import to avoid circular import:
-    # governance.services -> logistics_v2 -> issuance_services -> governance_v2 -> governance.services
-    from app.slices.governance.services import decide_issue as _decide_issue
-
-    return _decide_issue(*args, **kwargs)
+class SponsorCapsDTO(TypedDict):
+    note_max: int
+    all_codes: List[str]
+    by_domain: Dict[str, List[str]]
 
 
 # -----------------
@@ -495,39 +489,32 @@ def _load_json(path: Path, where: str):
 
 def get_role_catalogs() -> dict:
     """
-    Read the current RBAC and Domain role catalogs from their canonical owners.
+    Canonical role catalogs live in Governance policy: policy_entity_roles.json.
     Returns: {"rbac_roles":[...], "domain_roles":[...]}
     """
     where = "governance_v2.get_role_catalogs"
-    root = _app_root()
+    from app.extensions.policies import load_governance_policy
 
-    rbac_policy = _load_json(root / AUTH_RBAC_PATH, where)
-    gov_policy = _load_json(root / GOV_DOMAIN_PATH, where)
+    doc = load_governance_policy("entity_roles")
 
-    rbac_roles = sorted(
-        {str(x) for x in (rbac_policy.get("rbac_roles") or [])}
-    )
-    domain_roles = sorted(
-        {str(x) for x in (gov_policy.get("domain_roles") or [])}
-    )
+    rbac_roles = sorted({str(x) for x in (doc.get("rbac_roles") or [])})
+    domain_roles = sorted({str(x) for x in (doc.get("domain_roles") or [])})
 
     if not rbac_roles:
-        where = "governance_v2.get_role_catalogs.rbac_roles"
         raise ContractError(
             code="policy_invalid",
             where=where,
-            message="rbac_roles missing or empty",
+            message="entity_roles.rbac_roles is empty",
             http_status=503,
-            data={"path": str(root / AUTH_RBAC_PATH)},
+            data={},
         )
     if not domain_roles:
-        where = "governance_v2.get_role_catalogs.domain_roles"
         raise ContractError(
             code="policy_invalid",
             where=where,
-            message="domain_roles missing or empty",
+            message="entity_roles.domain_roles is empty",
             http_status=503,
-            data={"path": str(root / GOV_DOMAIN_PATH)},
+            data={},
         )
 
     return {"rbac_roles": rbac_roles, "domain_roles": domain_roles}
@@ -712,30 +699,87 @@ def describe():
 
 
 # -----------------
+# normalizer for
+# Resource & Sponsor
+# capabilities
+# so they send uniform
+# data package via
+# Policy DTO's
+# -----------------
+
+
+def _normalize_by_domain(raw: object, *, where: str) -> dict[str, list[str]]:
+    if not isinstance(raw, dict) or not raw:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message="by_domain must be a non-empty object",
+            http_status=503,
+        )
+
+    out: dict[str, list[str]] = {}
+    for dom, codes in raw.items():
+        dom_s = str(dom or "").strip()
+        if not dom_s:
+            continue
+
+        if codes is None:
+            codes_list: list[object] = []
+        elif isinstance(codes, list):
+            codes_list = codes
+        else:
+            raise ContractError(
+                code="policy_invalid",
+                where=where,
+                message=f'by_domain["{dom_s}"] must be a list',
+                http_status=503,
+                data={"domain": dom_s},
+            )
+
+        norm_codes = sorted(
+            {str(c).strip() for c in codes_list if str(c).strip()}
+        )
+        out[dom_s] = norm_codes
+
+    if not out:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message="by_domain produced no usable domains/codes",
+            http_status=503,
+        )
+    return out
+
+
+def _build_all_codes(by_domain: dict[str, list[str]]) -> list[str]:
+    # Stable + deterministic: domain then code, de-duped
+    out: list[str] = []
+    for dom in sorted(by_domain.keys()):
+        for code in by_domain[dom]:
+            out.append(f"{dom}.{code}")
+    return out
+
+
+# -----------------
 # Resource Policy DTO's
 # -----------------
 
 
-def get_resource_capabilities_policy() -> ResourceCapsPolicy:
-    """
-    Board policy: resource capabilities & taxonomy.
-    Backed by policy_resource_capabilities.json (or DB equivalent later).
-    """
-    data = gov_svc.svc_get_policy_value("resource", "capabilities")
-    return ResourceCapsPolicy(
-        note_max=int(data["note_max"]),
-        classifications={
-            k: list(v) for k, v in data["classifications"].items()
-        },
+def get_resource_capabilities_policy() -> CapabilityPolicyDTO:
+    where = "governance_v2.get_resource_capabilities_policy"
+    doc = load_governance_policy("service_taxonomy")
+
+    caps = doc.get("classifications", {}).get("resource_capabilities", {})
+    raw_by_domain = caps.get("by_domain")
+
+    by_domain = _normalize_by_domain(raw_by_domain, where=where)
+    note_max = int(caps.get("note_max", DEFAULT_CAP_NOTE_MAX))
+
+    return CapabilityPolicyDTO(
+        note_max=note_max,
+        all_codes=_build_all_codes(by_domain),
+        by_domain=by_domain,
     )
-
-
-def get_resource_lifecycle_policy() -> dict:
-    """
-    Board policy: resource readiness + MOU status vocab.
-    Backed by policy_resource_lifecycle.json.
-    """
-    return gov_svc.svc_get_policy_value("resource", "lifecycle")
 
 
 # -----------------
@@ -743,114 +787,94 @@ def get_resource_lifecycle_policy() -> dict:
 # -----------------
 
 
-def get_sponsor_capability_policy() -> SponsorCapsDTO:
-    """
-    Read-only contract for Sponsor capability taxonomy.
-
-    Returns a normalized DTO:
-        {
-          "caps": {
-              "funding": [ ... ],
-              "in_kind": [ ... ],
-              "meta": [ ... ]
-          },
-          "all_codes": [ ... ]  # flattened, sorted unique list
-        }
-
-    Raises ContractError (503) if the policy is missing or invalid.
-    """
+def get_sponsor_capability_policy() -> CapabilityPolicyDTO:
     where = "governance_v2.get_sponsor_capability_policy"
-    root = _app_root()
-    obj = _load_json(root / SPONSOR_CAPS_PATH, where)
+    doc = load_governance_policy("service_taxonomy")
 
-    # Require "caps" top-level mapping
-    caps_raw = obj.get("caps")
-    if not isinstance(caps_raw, dict) or not caps_raw:
+    caps = doc.get("classifications", {}).get("sponsor_capabilities", {})
+    domains = caps.get("domains")
+    meta = caps.get("meta") or {}
+
+    if not isinstance(domains, list) or not domains:
         raise ContractError(
             code="policy_invalid",
             where=where,
-            message='"caps" must be a non-empty object',
+            message="sponsor_capabilities.domains must be a non-empty list",
             http_status=503,
-            data={"path": str(root / SPONSOR_CAPS_PATH)},
+            data={"policy_key": "service_taxonomy"},
         )
 
-    normalized: Dict[str, List[str]] = {}
-    all_codes_set: set[str] = set()
+    by_domain: dict[str, list[str]] = {}
 
-    for family, codes in caps_raw.items():
-        if not isinstance(codes, list) or not codes:
+    for d in domains:
+        if not isinstance(d, dict):
+            continue
+
+        dom = str(d.get("code") or "").strip()
+        keys = d.get("keys")
+
+        if not dom:
             raise ContractError(
                 code="policy_invalid",
                 where=where,
-                message=f'"caps.{family}" must be a non-empty list',
+                message="each sponsor domain must have a non-empty code",
                 http_status=503,
-                data={"path": str(root / SPONSOR_CAPS_PATH)},
+                data={"policy_key": "service_taxonomy"},
             )
-        # normalize each family to sorted unique strings
-        codes_norm = sorted({str(c) for c in codes})
-        normalized[str(family)] = codes_norm
-        all_codes_set.update(codes_norm)
+        if not isinstance(keys, list) or not keys:
+            raise ContractError(
+                code="policy_invalid",
+                where=where,
+                message=f'sponsor domain "{dom}" must have non-empty keys list',
+                http_status=503,
+                data={"policy_key": "service_taxonomy", "domain": dom},
+            )
 
-    if not all_codes_set:
+        codes: set[str] = set()
+        for k in keys:
+            if isinstance(k, dict):
+                code = str(k.get("code") or "").strip()
+                if code:
+                    codes.add(code)
+
+        if not codes:
+            raise ContractError(
+                code="policy_invalid",
+                where=where,
+                message=f'sponsor domain "{dom}" keys must contain code fields',
+                http_status=503,
+                data={"policy_key": "service_taxonomy", "domain": dom},
+            )
+
+        by_domain[dom] = sorted(codes)
+
+    # Optional: ensure unclassified_key (meta.unclassified) is included
+    unclassified = meta.get("unclassified_key")
+    if isinstance(unclassified, str) and "." in unclassified:
+        u_dom, u_key = unclassified.split(".", 1)
+        u_dom = u_dom.strip()
+        u_key = u_key.strip()
+        if u_dom and u_key:
+            by_domain.setdefault(u_dom, [])
+            if u_key not in by_domain[u_dom]:
+                by_domain[u_dom].append(u_key)
+                by_domain[u_dom] = sorted(set(by_domain[u_dom]))
+
+    if not by_domain:
         raise ContractError(
             code="policy_invalid",
             where=where,
-            message="no capability codes defined",
+            message="sponsor_capabilities produced empty by_domain",
             http_status=503,
-            data={"path": str(root / SPONSOR_CAPS_PATH)},
+            data={"policy_key": "service_taxonomy"},
         )
 
-    return SponsorCapsDTO(
-        caps=normalized,
-        all_codes=sorted(all_codes_set),
-    )
+    note_max = int(caps.get("note_max", DEFAULT_CAP_NOTE_MAX))
 
-
-def get_sponsor_lifecycle_policy() -> SponsorLifecycleDTO:
-    """
-    Read-only contract for Sponsor readiness/MOU lifecycle vocabulary.
-
-    Returns:
-        {
-          "readiness_allowed": [...],
-          "mou_allowed": [...]
-        }
-
-    Both lists are normalized to sorted unique strings.
-
-    Raises ContractError (503) if the policy is missing or invalid.
-    """
-    where = "governance_v2.get_sponsor_lifecycle_policy"
-    root = _app_root()
-    obj = _load_json(root / SPONSOR_LIFECYCLE_PATH, where)
-
-    readiness = obj.get("readiness_allowed")
-    mou = obj.get("mou_allowed")
-
-    if not isinstance(readiness, list) or not readiness:
-        raise ContractError(
-            code="policy_invalid",
-            where=where,
-            message='"readiness_allowed" must be a non-empty list',
-            http_status=503,
-            data={"path": str(root / SPONSOR_LIFECYCLE_PATH)},
-        )
-
-    if not isinstance(mou, list) or not mou:
-        raise ContractError(
-            code="policy_invalid",
-            where=where,
-            message='"mou_allowed" must be a non-empty list',
-            http_status=503,
-            data={"path": str(root / SPONSOR_LIFECYCLE_PATH)},
-        )
-
-    readiness_norm = sorted({str(x) for x in readiness})
-    mou_norm = sorted({str(x) for x in mou})
-
-    return SponsorLifecycleDTO(
-        readiness_allowed=readiness_norm,
-        mou_allowed=mou_norm,
+    return CapabilityPolicyDTO(
+        note_max=note_max,
+        all_codes=_build_all_codes(by_domain),
+        by_domain=by_domain,
     )
 
 
@@ -876,6 +900,228 @@ def get_sponsor_pledge_policy() -> dict:
             http_status=503,
             data={"family": "sponsor", "key": "pledge"},
         ) from e
+
+
+# -----------------
+# Lifecycle Policy
+# Resource & Sponsor
+# -----------------
+
+
+def _dedupe_preserve_order(items: list[Any]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for x in items:
+        s = str(x)
+        if s not in seen:
+            out.append(s)
+            seen.add(s)
+    return out
+
+
+def _load_lifecycle_doc() -> dict:
+    where = "governance_v2._load_lifecycle_doc"
+    doc = load_governance_policy("lifecycle")  # <- canonical owner
+    machines = doc.get("machines")
+    if not isinstance(machines, dict) or not machines:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message='policy "lifecycle" missing required object: machines',
+            http_status=503,
+            data={"policy_key": "lifecycle"},
+        )
+    return machines
+
+
+def _load_lifecycle_policy(kind: str) -> LifecyclePolicyDTO:
+    """
+    Normalize lifecycle vocab for a given kind ("resource"|"sponsor").
+
+    Canonical source: policy_key="lifecycle" (policy_lifecycle.json).
+
+    Returns (always):
+      - readiness_allowed: list[str]
+      - mou_allowed: list[str]
+
+    May return (when available in policy):
+      - readiness_default: str
+      - mou_default: str
+      - transitions: {readiness: {...}, mou: {...}, pledge: {...}}
+    """
+    where = "governance_v2._load_lifecycle_policy"
+    machines = _load_lifecycle_doc()
+    data = machines.get(kind)
+
+    if not isinstance(data, dict):
+        raise ContractError(
+            code="policy_missing",
+            where=where,
+            message=f'policy "lifecycle" missing machine: {kind}',
+            http_status=503,
+            data={"policy_key": "lifecycle", "kind": kind},
+        )
+
+    # -----------------
+    # Resource (simple lists)
+    # -----------------
+    if kind == "resource":
+        readiness_raw = data.get("readiness")
+        mou_raw = data.get("mou_status_allowed", data.get("mou_allowed"))
+
+        if not isinstance(readiness_raw, list) or not readiness_raw:
+            raise ContractError(
+                code="policy_invalid",
+                where=where,
+                message="machines.resource.readiness must be a non-empty list",
+                http_status=503,
+                data={"policy_key": "lifecycle"},
+            )
+        if not isinstance(mou_raw, list) or not mou_raw:
+            raise ContractError(
+                code="policy_invalid",
+                where=where,
+                message="machines.resource.mou_status_allowed must be a non-empty list",
+                http_status=503,
+                data={"policy_key": "lifecycle"},
+            )
+
+        return {
+            "readiness_allowed": _dedupe_preserve_order(readiness_raw),
+            "mou_allowed": _dedupe_preserve_order(mou_raw),
+        }
+
+    # -----------------
+    # Sponsor (status objects + defaults + transitions)
+    # -----------------
+    if kind == "sponsor":
+        readiness_obj = data.get("readiness")
+        mou_obj = data.get("mou")
+
+        if not isinstance(readiness_obj, dict) or not isinstance(
+            mou_obj, dict
+        ):
+            raise ContractError(
+                code="policy_invalid",
+                where=where,
+                message="machines.sponsor.readiness and machines.sponsor.mou must be objects",
+                http_status=503,
+                data={"policy_key": "lifecycle"},
+            )
+
+        readiness_statuses = readiness_obj.get("statuses")
+        mou_statuses = mou_obj.get("statuses")
+
+        if not isinstance(readiness_statuses, list) or not readiness_statuses:
+            raise ContractError(
+                code="policy_invalid",
+                where=where,
+                message="machines.sponsor.readiness.statuses must be a non-empty list",
+                http_status=503,
+                data={"policy_key": "lifecycle"},
+            )
+        if not isinstance(mou_statuses, list) or not mou_statuses:
+            raise ContractError(
+                code="policy_invalid",
+                where=where,
+                message="machines.sponsor.mou.statuses must be a non-empty list",
+                http_status=503,
+                data={"policy_key": "lifecycle"},
+            )
+
+        readiness_allowed = _dedupe_preserve_order(
+            [
+                s.get("code")
+                for s in readiness_statuses
+                if isinstance(s, dict) and s.get("code")
+            ]
+        )
+        mou_allowed = _dedupe_preserve_order(
+            [
+                s.get("code")
+                for s in mou_statuses
+                if isinstance(s, dict) and s.get("code")
+            ]
+        )
+
+        if not readiness_allowed or not mou_allowed:
+            raise ContractError(
+                code="policy_invalid",
+                where=where,
+                message="sponsor lifecycle statuses must contain code fields",
+                http_status=503,
+                data={"policy_key": "lifecycle"},
+            )
+
+        out: LifecyclePolicyDTO = {
+            "readiness_allowed": readiness_allowed,
+            "mou_allowed": mou_allowed,
+        }
+
+        readiness_default = readiness_obj.get("default")
+        if readiness_default is not None:
+            readiness_default = str(readiness_default)
+            if readiness_default not in readiness_allowed:
+                raise ContractError(
+                    code="policy_invalid",
+                    where=where,
+                    message="machines.sponsor.readiness.default must match readiness.statuses[].code",
+                    http_status=503,
+                    data={
+                        "policy_key": "lifecycle",
+                        "default": readiness_default,
+                    },
+                )
+            out["readiness_default"] = readiness_default
+
+        mou_default = mou_obj.get("default")
+        if mou_default is not None:
+            mou_default = str(mou_default)
+            if mou_default not in mou_allowed:
+                raise ContractError(
+                    code="policy_invalid",
+                    where=where,
+                    message="machines.sponsor.mou.default must match mou.statuses[].code",
+                    http_status=503,
+                    data={"policy_key": "lifecycle", "default": mou_default},
+                )
+            out["mou_default"] = mou_default
+
+        transitions = data.get("transitions")
+        if transitions is not None:
+            if not isinstance(transitions, dict):
+                raise ContractError(
+                    code="policy_invalid",
+                    where=where,
+                    message="machines.sponsor.transitions must be an object when present",
+                    http_status=503,
+                    data={"policy_key": "lifecycle"},
+                )
+            out["transitions"] = {
+                "readiness": transitions.get("readiness"),
+                "mou": transitions.get("mou"),
+                "pledge": transitions.get("pledge"),
+            }
+
+        return out
+
+    raise ContractError(
+        code="bad_argument",
+        where=where,
+        message='kind must be "resource" or "sponsor"',
+        http_status=400,
+        data={"kind": kind},
+    )
+
+
+def get_resource_lifecycle_policy() -> LifecyclePolicyDTO:
+    """Read-only lifecycle vocab for Resource readiness + MOU."""
+    return _load_lifecycle_policy("resource")
+
+
+def get_sponsor_lifecycle_policy() -> LifecyclePolicyDTO:
+    """Read-only lifecycle vocab for Sponsor readiness + MOU."""
+    return _load_lifecycle_policy("sponsor")
 
 
 # -----------------

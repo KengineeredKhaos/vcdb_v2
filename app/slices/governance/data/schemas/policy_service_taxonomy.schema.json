@@ -1,329 +1,299 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://vcdb.local/schemas/policy_service_taxonomy.schema.json",
-  "title": "Service Taxonomy Policy Schema",
-  "description": "Validates policy_service_taxonomy.json (classifications map, resource capabilities, sponsor capabilities).",
-  "type": "object",
   "$defs": {
-    "token": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    "classificationNode": {
+      "additionalProperties": {
+        "$ref": "#/$defs/classificationNode"
+      },
+      "properties": {
+        "attributes": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
     },
-    "tokenUpper2": {
-      "type": "string",
-      "pattern": "^[A-Z]{2}$"
-    },
-    "ulid": {
-      "type": "string",
-      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
-    },
-    "singleLine": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^[^\\n\\r]+$"
+    "classifications": {
+      "additionalProperties": false,
+      "properties": {
+        "lifecycle": {
+          "$ref": "#/$defs/lifecycle"
+        },
+        "map": {
+          "additionalProperties": {
+            "$ref": "#/$defs/classificationNode"
+          },
+          "type": "object"
+        },
+        "resource_capabilities": {
+          "$ref": "#/$defs/resourceCapabilities"
+        },
+        "sku_code_regex": {
+          "items": {
+            "$ref": "#/$defs/regexString"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "sponsor_capabilities": {
+          "$ref": "#/$defs/sponsorCapabilities"
+        }
+      },
+      "required": [
+        "sku_code_regex",
+        "map",
+        "resource_capabilities",
+        "sponsor_capabilities",
+        "lifecycle"
+      ],
+      "type": "object"
     },
     "dateISO": {
-      "type": "string",
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      "format": "date",
+      "type": "string"
+    },
+    "lifecycle": {
+      "additionalProperties": false,
+      "properties": {
+        "resource": {
+          "$ref": "#/$defs/lifecycleEntity"
+        },
+        "sponsor": {
+          "$ref": "#/$defs/lifecycleEntity"
+        }
+      },
+      "required": [
+        "resource",
+        "sponsor"
+      ],
+      "type": "object"
+    },
+    "lifecycleEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "mou_allowed": {
+          "items": {
+            "$ref": "#/$defs/mouStatus"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "readiness_allowed": {
+          "items": {
+            "$ref": "#/$defs/readinessStatus"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "readiness_allowed",
+        "mou_allowed"
+      ],
+      "type": "object"
     },
     "meta": {
-      "type": "object",
       "additionalProperties": false,
-      "required": [
-        "policy_key",
-        "title",
-        "description",
-        "version",
-        "status",
-        "effective_on",
-        "schema_version"
-      ],
       "properties": {
-        "policy_key": {
-          "$ref": "#/$defs/token"
-        },
-        "title": {
-          "$ref": "#/$defs/singleLine"
-        },
         "description": {
           "$ref": "#/$defs/singleLine"
-        },
-        "notes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "maxLength": 70,
-            "pattern": "^[^\\n\\r]*$"
-          },
-          "default": []
-        },
-        "version": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "draft",
-            "adopted",
-            "deprecated"
-          ]
         },
         "effective_on": {
           "$ref": "#/$defs/dateISO"
         },
+        "notes": {
+          "items": {
+            "$ref": "#/$defs/singleLine"
+          },
+          "type": "array"
+        },
+        "policy_key": {
+          "const": "service_taxonomy",
+          "type": "string"
+        },
         "schema_version": {
-          "type": "integer",
-          "minimum": 1
-        }
-      }
-    },
-    "cadence": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "scope",
-        "period_days",
-        "max_per_period"
-      ],
-      "properties": {
-        "scope": {
-          "type": "string",
-          "enum": [
-            "classification",
-            "sku"
-          ]
+          "minimum": 1,
+          "type": "integer"
         },
-        "period_days": {
-          "type": "integer",
-          "minimum": 1
+        "status": {
+          "$ref": "#/$defs/policyStatus"
         },
-        "max_per_period": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "label": {
+        "title": {
           "$ref": "#/$defs/singleLine"
-        }
-      }
-    },
-    "attributeMap": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^[^\\n\\r]+$"
-        }
-      }
-    },
-    "classNode": {
-      "type": "object",
-      "properties": {
-        "attributes": {
-          "$ref": "#/$defs/attributeMap"
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
         }
       },
-      "additionalProperties": {
-        "$ref": "#/$defs/classNode"
-      }
-    },
-    "capByDomain": {
-      "type": "object",
-      "minProperties": 1,
-      "additionalProperties": {
-        "type": "array",
-        "items": {
-          "$ref": "#/$defs/token"
-        }
-      }
-    },
-    "sponsorCapabilityKey": {
-      "type": "object",
-      "additionalProperties": false,
       "required": [
-        "code",
-        "label",
-        "description"
+        "policy_key",
+        "effective_on",
+        "description",
+        "version",
+        "schema_version",
+        "title",
+        "status"
       ],
+      "type": "object"
+    },
+    "mouStatus": {
+      "enum": [
+        "none",
+        "pending",
+        "active",
+        "expired",
+        "terminated"
+      ],
+      "type": "string"
+    },
+    "policyStatus": {
+      "enum": [
+        "draft",
+        "active",
+        "deprecated"
+      ],
+      "type": "string"
+    },
+    "readinessStatus": {
+      "enum": [
+        "draft",
+        "review",
+        "active",
+        "suspended"
+      ],
+      "type": "string"
+    },
+    "regexString": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "resourceCapabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "by_domain": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/tokenLower"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "by_domain"
+      ],
+      "type": "object"
+    },
+    "singleLine": {
+      "pattern": "^[^\\r\\n]*$",
+      "type": "string"
+    },
+    "sponsorCapabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "domains": {
+          "items": {
+            "$ref": "#/$defs/sponsorCapabilityDomain"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "meta": {
+          "additionalProperties": false,
+          "properties": {
+            "flat_key_prefix": {
+              "$ref": "#/$defs/singleLine"
+            },
+            "unclassified_key": {
+              "$ref": "#/$defs/singleLine"
+            }
+          },
+          "required": [
+            "flat_key_prefix",
+            "unclassified_key"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "domains",
+        "meta"
+      ],
+      "type": "object"
+    },
+    "sponsorCapabilityDomain": {
+      "additionalProperties": false,
       "properties": {
         "code": {
-          "$ref": "#/$defs/token"
+          "$ref": "#/$defs/tokenLower"
+        },
+        "keys": {
+          "items": {
+            "$ref": "#/$defs/sponsorCapabilityKey"
+          },
+          "minItems": 1,
+          "type": "array"
         },
         "label": {
           "$ref": "#/$defs/singleLine"
-        },
-        "description": {
-          "$ref": "#/$defs/singleLine"
         }
-      }
-    },
-    "sponsorDomain": {
-      "type": "object",
-      "additionalProperties": false,
+      },
       "required": [
         "code",
         "label",
         "keys"
       ],
+      "type": "object"
+    },
+    "sponsorCapabilityKey": {
+      "additionalProperties": false,
       "properties": {
         "code": {
-          "$ref": "#/$defs/token"
-        },
-        "label": {
-          "$ref": "#/$defs/singleLine"
-        },
-        "keys": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/sponsorCapabilityKey"
-          }
-        }
-      }
-    }
-  },
-  "additionalProperties": false,
-  "required": [
-    "meta",
-    "classifications"
-  ],
-  "properties": {
-    "meta": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "policy_key",
-        "title",
-        "description",
-        "version",
-        "status",
-        "effective_on",
-        "schema_version"
-      ],
-      "properties": {
-        "policy_key": {
-          "const": "service_taxonomy"
-        },
-        "title": {
-          "$ref": "#/$defs/singleLine"
+          "$ref": "#/$defs/tokenLower"
         },
         "description": {
           "$ref": "#/$defs/singleLine"
         },
-        "notes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "maxLength": 70,
-            "pattern": "^[^\\n\\r]*$"
-          },
-          "default": []
-        },
-        "version": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "draft",
-            "adopted",
-            "deprecated"
-          ]
-        },
-        "effective_on": {
-          "$ref": "#/$defs/dateISO"
-        },
-        "schema_version": {
-          "type": "integer",
-          "minimum": 1
+        "label": {
+          "$ref": "#/$defs/singleLine"
         }
-      }
-    },
-    "classifications": {
-      "type": "object",
-      "additionalProperties": false,
+      },
       "required": [
-        "sku_code_regex",
-        "map",
-        "resource_capabilities",
-        "sponsor_capabilities"
+        "code",
+        "label",
+        "description"
       ],
-      "properties": {
-        "sku_code_regex": {
-          "description": "Regex (string) or list of regex strings used to validate classification codes parsed from SKUs.",
-          "oneOf": [
-            {
-              "type": "string",
-              "minLength": 1,
-              "pattern": "^[^\\n\\r]+$"
-            },
-            {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "string",
-                "minLength": 1,
-                "pattern": "^[^\\n\\r]+$"
-              }
-            }
-          ]
-        },
-        "map": {
-          "$ref": "#/$defs/classNode"
-        },
-        "resource_capabilities": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "by_domain"
-          ],
-          "properties": {
-            "by_domain": {
-              "$ref": "#/$defs/capByDomain"
-            }
-          }
-        },
-        "sponsor_capabilities": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "domains",
-            "meta"
-          ],
-          "properties": {
-            "domains": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "$ref": "#/$defs/sponsorDomain"
-              }
-            },
-            "meta": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "flat_key_prefix",
-                "unclassified_key"
-              ],
-              "properties": {
-                "flat_key_prefix": {
-                  "type": "string",
-                  "minLength": 1,
-                  "pattern": "^[^\\n\\r]+$"
-                },
-                "unclassified_key": {
-                  "type": "string",
-                  "minLength": 1,
-                  "pattern": "^[^\\n\\r]+$"
-                }
-              }
-            }
-          }
-        }
-      }
+      "type": "object"
+    },
+    "tokenLower": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "type": "string"
     }
-  }
+  },
+  "$id": "https://vcdb.local/schemas/policy_service_taxonomy.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Validates policy_service_taxonomy.json (classifications tree, resource capabilities, sponsor capabilities, lifecycle).",
+  "properties": {
+    "classifications": {
+      "$ref": "#/$defs/classifications"
+    },
+    "meta": {
+      "$ref": "#/$defs/meta"
+    }
+  },
+  "required": [
+    "meta",
+    "classifications"
+  ],
+  "title": "Service Taxonomy Policy Schema",
+  "type": "object"
 }

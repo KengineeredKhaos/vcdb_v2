@@ -79,13 +79,15 @@ class ContractError(RuntimeError):
             out["data"] = self.data
         return out
 
+    def __post_init__(self) -> None:
+        """Populate the base Exception/RuntimeError args.
 
-def __post_init__(self) -> None:
-    """Populate the base Exception/RuntimeError args.
+        Dataclasses do not call ``RuntimeError.__init__`` automatically.
+        Having ``args`` populated improves interop with loggers/tracebacks
+        and tools that expect ``exc.args`` to contain a meaningful message.
+        """
+        # Use the stable, log-friendly string representation.
+        RuntimeError.__init__(self, self.__str__())
 
-    Dataclasses do not call ``RuntimeError.__init__`` automatically.
-    Having ``args`` populated improves interop with loggers/tracebacks
-    and tools that expect ``exc.args`` to contain a meaningful message.
-    """
-    # Use the stable, log-friendly string representation.
-    RuntimeError.__init__(self, self.__str__())
+
+

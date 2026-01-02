@@ -64,7 +64,7 @@ class Fund(db.Model, ULIDPK, IsoTimestamps):
     )
 
 
-class Project(db.Model, ULIDPK, IsoTimestamps):
+class FinanceProject(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "finance_project"
 
     name: Mapped[str] = mapped_column(String(160), nullable=False)

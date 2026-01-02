@@ -196,7 +196,7 @@ class FundingProspect(db.Model, ULIDPK, IsoTimestamps):
 
     sponsor: Mapped["Sponsor"] = relationship(
         "Sponsor",
-        backref="funding_prospects",
+        back_populates="funding_prospects",
     )
 
     __table_args__ = (
@@ -272,9 +272,6 @@ class SponsorPOC(db.Model, ULIDPK, IsoTimestamps):
         "entity_org", ondelete="CASCADE", nullable=False, index=True
     )
 
-    org_entity_ulid: Mapped[str] = ULIDFK(
-        "entity_org", ondelete="CASCADE", nullable=False, index=True
-    )
     scope: Mapped[str] = mapped_column(String(24), nullable=True)
     rank: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 

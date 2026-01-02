@@ -22,9 +22,8 @@ User
 Role
     RBAC role catalog for auth-level permissions.
     - Examples: "user", "staff", "admin", "auditor", "dev".
-    - Role *definitions* (which roles exist and how they map to UI) are
-      governed by policy in the Governance slice; Auth just stores the
-      rows and assignments.
+    - Role codes are defined by Auth RBAC policy;
+    - Governance defines cross-slice rules (RBAC↔domain constraints).
 
 UserRole
     Many-to-many join table linking Users to Roles.

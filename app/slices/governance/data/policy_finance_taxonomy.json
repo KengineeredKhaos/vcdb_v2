@@ -1,69 +1,52 @@
 {
-  "meta": {
-    "policy_key": "finance_taxonomy",
-    "title": "Finance Taxonomy Policy>",
-    "description": "Fund Archetypes & Journal Expenses Flags",
-    "notes": [
-      "Defines allowable fund archetypes, their restrictions & payment timing",
-      "This policy also sets fund type flags for journal entries.",
-      "THIS IS REVENUE ONLY POLICY. See policy_operations for expense flags.",
-      "Do not use CoA codes in Journal flags, semantic <type> hints only.",
-      "Create new flags only for unique tracking requirements.",
-      "In-kind is recognized as revenue/expense at fair value when recorded."
-    ],
-    "version": 1,
-    "status": "draft",
-    "effective_on": "2026-01-01",
-    "schema_version": 1
-  },
   "fund_archetypes": [
     {
       "key": "general_unrestricted",
-      "restriction_type": "unrestricted",
       "label": "General Unrestricted",
-      "payment_timing": "upfront"
+      "payment_timing": "upfront",
+      "restriction_type": "unrestricted"
     },
     {
       "key": "grant_advance",
-      "restriction_type": "temporarily_restricted",
       "label": "Grant (advance funds)",
-      "payment_timing": "upfront"
+      "payment_timing": "upfront",
+      "restriction_type": "temporarily_restricted"
     },
     {
       "key": "grant_reimbursement",
-      "restriction_type": "temporarily_restricted",
       "label": "Grant (reimbursement)",
-      "payment_timing": "reimbursement"
+      "payment_timing": "reimbursement",
+      "restriction_type": "temporarily_restricted"
     },
     {
       "key": "vet_only",
-      "restriction_type": "temporarily_restricted",
       "label": "Veteran-only",
-      "payment_timing": "upfront"
+      "payment_timing": "upfront",
+      "restriction_type": "temporarily_restricted"
     },
     {
       "key": "local_only",
-      "restriction_type": "temporarily_restricted",
       "label": "Local-only",
-      "payment_timing": "upfront"
+      "payment_timing": "upfront",
+      "restriction_type": "temporarily_restricted"
     },
     {
       "key": "local_vet_only",
-      "restriction_type": "temporarily_restricted",
       "label": "Local veteran-only",
-      "payment_timing": "upfront"
+      "payment_timing": "upfront",
+      "restriction_type": "temporarily_restricted"
     },
     {
       "key": "match_funds",
-      "restriction_type": "temporarily_restricted",
       "label": "Match funds",
-      "payment_timing": "reimbursement"
+      "payment_timing": "reimbursement",
+      "restriction_type": "temporarily_restricted"
     },
     {
       "key": "inkind_tracking",
-      "restriction_type": "unrestricted",
       "label": "In-kind tracking only",
-      "payment_timing": "upfront"
+      "payment_timing": "upfront",
+      "restriction_type": "unrestricted"
     }
   ],
   "journal_flags": [
@@ -84,6 +67,23 @@
       "label": "Elks Freedom Grant tracking"
     }
   ],
+  "meta": {
+    "description": "Fund Archetypes & Journal Expenses Flags",
+    "effective_on": "2026-01-01",
+    "notes": [
+      "Defines allowable fund archetypes, their restrictions & payment timing",
+      "This policy also sets fund type flags for journal entries.",
+      "THIS IS REVENUE ONLY POLICY. See policy_operations for expense flags.",
+      "Do not use CoA codes in Journal flags, semantic <type> hints only.",
+      "Create new flags only for unique tracking requirements.",
+      "In-kind is recognized as revenue/expense at fair value when recorded."
+    ],
+    "policy_key": "finance_taxonomy",
+    "schema_version": 1,
+    "status": "draft",
+    "title": "Finance Taxonomy Policy>",
+    "version": 1
+  },
   "sponsor": {
     "pledge_type": [
       {

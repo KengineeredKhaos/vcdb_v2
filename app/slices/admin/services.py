@@ -43,26 +43,8 @@ Separation of concerns
 
 """
 # ---------------------------------------------------------------------------
-"""
-Admin slice services.
 
-This module centralizes "heavy lifting" for Admin workflows so that
-`routes.py` can stay thin and boring. The first consumer is the
-Governance/Auth policy editor:
-
-    - load policy JSON for editing
-    - validate a JSON payload against the appropriate schema/semantics
-    - persist an updated policy and emit a ledger event
-
-The rule of thumb is:
-    * routes know about HTTP, forms/JSON, and flashing messages
-    * services know about files, DB, event_bus, and other slices
-
-Over time other Admin-only flows (cron dashboards, diagnostics, etc.)
-should also live here.
-"""
-
-from __future__ import annotations  # noqa: E402, F404
+from __future__ import annotations
 
 import json
 from dataclasses import dataclass
@@ -269,7 +251,7 @@ def save_policy_raw(
     # emit ledger event (names only)
     event_bus.emit(
         domain="admin",
-        operation="policy.saved",
+        operation="policy_saved",
         request_id=new_ulid(),
         actor_ulid=actor_ulid,
         target_ulid=None,
@@ -309,7 +291,7 @@ def ack_cron_job(job_name: str, *, actor_ulid: str | None) -> None:
 
     event_bus.emit(
         domain="admin",
-        operation="cron.job.acknowledged",
+        operation="cron_job_acknowledged",
         request_id=new_ulid(),
         actor_ulid=actor_ulid,
         target_ulid=None,
@@ -361,7 +343,7 @@ def trigger_cron_job(
 
     event_bus.emit(
         domain="admin",
-        operation="cron.job.triggered",
+        operation="cron_job_triggered",
         request_id=new_ulid(),
         actor_ulid=actor_ulid,
         target_ulid=None,
