@@ -1,8 +1,7 @@
 # app/extensions/contracts/finance_v2.py
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, NotRequired, Optional, TypedDict
+from typing import Any, Dict, List, NotRequired, Optional, TypedDict
 
 from app.extensions.errors import ContractError
 

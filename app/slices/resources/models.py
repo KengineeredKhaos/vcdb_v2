@@ -59,7 +59,6 @@ from __future__ import annotations
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
-    Column,
     Index,
     Integer,
     String,

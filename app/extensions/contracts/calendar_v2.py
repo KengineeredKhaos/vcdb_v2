@@ -10,8 +10,7 @@
 
 from __future__ import annotations
 
-import typing as _t
-from typing import Any, Dict, List, Mapping, Optional, TypedDict
+from typing import Any, Optional, TypedDict
 
 from app.extensions.errors import ContractError
 

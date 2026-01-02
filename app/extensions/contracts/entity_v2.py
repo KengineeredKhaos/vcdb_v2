@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from app.extensions.errors import ContractError
-from app.lib.chrono import now_iso8601_ms
 
 # not used here but stays consistent
 from app.slices.entity.models import (

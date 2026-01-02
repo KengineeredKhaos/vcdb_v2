@@ -99,40 +99,22 @@
     ],
     "rules": [
       {
+        "cadence": {
+          "label": "bag-per-90d",
+          "max_per_period": 1,
+          "period_days": 90,
+          "scope": "sku"
+        },
         "match": {
           "sku_parts": {
-            "source": "DR"
+            "category": "CG",
+            "source": "DR",
+            "subcategory": "SL"
           }
         },
         "qualifiers": {
+          "homeless_required": true,
           "veteran_required": true
-        }
-      },
-      {
-        "match": {
-          "sku_parts": {
-            "issuance_class": "V"
-          }
-        },
-        "qualifiers": {
-          "veteran_required": true
-        }
-      },
-      {
-        "match": {
-          "sku_parts": {
-            "issuance_class": "H"
-          }
-        },
-        "qualifiers": {
-          "homeless_required": true
-        }
-      },
-      {
-        "match": {
-          "sku_parts": {
-            "issuance_class": "U"
-          }
         }
       },
       {
@@ -156,22 +138,40 @@
         }
       },
       {
-        "cadence": {
-          "label": "bag-per-90d",
-          "max_per_period": 1,
-          "period_days": 90,
-          "scope": "sku"
-        },
         "match": {
           "sku_parts": {
-            "category": "CG",
-            "source": "DR",
-            "subcategory": "SL"
+            "issuance_class": "H"
           }
         },
         "qualifiers": {
-          "homeless_required": true,
+          "homeless_required": true
+        }
+      },
+      {
+        "match": {
+          "sku_parts": {
+            "issuance_class": "V"
+          }
+        },
+        "qualifiers": {
           "veteran_required": true
+        }
+      },
+      {
+        "match": {
+          "sku_parts": {
+            "source": "DR"
+          }
+        },
+        "qualifiers": {
+          "veteran_required": true
+        }
+      },
+      {
+        "match": {
+          "sku_parts": {
+            "issuance_class": "U"
+          }
         }
       }
     ]

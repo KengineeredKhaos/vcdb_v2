@@ -1,34 +1,18 @@
 # app/slices/finance/services_funds.py
 from __future__ import annotations
 
-from collections import defaultdict
-from typing import Iterable, Optional
-
 from sqlalchemy import select
 
 from app.extensions import db, event_bus
 from app.extensions.contracts.finance_v2 import (
-    ActivitiesReportDTO,
-    BudgetDTO,
-    DonationDTO,
-    ExpenseDTO,
     FundDTO,
-    GrantDTO,
-    ProjectDTO,
-    ReceiptDTO,
-    ReimbursementDTO,
 )
 from app.lib.chrono import now_iso8601_ms
-from app.slices.finance import services_journal
 from app.slices.finance.models import (
     Account,
     BalanceMonthly,
     Fund,
-    Journal,
-    JournalLine,
     Period,
-    Project,
-    StatMetric,
 )
 
 """
@@ -229,8 +213,8 @@ def create_fund(
 
     # ---- Map archetype_key -> restriction_type using policy_funding.json ----
     if archetype_key:
-        from pathlib import Path
         import json
+        from pathlib import Path
 
         policy_path = (
             Path(__file__).resolve().parents[1]

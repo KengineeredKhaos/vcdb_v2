@@ -279,17 +279,15 @@ def dev_policy_health(as_json: bool):
     echo_db_banner("policy-health")
     try:
         warns, infos = policy_health_report()
+        # Normalize any miscategorized warning strings coming back in infos
+        moved = [i for i in infos if i.strip().lower().startswith("warn:")]
+        if moved:
+            infos = [i for i in infos if i not in moved]
+            warns.extend([i.split(":", 1)[1].strip() for i in moved])
+
     except PolicyError as e:
         click.echo(f"FATAL: {e}", err=True)
         raise SystemExit(1)
-
-    if as_json:
-        click.echo(json.dumps({"infos": infos, "warnings": warns}, indent=2))
-    else:
-        for i in infos:
-            click.echo(f"INFO: {i}")
-        for w in warns:
-            click.echo(f"WARN: {w}")
 
     # warnings shouldn’t fail CI by default;
     # change to nonzero if you want strict mode
@@ -299,33 +297,55 @@ def dev_policy_health(as_json: bool):
     summary, per_rule = _scan_issuance_coverage()
 
     if as_json:
-        import json
-
-        out = {
-            "issuance": {
-                "default_behavior": summary["default_behavior"],
-                "total_items": summary["total_items"],
-                "matched_items": summary["matched_items"],
-                "unmatched_items": summary["unmatched_items"],
-                "per_rule": per_rule,
-                "unmatched_samples": summary["unmatched_samples"],
-            }
-        }
-        click.echo(json.dumps(out, indent=2))
+        click.echo(
+            json.dumps(
+                {
+                    "infos": infos,
+                    "warnings": warns,
+                    "issuance": {
+                        "default_behavior": summary["default_behavior"],
+                        "catalog_total_items": summary["catalog_total_items"],
+                        "customer_total_items": summary[
+                            "customer_total_items"
+                        ],
+                        "durable_total_items": summary["durable_total_items"],
+                        "matched_items": summary["matched_items"],
+                        "unmatched_items": summary["unmatched_items"],
+                        "rules_loaded": summary.get("rules_loaded", 0),
+                        "per_rule": per_rule,
+                        "unmatched_samples": summary["unmatched_samples"],
+                        "durable_samples": summary.get("durable_samples", []),
+                    },
+                },
+                indent=2,
+            )
+        )
         return
 
+    for i in infos:
+        click.echo(f"INFO: {i}")
+    for w in warns:
+        click.echo(f"WARN: {w}")
+
     click.echo("")
-    click.echo("Issuance policy — coverage over catalog")
+    click.echo(
+        "Logistics issuance — sku_constraints.rules coverage over catalog"
+    )
     click.echo(f"  default_behavior : {summary['default_behavior']}")
-    click.echo(f"  total_items      : {summary['total_items']}")
+    click.echo(f"  catalog_total    : {summary['catalog_total_items']}")
+    click.echo(f"  customer_total   : {summary['customer_total_items']}")
     click.echo(f"  matched_items    : {summary['matched_items']}")
     click.echo(f"  unmatched_items  : {summary['unmatched_items']}")
+
     if summary["unmatched_items"]:
         click.echo(
             "  unmatched samples: " + ", ".join(summary["unmatched_samples"])
         )
+    click.echo("")
+    click.echo(f"  catalog_total    : {summary['catalog_total_items']}")
+    click.echo(f"  customer_total   : {summary['customer_total_items']}")
     click.echo(f"  rules_loaded    : {summary.get('rules_loaded', 0)}")
-    if summary["total_items"] and not summary.get("rules_loaded"):
+    if summary["customer_total_items"] and not summary.get("rules_loaded"):
         click.echo(
             "FATAL: issuance rules loaded == 0 while catalog has items"
         )
@@ -340,7 +360,16 @@ def dev_policy_health(as_json: bool):
             )
     else:
         click.echo("  (no rules loaded)")
-        # --- Additional summaries (text mode only) ----------------------------
+    click.echo("")
+    click.echo(
+        "Durable goods (issuance_class D) — excluded from customer issuance coverage"
+    )
+    click.echo(f"  total_items      : {summary['durable_total_items']}")
+    if summary["durable_total_items"]:
+        click.echo(
+            "  samples          : " + ", ".join(summary["durable_samples"])
+        )
+    # --- Additional summaries (text mode only) ----------------------------
     # Give Dev/Ops a quick view of how SKU/unit and Location policy are
     # being used in the Logistics slice. Skip when --json is requested.
     if not as_json:
@@ -629,22 +658,29 @@ def dev_policy_lint(
 
 
 def _issuance_policy_v2():
-    """Return (default_behavior, defaults, rules) for logistics_issuance (v2 policy shape)."""
-    from app.extensions.policies import load_governance_policy
+    """
+    Return (default_behavior, issuance_defaults, sku_constraint_rules) for logistics_issuance.
 
-    doc = load_governance_policy("logistics_issuance")
+    IMPORTANT: Logistics’ matcher `_rule_matches()` operates on `sku_constraints.rules`
+    entries shaped like {"match": {...}, ...}. The `issuance.rules` list is a different
+    family (if/then constraints) and is validated elsewhere.
+    """
+    from app.extensions.policies import load_policy_logistics_issuance
+
+    doc = load_policy_logistics_issuance() or {}
     issuance = doc.get("issuance") or {}
+    sku_constraints = doc.get("sku_constraints") or {}
 
     defaults = issuance.get("defaults") or {}
-    rules = list(issuance.get("rules") or [])
+    rules = list(sku_constraints.get("rules") or [])
 
-    # Support either location for default behavior (keep this tolerant)
     default_behavior = (
-        issuance.get("default_behavior") or defaults.get("behavior") or "deny"
+        doc.get("default_behavior")
+        or issuance.get("default_behavior")
+        or defaults.get("behavior")
+        or "deny"
     )
-    default_behavior = str(default_behavior).lower()
-
-    return default_behavior, defaults, rules
+    return str(default_behavior).lower(), defaults, rules
 
 
 def _sku_facts_from_code(sku_code: str) -> dict:
@@ -683,31 +719,18 @@ def _issuance_match_ctx(
     customer_ulid: str | None = None,
 ):
     """
-    Build a ctx object for _rule_matches() with ALL commonly used selector fields present.
-    This is the core fix: never let matching silently degrade due to missing ctx attrs.
+    Build the Logistics IssueContext required by `_rule_matches()`.
     """
-    from types import SimpleNamespace as NS
-    from app.slices.logistics.sku import parse_sku
+    from app.slices.logistics.issuance_services import IssueContext
+    from app.slices.logistics.sku import classification_key_for, parse_sku
 
-    facts = _sku_facts_from_code(sku_code)
-
-    return NS(
+    return IssueContext(
         customer_ulid=customer_ulid,
         sku_code=sku_code,
-        # Your matcher uses this name in a few places
-        classification=facts["classification"],
-        # Always present; useful for richer rules
-        sku_parts=parse_sku(sku_code),
         when_iso=when_iso,
         project_ulid=project_ulid,
-        # IMPORTANT: selector keys in rules often rely on these
-        category=facts["category"],
-        subcategory=facts["subcategory"],
-        source=facts["source"],
-        size=facts["size"],
-        color=facts["color"],
-        issuance_class=facts["issuance_class"],
-        seq=facts["seq"],
+        sku_parts=parse_sku(sku_code),
+        classification_key=classification_key_for(sku_code),
     )
 
 
@@ -727,9 +750,12 @@ def _scan_issuance_coverage():
     from app.extensions import db
     from app.slices.logistics.issuance_services import _rule_matches
     from app.slices.logistics.models import InventoryItem
+    from app.slices.logistics.sku import parse_sku
 
     default_behavior, defaults, rules = _issuance_policy_v2()
     rules_loaded = len(rules)
+    durable_total = 0
+    durable_samples: list[str] = []
 
     rows = (
         db.session.execute(
@@ -740,7 +766,7 @@ def _scan_issuance_coverage():
     )
 
     per_rule = [
-        {"index": i + 1, "selector": (r.get("if") or {}), "match_count": 0}
+        {"index": i + 1, "selector": (r.get("match") or {}), "match_count": 0}
         for i, r in enumerate(rules)
     ]
 
@@ -748,6 +774,13 @@ def _scan_issuance_coverage():
     unmatched_samples: list[str] = []
 
     for sku_code in rows:
+        parts = parse_sku(sku_code)
+        if parts.get("issuance_class") == "D":
+            durable_total += 1
+            if len(durable_samples) < 10:
+                durable_samples.append(sku_code)
+            continue
+
         ctx = _issuance_match_ctx(sku_code)
 
         hit = False
@@ -762,16 +795,31 @@ def _scan_issuance_coverage():
         elif len(unmatched_samples) < 10:
             unmatched_samples.append(sku_code)
 
+    catalog_total = len(rows)
+    customer_total = catalog_total - durable_total
+    customer_unmatched = customer_total - matched_any
+
     summary = {
-        "total_items": len(rows),
+        # totals (explicitly separated)
+        "catalog_total_items": catalog_total,  # all InventoryItem rows
+        "customer_total_items": customer_total,  # catalog minus durables
+        "durable_total_items": durable_total,
+        # customer-issuance coverage only (durables excluded)
         "matched_items": matched_any,
-        "unmatched_items": len(rows) - matched_any,
+        "unmatched_items": customer_unmatched,
         "default_behavior": default_behavior,
         "rules_loaded": rules_loaded,
         "defaults": defaults,
         "unmatched_samples": unmatched_samples,
+        # durable samples (for reporting)
+        "durable_samples": durable_samples,
     }
     return summary, per_rule
+
+
+# -----------------
+# Print SKU coverage
+# -----------------
 
 
 def _print_sku_policy_summary() -> None:
@@ -781,23 +829,15 @@ def _print_sku_policy_summary() -> None:
     - Shows allowed_units / allowed_sources from policy_sku_constraints.json
     - Shows InventoryItem.unit usage and flags any units not allowed by policy
     """
-    from sqlalchemy import func
+    from sqlalchemy import func, select
 
     from app.extensions import db
     from app.extensions.policies import load_policy_sku_constraints
-    from app.slices.logistics.issuance_services import _rule_matches
-
     from app.slices.logistics.models import InventoryItem
 
-    pol = load_policy_logistics_issuance()
-    rules = (pol.get("sku_constraints") or {}).get("rules") or []
-    default_behavior = (
-        (pol.get("issuance") or {}).get("default_behavior")
-        or pol.get("default_behavior")
-        or "deny"
-    ).lower()
-    allowed_units = set(pol.get("allowed_units") or [])
-    allowed_sources = set(pol.get("allowed_sources") or [])
+    sku_pol = load_policy_sku_constraints() or {}
+    allowed_units = set(sku_pol.get("allowed_units") or [])
+    allowed_sources = set(sku_pol.get("allowed_sources") or [])
 
     click.echo("SKU constraints — policy vs catalog")
     click.echo("----------------------------------")
@@ -888,7 +928,10 @@ def dev_issuance_debug(
 
     from app.extensions.policies import load_governance_policy
     from app.lib.chrono import now_iso8601_ms
-    from app.slices.logistics.issuance_services import _rule_matches, decide_issue
+    from app.slices.logistics.issuance_services import (
+        _rule_matches,
+        decide_issue,
+    )
 
     try:
         parts = parse_sku(sku_code)
@@ -1048,7 +1091,10 @@ def dev_issuance_tripwires(
     from app.extensions.policies import load_governance_policy
     from app.lib.chrono import now_iso8601_ms
     from app.lib.ids import new_ulid
-    from app.slices.logistics.issuance_services import _rule_matches, decide_issue
+    from app.slices.logistics.issuance_services import (
+        _rule_matches,
+        decide_issue,
+    )
     from app.slices.logistics.models import InventoryItem
     from app.slices.logistics.services import (
         ensure_item,

@@ -8,15 +8,8 @@ from sqlalchemy import select
 
 from app.extensions import db, event_bus
 from app.extensions.contracts.finance_v2 import (
-    ActivitiesReportDTO,
-    BudgetDTO,
     DonationDTO,
     ExpenseDTO,
-    FundDTO,
-    GrantDTO,
-    ProjectDTO,
-    ReceiptDTO,
-    ReimbursementDTO,
 )
 from app.lib.chrono import now_iso8601_ms
 from app.slices.finance.models import (

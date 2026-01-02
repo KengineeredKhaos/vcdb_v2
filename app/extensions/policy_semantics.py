@@ -375,9 +375,7 @@ def check_logistics_issuance_policy_against_catalog() -> list[str]:
     }
     rule_keys.discard(None)
 
-    attr = getattr(InventoryItem, "classification_key", None) or getattr(
-        InventoryItem, "category"
-    )
+    attr = getattr(InventoryItem, "classification_key", None) or InventoryItem.category
     cats = [
         c[0]
         for c in db.session.execute(select(distinct(attr))).all()

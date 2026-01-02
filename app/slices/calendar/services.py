@@ -1,12 +1,9 @@
 # app/slices/calendar/services.py
 from __future__ import annotations
 
-from dataclasses import asdict
-from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 from app.extensions import db, event_bus
-from app.extensions.contracts import finance_v2 as finance
-from app.extensions.errors import ContractError
 from app.extensions.policies import GOV_DATA, _load_and_cache
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid

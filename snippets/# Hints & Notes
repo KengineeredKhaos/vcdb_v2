@@ -1,5 +1,25 @@
 # Hints & Notes
 
+Quick Static sanity
+
+python -m compileall app (must pass)
+
+ruff check app (or your ruff config)
+
+ruff format app / black (your chosen formatter)
+
+Policy sanity
+
+flask dev policy-health
+must run without imports from slice internals that aren’t the target slice.
+
+Boundary sanity
+
+Non-devtools code must not do from app.slices.<other_slice>... imports.
+
+Cross-slice goes through app.extensions.contracts.*
+(or a clearly marked, heavily-guarded admin-only provider).
+
 Optional: add a tiny banner so it’s obvious when stub is active:
 
 @app.context_processor
