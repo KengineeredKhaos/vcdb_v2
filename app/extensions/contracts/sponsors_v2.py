@@ -422,35 +422,12 @@ def allocation_spend(
     occurred_on: str | None = None,
     dry_run: bool = False,
 ) -> dict:
-    """
-    Contract entry point: spend against a Sponsor Allocation.
-
-    - Validates arguments (ULIDs, ints).
-    - Delegates to sponsors.services.spend_allocation.
-    - Shapes any errors as ContractError.
-
-    This is the function that CLIs / other slices should call.
-    """
-    where = "sponsors_v2.allocation_spend"
-    try:
-        allocation_ulid = _require_ulid("allocation_ulid", allocation_ulid)
-        amount_cents = _require_int_ge("amount_cents", amount_cents, minval=1)
-
-        if request_id is None:
-            request_id = new_ulid()
-        else:
-            request_id = _require_ulid("request_id", request_id)
-
-        result = svc.spend_allocation(
-            allocation_ulid=allocation_ulid,
-            amount_cents=amount_cents,
-            request_id=request_id,
-            actor_ulid=actor_ulid,
-            category=category,
-            vendor=vendor,
-            occurred_on=occurred_on,
-            dry_run=dry_run,
-        )
-        return _ok(result)
-    except Exception as exc:
-        raise _as_contract_error(where, exc)
+    raise ContractError(
+        code="not_supported",
+        where="sponsors_v2.allocation_spend",
+        message=(
+            "Sponsors no longer owns allocation spending. "
+            "Spending happens via Calendar projects/tasks + Finance journal."
+        ),
+        http_status=400,
+    )

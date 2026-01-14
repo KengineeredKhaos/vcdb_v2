@@ -4,10 +4,10 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Optional, Tuple
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func
 
 from app.extensions import db, event_bus
-from app.extensions.contracts import entity_v2, finance_v2
+from app.extensions.contracts import entity_v2
 from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
@@ -15,7 +15,6 @@ from app.services import poc as poc_svc
 from app.services.entity_validate import require_person_entity_ulid
 
 from .models import (
-    Allocation,
     Sponsor,
     SponsorCapabilityIndex,
     SponsorHistory,
@@ -341,25 +340,6 @@ def _flatten_caps_payload(
                 raise ValueError("invalid capability payload value")
 
     return flat
-
-
-def get_allocation_by_ulid(allocation_ulid: str) -> Allocation:
-    """
-    Slice-local helper to look up an Allocation by ULID.
-
-    The Extensions contract (sponsors_v2.allocation_spend) calls this
-    so it doesn't have to reach into the Sponsors tables directly.
-    """
-    if not allocation_ulid:
-        raise ValueError("allocation_ulid is required")
-
-    row = db.session.execute(
-        select(Allocation).where(Allocation.ulid == allocation_ulid)
-    ).scalar_one_or_none()
-    if not row:
-        raise ValueError(f"allocation {allocation_ulid} not found")
-
-    return row
 
 
 # -----------------
@@ -1132,110 +1112,6 @@ def set_pledge_status(
         happened_at_utc=now_iso8601_ms(),
         changed={"pledge_ulid": pledge_ulid, "status": status, "prev": prev},
     )
-
-
-# -----------------
-# FLOW: allocation spend → finance journal
-# -----------------
-
-
-def spend_allocation(
-    *,
-    allocation_ulid: str,
-    amount_cents: int,
-    request_id: str,
-    actor_ulid: str | None = None,
-    category: str | None = None,
-    vendor: str | None = None,
-    occurred_on: str | None = None,
-    dry_run: bool = False,
-) -> Dict[str, Any]:
-    """
-    Spend against a Sponsor Allocation, posting an expense to Finance and
-    emitting a ledger event.
-
-    This is real wiring:
-      - Looks up the Allocation row.
-      - Builds a Finance expense payload (fund + project).
-      - Calls finance_v2.log_expense (journal entry).
-      - Emits sponsors.allocation.spent into the Ledger.
-
-    Policy checks (caps, status, RBAC spending authority) can layer on
-    later, but this function should never be a stub.
-    """
-    as_of = occurred_on or now_iso8601_ms()
-
-    # 1) Load the Allocation row (slice owns the SQL)
-    alloc = db.session.execute(
-        select(Allocation).where(Allocation.ulid == allocation_ulid)
-    ).scalar_one_or_none()
-    if not alloc:
-        raise LookupError(f"allocation {allocation_ulid} not found")
-
-    # FIXME: align these attribute names to your real model
-    fund_id = alloc.fund_ulid  # finance_fund.ulid
-    project_id = alloc.project_ulid  # calendar.project_ulid
-    sponsor_ulid = alloc.sponsor_ulid  # sponsor_allocation.ulid
-
-    if amount_cents <= 0:
-        raise ValueError("amount_cents must be > 0")
-
-    # 2) Build Finance expense payload
-    payload = {
-        "fund_id": fund_id,
-        "project_id": project_id,
-        "occurred_on": as_of,
-        "vendor": vendor or "allocation-spend",
-        "amount_cents": int(amount_cents),
-        "category": category or "sponsor_allocation",
-        # Optional: tie back to this allocation in Finance
-        "external_ref": allocation_ulid,
-        "memo": f"Sponsor allocation {allocation_ulid} spend",
-    }
-
-    # 3) Call Finance contract: real journal entry
-    expense = finance_v2.log_expense(payload, dry_run=dry_run)
-
-    # 4) (Optional but recommended) update allocation totals / status
-    # FIXME: match your real allocation fields here
-    if not dry_run:
-        if hasattr(alloc, "spent_cents"):
-            alloc.spent_cents = int(alloc.spent_cents or 0) + int(
-                amount_cents
-            )
-        db.session.add(alloc)
-        db.session.commit()
-
-        # 5) Emit Ledger spine
-        event_bus.emit(
-            domain="sponsors",
-            operation="allocation_spent",
-            request_id=request_id,
-            actor_ulid=actor_ulid,
-            target_ulid=sponsor_ulid,
-            refs={
-                "allocation_ulid": allocation_ulid,
-                "fund_id": fund_id,
-                "project_id": project_id,
-                "journal_id": expense.id,
-            },
-            changed={"amount_cents": int(amount_cents)},
-            meta={
-                "category": expense.category,
-                "occurred_on": expense.occurred_on,
-            },
-            happened_at_utc=as_of,
-            chain_key="finance",
-        )
-
-    return {
-        "allocation_ulid": allocation_ulid,
-        "amount_cents": int(amount_cents),
-        "expense_id": expense.id,
-        "fund_id": fund_id,
-        "project_id": project_id,
-        "dry_run": bool(dry_run),
-    }
 
 
 # -----------------

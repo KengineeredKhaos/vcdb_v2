@@ -636,8 +636,7 @@ def dev_policy_lint(
             click.echo(f"  message: {e.message}")
             if e.absolute_path:
                 click.echo(
-                    "  path:    /"
-                    + "/".join(str(p) for p in e.absolute_path)
+                    "  path:    /" + "/".join(str(p) for p in e.absolute_path)
                 )
         except Exception as e:
             had_error = True
@@ -906,121 +905,88 @@ def show_default(default_behavior) -> None:
 
 
 @dev_group.command("issuance-debug")
-@click.argument("sku_code")
+@with_appcontext
+@click.option("--sku", "sku_code", required=True, help="SKU code")
 @click.option(
-    "--when-iso",
-    help="ISO8601 timestamp; defaults to now",
+    "--customer-ulid",
+    default=None,
+    help="Optional customer ULID for qualifier checks",
 )
-@click.option(
-    "--project-ulid",
-    help="Optional project ULID; if set, project-only rules may apply",
-)
+@click.option("--when-iso", default=None, help="ISO time (defaults to now)")
+@click.option("--project-ulid", default=None, help="Optional project ULID")
 def dev_issuance_debug(
-    sku_code: str, when_iso: str | None, project_ulid: str | None
-) -> None:
-    """Debug issuance policy for a single SKU.
-
-    - Shows which rules match the SKU/classification.
-    - Shows the final decision from governance (allowed / reason).
-    - Does not write to the DB.
-    """
-
-    from app.extensions.policies import load_governance_policy
+    sku_code: str,
+    customer_ulid: str | None,
+    when_iso: str | None,
+    project_ulid: str | None,
+):
+    """Debug SKU constraint matching (sku_constraints.rules) and (optionally) a full policy decision."""
     from app.lib.chrono import now_iso8601_ms
     from app.slices.logistics.issuance_services import (
         _rule_matches,
         decide_issue,
     )
 
-    try:
-        parts = parse_sku(sku_code)
-    except ValueError as e:
-        click.echo(f"Invalid SKU '{sku_code}': {e}")
-        raise SystemExit(1)  # noqa: B904
+    echo_db_banner("issuance-debug")
 
     if when_iso is None:
         when_iso = now_iso8601_ms()
 
-    # Canonical classification key (e.g. 'CG/SL')
-    ckey = classification_key_for(sku_code)
+    default_behavior, defaults, rules = _issuance_policy_v2()
 
-    # NEW SHAPE: policy doc -> issuance section -> defaults/rules
-    doc = load_governance_policy("logistics_issuance")
-    issuance = doc.get("issuance") or {}
-    defaults = issuance.get("defaults") or {}
-    rules = list(issuance.get("rules") or [])
-
-    click.echo(f"=== Issuance debug for SKU {sku_code} ===")
-    click.echo(f"classification_key = {ckey}")
-    click.echo(f"when_iso          = {when_iso}")
-    click.echo(f"project_ulid      = {project_ulid or '-'}")
-    click.echo("")
-
-    # In v2, “behavior” is typically implicit deny unless a rule/then allows.
-    # show_default() already defaults behavior to "deny" if missing.
-    click.echo("Defaults:")
-    show_default(
-        defaults
-    )  # expects {"cadence": ...} and optional {"behavior": ...}
-    click.echo(f"Rules loaded: {len(rules)}")
-    click.echo("")
-
-    # Build a context object for rule matching (as expected by _rule_matches)
-    segs = sku_code.split("-")
-    src = segs[2] if len(segs) >= 3 else None
-    cat, sub = ckey.split("/", 1) if "/" in ckey else (None, None)
-
-    ctx_match = _issuance_match_ctx(
+    ctx = _issuance_match_ctx(
         sku_code,
         when_iso=when_iso,
         project_ulid=project_ulid,
-        customer_ulid="DEBUG-CUSTOMER",
+        customer_ulid=customer_ulid,
     )
 
-    # Show matching rules
-    click.echo("Matching rules:")
-    any_match = False
+    click.echo(f"SKU: {sku_code}")
+    click.echo(f"default_behavior: {default_behavior}")
+    click.echo("")
+
+    # --- sku_constraints.rules matching ---
+    click.echo("sku_constraints.rules matches (first-match wins):")
+    hit_any = False
     for i, rule in enumerate(rules, start=1):
-        if _rule_matches(rule, ctx_match):
-            any_match = True
-            label = (
-                rule.get("why")
-                or rule.get("id")
-                or rule.get("key")
-                or f"rule#{i}"
-            )
-            click.echo(f"- {label}")
-            click.echo(f"    if  : {rule.get('if')}")
-            click.echo(f"    then: {rule.get('then')}")
-    if not any_match:
-        click.echo("  (no rules matched this SKU/classification)")
-    click.echo("")
+        if _rule_matches(rule, ctx):
+            hit_any = True
+            click.echo(f"  HIT #{i:02}: {rule.get('match')}")
+            if rule.get("qualifiers"):
+                click.echo(f"       qualifiers: {rule['qualifiers']}")
+            if rule.get("cadence"):
+                click.echo(f"       cadence: {rule['cadence']}")
+            break
+    if not hit_any:
+        click.echo("  (no rule matched)")
 
-    # Evaluate decision via canonical governance path
-    ctx_match = _issuance_match_ctx(
-        sku_code,
-        when_iso=when_iso,
-        project_ulid=project_ulid,
-        customer_ulid="DEBUG-CUSTOMER",
+    # --- optional full decision ---
+    click.echo("")
+    click.echo(
+        "decide_issue(...) (may require a real customer_ulid depending on qualifier logic):"
     )
+    try:
+        # decide_issue in your codebase expects extra fields beyond IssueContext;
+        # keep this conservative by passing a lightweight namespace-shaped object.
+        from types import SimpleNamespace
 
-    decision = decide_issue(ctx_decide)
-    if decision.allowed:
-        click.echo(f"ALLOWED ({decision.reason})")
-    else:
-        click.echo(f"DENIED ({decision.reason})")
-
-    payload = {
-        "allowed": getattr(decision, "allowed", None),
-        "reason": getattr(decision, "reason", None),
-        "approver_required": getattr(decision, "approver_required", None),
-        "next_eligible_at_iso": getattr(
-            decision, "next_eligible_at_iso", None
-        ),
-        "limit_window_label": getattr(decision, "limit_window_label", None),
-    }
-    click.echo("")
-    click.echo(json.dumps(payload, indent=2, sort_keys=True))
+        ctx2 = SimpleNamespace(
+            customer_ulid=customer_ulid,
+            sku_code=ctx.sku_code,
+            classification_key=ctx.classification_key,
+            sku_parts=ctx.sku_parts,
+            when_iso=when_iso,
+            project_ulid=project_ulid,
+            force_blackout=False,
+            qualifiers={},
+            defaults_cadence=(defaults or {}).get("cadence"),
+        )
+        d = decide_issue(ctx2)
+        click.echo(
+            f"  allowed={getattr(d,'allowed',None)} reason={getattr(d,'reason',None)}"
+        )
+    except Exception as e:
+        click.echo(f"  (decision skipped/failed) {type(e).__name__}: {e}")
 
 
 # -----------------
@@ -1286,10 +1252,12 @@ def dev_decide_issue(
     if when_iso is None:
         when_iso = now_iso8601_ms()
 
-    ckey = classification_key_for(parts)
+    ckey = classification_key_for(sku_code)
+
+    default_behavior, defaults, _rules = _issuance_policy_v2()
 
     ctx = SimpleNamespace(
-        customer_ulid=customer_ulid or "DEBUG-CUSTOMER",
+        customer_ulid=customer_ulid,
         sku_code=sku_code,
         classification_key=ckey,
         sku_parts=parts,
@@ -1297,7 +1265,7 @@ def dev_decide_issue(
         project_ulid=project_ulid,
         force_blackout=force_blackout,
         qualifiers={},
-        defaults_cadence=None,
+        defaults_cadence=(defaults or {}).get("cadence"),
     )
 
     decision = decide_issue(ctx)

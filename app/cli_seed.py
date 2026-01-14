@@ -172,9 +172,9 @@ from app.seeds.core import (
 )
 
 # Models for POCs (entity “person” attached to an org)
-from app.slices.entity.models import Entity, EntityOrg, EntityPerson
-from app.slices.resources.models import Resource, ResourcePOC
-from app.slices.sponsors.models import Sponsor, SponsorPOC
+from app.slices.entity.models import Entity, EntityPerson
+from app.slices.resources.models import Resource
+from app.slices.sponsors.models import Sponsor
 
 
 # If you have a formal “POC” link model later, swap this helper accordingly.
@@ -213,108 +213,59 @@ def _ensure_org_poc_pair(*, org_entity_ulid: str, label: str) -> list[str]:
 
 
 def _attach_resource_pocs(*, resource_ulid: str, label: str) -> None:
-    """Create 2 POCs for a Resource org and attach them via ResourcePOC.
-
-    - Uses the Resource row to find the org via entity_ulid.
-    - Uses _ensure_org_poc_pair to create two Entity+EntityPerson POCs.
-    - Inserts ResourcePOC rows that point at:
-        * resource_resource.ulid
-        * entity_person.ulid
-        * entity_org.ulid
-    """
     ts = now_iso8601_ms()
-
-    # Load the Resource and its org (via entity_ulid -> EntityOrg.entity_ulid)
     resource = db.session.get(Resource, resource_ulid)
     if resource is None:
         raise RuntimeError(
             f"Resource {resource_ulid} not found when attaching POCs"
         )
 
-    org = (
-        db.session.query(EntityOrg)
-        .filter_by(entity_ulid=resource.entity_ulid)
-        .one()
-    )
-
-    # Create two POC people (returns ENTITY ULIDs, not person ULIDs)
     poc_entity_ulids = _ensure_org_poc_pair(
-        org_entity_ulid=resource.entity_ulid,
-        label=label,
+        org_entity_ulid=resource.entity_ulid, label=label
     )
 
-    # Map entity_ulid -> EntityPerson row, so we can get person.ulid
-    persons = (
-        db.session.query(EntityPerson)
-        .filter(EntityPerson.entity_ulid.in_(poc_entity_ulids))
-        .all()
-    )
-    person_by_entity = {p.entity_ulid: p for p in persons}
+    from app.slices.resources.services import resource_link_poc
 
-    for i, e_ulid in enumerate(poc_entity_ulids):
-        person = person_by_entity[e_ulid]
-
-        poc = ResourcePOC(
-            resource_ulid=resource.ulid,  # FK -> resource_resource.ulid
-            person_entity_ulid=person.ulid,  # FK -> entity_person.ulid
-            org_entity_ulid=org.ulid,  # FK -> entity_org.ulid
+    for i, person_entity_ulid in enumerate(poc_entity_ulids):
+        resource_link_poc(
+            resource_ulid=resource_ulid,
+            person_entity_ulid=person_entity_ulid,
             scope="primary" if i == 0 else "backup",
+            rank=i,
+            is_primary=(i == 0),
+            window={"from": ts, "to": None},
             org_role="poc",
-            valid_from_utc=ts,
-            valid_to_utc=None,
+            actor_ulid="seed",
+            request_id=new_ulid(),
         )
-        if hasattr(poc, "created_at_utc"):
-            poc.created_at_utc = ts
-        if hasattr(poc, "updated_at_utc"):
-            poc.updated_at_utc = ts
-        db.session.add(poc)
 
 
 def _attach_sponsor_pocs(*, sponsor_ulid: str, label: str) -> None:
-    """Create 2 POCs for a Sponsor org and attach them via SponsorPOC."""
     ts = now_iso8601_ms()
-
     sponsor = db.session.get(Sponsor, sponsor_ulid)
     if sponsor is None:
         raise RuntimeError(
             f"Sponsor {sponsor_ulid} not found when attaching POCs"
         )
 
-    org = (
-        db.session.query(EntityOrg)
-        .filter_by(entity_ulid=sponsor.entity_ulid)
-        .one()
-    )
-
     poc_entity_ulids = _ensure_org_poc_pair(
-        org_entity_ulid=sponsor.entity_ulid,
-        label=label,
+        org_entity_ulid=sponsor.entity_ulid, label=label
     )
 
-    persons = (
-        db.session.query(EntityPerson)
-        .filter(EntityPerson.entity_ulid.in_(poc_entity_ulids))
-        .all()
-    )
-    person_by_entity = {p.entity_ulid: p for p in persons}
+    from app.slices.sponsors.services import sponsor_link_poc
 
-    for i, e_ulid in enumerate(poc_entity_ulids):
-        person = person_by_entity[e_ulid]
-
-        poc = SponsorPOC(
-            sponsor_ulid=sponsor.ulid,  # FK -> sponsor_sponsor.ulid
-            person_entity_ulid=person.ulid,  # FK -> entity_person.ulid
-            org_entity_ulid=org.ulid,  # FK -> entity_org.ulid
+    for i, person_entity_ulid in enumerate(poc_entity_ulids):
+        sponsor_link_poc(
+            sponsor_ulid=sponsor_ulid,
+            person_entity_ulid=person_entity_ulid,
             scope="primary" if i == 0 else "backup",
+            rank=i,
+            is_primary=(i == 0),
+            window={"from": ts, "to": None},
             org_role="poc",
-            valid_from_utc=ts,
-            valid_to_utc=None,
+            actor_ulid="seed",
+            request_id=new_ulid(),
         )
-        if hasattr(poc, "created_at_utc"):
-            poc.created_at_utc = ts
-        if hasattr(poc, "updated_at_utc"):
-            poc.updated_at_utc = ts
-        db.session.add(poc)
 
 
 @click.group("seed")
@@ -562,7 +513,7 @@ def seed_logistics_canonical(
         if not validate_sku(sku):
             continue
 
-        parts = parse_sku(sku)
+        parse_sku(sku)
         name = f"{cat}/{sub} {size} {col} ({clazz})"
         # Generate only items that satisfy SKU policy constraints
         try:
