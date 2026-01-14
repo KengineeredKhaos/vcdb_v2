@@ -4,7 +4,8 @@ from __future__ import annotations
 from flask import flash, jsonify, redirect, render_template, request, url_for
 from flask_login import login_required
 
-from app.extensions.contracts.entity import v2 as entity_contract
+from app.extensions.auth_ctx import current_actor_ulid
+from app.extensions.contracts import entity_v2 as entity_contract
 from app.lib.geo import us_states
 from app.lib.ids import new_ulid
 from app.lib.security import require_permission
@@ -65,7 +66,7 @@ def list_people():
         per = 20
 
     role = (request.args.get("role") or "").strip().lower() or None
-    if role and role not in set(allowed_role_codes()):
+    if role and role not in svc.allowed_role_codes():
         return jsonify({"ok": False, "error": f"invalid role '{role}'"}), 400
 
     if role:
@@ -110,7 +111,7 @@ def list_orgs():
     except Exception:
         per = 20
 
-    allowed = set(allowed_role_codes())
+    allowed = svc.allowed_role_codes()
     default_roles = [r for r in ("resource", "sponsor") if r in allowed]
 
     roles_param = (request.args.get("roles") or "").strip().lower()
@@ -160,7 +161,7 @@ def create_form():
     # or however your helper exposes it
     return render_template(
         "entity/create.html",
-        role_codes=allowed_role_codes(),
+        role_codes=sorted(svc.allowed_role_codes()),
         states=us_state_choices,
     )
 

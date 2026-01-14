@@ -6,16 +6,13 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, g, jsonify, request, session
 from flask_login import current_user
-from sqlalchemy import select, text
+from sqlalchemy import text
 from werkzeug.exceptions import BadRequest, Forbidden
 
 from app.extensions import db
-from app.lib.chrono import now_iso8601_ms
 from app.lib.security import ASSUME_KEY, rbac
 from app.slices.entity.models import EntityOrg, EntityPerson, EntityRole
 from app.slices.entity.services import (
-    allowed_role_codes,
-    create_org_entity,
     create_person_entity,
     ensure_role,
 )
@@ -520,7 +517,6 @@ def v2_governance_policies_index():
         }
         if validate and has_schema:
             try:
-                import jsonschema
                 from jsonschema import Draft202012Validator
 
                 schema = json.loads(
@@ -571,7 +567,6 @@ def v2_governance_policies_get(key: str):
         schema_path = data_dir / "schemas" / f"{key}.schema.json"
         if schema_path.exists():
             try:
-                import jsonschema
                 from jsonschema import Draft202012Validator
 
                 schema = json.loads(schema_path.read_text(encoding="utf-8"))
@@ -625,7 +620,7 @@ def v2_dev_form_entity_person_create():
 
         s.commit()
         return jsonify({"ok": True, "person": dto}), 201
-    except Exception as e:
+    except Exception:
         s.rollback()
         current_app.logger.exception("dev_form_person_create_error")
         return jsonify({"error": "internal_error"}), 500

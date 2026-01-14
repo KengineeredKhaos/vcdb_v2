@@ -199,16 +199,12 @@ class ResourcePOC(db.Model, ULIDPK, IsoTimestamps):
     )
     # Person ULID from Entity slice
     person_entity_ulid: Mapped[str] = ULIDFK(
-        "entity_person", ondelete="RESTRICT", nullable=False, index=True
+        "entity_entity", ondelete="RESTRICT", nullable=False, index=True
     )
 
     # Optional relation label (keep "poc" as default in services if you like)
     relation: Mapped[str] = mapped_column(
         String(16), nullable=False, default="poc"
-    )
-
-    org_entity_ulid: Mapped[str] = ULIDFK(
-        "entity_org", ondelete="CASCADE", nullable=False, index=True
     )
 
     # Governance-constrained
@@ -229,26 +225,6 @@ class ResourcePOC(db.Model, ULIDPK, IsoTimestamps):
     )
     active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True
-    )
-
-    # -------------
-    # Relationships
-    # -------------
-
-    resource: Mapped["Resource"] = relationship(
-        "Resource",
-        back_populates="pocs",
-    )
-
-    org: Mapped["EntityOrg"] = relationship(
-        "EntityOrg",
-        back_populates="resource_pocs",
-        foreign_keys="ResourcePOC.org_entity_ulid",
-        passive_deletes=True,
-    )
-    person: Mapped["EntityPerson"] = relationship(
-        "EntityPerson",
-        passive_deletes=True,
     )
 
     __table_args__ = (

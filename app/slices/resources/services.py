@@ -4,14 +4,15 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
-from sqlalchemy import and_, desc, func
-from sqlalchemy.orm import Session
+from sqlalchemy import desc, func
 
 from app.extensions import db, event_bus
+from app.extensions.contracts import entity_v2
 from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
 from app.services import poc as poc_svc
+from app.services.entity_validate import require_person_entity_ulid
 from app.slices.resources.models import (
     Resource,
     ResourceCapabilityIndex,
@@ -25,6 +26,8 @@ from app.slices.resources.models import (
 
 CAPS_SECTION = "resource:capability:v1"
 POC_RELATION = "poc"  # table-level convention, not board policy
+_RESOURCE_POC_SPEC = poc_svc.POCSpec(owner_col="resource_ulid")
+
 
 # -----------------
 # Policy access (lazy imports)
@@ -95,6 +98,39 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
 
 
 # -----------------
+# Help for POC Validation
+# thru Entity contract
+# -----------------
+
+
+def _require_person_entity_ulid(
+    person_entity_ulid: str, *, where: str
+) -> None:
+    core = entity_v2.get_entity_core(db.session, person_entity_ulid)
+
+    if core.kind != "person":
+        raise ContractError(
+            code="bad_request",
+            where=where,
+            message=f"person_entity_ulid must be a person entity (got kind='{core.kind}')",
+            http_status=400,
+            data={"entity_ulid": person_entity_ulid, "kind": core.kind},
+        )
+
+    if core.archived_at:
+        raise ContractError(
+            code="conflict",
+            where=where,
+            message="person entity is archived",
+            http_status=409,
+            data={
+                "entity_ulid": person_entity_ulid,
+                "archived_at": core.archived_at,
+            },
+        )
+
+
+# -----------------
 # Point of Contact
 # wrappers for
 # app.services.poc
@@ -103,7 +139,7 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
 
 def resource_link_poc(
     *,
-    org_ulid: str,
+    resource_ulid: str,
     person_entity_ulid: str,
     scope: str | None = None,
     rank: int = 0,
@@ -113,11 +149,17 @@ def resource_link_poc(
     actor_ulid: str | None = None,
     request_id: str,
 ):
+    require_person_entity_ulid(
+        db.session,
+        person_entity_ulid,
+        where="resources.resource_link_poc",
+    )
     return poc_svc.link_poc(
         db.session,
         POCModel=ResourcePOC,
+        spec=_RESOURCE_POC_SPEC,
         domain="resources",
-        org_ulid=org_ulid,
+        owner_ulid=resource_ulid,
         person_entity_ulid=person_entity_ulid,
         scope=scope,
         rank=rank,
@@ -131,7 +173,7 @@ def resource_link_poc(
 
 def resource_update_poc(
     *,
-    org_ulid: str,
+    resource_ulid: str,
     person_entity_ulid: str,
     scope: str | None = None,
     rank: int | None = None,
@@ -141,11 +183,17 @@ def resource_update_poc(
     actor_ulid: str | None = None,
     request_id: str,
 ):
+    require_person_entity_ulid(
+        db.session,
+        person_entity_ulid,
+        where="resources.resource_link_poc",
+    )
     return poc_svc.update_poc(
         db.session,
         POCModel=ResourcePOC,
+        spec=_RESOURCE_POC_SPEC,
         domain="resources",
-        org_ulid=org_ulid,
+        owner_ulid=resource_ulid,
         person_entity_ulid=person_entity_ulid,
         scope=scope,
         rank=rank,
@@ -159,17 +207,23 @@ def resource_update_poc(
 
 def resource_unlink_poc(
     *,
-    org_ulid: str,
+    resource_ulid: str,
     person_entity_ulid: str,
     scope: str | None = None,
     actor_ulid: str | None = None,
     request_id: str,
 ):
+    require_person_entity_ulid(
+        db.session,
+        person_entity_ulid,
+        where="resources.resource_link_poc",
+    )
     return poc_svc.unlink_poc(
         db.session,
         POCModel=ResourcePOC,
+        spec=_RESOURCE_POC_SPEC,
         domain="resources",
-        org_ulid=org_ulid,
+        owner_ulid=resource_ulid,
         person_entity_ulid=person_entity_ulid,
         scope=scope,
         actor_ulid=actor_ulid,
@@ -177,9 +231,12 @@ def resource_unlink_poc(
     )
 
 
-def resource_list_pocs(*, org_ulid: str) -> list[dict]:
+def resource_list_pocs(*, resource_ulid: str) -> list[dict]:
     return poc_svc.list_pocs(
-        db.session, POCModel=ResourcePOC, org_ulid=org_ulid
+        db.session,
+        POCModel=ResourcePOC,
+        spec=_RESOURCE_POC_SPEC,
+        owner_ulid=resource_ulid,
     )
 
 
@@ -544,39 +601,6 @@ def upsert_capabilities(
         )
 
     return hist.ulid
-
-
-def _normalize_poc_args(
-    scope: Optional[str], rank: Optional[int]
-) -> tuple[str, int, dict]:
-    policy = _poc_policy()
-    scopes = policy["poc_scopes"]
-    default = policy["default_scope"]
-    max_rank = policy["max_rank"]
-
-    norm_scope = scope or default
-    if norm_scope not in scopes:
-        raise ValueError("invalid scope")
-    norm_rank = rank if rank is not None else 0
-    if not (0 <= norm_rank <= max_rank):
-        raise ValueError("invalid rank")
-    return norm_scope, norm_rank, policy
-
-
-def _enforce_primary(
-    sess: Session, org_ulid: str, scope: str, is_primary: bool
-):
-    if not is_primary:
-        return
-    # Flip any existing primary for same (org, relation, scope)
-    sess.query(ResourcePOC).filter(
-        and_(
-            ResourcePOC.org_ulid == org_ulid,
-            ResourcePOC.relation == POC_RELATION,
-            ResourcePOC.scope == scope,
-            ResourcePOC.is_primary == True,  # noqa: E712
-        )
-    ).update({"is_primary": False}, synchronize_session=False)
 
 
 # ----------- views / search -------------

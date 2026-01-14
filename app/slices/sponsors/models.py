@@ -261,15 +261,11 @@ class SponsorPOC(db.Model, ULIDPK, IsoTimestamps):
         "sponsor_sponsor", ondelete="CASCADE", nullable=False, index=True
     )
     person_entity_ulid: Mapped[str] = ULIDFK(
-        "entity_person", ondelete="RESTRICT", nullable=False, index=True
+        "entity_entity", ondelete="RESTRICT", nullable=False, index=True
     )
 
     relation: Mapped[str] = mapped_column(
         String(16), nullable=False, default="poc"
-    )
-
-    org_entity_ulid: Mapped[str] = ULIDFK(
-        "entity_org", ondelete="CASCADE", nullable=False, index=True
     )
 
     scope: Mapped[str] = mapped_column(String(24), nullable=True)
@@ -294,16 +290,6 @@ class SponsorPOC(db.Model, ULIDPK, IsoTimestamps):
     sponsor: Mapped["Sponsor"] = relationship(
         "Sponsor",
         back_populates="pocs",
-    )
-
-    org: Mapped["EntityOrg"] = relationship(
-        "EntityOrg",
-        back_populates="sponsor_pocs",
-        passive_deletes=True,
-    )
-    person: Mapped["EntityPerson"] = relationship(
-        "EntityPerson",
-        passive_deletes=True,
     )
 
     __table_args__ = (

@@ -1,8 +1,8 @@
 # tsets/foundation/test_poc_emit_and_list.py
 def test_resources_poc_link_list_emit(client, ro_session):
-    from app.slices.resources.services_poc import link_poc, list_pocs
-    from app.slices.entity.models import EntityOrg, EntityPerson
     from app.extensions import db
+    from app.slices.entity.models import EntityOrg, EntityPerson
+    from app.slices.resources.services_poc import link_poc, list_pocs
 
     # grab any existing seeded org/person
     org = ro_session.query(EntityOrg).first()

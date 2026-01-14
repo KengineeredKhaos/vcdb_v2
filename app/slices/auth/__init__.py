@@ -1,4 +1,18 @@
 # app/slices/auth/__init__.py
+from __future__ import annotations
+
+from flask import Blueprint, current_app, request, session
+from flask_login import current_user, login_user
+from flask_login.utils import login_required
+
+from app.extensions import login_manager
+from app.lib.ids import new_ulid
+
+from . import models
+
+bp = Blueprint(
+    "auth", __name__, url_prefix="/auth", template_folder="templates"
+)
 
 """
 VCDB v2 — Auth slice (__init__)
@@ -44,21 +58,6 @@ In production:
 These helpers exist purely for local/dev ergonomics and should be treated
 as part of the devtools story, not as canonical auth behavior.
 """
-
-from __future__ import annotations
-
-from flask import Blueprint, current_app, request, session
-from flask_login import current_user, login_user
-from flask_login.utils import login_required
-
-from app.extensions import login_manager
-from app.lib.ids import new_ulid
-
-bp = Blueprint(
-    "auth", __name__, url_prefix="/auth", template_folder="templates"
-)
-
-from . import models
 
 
 class SessionUser:
@@ -163,7 +162,7 @@ def dev_impersonate():
     This lets you test ledger:read as auditor without changing code.
     """
 
-    from flask import redirect, request, url_for
+    from flask import redirect, request
 
     if not current_app.debug:
         # In production or non-debug modes, this endpoint should not exist.
@@ -219,4 +218,4 @@ def _load_user_from_request(req: request):
     return None
 
 
-__all__ = ["SessionUser", "bp"]
+__all__ = ["SessionUser", "bp", "models"]

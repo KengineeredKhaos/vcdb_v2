@@ -4,6 +4,3 @@ from flask import Blueprint
 bp = Blueprint(
     "entity", __name__, url_prefix="/entity", template_folder="templates"
 )
-
-
-from . import models  # noqa: E402, F401

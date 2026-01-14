@@ -1,6 +1,7 @@
 # tests/foundation/test_devtools_fake_writes.py
-import pytest
 import uuid
+
+import pytest
 
 pytestmark = pytest.mark.skip(
     "Dev fake-write endpoints deprecated; using real service-backed routes."

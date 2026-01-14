@@ -1,5 +1,3 @@
-import json
-import random
 
 
 def _get_json(client, path, **kwargs):

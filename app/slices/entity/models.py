@@ -134,21 +134,6 @@ class EntityOrg(db.Model, ULIDPK, IsoTimestamps):
 
     archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
-    # -------------
-    # Relationships
-    # -------------
-    resource_pocs = relationship(
-        "ResourcePOC",
-        back_populates="org",
-        cascade="all, delete-orphan",
-        passive_deletes=True,  # honors ON DELETE CASCADE on FK
-    )
-    sponsor_pocs = relationship(
-        "SponsorPOC",
-        back_populates="org",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
     __table_args__ = (
         UniqueConstraint("entity_ulid", name="uq_org_entity"),  # enforce 1:1
         UniqueConstraint("ein", name="uq_org_ein"),

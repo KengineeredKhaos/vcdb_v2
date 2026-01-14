@@ -636,7 +636,7 @@ def dev_policy_lint(
             click.echo(f"  message: {e.message}")
             if e.absolute_path:
                 click.echo(
-                    f"  path:    /"
+                    "  path:    /"
                     + "/".join(str(p) for p in e.absolute_path)
                 )
         except Exception as e:
@@ -924,7 +924,6 @@ def dev_issuance_debug(
     - Shows the final decision from governance (allowed / reason).
     - Does not write to the DB.
     """
-    from types import SimpleNamespace
 
     from app.extensions.policies import load_governance_policy
     from app.lib.chrono import now_iso8601_ms
@@ -1080,31 +1079,22 @@ def dev_issuance_tripwires(
     so all callers use the same kwargs surface.
     """
     echo_db_banner("issuance-tripwires")
-    import json
     from datetime import datetime, timedelta, timezone
     from types import SimpleNamespace as NS
 
     import click
-    from sqlalchemy import select
 
-    from app.extensions import db
     from app.extensions.policies import load_governance_policy
-    from app.lib.chrono import now_iso8601_ms
     from app.lib.ids import new_ulid
     from app.slices.logistics.issuance_services import (
-        _rule_matches,
         decide_issue,
     )
-    from app.slices.logistics.models import InventoryItem
     from app.slices.logistics.services import (
-        ensure_item,
         ensure_location,
-        receive_inventory,
     )
     from app.slices.logistics.sku import (
         classification_key_for,
         parse_sku,
-        validate_sku,
     )
 
     # ---- load v2 issuance policy (canonical) ----

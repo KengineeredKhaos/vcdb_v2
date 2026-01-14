@@ -2,15 +2,12 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Union
 
 from flask import Flask, g, jsonify, request
 from flask_login import (
-    AnonymousUserMixin,
     UserMixin,
     current_user,
     login_user,
@@ -22,6 +19,7 @@ from werkzeug.exceptions import HTTPException
 from app.cli import register_cli
 from app.extensions.errors import ContractError
 from app.lib.chrono import parse_iso8601, utcnow_aware
+from app.lib.jsonutil import json
 from app.lib.logging import configure_logging
 
 from .extensions import csrf, init_extensions
@@ -622,7 +620,7 @@ def _5chema_5heck(app):
 
                     # loose type compare
                     m_t = type_name(mcol.type)
-                    d_t = type_name(dcol.get("type") or NullType())
+                    d_t = type_name(dcol.get("type"))
                     if not type_equiv(m_t, d_t):
                         issues.append(f"{cname}: type {m_t} vs {d_t}")
 

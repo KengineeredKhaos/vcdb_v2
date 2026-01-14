@@ -26,33 +26,6 @@ from .models import (
     EntityRole,
 )
 
-# REFACTOR: ensure proper calls to governance_v2 contract
-# -----------------
-# Allowed Role Codes
-# -----------------
-
-# Prefer the governance_v2 contract; fall back to policy file in dev/test
-try:
-    from app.extensions.contracts.governance_v2 import (
-        role_catalogs as _gov_role_catalogs,
-    )
-except Exception:
-    _gov_role_catalogs = (
-        None  # contract not wired yet (dev/test fallback path)
-    )
-"""
-Any ALLOWED_*ROLE* constants → replace with:
-
-Governance policy (governance.roles family) via contract call, or
-
-DB-backed RoleCode catalog helper (list_domain_roles() in Governance) exposed
-through governance_v2.
-
-Any DTOs that are used by other slices → move definitions into
-extensions/contracts/entity_v2.py and import them in entity.services
-instead of defining them “locally”.
-"""
-
 
 def allowed_role_codes(session=None) -> Set[str]:
     """
@@ -77,9 +50,16 @@ def _ensure_reqid(request_id: Optional[str]) -> str:
 
 
 # -----------------
-# DTO mappers (read shape for templates/contracts)
+# DTO mappers
+# (read shape for templates/contracts)
 # -----------------
-def _person_to_dto(p: EntityPerson) -> dict:
+"""
+These are internal-only dictionaries for view mapping and forms.
+DO NOT refernce these for API data transfer.
+"""
+
+
+def _person_view_dict(p: EntityPerson) -> dict:
     ent = p.entity
     # We keep a SINGLE primary EntityContact row (is_primary=True);
     # it may carry email and/or phone (both in same row)
@@ -100,7 +80,7 @@ def _person_to_dto(p: EntityPerson) -> dict:
     }
 
 
-def _org_to_dto(o: EntityOrg) -> dict:
+def _org_view_dict(o: EntityOrg) -> dict:
     ent = o.entity
     primary_contact = None
     if ent and ent.contacts:
@@ -452,7 +432,7 @@ def upsert_address(
         .first()
     )
 
-    created = False
+    # created = False
     if not addr:
         addr = EntityAddress(
             entity_ulid=entity_ulid,
@@ -465,7 +445,7 @@ def upsert_address(
             postal_code=_norm(postal_code) or "",
         )
         db.session.add(addr)
-        created = True
+        # created = True
     else:
         addr.address1 = _norm(address1) or addr.address1
         addr.address2 = _norm(address2)
@@ -586,7 +566,7 @@ def person_view(person_ulid: str) -> Optional[dict]:
         return None
     # eager-load primary contact for DTO
     _ = p.entity and p.entity.contacts  # touch relationship
-    return _person_to_dto(p)
+    return _person_view_dict(p)
 
 
 def list_people_with_role(
@@ -616,7 +596,7 @@ def list_people_with_role(
         return [], 0
 
     rows = q.offset((page - 1) * per).limit(per).all()
-    return [_person_to_dto(p) for p in rows], total
+    return [_person_view_dict(p) for p in rows], total
 
 
 def list_orgs_with_role(
@@ -642,7 +622,7 @@ def list_orgs_with_role(
         return [], 0
 
     rows = q.offset((page - 1) * per).limit(per).all()
-    return [_org_to_dto(o) for o in rows], total
+    return [_org_view_dict(o) for o in rows], total
 
 
 def list_people(*, page: int, per: int) -> Tuple[List[dict], int]:
@@ -670,7 +650,7 @@ def list_people(*, page: int, per: int) -> Tuple[List[dict], int]:
     if total == 0:
         return [], 0
     rows = q.offset((page - 1) * per).limit(per).all()
-    return [_person_to_dto(p) for p in rows], total
+    return [_person_view_dict(p) for p in rows], total
 
 
 def list_orgs(
@@ -703,7 +683,7 @@ def list_orgs(
         return [], 0
 
     rows = q.offset((page - 1) * per).limit(per).all()
-    return [_org_to_dto(o) for o in rows], total
+    return [_org_view_dict(o) for o in rows], total
 
 
 # -----------------

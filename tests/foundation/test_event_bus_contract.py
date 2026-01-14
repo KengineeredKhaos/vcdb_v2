@@ -31,8 +31,8 @@ def test_event_bus_emit_signature_does_not_drift(monkeypatch):
     monkeypatch.setattr(ledger_v2, "emit", fake_emit)
 
     # Call the canon wrapper
-    from app.lib.ids import new_ulid
     from app.lib.chrono import now_iso8601_ms
+    from app.lib.ids import new_ulid
 
     event_bus.emit(
         domain="governance",

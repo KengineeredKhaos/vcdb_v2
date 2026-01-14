@@ -7,11 +7,12 @@ from typing import Any, Dict, Optional, Tuple
 from sqlalchemy import desc, func, select
 
 from app.extensions import db, event_bus
-from app.extensions.contracts import finance_v2
+from app.extensions.contracts import entity_v2, finance_v2
 from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
 from app.services import poc as poc_svc
+from app.services.entity_validate import require_person_entity_ulid
 
 from .models import (
     Allocation,
@@ -30,6 +31,7 @@ CAPS_SECTION = "sponsor:capability:v1"
 PLEDGE_SECTION = "sponsor:pledge:v1"
 POC_RELATION = "poc"  # table-level convention, not board policy
 PROSPECT_REAL_SECTION = "sponsor:prospect_realization:v1"
+_SPONSOR_POC_SPEC = poc_svc.POCSpec(owner_col="sponsor_ulid")
 
 
 # -----------------
@@ -101,6 +103,39 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
 
 
 # -----------------
+# Help for POC Validation
+# thru Entity contract
+# -----------------
+
+
+def _require_person_entity_ulid(
+    person_entity_ulid: str, *, where: str
+) -> None:
+    core = entity_v2.get_entity_core(db.session, person_entity_ulid)
+
+    if core.kind != "person":
+        raise ContractError(
+            code="bad_request",
+            where=where,
+            message=f"person_entity_ulid must be a person entity (got kind='{core.kind}')",
+            http_status=400,
+            data={"entity_ulid": person_entity_ulid, "kind": core.kind},
+        )
+
+    if core.archived_at:
+        raise ContractError(
+            code="conflict",
+            where=where,
+            message="person entity is archived",
+            http_status=409,
+            data={
+                "entity_ulid": person_entity_ulid,
+                "archived_at": core.archived_at,
+            },
+        )
+
+
+# -----------------
 # Point of Contact
 # wrappers for
 # app.services.poc
@@ -109,7 +144,7 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
 
 def sponsor_link_poc(
     *,
-    org_ulid: str,
+    sponsor_ulid: str,
     person_entity_ulid: str,
     scope: str | None = None,
     rank: int = 0,
@@ -119,11 +154,17 @@ def sponsor_link_poc(
     actor_ulid: str | None = None,
     request_id: str,
 ):
+    require_person_entity_ulid(
+        db.session,
+        person_entity_ulid,
+        where="sponsors.sponsor_link_poc",
+    )
     return poc_svc.link_poc(
         db.session,
         POCModel=SponsorPOC,
+        spec=_SPONSOR_POC_SPEC,
         domain="sponsors",
-        org_ulid=org_ulid,
+        owner_ulid=sponsor_ulid,
         person_entity_ulid=person_entity_ulid,
         scope=scope,
         rank=rank,
@@ -137,7 +178,7 @@ def sponsor_link_poc(
 
 def sponsor_update_poc(
     *,
-    org_ulid: str,
+    sponsor_ulid: str,
     person_entity_ulid: str,
     scope: str | None = None,
     rank: int | None = None,
@@ -147,11 +188,17 @@ def sponsor_update_poc(
     actor_ulid: str | None = None,
     request_id: str,
 ):
+    require_person_entity_ulid(
+        db.session,
+        person_entity_ulid,
+        where="sponsors.sponsor_link_poc",
+    )
     return poc_svc.update_poc(
         db.session,
         POCModel=SponsorPOC,
+        spec=_SPONSOR_POC_SPEC,
         domain="sponsors",
-        org_ulid=org_ulid,
+        owner_ulid=sponsor_ulid,
         person_entity_ulid=person_entity_ulid,
         scope=scope,
         rank=rank,
@@ -165,17 +212,23 @@ def sponsor_update_poc(
 
 def sponsor_unlink_poc(
     *,
-    org_ulid: str,
+    sponsor_ulid: str,
     person_entity_ulid: str,
     scope: str | None = None,
     actor_ulid: str | None = None,
     request_id: str,
 ):
+    require_person_entity_ulid(
+        db.session,
+        person_entity_ulid,
+        where="sponsors.sponsor_link_poc",
+    )
     return poc_svc.unlink_poc(
         db.session,
         POCModel=SponsorPOC,
+        spec=_SPONSOR_POC_SPEC,
         domain="sponsors",
-        org_ulid=org_ulid,
+        owner_ulid=sponsor_ulid,
         person_entity_ulid=person_entity_ulid,
         scope=scope,
         actor_ulid=actor_ulid,
@@ -183,9 +236,12 @@ def sponsor_unlink_poc(
     )
 
 
-def sponsor_list_pocs(*, org_ulid: str) -> list[dict]:
+def sponsor_list_pocs(*, sponsor_ulid: str) -> list[dict]:
     return poc_svc.list_pocs(
-        db.session, POCModel=SponsorPOC, org_ulid=org_ulid
+        db.session,
+        POCModel=SponsorPOC,
+        spec=_SPONSOR_POC_SPEC,
+        owner_ulid=sponsor_ulid,
     )
 
 

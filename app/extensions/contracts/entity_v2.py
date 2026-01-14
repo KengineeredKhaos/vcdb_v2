@@ -11,7 +11,36 @@ from app.slices.entity.models import (
     EntityContact,
     EntityOrg,
     EntityPerson,
-)  # adjust names
+)
+
+
+@dataclass(frozen=True)
+class EntityCoreDTO:
+    ulid: str
+    kind: str  # "person" | "org" | ...
+    archived_at: str | None
+
+
+def get_entity_core(sess: Session, entity_ulid: str) -> EntityCoreDTO:
+    where = "entity_v2.get_entity_core"
+    try:
+        ent = sess.query(Entity).get(entity_ulid)
+        if not ent:
+            raise ContractError(
+                code="not_found",
+                where=where,
+                message="entity not found",
+                http_status=404,
+                data={"entity_ulid": entity_ulid},
+            )
+        return EntityCoreDTO(
+            ulid=ent.ulid,
+            kind=(ent.kind or "").strip().lower(),
+            archived_at=ent.archived_at,
+        )
+    except Exception as exc:
+        # IMPORTANT: use "from exc" (Ruff B904)
+        raise _as_contract_error(where, exc) from exc
 
 
 @dataclass
@@ -79,7 +108,7 @@ def get_entity_card(sess: Session, entity_ulid: str) -> EntityCardDTO:
             address_short=None,
         )
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 def _as_contract_error(where: str, exc: Exception) -> ContractError:
