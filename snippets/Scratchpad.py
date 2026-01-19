@@ -122,3 +122,6 @@ Governance policy meta example:
 
 
 """
+
+
+# a colon in set theroy represents "such that"

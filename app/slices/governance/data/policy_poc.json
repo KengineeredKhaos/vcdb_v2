@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "policy_key": "poc",
+    "schema_version": 1,
+    "status": "draft",
+    "title": "Point of Contact Policy",
+    "version": 1
+  },
+  "poc_scopes": [
+    "general",
+    "finance",
+    "logistics",
+    "marketing",
+    "publicity",
+    "volunteer"
+  ],
+  "default_scope": "general",
+  "max_rank": 99
+}

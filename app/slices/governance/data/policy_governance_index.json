@@ -100,6 +100,16 @@
       "schema_filename": "schemas/policy_operations.schema.json"
     },
     {
+      "edit_cadence_hint": "occasional",
+      "filename": "policy_poc.json",
+      "notes": [
+        "POC scopes/rank constraints for shared POC services."
+      ],
+      "owner_role_hint": "governor",
+      "policy_key": "poc",
+      "schema_filename": "schemas/policy_poc.schema.json"
+    },
+    {
       "edit_cadence_hint": "rare",
       "filename": "policy_service_taxonomy.json",
       "notes": [],

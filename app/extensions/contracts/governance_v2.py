@@ -538,8 +538,39 @@ def get_poc_policy() -> dict:
     Raises ContractError (503) if the policy is missing or invalid.
     """
     where = "governance_v2.get_poc_policy"
-    root = _app_root()
-    obj = _load_json(root / POC_POLICY_PATH, where)
+
+    # Load via governance policy catalog (policy_governance_index.json).
+    # This locates policy_poc.json by policy_key="poc".
+    try:
+        from app.extensions.policies import load_governance_policy
+
+        obj = load_governance_policy("poc") or {}
+    except KeyError as e:
+        # policy_key not present in policy_governance_index.json
+        raise ContractError(
+            code="policy_missing",
+            where=where,
+            message="Unknown governance policy_key: 'poc' (add to policy_governance_index.json)",
+            http_status=503,
+            data={"policy_key": "poc"},
+        ) from e
+    except FileNotFoundError as e:
+        # manifest entry exists, but file missing/unreadable/invalid JSON
+        raise ContractError(
+            code="policy_missing",
+            where=where,
+            message=str(e),
+            http_status=503,
+            data={"policy_key": "poc"},
+        ) from e
+    except Exception as e:
+        raise ContractError(
+            code="policy_read_error",
+            where=where,
+            message=str(e),
+            http_status=503,
+            data={"policy_key": "poc"},
+        ) from e
 
     # 1) Presence check first (avoid KeyError)
     required = ("poc_scopes", "default_scope", "max_rank")
@@ -549,7 +580,7 @@ def get_poc_policy() -> dict:
             where=where,
             message="POC policy missing required keys",
             http_status=503,
-            data={"required": required, "path": str(root / POC_POLICY_PATH)},
+            data={"policy_key": "poc", "required": required},
         )
 
     # 2) Shape / type checks + normalization
@@ -560,34 +591,31 @@ def get_poc_policy() -> dict:
             where=where,
             message="poc_scopes must be a non-empty list",
             http_status=503,
-            data={"path": str(root / POC_POLICY_PATH)},
+            data={"policy_key": "poc"},
         )
+
     # normalize to unique strings (sorted for determinism)
     scopes = sorted({str(s) for s in scopes_raw})
 
     default_scope = str(obj.get("default_scope"))
     try:
         max_rank = int(obj.get("max_rank"))
-    except Exception:
-        raise ContractError(  # noqa: B904
+    except Exception as e:
+        raise ContractError(
             code="policy_invalid",
             where=where,
             message="max_rank must be an integer",
             http_status=503,
-            data={
-                "path": str(root / POC_POLICY_PATH),
-                "value": obj.get("max_rank"),
-            },
-        )
+            data={"policy_key": "poc", "value": obj.get("max_rank")},
+        ) from e
 
-    # Optional bound—matches schema if you adopt it
     if max_rank < 0 or max_rank > 99:
         raise ContractError(
             code="policy_invalid",
             where=where,
             message="max_rank must be between 0 and 99",
             http_status=503,
-            data={"path": str(root / POC_POLICY_PATH), "value": max_rank},
+            data={"policy_key": "poc", "value": max_rank},
         )
 
     # 3) Invariant: default must be a valid scope
@@ -598,9 +626,9 @@ def get_poc_policy() -> dict:
             message="default_scope must be one of poc_scopes",
             http_status=503,
             data={
+                "policy_key": "poc",
                 "default_scope": default_scope,
                 "poc_scopes": scopes,
-                "path": str(root / POC_POLICY_PATH),
             },
         )
 

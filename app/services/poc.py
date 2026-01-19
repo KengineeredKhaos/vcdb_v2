@@ -147,17 +147,19 @@ def _normalize_scope_rank(*, scope: Optional[str], rank: Optional[int]):
     return sc, rk
 
 
-def _flip_existing_primary(
-    sess: Session, POCModel: Type, spec: POCSpec, owner_ulid: str, scope: str
-):
+def _flip_existing_primary(sess, POCModel, spec, owner_ulid, scope):
     sess.query(POCModel).filter(
         and_(
             _c(POCModel, spec.owner_col) == owner_ulid,
             _c(POCModel, spec.relation_col) == POC_RELATION,
             _c(POCModel, spec.scope_col) == scope,
+            _c(POCModel, spec.active_col) == True,  # noqa: E712
             _c(POCModel, spec.primary_col) == True,  # noqa: E712
         )
-    ).update({spec.primary_col: False}, synchronize_session=False)
+    ).update(
+        {_c(POCModel, spec.primary_col): False},
+        synchronize_session=False,
+    )
 
 
 def link_poc(
@@ -178,7 +180,10 @@ def link_poc(
 ):
     if not request_id or not str(request_id).strip():
         raise ContractError(
-            "bad_request", "poc.link_poc", "request_id required", 400
+            code="bad_request",
+            where="poc.link_poc",
+            message="request_id required",
+            http_status=400,
         )
 
     sc, rk = _normalize_scope_rank(scope=scope, rank=rank)
@@ -212,7 +217,7 @@ def link_poc(
         target_ulid=owner_ulid,
         actor_ulid=actor_ulid,
         request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
+        happened_at_utc=now,
         meta={
             "person_entity_ulid": person_entity_ulid,
             "relation": POC_RELATION,
@@ -257,6 +262,7 @@ def update_poc(
             _c(POCModel, spec.owner_col) == owner_ulid,
             _c(POCModel, spec.person_col) == person_entity_ulid,
             _c(POCModel, spec.relation_col) == POC_RELATION,
+            _c(POCModel, spec.active_col) == True,  # noqa: E712
         )
     )
     if scope:
@@ -306,7 +312,8 @@ def update_poc(
         setattr(row, spec.valid_from_col, (window or {}).get("from"))
         setattr(row, spec.valid_to_col, (window or {}).get("to"))
 
-    row.updated_at_utc = now_iso8601_ms()
+    now = now_iso8601_ms()
+    row.updated_at_utc = now
 
     event_bus.emit(
         domain=domain,
@@ -314,7 +321,7 @@ def update_poc(
         target_ulid=owner_ulid,
         actor_ulid=actor_ulid,
         request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
+        happened_at_utc=now,
         meta={
             "person_entity_ulid": person_entity_ulid,
             "relation": POC_RELATION,
@@ -354,6 +361,7 @@ def unlink_poc(
             _c(POCModel, spec.owner_col) == owner_ulid,
             _c(POCModel, spec.person_col) == person_entity_ulid,
             _c(POCModel, spec.relation_col) == POC_RELATION,
+            _c(POCModel, spec.active_col) == True,  # noqa: E712
         )
     )
     if scope:

@@ -226,6 +226,10 @@ class ResourcePOC(db.Model, ULIDPK, IsoTimestamps):
     active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True
     )
+    resource: Mapped["Resource"] = relationship(
+        "Resource",
+        back_populates="pocs",
+    )
 
     __table_args__ = (
         # Uniqueness allows same person to serve multiple scopes if needed
