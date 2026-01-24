@@ -577,18 +577,47 @@ def seed_minimal_customer(
     )
     if elig is None:
         elig = CustomerEligibility(customer_ulid=c.ulid)
+        # --- Veteran verification (must satisfy CHECKs) ---
+        verified = bool(random.getrandbits(1))
         if hasattr(elig, "is_veteran_verified"):
-            elig.is_veteran_verified = bool(random.getrandbits(1))
+            elig.is_veteran_verified = verified
+
+        if verified:
+            # ck_ce_verified_requires_method
+            if hasattr(elig, "veteran_method"):
+                method = random.choice(
+                    ["dd214", "va_id", "state_dl_veteran", "other"]
+                )
+                elig.veteran_method = method
+
+                # ck_ce_other_requires_approval + ck_ce_approval_requires_timestamp
+                if method == "other":
+                    if hasattr(elig, "approved_by_ulid"):
+                        elig.approved_by_ulid = new_ulid()
+                    if hasattr(elig, "approved_at_utc"):
+                        elig.approved_at_utc = ts
+        else:
+            # ck_ce_unverified_requires_nulls
+            if hasattr(elig, "veteran_method"):
+                elig.veteran_method = None
+            if hasattr(elig, "approved_by_ulid"):
+                elig.approved_by_ulid = None
+            if hasattr(elig, "approved_at_utc"):
+                elig.approved_at_utc = None
+
+        # --- Needs tiers (fine as-is) ---
         if hasattr(elig, "tier1_min"):
             elig.tier1_min = int(random.choice([1, 2, 3]))
         if hasattr(elig, "tier2_min"):
             elig.tier2_min = int(random.choice([1, 2, 3]))
         if hasattr(elig, "tier3_min"):
             elig.tier3_min = int(random.choice([1, 2, 3]))
+
         if hasattr(elig, "created_at_utc"):
             elig.created_at_utc = ts
         if hasattr(elig, "updated_at_utc"):
             elig.updated_at_utc = ts
+
         sess.add(elig)
 
     sess.flush()
