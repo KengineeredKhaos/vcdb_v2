@@ -447,7 +447,7 @@ def ensure_sponsor(
             mou_status="none",
         )
         db.session.add(s)
-        db.session.commit()
+        db.session.flush()
         event_bus.emit(
             domain="sponsors",
             operation="created_insert",
@@ -459,7 +459,7 @@ def ensure_sponsor(
         )
     else:
         s.last_touch_utc = now_iso8601_ms()
-        db.session.commit()
+        db.session.flush()
     return s.ulid
 
 
@@ -484,7 +484,7 @@ def upsert_capabilities(
     last = _latest_caps(sponsor_ulid)
     if last and stable_dumps(last) == stable_dumps(norm):
         s.last_touch_utc = now_iso8601_ms()
-        db.session.commit()
+        db.session.flush()
         return None
 
     before = {k for k, v in last.items() if v.get("has")}
@@ -537,7 +537,7 @@ def upsert_capabilities(
     s.admin_review_required = "meta.unclassified" in after
     if not s.admin_review_required and s.readiness_status == "draft":
         s.readiness_status = "review"
-    db.session.commit()
+    db.session.flush()
 
     for flat in added:
         d, k = _split(flat)
@@ -591,7 +591,7 @@ def patch_capabilities(
                 merged[flat]["note"] = str(note)[:note_max]
     if stable_dumps(merged) == stable_dumps(last):
         s.last_touch_utc = now_iso8601_ms()
-        db.session.commit()
+        db.session.flush()
         return None
 
     before = {k for k, v in last.items() if v.get("has")}
@@ -637,7 +637,7 @@ def patch_capabilities(
     s.admin_review_required = "meta.unclassified" in after
     if not s.admin_review_required and s.readiness_status == "draft":
         s.readiness_status = "review"
-    db.session.commit()
+    db.session.flush()
 
     for flat in added:
         d, k = _split(flat)
@@ -693,7 +693,7 @@ def set_readiness_status(
     now = now_iso8601_ms()
     s.readiness_status = status
     s.last_touch_utc = now
-    db.session.commit()
+    db.session.flush()
 
     event_bus.emit(
         domain="sponsors",
@@ -729,7 +729,7 @@ def set_mou_status(
     now = now_iso8601_ms()
     s.mou_status = status
     s.last_touch_utc = now
-    db.session.commit()
+    db.session.flush()
 
     event_bus.emit(
         domain="sponsors",
@@ -853,7 +853,7 @@ def record_prospect_realization(
     if not changed:
         # Nothing mutated; still touch sponsor for freshness.
         s.last_touch_utc = now
-        db.session.commit()
+        db.session.flush()
         return {
             "sponsor_ulid": sponsor_ulid,
             "prospect_ulid": prospect_ulid,
@@ -873,7 +873,7 @@ def record_prospect_realization(
     db.session.add(hist)
 
     s.last_touch_utc = now
-    db.session.commit()
+    db.session.flush()
 
     # Emit a Sponsors-side CRM event (no money moves here)
     event_bus.emit(
@@ -1007,7 +1007,7 @@ def upsert_pledge(
     changed = stable_dumps(merged) != stable_dumps(latest)
     if not changed:
         s.last_touch_utc = now_iso8601_ms()
-        db.session.commit()
+        db.session.flush()
         return list(merged.keys())[0]  # return pledge id anyway
 
     ver = _next_version(sponsor_ulid, PLEDGE_SECTION)
@@ -1059,7 +1059,7 @@ def upsert_pledge(
 
     s.pledge_last_update_utc = now
     s.last_touch_utc = now
-    db.session.commit()
+    db.session.flush()
 
     event_bus.emit(
         domain="sponsors",
@@ -1101,7 +1101,7 @@ def set_pledge_status(
     prev = row.status
     row.status = status
     row.updated_at_utc = now_iso8601_ms()
-    db.session.commit()
+    db.session.flush()
 
     event_bus.emit(
         domain="sponsors",

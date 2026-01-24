@@ -461,7 +461,7 @@ def ensure_resource(
             mou_status=_default_mou(),
         )
         db.session.add(r)
-        db.session.commit()
+        db.session.flush()
 
         event_bus.emit(
             domain="resources",
@@ -475,7 +475,7 @@ def ensure_resource(
         return r.ulid
 
     r.last_touch_utc = now
-    db.session.commit()
+    db.session.flush()
     return r.ulid
 
 
@@ -509,7 +509,7 @@ def upsert_capabilities(
     if last and stable_dumps(last) == stable_dumps(norm):
         # touch resource but don't write new version
         res.last_touch_utc = now_iso8601_ms()
-        db.session.commit()
+        db.session.flush()
         return ""  # indicate no new version created
 
     # Compute deltas (names-only)
@@ -574,7 +574,7 @@ def upsert_capabilities(
     if not res.admin_review_required and res.readiness_status == "draft":
         res.readiness_status = "review"
 
-    db.session.commit()
+    db.session.flush()
 
     # Emit names-only ledger events with pointer (values never leave History)
     for flat in added:
@@ -724,7 +724,7 @@ def set_readiness_status(
     now = now_iso8601_ms()
     res.readiness_status = status
     res.last_touch_utc = now
-    db.session.commit()
+    db.session.flush()
 
     event_bus.emit(
         domain="resources",
@@ -762,7 +762,7 @@ def set_mou_status(
     now = now_iso8601_ms()
     res.mou_status = status
     res.last_touch_utc = now
-    db.session.commit()
+    db.session.flush()
 
     event_bus.emit(
         domain="resources",
@@ -813,7 +813,7 @@ def rebuild_capability_index(
 
     r.last_touch_utc = now
     r.capability_last_update_utc = now
-    db.session.commit()
+    db.session.flush()
 
     event_bus.emit(
         domain="resources",
@@ -915,7 +915,7 @@ def patch_capabilities(
     if stable_dumps(merged) == stable_dumps(latest):
         # no effective change
         res.last_touch_utc = now_iso8601_ms()
-        db.session.commit()
+        db.session.flush()
         return None
 
     # deltas
@@ -969,7 +969,7 @@ def patch_capabilities(
     if not res.admin_review_required and res.readiness_status == "draft":
         res.readiness_status = "review"
 
-    db.session.commit()
+    db.session.flush()
 
     # emit names-only deltas
     for flat in added:

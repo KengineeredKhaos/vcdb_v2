@@ -1,10 +1,77 @@
 """
+
+
+## The mental model for Unit of Work (UoW)
+
+### Wizard
+
+* **Not a separate “function” that runs everything.**
+* It’s primarily **UI flow + routing choreography**:
+
+  * which page you’re on
+  * which step comes next/back
+  * what’s complete/incomplete
+* Each step still ends in a **real UoW route** that commits.
+
+Think of the wizard as “a guided sequence of UoW routes,” not an orchestrator that bypasses them.
+
+### Routes (UoW entrypoints)
+
+* ✅ Entry point
+* ✅ Authorization gate (RBAC)
+* ✅ Validate/parse inputs (typically via a Form)
+* ✅ Call service(s) and possibly cross-slice contracts
+* ✅ **One commit / one rollback**
+* ✅ Decide response (redirect/JSON) + flash messages
+
+### Services
+
+* ✅ Where the business work lives (“fat”)
+* ✅ Read/write using `db.session`
+* ✅ Can call **their slice’s repos/models**
+* ✅ May call other slices **only via contracts**
+* ✅ **No commit** (but can `flush()` when needed)
+* ✅ Return domain results/DTO-ish objects
+
+### Forms
+
+* ✅ Parse + validate request input
+* ✅ Normalize to clean Python types (dates, bools, enums)
+* ✅ Produce “validated payload” for the route to pass to services
+
+### Contracts + DTOs
+
+* ✅ The only safe cross-slice interface
+* ✅ Validate inputs/outputs and raise contract-scoped errors
+* ✅ DTOs are the “data envelope” crossing the boundary
+* ✅ Enforce “no PII” and schema stability at the edges
+
+### Ledger / event_bus
+
+* `event_bus.emit(...)` is a **side-effect inside the same UoW**
+* It must participate in the **same transaction**
+* So Ledger append should **flush**, not commit
+* The route’s final commit makes both the business facts and the audit fact durable together
+
+---
+
+## Summary
+
+**Wizard = guided UX across multiple UoW routes;**
+**Route = transaction boundary;**
+**Service = business logic;**
+**Form = input validation;**
+**Contracts/DTOs = cross-slice boundary;**
+**Ledger = audit side-effect inside the same commit.**
+
+
+
 # event_bus.emit strategy/pattern
 from app.extensions import event_bus
 
 event_bus.emit(
     domain: str,                               # owning slice / domain
-    operation: str,                            # what happened
+    operation: str,                            # what happened USE snake_case
     request_id: str,                           # request ULID
     actor_ulid: Optional[str],                 # who acted (ULID | None)
     target_ulid: Optional[str],                # primary subject | N/A

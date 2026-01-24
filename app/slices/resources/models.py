@@ -83,7 +83,9 @@ class Resource(db.Model, ULIDPK, IsoTimestamps):
     __table_args__ = (
         UniqueConstraint("entity_ulid", name="uq_resource_entity"),
     )
-
+    onboard_step: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, index=True
+    )
     # Operational flags / lifecycle (no PII)
     admin_review_required: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, index=True

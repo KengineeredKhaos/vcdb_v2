@@ -136,9 +136,6 @@ def issue_inventory(
     """Mutating entry point: evaluate policy then write Issue + decrement stock.
 
     Returns a plain dict suitable for JSON routes/CLI.
-
-    Note: Ledger currently commits inside its provider. We still call
-    ``db.session.commit()`` to keep the write-path stable if Ledger changes.
     """
     ctx = IssueContext(
         customer_ulid=customer_ulid,
@@ -171,7 +168,7 @@ def issue_inventory(
     )
 
     try:
-        db.session.commit()
+        db.session.flush()
     except Exception:
         db.session.rollback()
         raise
@@ -222,8 +219,10 @@ def decide_issue(ctx: IssueContext) -> IssueDecision:
         return _decision(False, "sku_required")
 
     # Fast structural validation (allowed sources/units + syntax)
-    errs = validate_sku(sku_code, load_policy_sku_constraints())
-    if errs:
+    # Structural validation is regex-based in sku.py.
+    # Governance SKU policy constraints are enforced separately (see _check_sku_constraints
+    # and policy_semantics.assert_sku_constraints_ok on the write path).
+    if not validate_sku(sku_code):
         return _decision(False, "invalid_sku")
 
     if ctx.sku_parts is None:
@@ -424,9 +423,8 @@ def decide_and_issue_one(
     Write path: reduce batch + stock, record Movement + Issue, emit Ledger event.
     Caller must commit (CLI should do db.session.commit()).
     """
-    sku_code = ctx.sku_code or ""
-    errs = validate_sku(sku_code, load_policy_sku_constraints())
-    if errs:
+    sku_code = (ctx.sku_code or "").strip()
+    if not validate_sku(sku_code):
         return IssueResult(ok=False, reason="invalid_sku", decision=decision)
 
     if not ctx.customer_ulid:

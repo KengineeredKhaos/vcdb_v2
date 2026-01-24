@@ -109,7 +109,10 @@ class EntityPerson(db.Model, ULIDPK, IsoTimestamps):
     preferred_name: Mapped[str | None] = mapped_column(
         String(60), nullable=True
     )
-
+    last_4: Mapped[str] = mapped_column(String(4), nullable=True)
+    dob: Mapped[str] = mapped_column(String(10), nullable=True)
+    branch: Mapped[str] = mapped_column(String(4), nullable=True)
+    era: Mapped[str] = mapped_column(String(16), nullable=True)
     archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
     # enforce 1:1 with Entity
     __table_args__ = (

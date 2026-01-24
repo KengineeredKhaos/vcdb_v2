@@ -172,7 +172,7 @@ def create_project(
     )
 
     db.session.add(p)
-    db.session.commit()
+    db.session.flush()
 
     rid = request_id or new_ulid()
 
@@ -296,7 +296,7 @@ def create_task(
     )
 
     db.session.add(t)
-    db.session.commit()
+    db.session.flush()
 
     # Emit PII-free: do NOT include notes/requirements bodies
     event_bus.emit(
@@ -365,7 +365,7 @@ def create_project_funding_plan(
     )
 
     db.session.add(fp)
-    db.session.commit()
+    db.session.flush()
 
     rid = request_id or new_ulid()
 

@@ -145,6 +145,14 @@ def _load_catalog() -> dict[str, PolicyCatalogEntry]:
     return out
 
 
+def load_policy_catalog() -> dict[str, PolicyCatalogEntry]:
+    """
+    Diagnostics/tests: return the cached governance policy catalog map:
+    policy_key -> PolicyCatalogEntry.
+    """
+    return _load_catalog()
+
+
 def reload_policy_catalog() -> None:
     """Clear cached manifest + any cached policy payloads (next loads reread disk)."""
     global _CATALOG
@@ -370,6 +378,7 @@ __all__ = [
     "AUTH_DATA",
     "GOV_INDEX",
     "GOV_SCHEMAS",
+    "load_policy_catalog",
     "reload_policy_catalog",
     "load_governance_policy",
     "save_governance_policy",

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from typing import Callable
 
 import pytest
 from flask import Flask
@@ -10,27 +11,27 @@ from sqlalchemy.engine import Engine
 
 from app import create_app
 from app.extensions import db
+from app.lib.ids import new_ulid
+
 
 # --- Session-wide app ---------------------------------------------------------
 
 
 @pytest.fixture(scope="session")
 def app() -> Flask:
-    """
-    Build a Flask app for the test session using TestConfig.
-    Also points SQLALCHEMY_DATABASE_URI at a temp sqlite file unless
-    already set by env (e.g., your vcdb-test alias).
-    """
-    # Default to a file-backed DB at app/instance/test.db for inspection + determinism.
+    """Create the Flask app once for the whole test session."""
+
+    # Default to a file-backed DB at app/instance/test.db (easy to inspect).
     inst_dir = os.path.abspath(os.path.join("app", "instance"))
     os.makedirs(inst_dir, exist_ok=True)
     test_db_path = os.path.join(inst_dir, "test.db")
+
     os.environ.setdefault(
         "SQLALCHEMY_DATABASE_URI", f"sqlite:///{test_db_path}"
     )
     os.environ.setdefault("VCDB_ENV", "testing")
 
-    # Start each pytest session with a fresh file DB (avoids stale schema/data)
+    # Start each pytest session with a fresh file DB (avoid stale schema/data)
     for suffix in ("", "-wal", "-shm", "-journal"):
         p = test_db_path + suffix
         if os.path.exists(p):
@@ -40,7 +41,8 @@ def app() -> Flask:
                 pass
 
     flask_app = create_app("config.TestConfig")
-    # Force it so tests & app agree:
+
+    # Force app + tests to agree on DB URI
     flask_app.config["SQLALCHEMY_DATABASE_URI"] = os.environ[
         "SQLALCHEMY_DATABASE_URI"
     ]
@@ -49,10 +51,7 @@ def app() -> Flask:
 
 @pytest.fixture(scope="session")
 def app_ctx(app: Flask):
-    """
-    Push a single application context for the entire test session.
-    Anything that needs current_app / db.engine can rely on this being active.
-    """
+    """Push one Flask app context for the entire session."""
     ctx = app.app_context()
     ctx.push()
     try:
@@ -61,16 +60,13 @@ def app_ctx(app: Flask):
         ctx.pop()
 
 
-# --- Engine + test DB build once per session -------------------------------
+# --- Engine + schema build once per session -----------------------------------
 
 
 @pytest.fixture(scope="session")
-def engine(app_ctx) -> Engine:  # depends on app_ctx so current_app is present
-    """
-    Provide the SQLAlchemy Engine bound to our Flask app and ensure
-    SQLite foreign keys are enforced for every connection.
-    """
-    eng = db.engine  # now safe: we have current_app via app_ctx
+def engine(app_ctx) -> Engine:
+    """Return SQLAlchemy Engine and enable SQLite foreign keys."""
+    eng = db.engine
 
     @event.listens_for(eng, "connect")
     def _fk_on(dbapi_conn, _):
@@ -84,44 +80,75 @@ def engine(app_ctx) -> Engine:  # depends on app_ctx so current_app is present
 
 @pytest.fixture(scope="session", autouse=True)
 def schema_once(app_ctx):
-    """
-    Create schema directly from SQLAlchemy models (no Alembic).
-    """
-    # Ensure at least the models you test against are imported so metadata is populated.
-    # (Your smoke test imports Fund, but this makes it explicit and future-proof.)
-    from app.slices.finance import models as _finance_models  # noqa: F401
+    """Create schema directly from SQLAlchemy models (no Alembic)."""
+
+    # IMPORTANT: import *all* slice models so metadata is populated.
+    # If a slice's models aren't imported, db.create_all() won't create its tables.
+    from app.slices import (  # noqa: F401
+        admin,
+        attachments,
+        auth,
+        calendar,
+        customers,
+        entity,
+        finance,
+        governance,
+        ledger,
+        logistics,
+        resources,
+        sponsors,
+    )
+
+    # Touch models modules explicitly (some slices may not import models in __init__)
+    from app.slices.admin import models as _admin_models  # noqa: F401
+    from app.slices.attachments import models as _att_models  # noqa: F401
+    from app.slices.auth import models as _auth_models  # noqa: F401
+    from app.slices.calendar import models as _cal_models  # noqa: F401
+    from app.slices.customers import models as _cust_models  # noqa: F401
+    from app.slices.entity import models as _ent_models  # noqa: F401
+    from app.slices.finance import models as _fin_models  # noqa: F401
+    from app.slices.governance import models as _gov_models  # noqa: F401
+    from app.slices.ledger import models as _led_models  # noqa: F401
+    from app.slices.logistics import models as _log_models  # noqa: F401
+    from app.slices.resources import models as _res_models  # noqa: F401
+    from app.slices.sponsors import models as _sp_models  # noqa: F401
 
     db.drop_all()
     db.create_all()
 
 
-# --- Function-scoped transactional safety nets --------------------------------
+# --- Function-scoped transactional safety net ---------------------------------
 
 
 @pytest.fixture(autouse=True)
 def _db_session_per_test(app_ctx, engine):
-    """
-    Each test runs inside an outer transaction + a SAVEPOINT.
-    Tests may call commit(); we keep isolation by restarting the SAVEPOINT.
-    """
+    """Run each test inside a transaction + SAVEPOINT; allow commits safely."""
     from sqlalchemy import event
 
     connection = engine.connect()
     outer = connection.begin()
 
     options = dict(bind=connection, binds={})
-    scoped = db.create_scoped_session(options=options)
+
+    # Flask-SQLAlchemy 2.x exposed create_scoped_session(); 3.x uses the
+    # private _make_scoped_session(). Support both without pinning a version.
+    maker = getattr(db, "create_scoped_session", None) or getattr(
+        db, "_make_scoped_session"
+    )
+    try:
+        scoped = maker(options=options)
+    except TypeError:
+        # Some versions accept the dict as a positional arg.
+        scoped = maker(options)
 
     old_session = db.session
     db.session = scoped
 
-    # Start a nested transaction (SAVEPOINT)
     sess = scoped()
     sess.begin_nested()
 
     @event.listens_for(sess, "after_transaction_end")
     def _restart_savepoint(session, transaction):
-        # If the SAVEPOINT ended (e.g., via commit), reopen it
         if transaction.nested and not transaction._parent.nested:
             session.begin_nested()
 
@@ -146,11 +173,64 @@ def _db_session_per_test(app_ctx, engine):
             pass
 
 
-# --- Marks (if you prefer to keep warnings away without touching pytest.ini) ---
+# --- Policy cache isolation ---------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_policy_cache():
+    """Reset policy loader caches between tests (avoids cross-test bleed)."""
+    try:
+        from app.extensions import policies
+
+        policies._CACHE.clear()  # type: ignore[attr-defined]
+        policies._CATALOG = None  # type: ignore[attr-defined]
+    except Exception:
+        # If internals change, don't brick the test suite.
+        pass
+    yield
+
+
+# --- Handy factories ----------------------------------------------------------
+
+
+@pytest.fixture
+def ulid() -> Callable[[], str]:
+    """Generate a new ULID string."""
+
+    def _make() -> str:
+        return new_ulid()
+
+    return _make
+
+
+@pytest.fixture
+def client(app: Flask):
+    return app.test_client()
+
+
+@pytest.fixture
+def admin_client(client):
+    # Stub auth: create_app() reads header X-Auth-Stub.
+    client.environ_base.update({"HTTP_X_AUTH_STUB": "admin"})
+    return client
+
+
+@pytest.fixture
+def staff_client(client):
+    client.environ_base.update({"HTTP_X_AUTH_STUB": "staff"})
+    return client
+
+
+@pytest.fixture
+def auditor_client(client):
+    client.environ_base.update({"HTTP_X_AUTH_STUB": "auditor"})
+    return client
+
+
+# --- Marks -------------------------------------------------------------------
 
 
 def pytest_configure(config):
-    # Allow using @pytest.mark.readonly and @pytest.mark.writes without warnings
     config.addinivalue_line("markers", "readonly: marks test as read-only")
     config.addinivalue_line(
         "markers", "writes: marks test as performing writes"

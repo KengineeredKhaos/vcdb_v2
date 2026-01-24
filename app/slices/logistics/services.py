@@ -93,7 +93,7 @@ def ensure_location(*, code: str, name: str) -> str:
 
     row = Location(ulid=new_ulid(), code=code, name=name)
     db.session.add(row)
-    db.session.commit()
+    db.session.flush()
     return row.ulid
 
 
@@ -197,7 +197,7 @@ def ensure_item(
         sku_seq=b36_to_int(parts["seq"]),
     )
     db.session.add(row)
-    db.session.commit()
+    db.session.flush()
     return row.ulid
 
 
@@ -291,7 +291,7 @@ def receive_inventory(
         unit=unit,
         delta=quantity,
     )
-    db.session.commit()
+    db.session.flush()
     return {"batch_ulid": b.ulid, "movement_ulid": m.ulid}
 
 
@@ -363,7 +363,7 @@ def issue_inventory_lowlevel(
     )
     db.session.add(issue)
 
-    db.session.commit()
+    db.session.flush()
     return m.ulid
 
 
@@ -384,7 +384,7 @@ def attach_issue_decision(movement_ulid: str, decision: dict) -> None:
     ).scalar_one_or_none()
     if issue:
         issue.decision_json = pretty_dumps(decision)
-        db.session.commit()
+        db.session.flush()
 
 
 # -----------------

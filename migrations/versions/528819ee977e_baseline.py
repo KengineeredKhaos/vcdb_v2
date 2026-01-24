@@ -1,8 +1,8 @@
-"""fresh baseline
+"""baseline
 
-Revision ID: df6eef78079d
+Revision ID: 528819ee977e
 Revises: 
-Create Date: 2026-01-14 20:46:39.934040
+Create Date: 2026-01-24 07:58:29.539982
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'df6eef78079d'
+revision = '528819ee977e'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -251,6 +251,7 @@ def upgrade():
     sa.Column('flag_tier1_immediate', sa.Boolean(), nullable=False),
     sa.Column('watchlist', sa.Boolean(), nullable=False),
     sa.Column('status', sa.String(length=24), nullable=False),
+    sa.Column('intake_step', sa.String(length=32), nullable=True),
     sa.Column('first_seen_utc', sa.String(length=30), nullable=True),
     sa.Column('last_touch_utc', sa.String(length=30), nullable=True),
     sa.Column('last_needs_update_utc', sa.String(length=30), nullable=True),
@@ -260,6 +261,8 @@ def upgrade():
     sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
+    sa.CheckConstraint("intake_step IS NULL OR intake_step IN ('identity','address_physical','address_postal','contact','eligibility','review','complete')", name='ck_customer_intake_step_enum'),
+    sa.CheckConstraint("status IN ('intake','active','suspended','archived')", name='ck_customer_status_enum'),
     sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('ulid'),
     sa.UniqueConstraint('entity_ulid', name='uq_customer_entity')
@@ -267,6 +270,7 @@ def upgrade():
     with op.batch_alter_table('customer_customer', schema=None) as batch_op:
         batch_op.create_index(batch_op.f('ix_customer_customer_entity_ulid'), ['entity_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_customer_customer_flag_tier1_immediate'), ['flag_tier1_immediate'], unique=False)
+        batch_op.create_index(batch_op.f('ix_customer_customer_intake_step'), ['intake_step'], unique=False)
         batch_op.create_index(batch_op.f('ix_customer_customer_status'), ['status'], unique=False)
         batch_op.create_index(batch_op.f('ix_customer_customer_tier1_min'), ['tier1_min'], unique=False)
         batch_op.create_index(batch_op.f('ix_customer_customer_tier2_min'), ['tier2_min'], unique=False)
@@ -330,6 +334,10 @@ def upgrade():
     sa.Column('first_name', sa.String(length=40), nullable=False),
     sa.Column('last_name', sa.String(length=60), nullable=False),
     sa.Column('preferred_name', sa.String(length=60), nullable=True),
+    sa.Column('last_4', sa.String(length=4), nullable=True),
+    sa.Column('dob', sa.String(length=10), nullable=True),
+    sa.Column('branch', sa.String(length=4), nullable=True),
+    sa.Column('era', sa.String(length=16), nullable=True),
     sa.Column('archived_at', sa.String(length=30), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
@@ -411,6 +419,7 @@ def upgrade():
 
     op.create_table('resource_resource',
     sa.Column('entity_ulid', sa.String(length=26), nullable=False),
+    sa.Column('onboard_step', sa.String(length=16), nullable=True),
     sa.Column('admin_review_required', sa.Boolean(), nullable=False),
     sa.Column('readiness_status', sa.String(length=16), nullable=False),
     sa.Column('mou_status', sa.String(length=16), nullable=False),
@@ -428,10 +437,12 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_resource_resource_admin_review_required'), ['admin_review_required'], unique=False)
         batch_op.create_index(batch_op.f('ix_resource_resource_entity_ulid'), ['entity_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_resource_resource_mou_status'), ['mou_status'], unique=False)
+        batch_op.create_index(batch_op.f('ix_resource_resource_onboard_step'), ['onboard_step'], unique=False)
         batch_op.create_index(batch_op.f('ix_resource_resource_readiness_status'), ['readiness_status'], unique=False)
 
     op.create_table('sponsor_sponsor',
     sa.Column('entity_ulid', sa.String(length=26), nullable=False),
+    sa.Column('onboard_step', sa.String(length=16), nullable=True),
     sa.Column('admin_review_required', sa.Boolean(), nullable=False),
     sa.Column('readiness_status', sa.String(length=16), nullable=False),
     sa.Column('mou_status', sa.String(length=16), nullable=False),
@@ -450,6 +461,7 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_sponsor_sponsor_admin_review_required'), ['admin_review_required'], unique=False)
         batch_op.create_index(batch_op.f('ix_sponsor_sponsor_entity_ulid'), ['entity_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_sponsor_sponsor_mou_status'), ['mou_status'], unique=False)
+        batch_op.create_index(batch_op.f('ix_sponsor_sponsor_onboard_step'), ['onboard_step'], unique=False)
         batch_op.create_index(batch_op.f('ix_sponsor_sponsor_readiness_status'), ['readiness_status'], unique=False)
 
     op.create_table('customer_eligibility',
@@ -467,7 +479,10 @@ def upgrade():
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.CheckConstraint("NOT (is_veteran_verified = 1 AND veteran_method = 'other' AND approved_by_ulid IS NULL)", name='ck_ce_other_requires_approval'),
     sa.CheckConstraint("veteran_method IS NULL OR veteran_method IN ('dd214','va_id','state_dl_veteran','other')", name='ck_ce_veteran_method_enum'),
+    sa.CheckConstraint('NOT (approved_at_utc IS NOT NULL AND approved_by_ulid IS NULL)', name='ck_ce_timestamp_requires_approver'),
+    sa.CheckConstraint('NOT (approved_by_ulid IS NOT NULL AND approved_at_utc IS NULL)', name='ck_ce_approval_requires_timestamp'),
     sa.CheckConstraint('NOT (is_veteran_verified = 0 AND (veteran_method IS NOT NULL OR approved_by_ulid IS NOT NULL OR approved_at_utc IS NOT NULL))', name='ck_ce_unverified_requires_nulls'),
+    sa.CheckConstraint('NOT (is_veteran_verified = 1 AND veteran_method IS NULL)', name='ck_ce_verified_requires_method'),
     sa.CheckConstraint('tier1_min IS NULL OR (tier1_min BETWEEN 1 AND 3)', name='ck_el_tier1_range'),
     sa.CheckConstraint('tier2_min IS NULL OR (tier2_min BETWEEN 1 AND 3)', name='ck_el_tier2_range'),
     sa.CheckConstraint('tier3_min IS NULL OR (tier3_min BETWEEN 1 AND 3)', name='ck_el_tier3_range'),
@@ -481,6 +496,7 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_customer_eligibility_is_veteran_verified'), ['is_veteran_verified'], unique=False)
         batch_op.create_index(batch_op.f('ix_customer_eligibility_tier1_min'), ['tier1_min'], unique=False)
         batch_op.create_index(batch_op.f('ix_customer_eligibility_tier2_min'), ['tier2_min'], unique=False)
+        batch_op.create_index(batch_op.f('ix_customer_eligibility_veteran_method'), ['veteran_method'], unique=False)
 
     op.create_table('customer_history',
     sa.Column('customer_ulid', sa.String(length=26), nullable=False),
@@ -930,6 +946,7 @@ def downgrade():
 
     op.drop_table('customer_history')
     with op.batch_alter_table('customer_eligibility', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_customer_eligibility_veteran_method'))
         batch_op.drop_index(batch_op.f('ix_customer_eligibility_tier2_min'))
         batch_op.drop_index(batch_op.f('ix_customer_eligibility_tier1_min'))
         batch_op.drop_index(batch_op.f('ix_customer_eligibility_is_veteran_verified'))
@@ -939,6 +956,7 @@ def downgrade():
     op.drop_table('customer_eligibility')
     with op.batch_alter_table('sponsor_sponsor', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_sponsor_sponsor_readiness_status'))
+        batch_op.drop_index(batch_op.f('ix_sponsor_sponsor_onboard_step'))
         batch_op.drop_index(batch_op.f('ix_sponsor_sponsor_mou_status'))
         batch_op.drop_index(batch_op.f('ix_sponsor_sponsor_entity_ulid'))
         batch_op.drop_index(batch_op.f('ix_sponsor_sponsor_admin_review_required'))
@@ -946,6 +964,7 @@ def downgrade():
     op.drop_table('sponsor_sponsor')
     with op.batch_alter_table('resource_resource', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_resource_resource_readiness_status'))
+        batch_op.drop_index(batch_op.f('ix_resource_resource_onboard_step'))
         batch_op.drop_index(batch_op.f('ix_resource_resource_mou_status'))
         batch_op.drop_index(batch_op.f('ix_resource_resource_entity_ulid'))
         batch_op.drop_index(batch_op.f('ix_resource_resource_admin_review_required'))
@@ -996,6 +1015,7 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_customer_customer_tier2_min'))
         batch_op.drop_index(batch_op.f('ix_customer_customer_tier1_min'))
         batch_op.drop_index(batch_op.f('ix_customer_customer_status'))
+        batch_op.drop_index(batch_op.f('ix_customer_customer_intake_step'))
         batch_op.drop_index(batch_op.f('ix_customer_customer_flag_tier1_immediate'))
         batch_op.drop_index(batch_op.f('ix_customer_customer_entity_ulid'))
 

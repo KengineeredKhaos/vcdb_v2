@@ -212,9 +212,9 @@ def ensure_customer(
 ) -> str:
     cust = db.session.get(Customer, entity_ulid)
     if cust:
-        # update last_touch, commit, return
+        # update last_touch, flush, return
         cust.last_touch_utc = now_iso8601_ms()
-        db.session.commit()
+        db.session.flush()
         return cust.ulid
 
     # create
@@ -222,7 +222,7 @@ def ensure_customer(
     cust.first_seen_utc = now_iso8601_ms()
     cust.last_touch_utc = cust.first_seen_utc
     db.session.add(cust)
-    db.session.commit()
+    db.session.flush()
 
     # 🔹 emit creation event (once)
     event_bus.emit(
@@ -333,7 +333,7 @@ def record_needs_tier(
         isinstance(housing, int) and housing == 1
     )
 
-    db.session.commit()
+    db.session.flush()
 
     event_bus.emit(
         domain="customers",
@@ -436,7 +436,7 @@ def set_veteran_verification(
         row.approved_by_ulid = None
         row.approved_at_utc = None
 
-    db.session.commit()
+    db.session.flush()
 
     event_bus.emit(
         domain="customers",

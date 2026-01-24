@@ -66,9 +66,6 @@ class Customer(db.Model, ULIDPK, IsoTimestamps):
 
     # one Customer per Entity
     entity_ulid: Mapped[str] = ULIDFK("entity_entity", index=True)
-    __table_args__ = (
-        UniqueConstraint("entity_ulid", name="uq_customer_entity"),
-    )
 
     # derived cues (denormalized for dashboards/lists)
     tier1_min: Mapped[int | None] = mapped_column(
@@ -89,6 +86,11 @@ class Customer(db.Model, ULIDPK, IsoTimestamps):
     # lifecycle/status
     status: Mapped[str] = mapped_column(
         String(24), default="active", nullable=False, index=True
+    )
+
+    # intake status / wizard step
+    intake_step: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
     )
 
     # ops timestamps (denormalized; for fast UI)
@@ -117,6 +119,19 @@ class Customer(db.Model, ULIDPK, IsoTimestamps):
         "CustomerHistory",
         back_populates="customer",
         cascade="all, delete-orphan",
+    )
+    __table_args__ = (
+        UniqueConstraint("entity_ulid", name="uq_customer_entity"),
+        # enum guards
+        CheckConstraint(
+            "intake_step IS NULL OR intake_step IN "
+            "('identity','address_physical','address_postal','contact','eligibility','review','complete')",
+            name="ck_customer_intake_step_enum",
+        ),
+        CheckConstraint(
+            "status IN ('intake','active','suspended','archived')",
+            name="ck_customer_status_enum",
+        ),
     )
 
 
@@ -164,7 +179,7 @@ class CustomerEligibility(db.Model, ULIDPK, IsoTimestamps):
         Boolean, default=False, nullable=False, index=True
     )
     veteran_method: Mapped[str | None] = mapped_column(
-        String(32), nullable=True
+        String(32), nullable=True, index=True
     )  # dd214|va_id|state_dl_veteran|other
     approved_by_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True
@@ -217,5 +232,17 @@ class CustomerEligibility(db.Model, ULIDPK, IsoTimestamps):
         CheckConstraint(
             "NOT (is_veteran_verified = 1 AND veteran_method = 'other' AND approved_by_ulid IS NULL)",
             name="ck_ce_other_requires_approval",
+        ),
+        CheckConstraint(
+            "NOT (is_veteran_verified = 1 AND veteran_method IS NULL)",
+            name="ck_ce_verified_requires_method",
+        ),
+        CheckConstraint(
+            "NOT (approved_by_ulid IS NOT NULL AND approved_at_utc IS NULL)",
+            name="ck_ce_approval_requires_timestamp",
+        ),
+        CheckConstraint(
+            "NOT (approved_at_utc IS NOT NULL AND approved_by_ulid IS NULL)",
+            name="ck_ce_timestamp_requires_approver",
         ),
     )

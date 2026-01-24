@@ -111,11 +111,11 @@ def append_event(
 ) -> LedgerEvent:
     """
     Append a ledger event. Callers are slice services or the event bus.
-    No PII—ULIDs and names only. Commits the row.
+    No PII—ULIDs and names only. This unit only flushes; caller commits.
     """
     env = _canon_envelope(
         domain=domain,
-        operation=operation,
+        operation=operation,  # always snake_case
         request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=target_ulid,
@@ -160,7 +160,9 @@ def append_event(
         created_at_utc=now_iso8601_ms(),
     )
     db.session.add(row)
-    db.session.commit()
+    db.session.flush()
+    # ensure row is INSERTed so subsequent append_event()
+    # calls in same txn see it
     return row
 
 

@@ -236,14 +236,14 @@ def ensure_person(
                 )
             )
 
-    db.session.commit()
+    db.session.flush()
 
     # Upsert a single *primary* contact row
     if email is not None or phone is not None:
         _upsert_primary_contact(
             entity_ulid=ent.ulid, email=email_norm, phone=phone_norm
         )
-        db.session.commit()
+        db.session.flush()
 
     # PII-safe, canon emit
     event_bus.emit(
@@ -329,7 +329,7 @@ def ensure_org(
                 )
             )
 
-    db.session.commit()
+    db.session.flush()
     # PII-safe, canon emit
     event_bus.emit(
         domain="entity",
@@ -381,7 +381,7 @@ def upsert_contacts(
     if phone is not None:
         changed["phone"] = ph
 
-    db.session.commit()
+    db.session.flush()
     if changed:
         event_bus.emit(
             domain="entity",
@@ -453,7 +453,7 @@ def upsert_address(
         addr.state = _norm(state) or addr.state
         addr.postal_code = _norm(postal_code) or addr.postal_code
 
-    db.session.commit()
+    db.session.flush()
 
     event_bus.emit(
         domain="entity",
@@ -502,7 +502,7 @@ def ensure_role(
 
     rr = EntityRole(entity_ulid=entity_ulid, role=role)
     db.session.add(rr)
-    db.session.commit()
+    db.session.flush()
 
     # attached
     event_bus.emit(
@@ -542,7 +542,7 @@ def remove_role(
         return False
 
     db.session.delete(existing)
-    db.session.commit()
+    db.session.flush()
 
     # removed
     event_bus.emit(
