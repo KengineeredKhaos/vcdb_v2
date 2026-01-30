@@ -172,7 +172,7 @@ class CustomerEligibility(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "customer_eligibility"
 
     # FK to Customer (not Entity) to stay within slice and align with your pattern
-    customer_ulid: Mapped[str] = ULIDFK("customer_customer", index=True)
+    customer_ulid: Mapped[str] = ULIDFK("customer_customer")
 
     # Verified qualifiers (coarse booleans)
     is_veteran_verified: Mapped[bool] = mapped_column(

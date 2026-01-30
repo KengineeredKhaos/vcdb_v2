@@ -236,7 +236,7 @@ def create_app(config_object="config.DevConfig"):
     # are set & loaded
     # -------------
 
-    # ---- Imports and aliases ----
+    # --- register blueprints ---
     from app.slices.admin import bp as admin_bp
     from app.slices.attachments import bp as attachments_bp
     from app.slices.auth import bp as auth_bp
@@ -365,8 +365,59 @@ def create_app(config_object="config.DevConfig"):
             return {"_macros": None}
 
     # Global error handler (logs all exceptions once, honors debugger in dev)
+    @flask_app.errorhandler(ContractError)
+    def _handle_contract_error(e: ContractError):
+        # Don’t log as "unhandled" — this is an expected, normalized error.
+        flask_app.logger.warning(
+            {
+                "event": "contract_error",
+                "status": e.http_status,
+                "code": e.code,
+                "where": e.where,
+                "endpoint": request.endpoint,
+                "path": request.path,
+            }
+        )
+        payload = {
+            "ok": False,
+            "error": e.message,
+            "code": e.code,
+            "where": e.where,
+        }
+        if getattr(e, "data", None):
+            payload["data"] = e.data
+        return jsonify(payload), e.http_status
+
+    @flask_app.errorhandler(HTTPException)
+    def _handle_http_exception(e: HTTPException):
+        # Keep logging once
+        flask_app.logger.warning(
+            {
+                "event": "http_exception",
+                "status": e.code,
+                "error": str(e),
+                "endpoint": request.endpoint,
+                "path": request.path,
+            }
+        )
+        # JSON response (not HTML)
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": e.name,  # e.g. "Not Found"
+                    "detail": e.description,  # short explanation
+                }
+            ),
+            e.code,
+        )
+
     @flask_app.errorhandler(Exception)
     def _handle_any_exception(e: Exception):
+        # Let pytest see the real traceback
+        if flask_app.testing or flask_app.config.get("PROPAGATE_EXCEPTIONS"):
+            raise
+
         if isinstance(e, HTTPException):
             flask_app.logger.warning(
                 {
@@ -378,6 +429,7 @@ def create_app(config_object="config.DevConfig"):
                 }
             )
             return e
+
         flask_app.logger.exception(
             {
                 "event": "unhandled_exception",

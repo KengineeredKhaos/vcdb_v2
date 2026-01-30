@@ -27,6 +27,10 @@ from .models import (
 )
 
 
+class DuplicateCandidateError(Exception):
+    pass
+
+
 def allowed_role_codes(session=None) -> Set[str]:
     """
     Return the canonical set of domain role codes allowed by Governance policy.
@@ -162,9 +166,31 @@ def create_org_entity(
 
 
 # -----------------
-# Entity as Person
+# Entity as Person (POC)
 # -----------------
+
+
 def ensure_person(
+    *,
+    first_name: str,
+    last_name: str,
+    email: str | None,
+    phone: str | None,
+    request_id: str,
+    actor_ulid: str | None,
+) -> str:
+    # Back-compat shim for older call sites/tests.
+    return ensure_person_by_contact(
+        first_name=first_name,
+        last_name=last_name,
+        email=email,
+        phone=phone,
+        request_id=request_id,
+        actor_ulid=actor_ulid,
+    )
+
+
+def ensure_person_by_contact(
     *,
     first_name: str,
     last_name: str,
@@ -264,8 +290,140 @@ def ensure_person(
 
 
 # -----------------
+# Entity as Person
+# Customer Creation
+# Customer intake
+# (dob/last_4 invariants)
+# Provider returns primitives;
+# contract wraps DTOs.
+# -----------------
+
+
+def search_customer_candidates(
+    *,
+    last_name: str,
+    dob: str,
+    last_4: str,
+) -> list[dict]:
+    """
+    PII stays here. Return only PII-free match data:
+      [{"entity_ulid": "...", "score": 100, "reasons": ["exact"]}, ...]
+    """
+    ln = (last_name or "").strip()
+    d = (dob or "").strip()
+    l4 = (last_4 or "").strip()
+    if not ln or not d or not l4:
+        raise ValueError("last_name, dob, last_4 are required")
+
+    # NOTE: adjust field names if your EntityPerson stores these differently.
+    # This assumes EntityPerson has: last_name, dob, last_4.
+    q = (
+        db.session.query(EntityPerson)
+        .filter(
+            func.lower(EntityPerson.last_name) == ln.lower(),
+            EntityPerson.dob == d,
+        )
+        .order_by(EntityPerson.entity_ulid.asc())
+    )
+
+    out: list[dict] = []
+    for p in q.all():
+        exact = getattr(p, "last_4", None) == l4
+        out.append(
+            {
+                "entity_ulid": p.entity_ulid,
+                "score": 100 if exact else 50,
+                "reasons": ["exact"] if exact else ["last_name+dob_match"],
+            }
+        )
+
+    # best score first
+    out.sort(key=lambda r: int(r.get("score") or 0), reverse=True)
+    return out
+
+
+def create_customer_person(
+    *,
+    first_name: str,
+    last_name: str,
+    preferred_name: str | None,
+    dob: str,
+    last_4: str,
+    branch: str | None,
+    era: str | None,
+    request_id: str,
+    actor_ulid: str | None,
+    allow_duplicate: bool = False,
+) -> dict:
+    """
+    Create Entity(kind=person) + EntityPerson with customer invariants.
+    Returns primitives: {"entity_ulid": "...", "created": True}
+    """
+    _ensure_reqid(request_id)
+
+    fn = (first_name or "").strip()
+    ln = (last_name or "").strip()
+    pn = (preferred_name or "").strip() or None
+    d = (dob or "").strip()
+    l4 = (last_4 or "").strip()
+    if not fn or not ln:
+        raise ValueError("first_name and last_name are required")
+    if not d or not l4:
+        raise ValueError("dob and last_4 are required")
+
+    # detect exact duplicate
+    matches = search_customer_candidates(last_name=ln, dob=d, last_4=l4)
+    if (
+        any(int(m.get("score") or 0) >= 100 for m in matches)
+        and not allow_duplicate
+    ):
+        raise DuplicateCandidateError("exact candidate exists")
+
+    ent = Entity(kind="person")
+    db.session.add(ent)
+    db.session.flush()
+
+    person = EntityPerson(
+        entity_ulid=ent.ulid,
+        first_name=fn,
+        last_name=ln,
+        preferred_name=pn,
+        dob=d,
+        last_4=l4,
+        branch=(branch or "").strip() or None,
+        era=(era or "").strip() or None,
+    )
+    db.session.add(person)
+    db.session.flush()
+
+    event_bus.emit(
+        domain="entity",
+        operation="customer_person_created",
+        request_id=request_id,
+        actor_ulid=actor_ulid,
+        target_ulid=ent.ulid,
+        refs=None,
+        changed={
+            "fields": [
+                "first_name",
+                "last_name",
+                "preferred_name",
+                "dob",
+                "last_4",
+                "branch",
+                "era",
+            ]
+        },
+    )
+
+    return {"entity_ulid": ent.ulid, "created": True}
+
+
+# -----------------
 # Entity as Organization
 # -----------------
+
+
 def ensure_org(
     *,
     legal_name: str,

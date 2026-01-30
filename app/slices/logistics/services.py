@@ -15,6 +15,7 @@ from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 from app.lib.jsonutil import pretty_dumps
 from app.slices.logistics.sku import (
+    classification_key_for,
     parse_sku,
     validate_sku,
 )
@@ -312,9 +313,14 @@ def issue_inventory_lowlevel(
     target_ref_ulid: str | None,
     note: str | None,
     actor_ulid: str | None,
+    project_ulid: str | None = None,
 ) -> str:
     """Low-level issuance path that writes a movement, reduces stock,
     and inserts the Issue row; returns movement_ulid.
+
+    Notes:
+      - classification_key is derived from the SKU (cat/sub), not InventoryItem.category.
+      - project_ulid is persisted when provided (durable goods require project/task context).
     """
 
     # Movement record
@@ -343,21 +349,18 @@ def issue_inventory_lowlevel(
     )
 
     # Issue row (no decision_json here; attach later)
-    it = db.session.execute(
-        select(InventoryItem.sku, InventoryItem.category).where(
-            InventoryItem.ulid == item_ulid
-        )
-    ).one()
-    sku_code, category = it
+    sku_code = db.session.execute(
+        select(InventoryItem.sku).where(InventoryItem.ulid == item_ulid)
+    ).scalar_one()
 
     issue = Issue(
         ulid=new_ulid(),
         customer_ulid=target_ref_ulid,
-        classification_key=category,
+        classification_key=classification_key_for(sku_code),
         sku_code=sku_code,
         quantity=quantity,
         issued_at=happened_at_utc,
-        project_ulid=None,
+        project_ulid=project_ulid,
         movement_ulid=m.ulid,
         created_by_actor=actor_ulid,
     )

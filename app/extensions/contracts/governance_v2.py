@@ -138,7 +138,6 @@ from typing import (
 from flask import current_app
 
 from app.extensions import event_bus
-from app.extensions.contracts import customers_v2
 from app.extensions.errors import ContractError
 from app.extensions.policies import load_governance_policy
 from app.lib.chrono import now_iso8601_ms
@@ -159,6 +158,7 @@ __all__ = [
     "decide_issue",
     "get_role_catalogs",
     "get_poc_policy",
+    "get_customer_veteran_verification_methods",
     "get_sponsor_capability_policy",
     "get_sponsor_pledge_policy",
     # New budget / spend helpers (runtime-safe)
@@ -643,6 +643,74 @@ def get_poc_policy() -> dict:
 # Customer Contract API
 # -----------------
 
+def get_customer_veteran_verification_methods() -> list[str]:
+    """
+    Read-only contract for the allowed customer veteran verification methods.
+
+    Canonical source: governance policy_key="customer" (policy_customer.json):
+        customer.veteran_verification.methods: [str, ...]
+
+    Returns:
+        Sorted, de-duped list[str] of allowed methods.
+
+    Raises:
+        ContractError (503) if the policy is missing or invalid.
+    """
+    where = "governance_v2.get_customer_veteran_verification_methods"
+
+    # Load via governance policy catalog (policy_governance_index.json).
+    try:
+        obj = load_governance_policy("customer") or {}
+    except KeyError as e:
+        raise ContractError(
+            code="policy_missing",
+            where=where,
+            message="Unknown governance policy_key: 'customer' (add to policy_governance_index.json)",
+            http_status=503,
+            data={"policy_key": "customer"},
+        ) from e
+    except FileNotFoundError as e:
+        raise ContractError(
+            code="policy_missing",
+            where=where,
+            message=str(e),
+            http_status=503,
+            data={"policy_key": "customer"},
+        ) from e
+    except Exception as e:
+        raise ContractError(
+            code="policy_read_error",
+            where=where,
+            message=str(e),
+            http_status=503,
+            data={"policy_key": "customer"},
+        ) from e
+
+    vv = obj.get("veteran_verification") or {}
+    methods_raw = vv.get("methods")
+
+    if not isinstance(methods_raw, list) or not methods_raw:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message="customer.veteran_verification.methods must be a non-empty list",
+            http_status=503,
+            data={"policy_key": "customer"},
+        )
+
+    methods = sorted({str(m).strip() for m in methods_raw if str(m).strip()})
+    if not methods:
+        raise ContractError(
+            code="policy_invalid",
+            where=where,
+            message="customer.veteran_verification.methods produced no usable strings",
+            http_status=503,
+            data={"policy_key": "customer"},
+        )
+
+    return methods
+
+
 
 def get_spending_limits() -> SpendingLimitsDTO:
     return {"staff_limit_cents": 20000, "admin_over_cents": 20000}
@@ -658,12 +726,15 @@ def evaluate_customer(
     """
     Read-only evaluation. Emits governance.decision_made.
     """
-    prof = customers_v2.get_needs_profile(customer_ulid)
+    from app.extensions.contracts import customers_v2
 
-    attention_required = prof.tier1_min == 1
-    watchlist = prof.tier2_min == 1
-    eligible_veteran_only = bool(prof.is_veteran_verified)
-    eligible_homeless_only = bool(prof.is_homeless_verified)
+    cues = customers_v2.get_customer_cues(customer_ulid)
+
+    # Prefer pre-derived cues flags when present.
+    attention_required = bool(getattr(cues, "flag_tier1_immediate", False))
+    watchlist = bool(getattr(cues, "watchlist", False))
+    eligible_veteran_only = bool(getattr(cues, "is_veteran_verified", False))
+    eligible_homeless_only = bool(getattr(cues, "is_homeless_verified", False))
 
     # Emit governance ledger event (PII-free)
     event_bus.emit(
@@ -693,17 +764,17 @@ def evaluate_customer(
     )
 
     return DecisionDTO(
-        customer_ulid=prof.customer_ulid,
-        is_veteran_verified=prof.is_veteran_verified,
-        is_homeless_verified=prof.is_homeless_verified,
-        tier1_min=prof.tier1_min,
-        tier2_min=prof.tier2_min,
-        tier3_min=prof.tier3_min,
+        customer_ulid=cues.customer_ulid,
+        is_veteran_verified=cues.is_veteran_verified,
+        is_homeless_verified=cues.is_homeless_verified,
+        tier1_min=cues.tier1_min,
+        tier2_min=cues.tier2_min,
+        tier3_min=cues.tier3_min,
         attention_required=attention_required,
         watchlist=watchlist,
         eligible_veteran_only=eligible_veteran_only,
         eligible_homeless_only=eligible_homeless_only,
-        as_of_iso=prof.as_of_iso,
+        as_of_iso=cues.as_of_iso,
     )
 
 

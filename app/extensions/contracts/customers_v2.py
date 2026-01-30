@@ -11,8 +11,8 @@ Ethos:
   add customer_v3 for breaking changes.
 
 Guaranteed fields:
-- NeedsProfileDTO: coarse decisions surface for Governance
-  (is_veteran_verified, is_homeless_verified, tier mins).
+- CustomerCuesDTO: primary cross-slice decision surface (PII-free cues).
+- NeedsProfileDTO: legacy coarse decisions surface (kept for now).
 - DashboardDTO: quick operator view (denormalized flags + latest tier maps).
 - Write calls return ResultDTOs with refs
   (e.g., history version ULID) and never leak values.
@@ -28,7 +28,7 @@ Raises ContractError with code values:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping, Optional, TypedDict
+from typing import Final, Mapping, Optional, TypedDict
 
 from app.extensions import db
 from app.extensions.errors import ContractError
@@ -117,6 +117,24 @@ class NeedsProfileDTO:
     tier3_min: int | None
     as_of_iso: str
 
+@dataclass(frozen=True)
+class CustomerCuesDTO:
+    """
+    Canonical, PII-free, decision-ready cues for cross-slice gating.
+    Intended to be stable and grep-able across slices.
+    """
+    customer_ulid: str
+    tier1_min: int | None
+    tier2_min: int | None
+    tier3_min: int | None
+    is_veteran_verified: bool
+    is_homeless_verified: bool
+    flag_tier1_immediate: bool
+    watchlist: bool
+    watchlist_since_utc: Optional[str]
+    as_of_iso: str
+
+
 
 @dataclass(frozen=True)
 class DashboardDTO:
@@ -163,6 +181,15 @@ class TierUpdateResultDTO:
 # Helpers
 # ---------------------------
 
+WHERE_GET_CUSTOMER_CUES: Final[str] = "customers_v2.get_customer_cues"
+WHERE_GET_DASHBOARD_VIEW: Final[str] = "customers_v2.get_dashboard_view"
+WHERE_GET_NEEDS_PROFILE: Final[str] = "customers_v2.get_needs_profile"
+WHERE_VERIFY_VETERAN: Final[str] = "customers_v2.verify_veteran"
+WHERE_UPDATE_TIER1: Final[str] = "customers_v2.update_tier1"
+WHERE_UPDATE_TIER2: Final[str] = "customers_v2.update_tier2"
+WHERE_UPDATE_TIER3: Final[str] = "customers_v2.update_tier3"
+
+
 
 # ---------------------------
 # READ CONTRACT
@@ -180,8 +207,55 @@ def get_profile(customer_ulid: str) -> CustomerProfileDTO:
     }
 
 
+def get_customer_cues(customer_ulid: str) -> CustomerCuesDTO:
+    """
+    Primary cross-slice read: decision-ready, PII-free cues for gating.
+
+    This is the single surface Logistics (and other slices) should consume for
+    SKU filtering and eligibility gates.
+
+    Returns:
+        CustomerCuesDTO
+
+    Raises:
+        ContractError (404) if customer_ulid not found.
+    """
+    where = WHERE_GET_CUSTOMER_CUES
+    try:
+        dv = cust_svc.get_dashboard_view(customer_ulid)
+        if dv is None:
+            raise LookupError("customer not found")
+
+        snap = cust_svc.get_eligibility_snapshot(customer_ulid)
+        if snap is None:
+            raise LookupError("eligibility not found")
+
+        return CustomerCuesDTO(
+            customer_ulid=snap.customer_ulid,
+            tier1_min=snap.tier1_min,
+            tier2_min=snap.tier2_min,
+            tier3_min=snap.tier3_min,
+            is_veteran_verified=bool(snap.is_veteran_verified),
+            is_homeless_verified=bool(snap.is_homeless_verified),
+            flag_tier1_immediate=bool(getattr(dv, "flag_tier1_immediate", False)),
+            watchlist=bool(getattr(dv, "watchlist", False)),
+            watchlist_since_utc=getattr(dv, "watchlist_since_utc", None),
+            as_of_iso=now_iso8601_ms(),
+        )
+    except LookupError as exc:
+        raise ContractError(
+            code="not_found",
+            where=where,
+            message=str(exc),
+            http_status=404,
+            data={"customer_ulid": customer_ulid},
+        ) from exc
+    except Exception as exc:
+        raise _as_contract_error(where, exc)
+
+
 def get_needs_profile(customer_ulid: str) -> NeedsProfileDTO:
-    where = "customers_v2.get_needs_profile"
+    where = WHERE_GET_NEEDS_PROFILE
     try:
         dv = cust_svc.get_dashboard_view(customer_ulid)
         if dv is None:
@@ -195,7 +269,7 @@ def get_needs_profile(customer_ulid: str) -> NeedsProfileDTO:
             tier1_min=snap.tier1_min,
             tier2_min=snap.tier2_min,
             tier3_min=snap.tier3_min,
-            veteran_method=dv.veteran_method,
+            veteran_method=veteran_method or getattr(dv, 'veteran_method', None),
             as_of_iso=now_iso8601_ms(),
         )
     except Exception as e:
@@ -205,11 +279,23 @@ def get_needs_profile(customer_ulid: str) -> NeedsProfileDTO:
 def get_dashboard_view(customer_ulid: str) -> DashboardDTO | None:
     """
     Operator-facing aggregated read.
+
     Returns None if the customer_ulid does not exist.
+    NOTE: This function is intentionally non-raising for 'missing customer' semantics.
+
+    DashboardView is allowed to be a lightweight projection; eligibility fields
+    are sourced from the canonical typed eligibility snapshot.
     """
     dv = cust_svc.get_dashboard_view(customer_ulid)
     if not dv:
         return None
+
+    snap = cust_svc.get_eligibility_snapshot(customer_ulid)
+
+    is_veteran_verified = bool(snap.is_veteran_verified) if snap else False
+    is_homeless_verified = bool(snap.is_homeless_verified) if snap else False
+    veteran_method = snap.veteran_method if snap else None
+
     return DashboardDTO(
         customer_ulid=dv.customer_ulid,
         entity_ulid=dv.entity_ulid,
@@ -220,9 +306,9 @@ def get_dashboard_view(customer_ulid: str) -> DashboardDTO | None:
         flag_reason=dv.flag_reason,
         watchlist=dv.watchlist,
         watchlist_since_utc=dv.watchlist_since_utc,
-        is_veteran_verified=dv.is_veteran_verified,
-        veteran_method=dv.veteran_method,
-        is_homeless_verified=dv.is_homeless_verified,
+        is_veteran_verified=is_veteran_verified,
+        veteran_method=veteran_method or getattr(dv, "veteran_method", None),
+        is_homeless_verified=is_homeless_verified,
         tier_factors=dv.tier_factors,
         status=dv.status,
         first_seen_utc=dv.first_seen_utc,
@@ -231,11 +317,6 @@ def get_dashboard_view(customer_ulid: str) -> DashboardDTO | None:
         last_needs_tier_updated=dv.last_needs_tier_updated,
         as_of_iso=dv.as_of_iso,
     )
-
-
-# ---------------------------
-# WRITE CONTRACT
-# ---------------------------
 
 
 def verify_veteran(
@@ -248,10 +329,12 @@ def verify_veteran(
     request_id: str,
 ) -> VerificationResultDTO:
     """
-    Method 'other' requires actor_has_governor=True.
-    Emits 'customers.verification_updated' via services.
+    Update veteran verification state (write) and return a lightweight result DTO.
+
+    Allowed methods and governor-only exceptions are enforced in Customers services
+    via Governance policy (governance_v2).
     """
-    where = "customers_v2.verify_veteran"
+    where = WHERE_VERIFY_VETERAN
     try:
         snap = cust_svc.set_veteran_verification(
             customer_ulid=customer_ulid,
@@ -261,20 +344,14 @@ def verify_veteran(
             actor_has_governor=actor_has_governor,
             request_id=request_id,
         )
-        # Pull method & approvals from current eligibility row
-        # via dashboard (lightweight)
-        dv = cust_svc.get_dashboard_view(customer_ulid)
+
         return VerificationResultDTO(
             customer_ulid=customer_ulid,
-            is_veteran_verified=snap.is_veteran_verified,
-            veteran_method=(dv.veteran_method if dv else None),
-            approved_by_ulid=(
-                getattr(db.session.query, "__doc__", None)
-                and getattr(dv, "approved_by_ulid", None)
-            )
-            or None,  # not exposed by dashboard; keep None
-            approved_at_utc=None,
-            as_of_iso=snap.as_of_iso,
+            is_veteran_verified=bool(snap.is_veteran_verified),
+            veteran_method=snap.veteran_method or (method if verified else None),
+            approved_by_ulid=snap.approved_by_ulid,
+            approved_at_utc=snap.approved_at_utc,
+            as_of_iso=now_iso8601_ms(),
         )
     except Exception as exc:
         raise _as_contract_error(where, exc)
@@ -287,7 +364,7 @@ def update_tier1(
     request_id: str,
     actor_ulid: str | None,
 ) -> TierUpdateResultDTO:
-    where = "customers_v2.update_tier1"
+    where = WHERE_UPDATE_TIER1
     try:
         vptr = cust_svc.update_tier1(
             customer_ulid=customer_ulid,
@@ -312,7 +389,7 @@ def update_tier2(
     request_id: str,
     actor_ulid: str | None,
 ) -> TierUpdateResultDTO:
-    where = "customers_v2.update_tier2"
+    where = WHERE_UPDATE_TIER2
     try:
         vptr = cust_svc.update_tier2(
             customer_ulid=customer_ulid,
@@ -337,7 +414,7 @@ def update_tier3(
     request_id: str,
     actor_ulid: str | None,
 ) -> TierUpdateResultDTO:
-    where = "customers_v2.update_tier3"
+    where = WHERE_UPDATE_TIER3
     try:
         vptr = cust_svc.update_tier3(
             customer_ulid=customer_ulid,

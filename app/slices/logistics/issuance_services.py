@@ -10,10 +10,12 @@ from typing import Any, Optional
 from sqlalchemy import func, select
 
 from app.extensions import db, event_bus
-from app.extensions.contracts.customers_v2 import get_needs_profile
+from app.extensions.contracts.customers_v2 import (
+    CustomerCuesDTO,
+    get_customer_cues,
+)
 from app.extensions.policies import (
     load_policy_logistics_issuance,
-    load_policy_sku_constraints,
 )
 from app.lib.chrono import as_naive_utc, now_iso8601_ms
 from app.lib.ids import new_ulid
@@ -26,6 +28,7 @@ from .models import (
     InventoryStock,
     Issue,
 )
+from .qualifiers import evaluate as evaluate_qualifiers
 from .sku import classification_key_for, parse_sku, validate_sku
 
 # Policy selector keys -> parse_sku() keys
@@ -75,7 +78,7 @@ class IssueContext:
     classification_key: Optional[str] = None
 
     # Cached cross-slice snapshot (avoid N calls for N SKUs)
-    needs_profile: Optional[dict[str, Any]] = None
+    customer_cues: CustomerCuesDTO | None = None
 
     # Working fields (set by decide_issue)
     qualifiers: dict[str, Any] = field(default_factory=dict)
@@ -104,11 +107,6 @@ class IssueResult:
     qty_each: int = 0
 
     decision: Optional[IssueDecision] = None
-
-
-# Back-compat alias (older callers)
-def issue_inventory_policy(ctx: IssueContext) -> IssueDecision:
-    return decide_issue(ctx)
 
 
 # -----------------
@@ -325,8 +323,17 @@ def decide_issue(ctx: IssueContext) -> IssueDecision:
     # -------- 5) matched rules → merged qualifiers then cadence --------
     ctx.qualifiers = _merge_qualifiers(matches)
 
-    ok_q, why_q = _check_qualifiers(ctx)
-    ok_q, why_q = _norm_gate(ok_q, why_q, "qualifiers_not_met")
+    # Hydrate cues only if qualifiers exist and the caller didn't supply them.
+    # (available_skus_for_customer preloads cues once for N SKUs.)
+    if ctx.customer_ulid and ctx.customer_cues is None and ctx.qualifiers:
+        ctx.customer_cues = _get_customer_cues(ctx)
+
+    out_q = evaluate_qualifiers(
+        qualifiers=ctx.qualifiers,
+        customer_cues=ctx.customer_cues,
+    )
+
+    ok_q, why_q = _norm_gate(out_q.ok, out_q.reason, "qualifiers_not_met")
     if not ok_q:
         return _decision(False, why_q)
 
@@ -375,7 +382,7 @@ def available_skus_for_customer(
       - This DOES evaluate cadence (so the picker won't offer blocked SKUs).
       - If include_out_of_stock is False and location_ulid is provided, we require stock > 0 at that location.
     """
-    prof = get_needs_profile(customer_ulid=customer_ulid)
+    cues = get_customer_cues(customer_ulid=customer_ulid)
 
     q = select(InventoryItem.sku).distinct()
     if location_ulid and not include_out_of_stock:
@@ -397,7 +404,7 @@ def available_skus_for_customer(
             actor_ulid=actor_ulid,
             actor_domain_roles=actor_domain_roles or [],
             override_cadence=override_cadence,
-            needs_profile=prof,
+            customer_cues=cues,
         )
         d = decide_issue(ctx)
         if d.allowed:
@@ -572,33 +579,28 @@ def decide_and_issue_one(
 # -----------------
 
 
-def _get_needs_profile(ctx: IssueContext) -> dict[str, Any]:
-    if ctx.needs_profile is None:
-        if not ctx.customer_ulid:
-            ctx.needs_profile = {}
-        else:
-            ctx.needs_profile = get_needs_profile(
-                customer_ulid=ctx.customer_ulid
-            )
-    return ctx.needs_profile or {}
+def _get_customer_cues(ctx: IssueContext) -> CustomerCuesDTO | None:
+    """Lazy-load Customer cues into ctx.
 
+    This is the *only* cross-slice read performed by the Logistics decision engine.
+    It is cached in the IssueContext so SKU filtering can reuse one DTO.
 
-def _check_qualifiers(ctx: IssueContext) -> tuple[bool, str | None]:
-    q = ctx.qualifiers or {}
-    if not q:
-        return True, None
+    Fail-safe behavior: if the customer does not exist or the contract errors,
+    return None (qualifiers that require cues will fail closed).
+    """
+    if ctx.customer_cues is not None:
+        return ctx.customer_cues
 
-    prof = _get_needs_profile(ctx)
+    if not ctx.customer_ulid:
+        ctx.customer_cues = None
+        return None
 
-    if q.get("veteran_required") is True:
-        if not bool(prof.get("is_veteran_verified")):
-            return False, "veteran_required"
+    try:
+        ctx.customer_cues = get_customer_cues(customer_ulid=ctx.customer_ulid)
+    except Exception:
+        ctx.customer_cues = None
 
-    if q.get("homeless_required") is True:
-        if not bool(prof.get("is_homeless_verified")):
-            return False, "homeless_required"
-
-    return True, None
+    return ctx.customer_cues
 
 
 def _cadence_from(rule: dict, *, defaults_cadence: dict) -> dict:

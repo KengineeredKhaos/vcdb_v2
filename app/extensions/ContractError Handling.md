@@ -70,6 +70,98 @@ except SomeInternalError as e:
     raise ContractError(...) from e
 ```
 
+In routes, use this pattern:
+```python
+from app.extensions.errors import ContractError
+
+def _ok(data=None, **extra):
+    return jsonify({"ok": True, "data": data, **extra}), 200
+
+
+def _err(exc: Exception | str, code: int = 400):
+    """
+    Route-level error formatter.
+    - If exc is ContractError: preserve http_status + structured fields.
+    - If exc is a string: use provided code.
+    - Otherwise: treat as bad request unless caller overrides.
+    """
+    if isinstance(exc, ContractError):
+        payload = {
+            "ok": False,
+            "error": exc.message,
+            "code": exc.code,
+            "where": exc.where,
+        }
+        # Only include data if present (must be PII-free by contract)
+        if getattr(exc, "data", None):
+            payload["data"] = exc.data
+        return jsonify(payload), exc.http_status
+
+    # string / generic exception
+    return jsonify({"ok": False, "error": str(exc)}), code
+
+def some_function():
+    try:
+        data = customers_svc.intake_start(...)
+        db.session.commit()
+        return jsonify({"ok": True, "data": data}), 200
+
+    except ContractError as e:
+        db.session.rollback()
+        return jsonify({
+            "ok": False,
+            "code": e.code,
+            "where": e.where,
+            "error": e.message,
+            "data": e.data,   # optional, PII-free
+        }), e.http_status
+
+    except Exception as e:
+        db.session.rollback()
+        # log exception here
+        return jsonify({"ok": False, "error": "internal error"}), 500
+
+```
+An example inplementation:
+```python
+@bp.post("/intake/lookup")
+def intake_lookup():
+    payload = request.get_json(force=True, silent=False) or {}
+    req = ensure_request_id()
+    actor = get_actor_ulid()
+
+    # Route-level validation (request parsing / required fields)
+    last_name = (payload.get("last_name") or "").strip()
+    if not last_name:
+        return _err("last_name is required", 400)
+
+    dob = (payload.get("dob") or "").strip()
+    if not dob:
+        return _err("dob is required", 400)
+
+    last4 = (payload.get("last4") or "").strip()
+    if not last4:
+        return _err("last4 is required", 400)
+
+    try:
+        matches = cust_svc.intake_lookup(
+            last_name=last_name,
+            dob=dob,
+            last4=last4,
+            request_id=req,
+            actor_ulid=actor,
+        )
+        # matches: list[CustomerCandidateDTO] (PII-free)
+        return _ok({"matches": matches})
+
+    except Exception as e:
+        # safe even for read-only; keeps session clean if provider did work
+        db.session.rollback()
+        return _err(e)
+
+
+````
+
 ---
 
 ## 3. `code` naming conventions

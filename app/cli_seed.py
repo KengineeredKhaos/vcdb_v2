@@ -73,6 +73,111 @@ def _fresh_sqlite_db(*, force: bool) -> None:
         path.unlink()
 
 
+def seed_bootstrap_impl(
+    *,
+    fresh: bool,
+    force: bool,
+    faker_seed: int,
+    customers: int,
+    resources: int,
+    sponsors: int,
+) -> None:
+    """
+    Plain Python seeding implementation.
+    Safe for pytest to call inside an app context.
+
+    NOTE: In tests you normally want fresh=False/force=False because pytest uses
+    its own sqlite test DB (created in tests/conftest.py).
+    """
+    if fresh:
+        _fresh_sqlite_db(force=force)
+
+    # Always migrate to latest
+    alembic_upgrade()
+
+    faker = seed_core.make_faker(faker_seed)
+
+    # Role codes (no commit yet)
+    n_rbac, n_domain = seed_core.seed_policy_codes_no_commit(db.session)
+
+    # Late imports so app boots even if slices change during refactors
+    from app.slices.resources.services import resource_link_poc
+    from app.slices.sponsors.services import sponsor_link_poc
+
+    # Resources + POCs
+    for i in range(resources):
+        label = f"Resource Org {i+1}"
+        res = seed_core.seed_active_resource(
+            sess=db.session, label=label, faker=faker
+        )
+
+        pocs = seed_core.seed_org_poc_pair(
+            db.session,
+            org_entity_ulid=res.entity_ulid,
+            label=label,
+            faker=faker,
+        )
+
+        ts = now_iso8601_ms()
+        for j, person_entity_ulid in enumerate(pocs):
+            resource_link_poc(
+                resource_ulid=res.resource_ulid,
+                person_entity_ulid=person_entity_ulid,
+                scope=None,
+                rank=j,
+                is_primary=(j == 0),
+                window={"from": ts, "to": None},
+                org_role="primary" if j == 0 else "backup",
+                actor_ulid="seed",
+                request_id=new_ulid(),
+            )
+
+    # Sponsors + POCs
+    for i in range(sponsors):
+        label = f"Sponsor Org {i+1}"
+        sres = seed_core.seed_sponsor_with_policy(
+            sess=db.session, label=label, faker=faker
+        )
+
+        pocs = seed_core.seed_org_poc_pair(
+            db.session,
+            org_entity_ulid=sres.entity_ulid,
+            label=label,
+            faker=faker,
+        )
+
+        ts = now_iso8601_ms()
+        for j, person_entity_ulid in enumerate(pocs):
+            sponsor_link_poc(
+                sponsor_ulid=sres.sponsor_ulid,
+                person_entity_ulid=person_entity_ulid,
+                scope=None,
+                rank=j,
+                is_primary=(j == 0),
+                window={"from": ts, "to": None},
+                org_role="primary" if j == 0 else "backup",
+                actor_ulid="seed",
+                request_id=new_ulid(),
+            )
+
+    # Customers
+    for i in range(customers):
+        seed_core.seed_minimal_customer(
+            sess=db.session,
+            first="Test",
+            last=f"User{i+1}",
+            faker=faker,
+        )
+
+    db.session.commit()
+
+    click.echo(
+        f"OK — bootstrap complete. (RBAC +{n_rbac}, Domain +{n_domain}, "
+        f"resources={resources}, sponsors={sponsors}, customers={customers})"
+    )
+    return True
+
+
 @seed_cmd.command("bootstrap")
 @with_appcontext
 @click.option(
@@ -99,91 +204,13 @@ def seed_bootstrap(
 ):
     try:
         click.echo("seed-bootstrap")
-
-        if fresh:
-            _fresh_sqlite_db(force=force)
-
-        # Always migrate to latest
-        alembic_upgrade()
-
-        faker = seed_core.make_faker(faker_seed)
-
-        # Role codes (no commit yet)
-        n_rbac, n_domain = seed_core.seed_policy_codes_no_commit(db.session)
-
-        # Late imports so app boots even if slices change during refactors
-        from app.slices.resources.services import resource_link_poc
-        from app.slices.sponsors.services import sponsor_link_poc
-
-        # Resources + POCs
-        for i in range(resources):
-            label = f"Resource Org {i+1}"
-            res = seed_core.seed_active_resource(
-                sess=db.session, label=label, faker=faker
-            )
-
-            pocs = seed_core.seed_org_poc_pair(
-                db.session,
-                org_entity_ulid=res.entity_ulid,
-                label=label,
-                faker=faker,
-            )
-
-            ts = now_iso8601_ms()
-            for j, person_entity_ulid in enumerate(pocs):
-                resource_link_poc(
-                    resource_ulid=res.resource_ulid,
-                    person_entity_ulid=person_entity_ulid,
-                    scope=None,
-                    rank=j,
-                    is_primary=(j == 0),
-                    window={"from": ts, "to": None},
-                    org_role="primary" if j == 0 else "backup",
-                    actor_ulid="seed",
-                    request_id=new_ulid(),
-                )
-
-        # Sponsors + POCs
-        for i in range(sponsors):
-            label = f"Sponsor Org {i+1}"
-            sres = seed_core.seed_sponsor_with_policy(
-                sess=db.session, label=label, faker=faker
-            )
-
-            pocs = seed_core.seed_org_poc_pair(
-                db.session,
-                org_entity_ulid=sres.entity_ulid,
-                label=label,
-                faker=faker,
-            )
-
-            ts = now_iso8601_ms()
-            for j, person_entity_ulid in enumerate(pocs):
-                sponsor_link_poc(
-                    sponsor_ulid=sres.sponsor_ulid,
-                    person_entity_ulid=person_entity_ulid,
-                    scope=None,
-                    rank=j,
-                    is_primary=(j == 0),
-                    window={"from": ts, "to": None},
-                    org_role="primary" if j == 0 else "backup",
-                    actor_ulid="seed",
-                    request_id=new_ulid(),
-                )
-
-        # Customers
-        for i in range(customers):
-            seed_core.seed_minimal_customer(
-                sess=db.session,
-                first="Test",
-                last=f"User{i+1}",
-                faker=faker,
-            )
-
-        db.session.commit()
-        click.echo(
-            f"OK — bootstrap complete. (RBAC +{n_rbac}, Domain +{n_domain}, "
-            f"resources={resources}, sponsors={sponsors}, customers={customers})"
+        seed_bootstrap_impl(
+            fresh=fresh,
+            force=force,
+            faker_seed=faker_seed,
+            customers=customers,
+            resources=resources,
+            sponsors=sponsors,
         )
     except Exception as e:
         db.session.rollback()

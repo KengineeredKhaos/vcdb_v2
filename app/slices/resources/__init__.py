@@ -1,16 +1,25 @@
 # app/slices/resources/__init__.py
-from __future__ import annotations
+"""
+Resources slice package.
+
+Important:
+- bp MUST be registered by the app factory.
+- routes MUST be imported so decorators attach to bp.
+
+URL prefix is kept at root (/resources) to match the existing test suite
+and the Customers slice pattern (/customers).
+"""
 
 from flask import Blueprint
 
-bp = Blueprint(
-    "resources",
-    __name__,
-    template_folder="templates",
-    static_folder=None,
-    url_prefix="/resources",
-)
+bp = Blueprint("resources", __name__, url_prefix="/resources")
 
+# Import order matters:
+# models first (tables),
+# then services (business),
+# then routes (bp decorators).
+from . import models  # noqa: E402, F401
+from . import services  # noqa: F401
+from . import routes  # noqa: F401
 
-# Ensure models import so metadata is registered
-from . import models  # noqa: E402,F401
+__all__ = ["bp"]

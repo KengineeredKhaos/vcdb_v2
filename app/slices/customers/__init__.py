@@ -11,4 +11,12 @@ bp = Blueprint(
     url_prefix="/customers",
 )
 
-from . import models  # noqa: E402,F401
+# Import order matters:
+# models first (tables),
+# then services (business),
+# then routes (bp decorators).
+from . import models
+from . import services
+from . import routes
+
+__all__ = ["bp"]

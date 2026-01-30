@@ -20,12 +20,29 @@ from app.slices.logistics.models import InventoryStock, Issue
 
 def _make_customer_veteran(*, is_veteran: bool) -> str:
     res = seed_minimal_customer(first="Test", last="Veteran", sess=db.session)
+
     elig = (
         db.session.query(CustomerEligibility)
         .filter(CustomerEligibility.customer_ulid == res.customer_ulid)
         .one()
     )
-    elig.is_veteran_verified = bool(is_veteran)
+
+    if is_veteran:
+        elig.is_veteran_verified = True
+        # must satisfy ck_ce_verified_requires_method (if you added it)
+        if elig.veteran_method is None:
+            elig.veteran_method = "dd214"  # any canon method is fine
+        # approvals only required for method='other'; keep nulls otherwise
+        if elig.veteran_method != "other":
+            elig.approved_by_ulid = None
+            elig.approved_at_utc = None
+    else:
+        elig.is_veteran_verified = False
+        # must satisfy ck_ce_unverified_requires_nulls
+        elig.veteran_method = None
+        elig.approved_by_ulid = None
+        elig.approved_at_utc = None
+
     db.session.commit()
     return res.customer_ulid
 

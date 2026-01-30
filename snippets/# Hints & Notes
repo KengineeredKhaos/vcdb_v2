@@ -234,7 +234,7 @@ veteran_method: SelectField [dd214|va_id|state_dl_veteran|other ]
 
 branch: SelectField [USA|USMC|USN|USAF|USSF|USCG]
 
-era: SelectField [WWI|WWII|Korea|Vietnam|ColdWar|GW-IF-EF|PsyWar]
+era: SelectField [WWI|WWII|Korea|Vietnam|ColdWar|GW|OIF|OEF|PsyWar]
 
 Categories for Customer Needs Profile Questionaire:
 Tier 1 (physiological): food, hygiene, health, housing, clothing

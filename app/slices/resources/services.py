@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any, Optional
 
 from sqlalchemy import desc, func
@@ -28,7 +29,6 @@ CAPS_SECTION = "resource:capability:v1"
 POC_RELATION = "poc"  # table-level convention, not board policy
 _RESOURCE_POC_SPEC = poc_svc.POCSpec(owner_col="resource_ulid")
 
-
 # -----------------
 # Policy access (lazy imports)
 # -----------------
@@ -40,7 +40,15 @@ def _poc_policy() -> dict:
     return governance_v2.get_poc_policy()
 
 
-def _caps_policy():
+def _caps_policy() -> Any:
+    """
+    Governance-backed resource capabilities policy.
+
+    We tolerate both dict and attribute-style objects coming back from Governance.
+    Required fields:
+      - all_codes: iterable[str] of "domain.key" codes
+      - note_max: int
+    """
     from app.extensions.contracts import governance_v2
 
     return governance_v2.get_resource_capabilities_policy()
@@ -52,14 +60,20 @@ def _lifecycle_policy() -> dict:
     return governance_v2.get_resource_lifecycle_policy()
 
 
+def _pol_get(pol: Any, key: str, default: Any = None) -> Any:
+    if pol is None:
+        return default
+    if isinstance(pol, dict):
+        return pol.get(key, default)
+    return getattr(pol, key, default)
+
+
 # -----------------
-# Contract Error
-# normalization
+# Contract Error normalization
 # -----------------
 
 
 def _as_contract_error(where: str, exc: Exception) -> ContractError:
-    # If we’re already looking at a ContractError, just bubble it up unchanged
     if isinstance(exc, ContractError):
         return exc
 
@@ -87,53 +101,17 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
             http_status=404,
         )
 
-    # Fallback: unexpected system/runtime error
     return ContractError(
         code="internal_error",
         where=where,
-        message="unexpected error in contract; see logs",
+        message="unexpected error in resources contract; see logs",
         http_status=500,
         data={"exc_type": exc.__class__.__name__},
     )
 
 
 # -----------------
-# Help for POC Validation
-# thru Entity contract
-# -----------------
-
-
-def _require_person_entity_ulid(
-    person_entity_ulid: str, *, where: str
-) -> None:
-    core = entity_v2.get_entity_core(db.session, person_entity_ulid)
-
-    if core.kind != "person":
-        raise ContractError(
-            code="bad_request",
-            where=where,
-            message=f"person_entity_ulid must be a person entity (got kind='{core.kind}')",
-            http_status=400,
-            data={"entity_ulid": person_entity_ulid, "kind": core.kind},
-        )
-
-    if core.archived_at:
-        raise ContractError(
-            code="conflict",
-            where=where,
-            message="person entity is archived",
-            http_status=409,
-            data={
-                "entity_ulid": person_entity_ulid,
-                "archived_at": core.archived_at,
-            },
-        )
-
-
-# -----------------
-# Point of Contact
-# wrappers for
-# app.services.poc
+# Point of Contact wrappers for app.services.poc
 # -----------------
 
 
@@ -186,7 +164,7 @@ def resource_update_poc(
     require_person_entity_ulid(
         db.session,
         person_entity_ulid,
-        where="resources.resource_link_poc",
+        where="resources.resource_update_poc",
     )
     return poc_svc.update_poc(
         db.session,
@@ -216,7 +194,7 @@ def resource_unlink_poc(
     require_person_entity_ulid(
         db.session,
         person_entity_ulid,
-        where="resources.resource_link_poc",
+        where="resources.resource_unlink_poc",
     )
     return poc_svc.unlink_poc(
         db.session,
@@ -266,9 +244,7 @@ def _latest_snapshot(resource_ulid: str) -> dict[str, dict]:
     return json.loads(h.data_json) if h else {}
 
 
-def _next_version(
-    resource_ulid: str,
-) -> int:
+def _next_version(resource_ulid: str) -> int:
     cur = (
         db.session.query(func.max(ResourceHistory.version))
         .filter_by(resource_ulid=resource_ulid, section=CAPS_SECTION)
@@ -297,9 +273,7 @@ def _split(flat_key: str) -> tuple[str, str]:
     return domain, key
 
 
-def _flatten_caps_payload(
-    payload: dict[str, object],
-) -> dict[str, dict[str, object]]:
+def _flatten_caps_payload(payload: dict[str, object]) -> dict[str, dict[str, object]]:
     """
     Normalise capability payload into flat keys.
 
@@ -315,7 +289,7 @@ def _flatten_caps_payload(
         return flat
 
     policy = _caps_policy()
-    note_max = int(policy.note_max)
+    note_max = int(_pol_get(policy, "note_max", 0) or 0)
 
     for key, value in payload.items():
         key = str(key).strip()
@@ -327,9 +301,7 @@ def _flatten_caps_payload(
             # Shape 2: nested by domain
             domain = key
             if not isinstance(value, dict):
-                raise ValueError(
-                    "nested capabilities must be objects per domain"
-                )
+                raise ValueError("nested capabilities must be objects per domain")
             items = [(f"{domain}.{sub}", sv) for sub, sv in value.items()]
 
         for flat_key, obj in items:
@@ -343,7 +315,7 @@ def _flatten_caps_payload(
             if isinstance(obj, dict):
                 out: dict[str, object] = {}
 
-                # has defaults True when omitted but other fields exist
+                # replace semantics: "has" defaults True when omitted
                 out["has"] = bool(obj.get("has", True))
 
                 note_raw = obj.get("note")
@@ -360,34 +332,26 @@ def _flatten_caps_payload(
     return flat
 
 
-def _validate_caps(
-    payload: dict[str, object]
-) -> dict[str, dict[str, object]]:
+def _validate_caps(payload: dict[str, object]) -> dict[str, dict[str, object]]:
     """
     Validate and normalise a capability payload against Board policy.
 
-    - Accepts nested/flat shapes.
-    - Ensures every capability is allowed by policy.
-    - Trims note fields to policy.note_max.
-
+    Replace semantics.
     Returns:
         { "domain.code": {"has": bool, "note": str?}, ... }
     """
-    # NOTE: keep copy-shaped with sponsors/resources _validate_caps()
-
     flat = _flatten_caps_payload(payload)
     if not flat:
         return flat
 
     caps = _caps_policy()
-    allowed = set(caps.all_codes)
-    note_max = caps.note_max
+    allowed = set(_pol_get(caps, "all_codes", []) or [])
+    note_max = int(_pol_get(caps, "note_max", 0) or 0)
 
     norm: dict[str, dict[str, object]] = {}
     for flat_key, obj in flat.items():
         if flat_key not in allowed:
             raise ValueError(f"unknown capability '{flat_key}'")
-
         if not isinstance(obj, dict):
             raise ValueError(f"invalid payload for '{flat_key}'")
 
@@ -404,6 +368,60 @@ def _validate_caps(
     return norm
 
 
+def _validate_caps_patch(payload: dict[str, object]) -> dict[str, dict[str, object]]:
+    """
+    Patch semantics.
+    Allows:
+      - bool values (treated as {"has": bool})
+      - dict values with optional "has" and/or "note"
+    Important difference vs replace: if "has" is omitted, we DO NOT default it.
+    """
+    if not payload:
+        return {}
+
+    caps = _caps_policy()
+    allowed = set(_pol_get(caps, "all_codes", []) or [])
+    note_max = int(_pol_get(caps, "note_max", 0) or 0)
+
+    norm: dict[str, dict[str, object]] = {}
+
+    for raw_key, raw_val in payload.items():
+        key = str(raw_key).strip()
+        if "." not in key:
+            raise ValueError(f"invalid classification key '{key}'; expected 'domain.key'")
+        domain, code = _split(key)
+        flat_key = f"{domain}.{code}"
+
+        if flat_key not in allowed:
+            raise ValueError(f"unknown capability '{flat_key}'")
+
+        if isinstance(raw_val, bool):
+            norm[flat_key] = {"has": bool(raw_val)}
+            continue
+
+        if not isinstance(raw_val, dict):
+            raise ValueError(f"invalid payload for '{flat_key}'")
+
+        out: dict[str, object] = {}
+
+        if "has" in raw_val:
+            out["has"] = bool(raw_val.get("has"))
+
+        if "note" in raw_val:
+            note = raw_val.get("note")
+            if note is None or str(note).strip() == "":
+                out["note"] = None  # explicit clear
+            else:
+                out["note"] = str(note).strip()[:note_max]
+
+        if not out:
+            raise ValueError(f"empty patch for '{flat_key}'")
+
+        norm[flat_key] = out
+
+    return norm
+
+
 # -----------------
 # Policy-backed helpers (Board policy via Governance)
 # -----------------
@@ -411,32 +429,34 @@ def _validate_caps(
 
 def allowed_capability_codes() -> list[str]:
     caps = _caps_policy()
-    return sorted(caps.all_codes)
+    return sorted(list(_pol_get(caps, "all_codes", []) or []))
 
 
 def readiness_allowed() -> set[str]:
     pol = _lifecycle_policy()
-    return set(pol["readiness_allowed"])
+    return set(pol.get("readiness_allowed") or [])
 
 
 def mou_allowed() -> set[str]:
     pol = _lifecycle_policy()
-    return set(pol["mou_allowed"])
+    return set(pol.get("mou_allowed") or [])
 
 
 def note_max() -> int:
     caps = _caps_policy()
-    return int(caps.note_max)
+    return int(_pol_get(caps, "note_max", 0) or 0)
 
 
 def _default_readiness() -> str:
     pol = _lifecycle_policy()
-    return str(pol["readiness_allowed"][0])
+    allowed = pol.get("readiness_allowed") or ["draft"]
+    return str(allowed[0])
 
 
 def _default_mou() -> str:
     pol = _lifecycle_policy()
-    return str(pol["mou_allowed"][0])
+    allowed = pol.get("mou_allowed") or ["none"]
+    return str(allowed[0])
 
 
 # -----------------
@@ -444,9 +464,7 @@ def _default_mou() -> str:
 # ------------------
 
 
-def ensure_resource(
-    *, entity_ulid: str, request_id: str, actor_ulid: Optional[str]
-) -> str:
+def ensure_resource(*, entity_ulid: str, request_id: str, actor_ulid: Optional[str]) -> str:
     _ensure_reqid(request_id)
 
     r = db.session.query(Resource).filter_by(entity_ulid=entity_ulid).first()
@@ -489,12 +507,7 @@ def upsert_capabilities(
 ) -> str:
     """
     Replace semantics: incoming payload is the new truth.
-    - Validates keys/values
-    - Writes ResourceHistory (values + notes) with next version
-    - Updates ResourceCapabilityIndex (names only)
-    - Sets admin_review_required based on 'meta.unclassified'
-    - Emits names-only ledger events for deltas with version pointer
-    Returns history_ulid.
+    Returns history_ulid, or "" if idempotent (no new version created).
     """
     _ensure_reqid(request_id)
 
@@ -504,21 +517,17 @@ def upsert_capabilities(
 
     norm = _validate_caps(payload)
 
-    # Idempotency (optional): if identical to last snapshot, no-op
     last = _latest_snapshot(resource_ulid)
     if last and stable_dumps(last) == stable_dumps(norm):
-        # touch resource but don't write new version
         res.last_touch_utc = now_iso8601_ms()
         db.session.flush()
-        return ""  # indicate no new version created
+        return ""
 
-    # Compute deltas (names-only)
     before_active = {k for k, v in last.items() if v.get("has") is True}
     after_active = {k for k, v in norm.items() if v.get("has") is True}
     added = sorted(after_active - before_active)
     removed = sorted(before_active - after_active)
 
-    # Write History
     version = _next_version(resource_ulid)
     hist = ResourceHistory(
         resource_ulid=resource_ulid,
@@ -529,17 +538,15 @@ def upsert_capabilities(
     )
     db.session.add(hist)
 
-    # Rebuild projection table in-place
-    # 1) Fetch existing projection entries
     existing = {
         (rc.domain, rc.key): rc
         for rc in db.session.query(ResourceCapabilityIndex)
         .filter_by(resource_ulid=resource_ulid)
         .all()
     }
-    # 2) Upsert new/updated rows
     now = now_iso8601_ms()
     seen_pairs: set[tuple[str, str]] = set()
+
     for flat, obj in norm.items():
         domain, key = _split(flat)
         active = bool(obj.get("has"))
@@ -558,25 +565,20 @@ def upsert_capabilities(
                     updated_at_utc=now,
                 )
             )
-    # 3) Remove projection rows that are no longer present
+
     for (domain, key), row in existing.items():
         if (domain, key) not in seen_pairs:
             db.session.delete(row)
 
-    # Update Resource ops flags
     res.capability_last_update_utc = now
     res.last_touch_utc = now
 
-    # Admin review: true when meta.unclassified is active
     res.admin_review_required = "meta.unclassified" in after_active
-
-    # Auto bump readiness: if no 'unclassified' and previously draft, move to 'review'
     if not res.admin_review_required and res.readiness_status == "draft":
         res.readiness_status = "review"
 
     db.session.flush()
 
-    # Emit names-only ledger events with pointer (values never leave History)
     for flat in added:
         domain, key = _split(flat)
         event_bus.emit(
@@ -585,7 +587,7 @@ def upsert_capabilities(
             actor_ulid=actor_ulid,
             target_ulid=resource_ulid,
             request_id=request_id,
-            happened_at_utc=now_iso8601_ms(),
+            happened_at_utc=now,
             refs={"domain": domain, "key": key, "version_ptr": hist.ulid},
         )
     for flat in removed:
@@ -596,14 +598,11 @@ def upsert_capabilities(
             actor_ulid=actor_ulid,
             target_ulid=resource_ulid,
             request_id=request_id,
-            happened_at_utc=now_iso8601_ms(),
+            happened_at_utc=now,
             refs={"domain": domain, "key": key, "version_ptr": hist.ulid},
         )
 
     return hist.ulid
-
-
-# ----------- views / search -------------
 
 
 def resource_view(resource_ulid: str) -> Optional[dict]:
@@ -621,9 +620,7 @@ def resource_view(resource_ulid: str) -> Optional[dict]:
         "admin_review_required": r.admin_review_required,
         "readiness_status": r.readiness_status,
         "mou_status": r.mou_status,
-        "active_capabilities": [
-            {"domain": c.domain, "key": c.key} for c in caps
-        ],
+        "active_capabilities": [{"domain": c.domain, "key": c.key} for c in caps],
         "capability_last_update_utc": r.capability_last_update_utc,
         "first_seen_utc": r.first_seen_utc,
         "last_touch_utc": r.last_touch_utc,
@@ -634,39 +631,30 @@ def resource_view(resource_ulid: str) -> Optional[dict]:
 
 def find_resources(
     *,
-    any_of: Optional[list[tuple[str, str]]] = None,  # OR of (domain, key)
-    all_of: Optional[list[tuple[str, str]]] = None,  # AND of (domain, key)
+    any_of: Optional[list[tuple[str, str]]] = None,
+    all_of: Optional[list[tuple[str, str]]] = None,
     admin_review_required: Optional[bool] = None,
     readiness_in: Optional[list[str]] = None,
     page: int = 1,
     per: int = 50,
 ) -> tuple[list[dict], int]:
-    """
-    Search by capability keys quickly via the projection table.
-    “optimize later” (SQL UNION / exists / group by having count patterns)
-    """
     q = db.session.query(Resource)
 
-    # Join to projection as needed
     if any_of:
-        ors = []
+        sub_ids: set[str] = set()
         for d, k in any_of:
-            ors.append(
+            rows = (
                 db.session.query(ResourceCapabilityIndex.resource_ulid)
                 .filter_by(domain=d, key=k, active=True)
-                .with_entities(ResourceCapabilityIndex.resource_ulid)
+                .all()
             )
-        # filter Resource.ulid IN union of ors
-        sub_ids = set()
-        for sub in ors:
-            sub_ids.update([row[0] for row in sub.all()])
+            sub_ids.update([row[0] for row in rows])
         if sub_ids:
             q = q.filter(Resource.ulid.in_(list(sub_ids)))
         else:
             return [], 0
 
     if all_of:
-        # for AND, chain filters
         for d, k in all_of:
             q = q.join(
                 ResourceCapabilityIndex,
@@ -678,9 +666,7 @@ def find_resources(
             )
 
     if admin_review_required is not None:
-        q = q.filter(
-            Resource.admin_review_required.is_(bool(admin_review_required))
-        )
+        q = q.filter(Resource.admin_review_required.is_(bool(admin_review_required)))
     if readiness_in:
         q = q.filter(Resource.readiness_status.in_(list(set(readiness_in))))
 
@@ -692,11 +678,6 @@ def find_resources(
         .all()
     )
     return [resource_view(r.ulid) for r in rows], total
-
-
-# -----------------
-# Readiness/MOU helpers
-# -----------------
 
 
 def set_readiness_status(
@@ -775,13 +756,7 @@ def set_mou_status(
     )
 
 
-def rebuild_capability_index(
-    *, resource_ulid: str, request_id: str, actor_ulid: str | None
-) -> int:
-    """
-    Rebuild the projection table from the latest History snapshot.
-    Returns number of index rows after rebuild.
-    """
+def rebuild_capability_index(*, resource_ulid: str, request_id: str, actor_ulid: str | None) -> int:
     _ensure_reqid(request_id)
 
     r = db.session.get(Resource, resource_ulid)
@@ -791,10 +766,7 @@ def rebuild_capability_index(
     snapshot = _latest_snapshot(resource_ulid)
     now = now_iso8601_ms()
 
-    # wipe and recreate for deterministic state
-    db.session.query(ResourceCapabilityIndex).filter_by(
-        resource_ulid=resource_ulid
-    ).delete()
+    db.session.query(ResourceCapabilityIndex).filter_by(resource_ulid=resource_ulid).delete()
 
     count = 0
     for flat, obj in snapshot.items():
@@ -827,23 +799,14 @@ def rebuild_capability_index(
     return count
 
 
-def promote_readiness_if_clean(
-    *, resource_ulid: str, request_id: str, actor_ulid: str | None
-) -> bool:
-    """
-    Convenience: if no 'meta.unclassified' and currently 'review',
-    promote to 'active'.
-    Returns True if promoted.
-    """
+def promote_readiness_if_clean(*, resource_ulid: str, request_id: str, actor_ulid: str | None) -> bool:
     _ensure_reqid(request_id)
     r = db.session.get(Resource, resource_ulid)
     if not r:
         raise ValueError("resource not found")
 
     latest = _latest_snapshot(resource_ulid)
-    has_unclassified = bool(
-        latest.get("meta.unclassified", {}).get("has") is True
-    )
+    has_unclassified = bool(latest.get("meta.unclassified", {}).get("has") is True)
     if not has_unclassified and r.readiness_status == "review":
         set_readiness_status(
             resource_ulid=resource_ulid,
@@ -855,18 +818,7 @@ def promote_readiness_if_clean(
     return False
 
 
-# ---- Patch semantics (merge into latest snapshot) --------------------------
-
-
-def _merge_snapshot(
-    latest: dict[str, dict], patch: dict[str, dict]
-) -> dict[str, dict]:
-    """
-    For each provided key:
-      - assumes key is valid and values are normalised by _validate_caps()
-      - updates 'has' and/or 'note' (if provided)
-    Keys not present in patch remain unchanged.
-    """
+def _merge_snapshot(latest: dict[str, dict], patch: dict[str, dict]) -> dict[str, dict]:
     merged = {k: dict(v) for k, v in latest.items()}
     for flat, obj in patch.items():
         if flat not in merged:
@@ -875,56 +827,44 @@ def _merge_snapshot(
             merged[flat]["has"] = bool(obj["has"])
         if "note" in obj:
             note = obj["note"]
-            if note is None or str(note).strip() == "":
+            if note is None:
                 merged[flat].pop("note", None)
             else:
-                # already trimmed by _validate_caps
-                merged[flat]["note"] = str(note)
+                note_str = str(note).strip()
+                if not note_str:
+                    merged[flat].pop("note", None)
+                else:
+                    merged[flat]["note"] = note_str
     return merged
 
 
 def patch_capabilities(
     *,
     resource_ulid: str,
-    payload: dict[
-        str, dict
-    ],  # subset of "domain.key": {"has"?: bool, "note"?: str|null}
+    payload: dict[str, object],
     request_id: str,
     actor_ulid: str | None,
 ) -> str | None:
-    """
-    PATCH semantics: update only provided keys; others remain as-is.
-    - Validates keys
-    - Computes deltas (names-only)
-    - Writes ResourceHistory if there is any change
-    - Updates projection accordingly
-    - Emits names-only ledger events for added/removed
-    Returns history_ulid if a new version was created, else None (no change).
-    """
     _ensure_reqid(request_id)
 
     res = db.session.get(Resource, resource_ulid)
     if not res:
         raise ValueError("resource not found")
 
-    norm_patch = _validate_caps(payload)
-    # same validator; it requires "has" in each item
+    norm_patch = _validate_caps_patch(payload)
     latest = _latest_snapshot(resource_ulid)
     merged = _merge_snapshot(latest, norm_patch)
 
     if stable_dumps(merged) == stable_dumps(latest):
-        # no effective change
         res.last_touch_utc = now_iso8601_ms()
         db.session.flush()
         return None
 
-    # deltas
     before_active = {k for k, v in latest.items() if v.get("has") is True}
     after_active = {k for k, v in merged.items() if v.get("has") is True}
     added = sorted(after_active - before_active)
     removed = sorted(before_active - after_active)
 
-    # write history
     version = _next_version(resource_ulid)
     hist = ResourceHistory(
         resource_ulid=resource_ulid,
@@ -935,11 +875,13 @@ def patch_capabilities(
     )
     db.session.add(hist)
 
-    # update projection (only touched keys)
     now = now_iso8601_ms()
-    # 1) upsert keys from patch payload
+
+    # Upsert only touched keys; leave other index rows unchanged.
     for flat, obj in norm_patch.items():
         domain, key = _split(flat)
+        if "has" not in obj:
+            continue  # note-only change doesn't affect index state
         active = bool(obj.get("has"))
         row = (
             db.session.query(ResourceCapabilityIndex)
@@ -959,10 +901,7 @@ def patch_capabilities(
                     updated_at_utc=now,
                 )
             )
-    # 2) if any key became inactive and we want strict replace of its presence, leave row with active=False
-    #    (no deletion here, unlike replace semantics which removes unknown rows)
 
-    # update resource ops
     res.last_touch_utc = now
     res.capability_last_update_utc = now
     res.admin_review_required = "meta.unclassified" in after_active
@@ -971,7 +910,6 @@ def patch_capabilities(
 
     db.session.flush()
 
-    # emit names-only deltas
     for flat in added:
         d, k = _split(flat)
         event_bus.emit(
@@ -980,7 +918,7 @@ def patch_capabilities(
             actor_ulid=actor_ulid,
             target_ulid=resource_ulid,
             request_id=request_id,
-            happened_at_utc=now_iso8601_ms,
+            happened_at_utc=now,
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
         )
     for flat in removed:
@@ -991,25 +929,18 @@ def patch_capabilities(
             actor_ulid=actor_ulid,
             target_ulid=resource_ulid,
             request_id=request_id,
-            happened_at_utc=now_iso8601_ms(),
+            happened_at_utc=now,
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
         )
 
     return hist.ulid
 
 
-# ---- Batch rebuild (maintenance / recovery) --------------------------------
-
-
 def rebuild_all_capability_indexes(
     *, page: int = 1, per: int = 200, request_id: str, actor_ulid: str | None
 ) -> dict:
-    """
-    Rebuild the projection for a page of resources (safety-limited).
-    Returns {"processed": N, "reindexed": total_rows, "page": page, "per": per}
-    """
     _ensure_reqid(request_id)
-    per = max(1, min(int(per or 200), 500))  # safety cap 500
+    per = max(1, min(int(per or 200), 500))
 
     q = (
         db.session.query(Resource.ulid)
@@ -1020,7 +951,7 @@ def rebuild_all_capability_indexes(
     ids = [row[0] for row in q.all()]
     total_rows = 0
     for rid in ids:
-        total_rows += (
+        total_rows += int(
             rebuild_capability_index(
                 resource_ulid=rid,
                 request_id=request_id,
