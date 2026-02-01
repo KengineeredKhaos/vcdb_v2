@@ -1,6 +1,162 @@
 # Hints & Notes
 
-Quick Static sanity
+
+The Foundation Checklist:
+When reading code,
+
+“Is this respecting transaction ownership?”
+“Is this respecting slice boundaries?”
+“Is this respecting the facet key?”
+“Is this contract honest, or is it faking it?”
+
+The big tripwire patterns (and what they usually mean):
+1) Contract takes sess but doesn’t use it
+
+Signal: the contract is pretending to be session-driven but isn’t.
+Typical cause: compatibility scab or churn (fallback probing).
+Consequence: tests become nondeterministic; flush/commit boundaries leak.
+
+2) getattr(..., "new_fn", None) or getattr(..., "old_fn", None)
+
+Signal: “provider interface is unstable.”
+Typical cause: test-driven patching over refactors.
+Consequence: you can’t reason about behavior from reading one file.
+
+3) Services calling db.session.commit() (or implicitly committing)
+
+Signal: your invariant is violated.
+Consequence: routes can’t reliably rollback; tests get weird.
+
+4) Multiple competing identifiers used as “the anchor”
+
+Examples: ulid, entity_ulid, resource_ulid, sponsor_ulid used interchangeably.
+Signal: the data model premise has drifted.
+Consequence: every layer invents translation glue.
+
+Your facet conversion is a perfect example:
+once entity_ulid is the PK, any code still using s.ulid is now automatically
+suspicious.
+
+5) Routes doing business logic
+
+Signal: slice is bending to tests or convenience.
+Consequence: untestable services + duplicated rules + drift.
+
+6) “Helpers” that exist only to satisfy tests
+
+Names often look like _compat, _shim, _legacy, maybe_*, try_*.
+Signal: the codebase is carrying a temporary prosthetic that wasn’t removed.
+Consequence: permanent confusion (your _link_poc_compat ghost story).
+
+The “standard conformance scan” you can run mentally
+
+When you open any function, you can check it in ~10 seconds:
+
+Inputs: Does it accept sess (if contract-facing)?
+DB boundary: Does it only flush and never commit?
+Keying: Does it use facet key (entity_ulid) consistently?
+Errors: Does it raise ContractError (services/contracts) vs shape JSON (routes)?
+Cross-slice: If it needs other slices, does it go via contracts,
+not direct imports?
+Ledger: If it mutates, does it emit ledger events with ULIDs only (no PII)?
+
+If any of those fail, you’ve found “aberrant pattern.”
+A useful framing for what you’re doing
+You’re building a “lint rule set,” but in your head:
+
+Green code = boring, explicit, predictable.
+Yellow code = slight smell (maybe acceptable short-term).
+Red code = violates invariants; must be refactored before extending.
+
+That’s why you’re suddenly able to critique Entity contracts:
+you’re detecting red patterns, not parsing Python grammar.
+
+
+
+Flask Shell Primer:
+
+In a Flask shell, a DTO is usually a class (dataclass, pydantic model, attrs class, etc.). You inspect it by looking at either:
+
+* the class constructor signature (`__init__`)
+* the generated dataclass fields
+* the type hints (`__annotations__`)
+* or pydantic fields (if applicable)
+
+Here are the most useful “copy/paste” snippets.
+
+## 1) Constructor signature (works for most classes)
+
+```py
+import inspect
+from app.extensions.contracts.entity_v2 import EnsurePersonResultDTO
+
+print(inspect.signature(EnsurePersonResultDTO))
+# or explicitly:
+print(inspect.signature(EnsurePersonResultDTO.__init__))
+```
+
+If it’s a normal class or dataclass, this will show the parameter list.
+
+## 2) If it’s a `@dataclass`
+
+```py
+import dataclasses
+from app.extensions.contracts.entity_v2 import EnsurePersonResultDTO
+
+print(dataclasses.is_dataclass(EnsurePersonResultDTO))
+print([f"{f.name}: {f.type} default={f.default!r}" for f in dataclasses.fields(EnsurePersonResultDTO)])
+```
+
+## 3) Type hints / annotations
+
+```py
+from typing import get_type_hints
+from app.extensions.contracts.entity_v2 import EnsurePersonResultDTO
+
+print(get_type_hints(EnsurePersonResultDTO))
+```
+
+This tells you the field names and their types (often enough to know the “shape”).
+
+## 4) If it’s Pydantic (v1 or v2)
+
+Pydantic v1:
+
+```py
+from app.extensions.contracts.entity_v2 import EnsurePersonResultDTO
+print(EnsurePersonResultDTO.__fields__.keys())
+print(EnsurePersonResultDTO.schema())
+```
+
+Pydantic v2:
+
+```py
+from app.extensions.contracts.entity_v2 import EnsurePersonResultDTO
+print(EnsurePersonResultDTO.model_fields.keys())
+print(EnsurePersonResultDTO.model_json_schema())
+```
+
+## 5) For a *function* that returns a DTO (often what you really need)
+
+If you’re trying to see what `entity_svc.ensure_person` expects:
+
+```py
+import inspect
+from app.slices.entity import services as entity_svc
+
+fn = getattr(entity_svc, "ensure_person_by_contact", None) or getattr(entity_svc, "ensure_person")
+print(fn)
+print(inspect.signature(fn))
+```
+
+That last line is usually the smoking gun when the contract call is failing.
+
+If you paste the output of `print(inspect.signature(fn))`, I’ll tell you exactly what mismatch you’ve got (missing `sess`, different kw names, etc.) and what the smallest fix is.
+
+
+
+
+Quick Static sanity:
 
 python -m compileall app (must pass)
 
@@ -49,17 +205,7 @@ def _stub_admin_headers(monkeypatch):
     # only in tests that need it; otherwise be explicit per-call
     pass
 
-When you circle back to foundation tests
 
-Keep the testing env headless (no UI blueprints).
-
-Your devtools endpoints expected by the suite should now just work:
-
-/api/dev/health/db
-
-/api/dev/health/session
-
-/api/dev/seed/manifest
 
 
 curl -s http://127.0.0.1:5000/end/point/routing/symbol | jq .
@@ -265,3 +411,6 @@ Sponsor Classifications
 - Fund_Restrictions: vet_only, homeless_only, local_only, grant_reporting
 - Spnsr_Tier: Partner, Affiliate, Associate, Valued_Donor
 - Ack_History: t_y_letter, certificate, plaque, recog_event, board_seat
+
+
+

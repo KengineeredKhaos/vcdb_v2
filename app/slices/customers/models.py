@@ -61,11 +61,20 @@ from app.extensions import db
 from app.lib.models import ULIDFK, ULIDPK, IsoTimestamps
 
 
-class Customer(db.Model, ULIDPK, IsoTimestamps):
+class Customer(db.Model, IsoTimestamps):
+    """
+    FACET TABLE (anchor = entity_ulid):
+    Primary key is entity_ulid (same ULID as the Entity row).
+    """
+
     __tablename__ = "customer_customer"
 
     # one Customer per Entity
-    entity_ulid: Mapped[str] = ULIDFK("entity_entity", index=True)
+    entity_ulid: Mapped[str] = mapped_column(
+        String(26),
+        db.ForeignKey("entity_entity.ulid", ondelete="CASCADE"),
+        primary_key=True,
+    )
 
     # derived cues (denormalized for dashboards/lists)
     tier1_min: Mapped[int | None] = mapped_column(
@@ -121,8 +130,6 @@ class Customer(db.Model, ULIDPK, IsoTimestamps):
         cascade="all, delete-orphan",
     )
     __table_args__ = (
-        UniqueConstraint("entity_ulid", name="uq_customer_entity"),
-        # enum guards
         CheckConstraint(
             "intake_step IS NULL OR intake_step IN "
             "('identity','address_physical','address_postal','contact','eligibility','review','complete')",
@@ -131,6 +138,21 @@ class Customer(db.Model, ULIDPK, IsoTimestamps):
         CheckConstraint(
             "status IN ('intake','active','suspended','archived')",
             name="ck_customer_status_enum",
+        ),
+        CheckConstraint(
+            "tier1_min IS NULL OR (tier1_min BETWEEN 1 AND 3)",
+            name="ck_el_tier1_range",
+        ),
+        CheckConstraint(
+            "tier2_min IS NULL OR (tier2_min BETWEEN 1 AND 3)",
+            name="ck_el_tier2_range",
+        ),
+        CheckConstraint(
+            "tier3_min IS NULL OR (tier3_min BETWEEN 1 AND 3)",
+            name="ck_el_tier3_range",
+        ),
+        CheckConstraint(
+            "last_needs_tier_updated IS NULL OR last_needs_tier_updated IN ('tier1','tier2','tier3'"
         ),
     )
 
@@ -142,7 +164,12 @@ class CustomerHistory(db.Model, ULIDPK, IsoTimestamps):
 
     __tablename__ = "customer_history"
 
-    customer_ulid: Mapped[str] = ULIDFK("customer_customer", index=True)
+    customer_entity_ulid: Mapped[str] = mapped_column(
+        String(26),
+        db.ForeignKey("customer_customer.entity_ulid", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     section: Mapped[str] = mapped_column(
         String(64), nullable=False, index=True
     )  # 'profile:needs:tier1'|tier2|tier3
@@ -159,6 +186,12 @@ class CustomerHistory(db.Model, ULIDPK, IsoTimestamps):
     )
 
     __table_args__ = (
+        UniqueConstraint(
+            "customer_entity_ulid",
+            "section",
+            "version",
+            name="uq_customer_hist_stream_version",
+        ),
         CheckConstraint("version >= 1", name="ck_history_version_pos"),
     )
 
@@ -171,9 +204,12 @@ class CustomerEligibility(db.Model, ULIDPK, IsoTimestamps):
 
     __tablename__ = "customer_eligibility"
 
-    # FK to Customer (not Entity) to stay within slice and align with your pattern
-    customer_ulid: Mapped[str] = ULIDFK("customer_customer")
-
+    customer_entity_ulid: Mapped[str] = mapped_column(
+        String(26),
+        db.ForeignKey("customer_customer.entity_ulid", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     # Verified qualifiers (coarse booleans)
     is_veteran_verified: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, index=True
@@ -202,7 +238,7 @@ class CustomerEligibility(db.Model, ULIDPK, IsoTimestamps):
 
     __table_args__ = (
         UniqueConstraint(
-            "customer_ulid", name="uq_customer_eligibility_customer"
+            "customer_entity_ulid", name="uq_customer_eligibility_customer"
         ),
         CheckConstraint(
             "tier1_min IS NULL OR (tier1_min BETWEEN 1 AND 3)",

@@ -1,194 +1,126 @@
-# tests/test_resources_slice.py
-from __future__ import annotations
+"""Resources slice route tests.
 
-from types import SimpleNamespace
+These tests focus on the HTTP surface (routes + services + commit/rollback).
+They intentionally avoid reaching into contracts directly so they smoke out:
+- parsing / validation issues
+- response envelope shape
+- facet key correctness (resource_ulid == entity_ulid)
+"""
+
+from __future__ import annotations
 
 import pytest
 
 from app.extensions import db
-from app.extensions.contracts import entity_v2, resources_v2
+from app.extensions.contracts import entity_v2
 from app.lib.ids import new_ulid
+from app.slices.resources.models import Resource
 
 
-def _monkeypatch_policies(monkeypatch):
-    """
-    Keep Resources tests focused by monkeypatching Governance policy access.
-    """
-    import app.slices.resources.services as res_svc
-
-    monkeypatch.setattr(
-        res_svc,
-        "_lifecycle_policy",
-        lambda: {
-            "readiness_allowed": ["draft", "review", "active", "suspended"],
-            "mou_allowed": ["none", "pending", "active", "expired", "terminated"],
-        },
-    )
-    monkeypatch.setattr(
-        res_svc,
-        "_caps_policy",
-        lambda: {"all_codes": ["basic_needs.food_pantry", "meta.unclassified"], "note_max": 200},
-    )
+def _assert_ok(resp) -> dict:
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    payload = resp.get_json()
+    assert payload and payload.get("ok") is True
+    assert "data" in payload
+    assert "request_id" in payload
+    return payload["data"]
 
 
-def _ensure_any_entity_ulid():
-    """
-    Prefer org if contract supports it; fallback to person.
-    We only need a real entity row to satisfy FK.
-    """
-    if hasattr(entity_v2, "ensure_org"):
-        try:
-            ent = entity_v2.ensure_org(
-                db.session,
-                name=f"Test Org {new_ulid()}",
-                email=f"org-{new_ulid()}@test.invalid",
-                phone=None,
-                request_id=new_ulid(),
-                actor_ulid="seed",
-            )
-            return ent.entity_ulid
-        except TypeError:
-            # signature mismatch; fall through
-            pass
+def _assert_err(resp, status: int) -> dict:
+    assert resp.status_code == status, resp.get_data(as_text=True)
+    payload = resp.get_json()
+    assert payload and payload.get("ok") is False
+    return payload
 
-    ent = entity_v2.ensure_person(
+
+def test_resources_ensure_requires_entity_ulid(staff_client):
+    resp = staff_client.post("/resources", json={})
+    _assert_err(resp, 400)
+
+
+def test_resources_ensure_idempotent(staff_client):
+    org = entity_v2.ensure_org(
         db.session,
-        first_name="Res",
-        last_name="Provider",
-        email=f"res-{new_ulid()}@test.invalid",
-        phone=None,
+        org_name="VC Test Org (resources idempotent)",
         request_id=new_ulid(),
         actor_ulid="seed",
     )
-    return ent.entity_ulid
+
+    r1 = staff_client.post("/resources", json={"entity_ulid": org.entity_ulid})
+    d1 = _assert_ok(r1)
+    rid1 = d1["resource_ulid"]
+    assert rid1 == org.entity_ulid
+
+    r2 = staff_client.post("/resources", json={"entity_ulid": org.entity_ulid})
+    d2 = _assert_ok(r2)
+    rid2 = d2["resource_ulid"]
+    assert rid2 == rid1
+
+    # Only one facet row exists
+    assert db.session.query(Resource).filter_by(entity_ulid=org.entity_ulid).count() == 1
 
 
-def test_resources_ensure_resource_idempotent(monkeypatch, staff_client):
-    _monkeypatch_policies(monkeypatch)
+def test_resources_capabilities_roundtrip(staff_client):
+    org = entity_v2.ensure_org(
+        db.session,
+        org_name="VC Test Org (resources caps)",
+        request_id=new_ulid(),
+        actor_ulid="seed",
+    )
+    rid = _assert_ok(
+        staff_client.post("/resources", json={"entity_ulid": org.entity_ulid})
+    )["resource_ulid"]
 
-    ent_ulid = _ensure_any_entity_ulid()
+    # Set two capabilities
+    cap_payload = {
+        "basic_needs.food_pantry": True,
+        "events.stand_down": True,
+    }
+    r1 = staff_client.post(f"/resources/{rid}/capabilities", json=cap_payload)
+    d1 = _assert_ok(r1)
+    codes1 = {c["domain"] + "." + c["key"] for c in d1["resource"]["active_capabilities"]}
+    assert codes1 == {"basic_needs.food_pantry", "events.stand_down"}
 
-    r1 = staff_client.post("/resources", json={"entity_ulid": ent_ulid})
-    assert r1.status_code == 200, r1.get_json()
-    rid = r1.get_json()["data"]["resource_ulid"]
-    assert rid
-
-    r2 = staff_client.post("/resources", json={"entity_ulid": ent_ulid})
-    assert r2.status_code == 200, r2.get_json()
-    rid2 = r2.get_json()["data"]["resource_ulid"]
-    assert rid2 == rid
+    # Replace with a single capability (acts like replace)
+    cap_payload2 = {"events.stand_down": True}
+    r2 = staff_client.post(f"/resources/{rid}/capabilities", json=cap_payload2)
+    d2 = _assert_ok(r2)
+    codes2 = {c["domain"] + "." + c["key"] for c in d2["resource"]["active_capabilities"]}
+    assert codes2 == {"events.stand_down"}
 
 
-def test_resources_upsert_capabilities_writes_history_and_index(monkeypatch, staff_client):
-    _monkeypatch_policies(monkeypatch)
-
-    ent_ulid = _ensure_any_entity_ulid()
-    resp = staff_client.post("/resources", json={"entity_ulid": ent_ulid})
-    rid = resp.get_json()["data"]["resource_ulid"]
-
-    up = staff_client.post(
+def test_resources_search_any(staff_client):
+    org = entity_v2.ensure_org(
+        db.session,
+        org_name="VC Test Org (resources search)",
+        request_id=new_ulid(),
+        actor_ulid="seed",
+    )
+    rid = _assert_ok(
+        staff_client.post("/resources", json={"entity_ulid": org.entity_ulid})
+    )["resource_ulid"]
+    staff_client.post(
         f"/resources/{rid}/capabilities",
-        json={"basic_needs.food_pantry": True},
+        json={"events.stand_down": True},
     )
-    assert up.status_code == 200, up.get_json()
-    data = up.get_json()["data"]
-    assert data["history_ulid"]  # new version created
-    view = data["resource"]
-    assert view["readiness_status"] in ("review", "draft")
-    assert {"domain": "basic_needs", "key": "food_pantry"} in view["active_capabilities"]
 
-    # Contract read view works and is PII-free
-    v = resources_v2.get_resource_view(rid)
-    assert v["resource_ulid"] == rid
+    r = staff_client.get("/resources", query_string={"any": "events.stand_down"})
+    d = _assert_ok(r)
+    assert d["total"] >= 1
+    assert any(row.get("resource_entity_ulid") == rid for row in d["rows"])
 
 
-def test_resources_upsert_idempotent_returns_none_history(monkeypatch, staff_client):
-    _monkeypatch_policies(monkeypatch)
-
-    ent_ulid = _ensure_any_entity_ulid()
-    rid = staff_client.post("/resources", json={"entity_ulid": ent_ulid}).get_json()["data"]["resource_ulid"]
-
-    first = resources_v2.upsert_capabilities(
-        resource_ulid=rid,
-        capabilities={"basic_needs.food_pantry": True},
+def test_resources_rejects_bad_capability_code(staff_client):
+    org = entity_v2.ensure_org(
+        db.session,
+        org_name="VC Test Org (bad cap code)",
         request_id=new_ulid(),
         actor_ulid="seed",
     )
-    assert first["data"]["history_ulid"]
+    rid = _assert_ok(
+        staff_client.post("/resources", json={"entity_ulid": org.entity_ulid})
+    )["resource_ulid"]
 
-    second = resources_v2.upsert_capabilities(
-        resource_ulid=rid,
-        capabilities={"basic_needs.food_pantry": True},
-        request_id=new_ulid(),
-        actor_ulid="seed",
-    )
-    # idempotent -> history_ulid None
-    assert second["data"]["history_ulid"] is None
-
-
-def test_resources_patch_note_only_does_not_flip_has(monkeypatch, staff_client):
-    _monkeypatch_policies(monkeypatch)
-
-    ent_ulid = _ensure_any_entity_ulid()
-    rid = staff_client.post("/resources", json={"entity_ulid": ent_ulid}).get_json()["data"]["resource_ulid"]
-
-    resources_v2.upsert_capabilities(
-        resource_ulid=rid,
-        capabilities={"basic_needs.food_pantry": False},
-        request_id=new_ulid(),
-        actor_ulid="seed",
-    )
-
-    # note-only patch should NOT change has=False
-    resources_v2.patch_capabilities(
-        resource_ulid=rid,
-        capabilities={"basic_needs.food_pantry": {"note": "closed on weekends"}},
-        request_id=new_ulid(),
-        actor_ulid="seed",
-    )
-
-    # active capabilities should still be empty
-    view = resources_v2.get_resource_view(rid)
-    assert {"domain": "basic_needs", "key": "food_pantry"} not in (view.get("active_capabilities") or [])
-
-
-def test_resources_promote_if_clean(monkeypatch, staff_client):
-    _monkeypatch_policies(monkeypatch)
-
-    ent_ulid = _ensure_any_entity_ulid()
-    rid = staff_client.post("/resources", json={"entity_ulid": ent_ulid}).get_json()["data"]["resource_ulid"]
-
-    # upsert without meta.unclassified should move draft -> review
-    resources_v2.upsert_capabilities(
-        resource_ulid=rid,
-        capabilities={"basic_needs.food_pantry": True},
-        request_id=new_ulid(),
-        actor_ulid="seed",
-    )
-
-    view = resources_v2.get_resource_view(rid)
-    assert view["readiness_status"] in ("review", "active", "draft")
-
-    # promote review -> active
-    out = resources_v2.promote_if_clean(
-        resource_ulid=rid,
-        request_id=new_ulid(),
-        actor_ulid="seed",
-    )
-    assert out["data"]["promoted"] in (True, False)
-
-    view2 = resources_v2.get_resource_view(rid)
-    assert view2["readiness_status"] in ("active", "review", "draft")
-
-
-def test_resources_search_by_capability(monkeypatch, staff_client):
-    _monkeypatch_policies(monkeypatch)
-
-    ent_ulid = _ensure_any_entity_ulid()
-    rid = staff_client.post("/resources", json={"entity_ulid": ent_ulid}).get_json()["data"]["resource_ulid"]
-    staff_client.post(f"/resources/{rid}/capabilities", json={"basic_needs.food_pantry": True})
-
-    resp = staff_client.get("/resources", query_string={"any": "basic_needs.food_pantry"})
-    assert resp.status_code == 200, resp.get_json()
-    rows = resp.get_json()["data"]["rows"]
-    assert any(r["resource_ulid"] == rid for r in rows)
+    # Missing '.' should be rejected by parsing/validation
+    resp = staff_client.post(f"/resources/{rid}/capabilities", json={"badcode": True})
+    _assert_err(resp, 400)

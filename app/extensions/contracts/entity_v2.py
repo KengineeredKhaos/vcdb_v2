@@ -50,8 +50,9 @@ class CreateCustomerPersonResultDTO:
 
 @dataclass(frozen=True)
 class EnsurePersonResultDTO:
+    sess: Session
     entity_ulid: str
-    created: bool | None
+    created: bool
 
 
 # -----------------
@@ -100,6 +101,35 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
 # -----------------
 # Functions
 # -----------------
+
+
+def ensure_person(
+    sess: Session,
+    *,
+    first_name: str,
+    last_name: str,
+    email: Optional[str] = None,
+    phone: Optional[str] = None,
+    request_id: str,
+    actor_ulid: str | None,
+) -> EnsurePersonResultDTO:
+    where = "entity_v2.ensure_person"
+    try:
+        from app.slices.entity import services as entity_svc  # noqa: WPS433
+
+        # No provider hunting. This is the canonical provider.
+        ulid, created = entity_svc.ensure_person_by_contact(
+            sess,
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            phone=phone,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+        return EnsurePersonResultDTO(entity_ulid=ulid, created=created)
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
 
 
 def get_entity_core(sess: Session, entity_ulid: str) -> EntityCoreDTO:
@@ -232,40 +262,5 @@ def create_customer_person(
             actor_ulid=actor_ulid,
             allow_duplicate=allow_duplicate,
         )
-    except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
-
-
-def ensure_person(
-    sess: Session,
-    *,
-    first_name: str,
-    last_name: str,
-    email: Optional[str] = None,
-    phone: Optional[str] = None,
-    request_id: str,
-    actor_ulid: str | None,
-) -> EnsurePersonResultDTO:
-    where = "entity_v2.ensure_person"
-    try:
-        from app.slices.entity import services as entity_svc  # noqa: WPS433
-
-        fn = getattr(entity_svc, "ensure_person_by_contact", None) or getattr(
-            entity_svc, "ensure_person", None
-        )
-        if not fn:
-            raise AttributeError(
-                "entity provider missing ensure_person[_by_contact]"
-            )
-
-        ulid = fn(
-            first_name=first_name,
-            last_name=last_name,
-            email=email,
-            phone=phone,
-            request_id=request_id,
-            actor_ulid=actor_ulid,
-        )
-        return EnsurePersonResultDTO(entity_ulid=ulid, created=None)
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc

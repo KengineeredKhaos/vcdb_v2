@@ -1,8 +1,8 @@
 """fresh baseline
 
-Revision ID: 8248ea86fca2
+Revision ID: 47dbd1aacdcf
 Revises: 
-Create Date: 2026-01-31 19:11:04.510164
+Create Date: 2026-02-01 08:39:00.191300
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '8248ea86fca2'
+revision = '47dbd1aacdcf'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -258,17 +258,18 @@ def upgrade():
     sa.Column('last_needs_tier_updated', sa.String(length=8), nullable=True),
     sa.Column('flag_reason', sa.String(length=120), nullable=True),
     sa.Column('watchlist_since_utc', sa.String(length=30), nullable=True),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.CheckConstraint("intake_step IS NULL OR intake_step IN ('identity','address_physical','address_postal','contact','eligibility','review','complete')", name='ck_customer_intake_step_enum'),
+    sa.CheckConstraint("last_needs_tier_updated IS NULL OR last_needs_tier_updated IN ('tier1','tier2','tier3'"),
     sa.CheckConstraint("status IN ('intake','active','suspended','archived')", name='ck_customer_status_enum'),
-    sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='RESTRICT'),
-    sa.PrimaryKeyConstraint('ulid'),
-    sa.UniqueConstraint('entity_ulid', name='uq_customer_entity')
+    sa.CheckConstraint('tier1_min IS NULL OR (tier1_min BETWEEN 1 AND 3)', name='ck_el_tier1_range'),
+    sa.CheckConstraint('tier2_min IS NULL OR (tier2_min BETWEEN 1 AND 3)', name='ck_el_tier2_range'),
+    sa.CheckConstraint('tier3_min IS NULL OR (tier3_min BETWEEN 1 AND 3)', name='ck_el_tier3_range'),
+    sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('entity_ulid')
     )
     with op.batch_alter_table('customer_customer', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_customer_customer_entity_ulid'), ['entity_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_customer_customer_flag_tier1_immediate'), ['flag_tier1_immediate'], unique=False)
         batch_op.create_index(batch_op.f('ix_customer_customer_intake_step'), ['intake_step'], unique=False)
         batch_op.create_index(batch_op.f('ix_customer_customer_status'), ['status'], unique=False)
@@ -317,18 +318,12 @@ def upgrade():
     sa.Column('legal_name', sa.String(length=120), nullable=False),
     sa.Column('dba_name', sa.String(length=120), nullable=True),
     sa.Column('ein', sa.String(length=9), nullable=True),
-    sa.Column('archived_at', sa.String(length=30), nullable=True),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='RESTRICT'),
-    sa.PrimaryKeyConstraint('ulid'),
-    sa.UniqueConstraint('ein', name='uq_org_ein'),
-    sa.UniqueConstraint('entity_ulid', name='uq_org_entity')
+    sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('entity_ulid'),
+    sa.UniqueConstraint('ein', name='uq_org_ein')
     )
-    with op.batch_alter_table('entity_org', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_entity_org_entity_ulid'), ['entity_ulid'], unique=False)
-
     op.create_table('entity_person',
     sa.Column('entity_ulid', sa.String(length=26), nullable=False),
     sa.Column('first_name', sa.String(length=40), nullable=False),
@@ -338,17 +333,11 @@ def upgrade():
     sa.Column('dob', sa.String(length=10), nullable=True),
     sa.Column('branch', sa.String(length=4), nullable=True),
     sa.Column('era', sa.String(length=16), nullable=True),
-    sa.Column('archived_at', sa.String(length=30), nullable=True),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='RESTRICT'),
-    sa.PrimaryKeyConstraint('ulid'),
-    sa.UniqueConstraint('entity_ulid', name='uq_person_entity')
+    sa.ForeignKeyConstraint(['entity_ulid'], ['entity_entity.ulid'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('entity_ulid')
     )
-    with op.batch_alter_table('entity_person', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_entity_person_entity_ulid'), ['entity_ulid'], unique=False)
-
     op.create_table('entity_role',
     sa.Column('entity_ulid', sa.String(length=26), nullable=False),
     sa.Column('role', sa.String(length=50), nullable=False),
@@ -461,7 +450,7 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_sponsor_sponsor_readiness_status'), ['readiness_status'], unique=False)
 
     op.create_table('customer_eligibility',
-    sa.Column('customer_ulid', sa.String(length=26), nullable=False),
+    sa.Column('customer_entity_ulid', sa.String(length=26), nullable=False),
     sa.Column('is_veteran_verified', sa.Boolean(), nullable=False),
     sa.Column('veteran_method', sa.String(length=32), nullable=True),
     sa.Column('approved_by_ulid', sa.String(length=26), nullable=True),
@@ -482,12 +471,12 @@ def upgrade():
     sa.CheckConstraint('tier1_min IS NULL OR (tier1_min BETWEEN 1 AND 3)', name='ck_el_tier1_range'),
     sa.CheckConstraint('tier2_min IS NULL OR (tier2_min BETWEEN 1 AND 3)', name='ck_el_tier2_range'),
     sa.CheckConstraint('tier3_min IS NULL OR (tier3_min BETWEEN 1 AND 3)', name='ck_el_tier3_range'),
-    sa.ForeignKeyConstraint(['customer_ulid'], ['customer_customer.ulid'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['customer_entity_ulid'], ['customer_customer.entity_ulid'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('ulid'),
-    sa.UniqueConstraint('customer_ulid', name='uq_customer_eligibility_customer')
+    sa.UniqueConstraint('customer_entity_ulid', name='uq_customer_eligibility_customer')
     )
     with op.batch_alter_table('customer_eligibility', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_customer_eligibility_customer_ulid'), ['customer_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_customer_eligibility_customer_entity_ulid'), ['customer_entity_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_customer_eligibility_is_homeless_verified'), ['is_homeless_verified'], unique=False)
         batch_op.create_index(batch_op.f('ix_customer_eligibility_is_veteran_verified'), ['is_veteran_verified'], unique=False)
         batch_op.create_index(batch_op.f('ix_customer_eligibility_tier1_min'), ['tier1_min'], unique=False)
@@ -495,7 +484,7 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_customer_eligibility_veteran_method'), ['veteran_method'], unique=False)
 
     op.create_table('customer_history',
-    sa.Column('customer_ulid', sa.String(length=26), nullable=False),
+    sa.Column('customer_entity_ulid', sa.String(length=26), nullable=False),
     sa.Column('section', sa.String(length=64), nullable=False),
     sa.Column('version', sa.Integer(), nullable=False),
     sa.Column('data_json', sa.String(), nullable=False),
@@ -504,11 +493,12 @@ def upgrade():
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.CheckConstraint('version >= 1', name='ck_history_version_pos'),
-    sa.ForeignKeyConstraint(['customer_ulid'], ['customer_customer.ulid'], ondelete='RESTRICT'),
-    sa.PrimaryKeyConstraint('ulid')
+    sa.ForeignKeyConstraint(['customer_entity_ulid'], ['customer_customer.entity_ulid'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('ulid'),
+    sa.UniqueConstraint('customer_entity_ulid', 'section', 'version', name='uq_customer_hist_stream_version')
     )
     with op.batch_alter_table('customer_history', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_customer_history_customer_ulid'), ['customer_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_customer_history_customer_entity_ulid'), ['customer_entity_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_customer_history_section'), ['section'], unique=False)
 
     op.create_table('funding_plan',
@@ -938,7 +928,7 @@ def downgrade():
     op.drop_table('funding_plan')
     with op.batch_alter_table('customer_history', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_customer_history_section'))
-        batch_op.drop_index(batch_op.f('ix_customer_history_customer_ulid'))
+        batch_op.drop_index(batch_op.f('ix_customer_history_customer_entity_ulid'))
 
     op.drop_table('customer_history')
     with op.batch_alter_table('customer_eligibility', schema=None) as batch_op:
@@ -947,7 +937,7 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_customer_eligibility_tier1_min'))
         batch_op.drop_index(batch_op.f('ix_customer_eligibility_is_veteran_verified'))
         batch_op.drop_index(batch_op.f('ix_customer_eligibility_is_homeless_verified'))
-        batch_op.drop_index(batch_op.f('ix_customer_eligibility_customer_ulid'))
+        batch_op.drop_index(batch_op.f('ix_customer_eligibility_customer_entity_ulid'))
 
     op.drop_table('customer_eligibility')
     with op.batch_alter_table('sponsor_sponsor', schema=None) as batch_op:
@@ -990,13 +980,7 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_entity_role_entity_ulid'))
 
     op.drop_table('entity_role')
-    with op.batch_alter_table('entity_person', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_entity_person_entity_ulid'))
-
     op.drop_table('entity_person')
-    with op.batch_alter_table('entity_org', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_entity_org_entity_ulid'))
-
     op.drop_table('entity_org')
     with op.batch_alter_table('entity_contact', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_entity_contact_entity_ulid'))
@@ -1013,7 +997,6 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_customer_customer_status'))
         batch_op.drop_index(batch_op.f('ix_customer_customer_intake_step'))
         batch_op.drop_index(batch_op.f('ix_customer_customer_flag_tier1_immediate'))
-        batch_op.drop_index(batch_op.f('ix_customer_customer_entity_ulid'))
 
     op.drop_table('customer_customer')
     with op.batch_alter_table('auth_user_role', schema=None) as batch_op:

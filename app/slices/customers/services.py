@@ -198,7 +198,9 @@ def _elig_row(customer_ulid: str) -> CustomerEligibility:
     return row
 
 
-def get_eligibility_snapshot(customer_ulid: str) -> CustomerEligibilitySnapshot | None:
+def get_eligibility_snapshot(
+    customer_ulid: str,
+) -> CustomerEligibilitySnapshot | None:
     """
     Typed eligibility snapshot for UI/routes/contracts.
 
@@ -368,7 +370,6 @@ def set_veteran_verification(
         # Should not happen because _elig_row creates the row.
         raise RuntimeError("eligibility snapshot missing after update")
     return snap
-
 
 
 def _ensure_customer_eligibility(*, customer_ulid: str) -> None:

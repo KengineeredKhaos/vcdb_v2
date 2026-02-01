@@ -98,10 +98,19 @@ class Entity(db.Model, ULIDPK, IsoTimestamps):
 # -------------------------
 # Entity Person (1:1 with Entity)
 # -------------------------
-class EntityPerson(db.Model, ULIDPK, IsoTimestamps):
+class EntityPerson(db.Model, IsoTimestamps):
+    """
+    FACET TABLE (anchor = entity_ulid):
+    Primary key is entity_ulid (same ULID as the Entity row).
+    """
+
     __tablename__ = "entity_person"
 
-    entity_ulid: Mapped[str] = ULIDFK("entity_entity")
+    entity_ulid: Mapped[str] = mapped_column(
+        String(26),
+        db.ForeignKey("entity_entity.ulid", ondelete="CASCADE"),
+        primary_key=True,
+    )
     entity: Mapped[Entity] = relationship("Entity", back_populates="person")
 
     first_name: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -113,20 +122,24 @@ class EntityPerson(db.Model, ULIDPK, IsoTimestamps):
     dob: Mapped[str] = mapped_column(String(10), nullable=True)
     branch: Mapped[str] = mapped_column(String(4), nullable=True)
     era: Mapped[str] = mapped_column(String(16), nullable=True)
-    archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    # enforce 1:1 with Entity
-    __table_args__ = (
-        UniqueConstraint("entity_ulid", name="uq_person_entity"),
-    )
 
 
 # -------------------------
 # Entity Organization (1:1 with Entity)
 # -------------------------
-class EntityOrg(db.Model, ULIDPK, IsoTimestamps):
+class EntityOrg(db.Model, IsoTimestamps):
+    """
+    FACET TABLE (anchor = entity_ulid):
+    Primary key is entity_ulid (same ULID as the Entity row).
+    """
+
     __tablename__ = "entity_org"
 
-    entity_ulid: Mapped[str] = ULIDFK("entity_entity")
+    entity_ulid: Mapped[str] = mapped_column(
+        String(26),
+        db.ForeignKey("entity_entity.ulid", ondelete="CASCADE"),
+        primary_key=True,
+    )
     entity: Mapped[Entity] = relationship("Entity", back_populates="org")
 
     legal_name: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -135,10 +148,7 @@ class EntityOrg(db.Model, ULIDPK, IsoTimestamps):
         String(9), nullable=True
     )  # normalized/validated in service
 
-    archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
-
     __table_args__ = (
-        UniqueConstraint("entity_ulid", name="uq_org_entity"),  # enforce 1:1
         UniqueConstraint("ein", name="uq_org_ein"),
         # works ONLY if DB allows UNIQUE with NULLs
     )
