@@ -66,7 +66,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import ForeignKey, Mapped, mapped_column, relationship
 
 from app.extensions import db
 from app.lib.models import ULIDPK, IsoTimestamps
@@ -85,7 +85,7 @@ class Resource(db.Model, IsoTimestamps):
     # Facet PK == FK to Entity.ulid
     entity_ulid: Mapped[str] = mapped_column(
         String(26),
-        db.ForeignKey("entity_entity.ulid", ondelete="CASCADE"),
+        ForeignKey("entity_entity.ulid", ondelete="CASCADE"),
         primary_key=True,
     )
 
@@ -142,7 +142,7 @@ class ResourceHistory(db.Model, ULIDPK, IsoTimestamps):
 
     resource_entity_ulid: Mapped[str] = mapped_column(
         String(26),
-        db.ForeignKey("resource_resource.entity_ulid", ondelete="CASCADE"),
+        ForeignKey("resource_resource.entity_ulid", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -171,7 +171,7 @@ class ResourceCapabilityIndex(db.Model, ULIDPK, IsoTimestamps):
 
     resource_entity_ulid: Mapped[str] = mapped_column(
         String(26),
-        db.ForeignKey("resource_resource.entity_ulid", ondelete="CASCADE"),
+        ForeignKey("resource_resource.entity_ulid", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -203,14 +203,14 @@ class ResourcePOC(db.Model, ULIDPK, IsoTimestamps):
 
     resource_entity_ulid: Mapped[str] = mapped_column(
         String(26),
-        db.ForeignKey("resource_resource.entity_ulid", ondelete="CASCADE"),
+        ForeignKey("resource_resource.entity_ulid", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     person_entity_ulid: Mapped[str] = mapped_column(
         String(26),
-        db.ForeignKey("entity_entity.ulid", ondelete="RESTRICT"),
+        ForeignKey("entity_entity.ulid", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

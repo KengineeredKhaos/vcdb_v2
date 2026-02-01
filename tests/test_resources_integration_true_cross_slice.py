@@ -12,7 +12,9 @@ from app.slices.ledger.models import LedgerEvent
 def _pick_cap_code(*, prefer_non_meta: bool = True) -> str:
     pol = governance_v2.get_resource_capabilities_policy()
     codes = list(getattr(pol, "all_codes", []) or [])
-    assert codes, "Governance policy returned no resource capability codes (service_taxonomy)."
+    assert (
+        codes
+    ), "Governance policy returned no resource capability codes (service_taxonomy)."
 
     if prefer_non_meta:
         for c in codes:
@@ -24,7 +26,13 @@ def _pick_cap_code(*, prefer_non_meta: bool = True) -> str:
 def _event_text(ev: LedgerEvent) -> str:
     # Try a few common JSON/text columns; tolerate schema drift.
     parts: list[str] = []
-    for attr in ("refs_json", "data_json", "payload_json", "meta_json", "body_json"):
+    for attr in (
+        "refs_json",
+        "data_json",
+        "payload_json",
+        "meta_json",
+        "body_json",
+    ):
         v = getattr(ev, attr, None)
         if v:
             parts.append(str(v))
@@ -35,7 +43,9 @@ def _event_text(ev: LedgerEvent) -> str:
     return " ".join(parts)
 
 
-def test_resources_true_cross_slice_entity_to_routes_to_contract_to_ledger(staff_client):
+def test_resources_true_cross_slice_entity_to_routes_to_contract_to_ledger(
+    staff_client,
+):
     """
     True cross-slice integration for Resources:
 
@@ -75,7 +85,9 @@ def test_resources_true_cross_slice_entity_to_routes_to_contract_to_ledger(staff
     assert view["resource_ulid"] == rid
 
     domain, key = cap.split(".", 1)
-    assert {"domain": domain, "key": key} in (view.get("active_capabilities") or [])
+    assert {"domain": domain, "key": key} in (
+        view.get("active_capabilities") or []
+    )
 
     # 4) Search via route
     s = staff_client.get("/resources", query_string={"any": cap})
@@ -86,7 +98,9 @@ def test_resources_true_cross_slice_entity_to_routes_to_contract_to_ledger(staff
     # 5) Contract read is available + PII-free surface
     cv = resources_v2.get_resource_view(rid)
     assert cv["resource_ulid"] == rid
-    assert {"domain": domain, "key": key} in (cv.get("active_capabilities") or [])
+    assert {"domain": domain, "key": key} in (
+        cv.get("active_capabilities") or []
+    )
 
     # 6) Ledger events: at least created + capability_add should exist
     created = (
@@ -137,21 +151,27 @@ def test_resources_rejects_unknown_capability_code_from_policy(staff_client):
     assert r.status_code == 200, r.get_json()
     rid = r.get_json()["data"]["resource_ulid"]
 
-    resp = staff_client.post(f"/resources/{rid}/capabilities", json={"does.notexist": True})
+    resp = staff_client.post(
+        f"/resources/{rid}/capabilities", json={"does.notexist": True}
+    )
     assert resp.status_code == 400, resp.get_json()
     body = resp.get_json() or {}
     assert body.get("ok") is False
     assert "unknown capability" in (body.get("error") or "").lower()
 
 
-def test_resources_meta_unclassified_triggers_admin_review_when_present(staff_client):
+def test_resources_meta_unclassified_triggers_admin_review_when_present(
+    staff_client,
+):
     """
     If Governance policy includes meta.unclassified, setting it active should flip admin_review_required.
     """
     pol = governance_v2.get_resource_capabilities_policy()
     codes = set(getattr(pol, "all_codes", []) or [])
     if "meta.unclassified" not in codes:
-        pytest.skip("meta.unclassified not present in service_taxonomy policy")
+        pytest.skip(
+            "meta.unclassified not present in service_taxonomy policy"
+        )
 
     ent = entity_v2.ensure_person(
         db.session,
@@ -167,7 +187,9 @@ def test_resources_meta_unclassified_triggers_admin_review_when_present(staff_cl
     assert r.status_code == 200, r.get_json()
     rid = r.get_json()["data"]["resource_ulid"]
 
-    up = staff_client.post(f"/resources/{rid}/capabilities", json={"meta.unclassified": True})
+    up = staff_client.post(
+        f"/resources/{rid}/capabilities", json={"meta.unclassified": True}
+    )
     assert up.status_code == 200, up.get_json()
     view = up.get_json()["data"]["resource"]
     assert view["admin_review_required"] is True

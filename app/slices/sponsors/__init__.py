@@ -1,3 +1,4 @@
+# app/slices/sponsors/__init__.py
 # Generated scaffolding — VCDB v2 — 2025-09-22 00:11:24 UTC
 from __future__ import annotations
 
@@ -7,7 +8,6 @@ bp = Blueprint(
     "sponsors",
     __name__,
     template_folder="templates",
-    static_folder=None,
     url_prefix="/sponsors",
 )
 
@@ -15,8 +15,8 @@ bp = Blueprint(
 # models first (tables),
 # then services (business),
 # then routes (bp decorators).
-from . import models  # noqa: E402,F401
+from . import models
 from . import services
 from . import routes
 
-__all_ = ["bp"]
+__all__ = ["bp"]

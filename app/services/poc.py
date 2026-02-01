@@ -102,7 +102,7 @@ POC_RELATION = "poc"
 @dataclass(frozen=True)
 class POCSpec:
     # which column names exist on the slice POC model
-    owner_col: str  # "sponsor_ulid" or "resource_ulid"
+    owner_col: str  # "sponsor_entity_ulid" or "resource_entity_ulid"
     person_col: str = "person_entity_ulid"
     relation_col: str = "relation"
     scope_col: str = "scope"

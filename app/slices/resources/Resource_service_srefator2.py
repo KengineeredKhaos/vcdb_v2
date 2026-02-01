@@ -505,7 +505,7 @@ def ensure_resource(
             happened_at_utc=now,
             refs={"entity_ulid": resource_entity_ulid},
         )
-        return resource_entity_ulid
+        return r.ulid
 
     r.last_touch_utc = now
     db.session.flush()
@@ -525,7 +525,7 @@ def upsert_capabilities(
     Returns history_ulid, or "" if idempotent (no new version created).
     """
     _ensure_reqid(request_id)
-    now = now_iso8601_ms()
+
     res = db.session.get(Resource, resource_entity_ulid)
     if not res:
         raise ValueError("resource not found")
@@ -534,7 +534,7 @@ def upsert_capabilities(
 
     last = _latest_snapshot(resource_entity_ulid)
     if last and stable_dumps(last) == stable_dumps(norm):
-        res.last_touch_utc = now
+        res.last_touch_utc = now_iso8601_ms()
         db.session.flush()
         return ""
 
@@ -559,6 +559,7 @@ def upsert_capabilities(
         .filter_by(resource_entity_ulid=resource_entity_ulid)
         .all()
     }
+    now = now_iso8601_ms()
     seen_pairs: set[tuple[str, str]] = set()
 
     for flat, obj in norm.items():
@@ -706,7 +707,6 @@ def set_readiness_status(
     request_id: str,
 ) -> None:
     _ensure_reqid(request_id)
-    now = now_iso8601_ms()
     status = (status or "").strip().lower()
 
     allowed = readiness_allowed()
@@ -721,6 +721,7 @@ def set_readiness_status(
         return
 
     prev = res.readiness_status
+    now = now_iso8601_ms()
     res.readiness_status = status
     res.last_touch_utc = now
     db.session.flush()
@@ -744,7 +745,6 @@ def set_mou_status(
     request_id: str,
 ) -> None:
     _ensure_reqid(request_id)
-    now = now_iso8601_ms()
     status = (status or "").strip().lower()
 
     allowed = mou_allowed()
@@ -759,6 +759,7 @@ def set_mou_status(
         return
 
     prev = res.mou_status
+    now = now_iso8601_ms()
     res.mou_status = status
     res.last_touch_utc = now
     db.session.flush()
@@ -778,12 +779,13 @@ def rebuild_capability_index(
     *, resource_entity_ulid: str, request_id: str, actor_ulid: str | None
 ) -> int:
     _ensure_reqid(request_id)
-    now = now_iso8601_ms()
+
     r = db.session.get(Resource, resource_entity_ulid)
     if not r:
         raise ValueError("resource not found")
 
     snapshot = _latest_snapshot(resource_entity_ulid)
+    now = now_iso8601_ms()
 
     db.session.query(ResourceCapabilityIndex).filter_by(
         resource_entity_ulid=resource_entity_ulid
@@ -873,7 +875,7 @@ def patch_capabilities(
     actor_ulid: str | None,
 ) -> str | None:
     _ensure_reqid(request_id)
-    now = now_iso8601_ms()
+
     res = db.session.get(Resource, resource_entity_ulid)
     if not res:
         raise ValueError("resource not found")
@@ -883,7 +885,7 @@ def patch_capabilities(
     merged = _merge_snapshot(latest, norm_patch)
 
     if stable_dumps(merged) == stable_dumps(latest):
-        res.last_touch_utc = now
+        res.last_touch_utc = now_iso8601_ms()
         db.session.flush()
         return None
 
@@ -901,6 +903,8 @@ def patch_capabilities(
         created_by_actor=actor_ulid,
     )
     db.session.add(hist)
+
+    now = now_iso8601_ms()
 
     # Upsert only touched keys; leave other index rows unchanged.
     for flat, obj in norm_patch.items():
@@ -972,7 +976,7 @@ def rebuild_all_capability_indexes(
     per = max(1, min(int(per or 200), 500))
 
     q = (
-        db.session.query(Resource.entity_ulid)
+        db.session.query(Resource.ulid)
         .order_by(Resource.created_at_utc.asc())
         .offset((int(page or 1) - 1) * per)
         .limit(per)

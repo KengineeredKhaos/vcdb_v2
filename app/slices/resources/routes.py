@@ -4,13 +4,13 @@ Resources slice HTTP routes.
 
 Goal:
 - Keep routes skinny: parse input, call services, commit/rollback, shape response.
-- PII boundary: never return Entity PII here; only resource ULIDs + capability codes.
+- PII boundary: never return Entity PII here; only resource entity ULIDs + capability codes.
 
 Endpoints (minimal, test-facing surface):
 - POST   /resources                       -> ensure resource for an entity
 - GET    /resources?any=domain.key        -> search resources by capability (ANY-of)
-- POST   /resources/<resource_ulid>/capabilities  -> replace capabilities (upsert)
-- PATCH  /resources/<resource_ulid>/capabilities  -> patch capabilities (note-only, etc.)
+- POST   /resources/<resource_entity_ulid>/capabilities  -> replace capabilities (upsert)
+- PATCH  /resources/<resource_entity_ulid>/capabilities  -> patch capabilities (note-only, etc.)
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ from flask import jsonify, request
 
 from app.extensions import db
 from app.extensions.errors import ContractError
-from app.lib.ids import new_ulid
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
 
 from . import bp
@@ -86,7 +85,7 @@ def ensure_resource():
             actor_ulid=actor,
         )
         db.session.commit()
-        return _ok({"resource_ulid": rid}, request_id=req)
+        return _ok({"resource_entity_ulid": rid}, request_id=req)
     except Exception as e:
         db.session.rollback()
         return _err(e, 400)
@@ -125,49 +124,58 @@ def search_resources():
             page=page,
             per=per,
         )
-        return _ok({"rows": rows, "total": total, "page": page, "per": per}, request_id=req)
+        return _ok(
+            {"rows": rows, "total": total, "page": page, "per": per},
+            request_id=req,
+        )
     except Exception as e:
         return _err(e, 400)
 
 
-@bp.post("/<resource_ulid>/capabilities")
-def upsert_capabilities(resource_ulid: str):
+@bp.post("/<resource_entity_ulid>/capabilities")
+def upsert_capabilities(resource_entity_ulid: str):
     payload = request.get_json(force=True, silent=False) or {}
     req = ensure_request_id()
     actor = get_actor_ulid()
 
     try:
         hist_ulid = svc.upsert_capabilities(
-            resource_ulid=resource_ulid,
+            resource_entity_ulid=resource_entity_ulid,
             payload=payload,
             request_id=req,
             actor_ulid=actor,
             idempotency_key=None,
         )
-        view = svc.resource_view(resource_ulid)
+        view = svc.resource_view(resource_entity_ulid)
         db.session.commit()
-        return _ok({"history_ulid": hist_ulid or None, "resource": view}, request_id=req)
+        return _ok(
+            {"history_ulid": hist_ulid or None, "resource": view},
+            request_id=req,
+        )
     except Exception as e:
         db.session.rollback()
         return _err(e, 400)
 
 
-@bp.patch("/<resource_ulid>/capabilities")
-def patch_capabilities(resource_ulid: str):
+@bp.patch("/<resource_entity_ulid>/capabilities")
+def patch_capabilities(resource_entity_ulid: str):
     payload = request.get_json(force=True, silent=False) or {}
     req = ensure_request_id()
     actor = get_actor_ulid()
 
     try:
         hist_ulid = svc.patch_capabilities(
-            resource_ulid=resource_ulid,
+            resource_entity_ulid=resource_entity_ulid,
             payload=payload,
             request_id=req,
             actor_ulid=actor,
         )
-        view = svc.resource_view(resource_ulid)
+        view = svc.resource_view(resource_entity_ulid)
         db.session.commit()
-        return _ok({"history_ulid": hist_ulid or None, "resource": view}, request_id=req)
+        return _ok(
+            {"history_ulid": hist_ulid or None, "resource": view},
+            request_id=req,
+        )
     except Exception as e:
         db.session.rollback()
         return _err(e, 400)

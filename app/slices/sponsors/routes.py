@@ -1,21 +1,41 @@
 # app/slices/sponsors/routes.py
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import jsonify, request
 
+from app.extensions import db
+from app.extensions.errors import ContractError
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
 
+from . import bp
 from . import services as sp_svc
 
-bp = Blueprint("sponsors", __name__, url_prefix="/sponsors")
+
+def _ok(data: dict, request_id: str):
+    return jsonify({"ok": True, "request_id": request_id, "data": data}), 200
 
 
-def _ok(data=None, **extra):
-    return jsonify({"ok": True, "data": data, **extra}), 200
+def _err(exc: Exception, code: int = 400):
+    # Prefer ContractError shaping
+    if isinstance(exc, ContractError):
+        payload = {
+            "ok": False,
+            "error": exc.message,
+            "code": exc.code,
+            "where": exc.where,
+        }
+        if getattr(exc, "data", None):
+            payload["data"] = exc.data
+        return jsonify(payload), exc.http_status
 
+    if isinstance(exc, LookupError):
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    if isinstance(exc, PermissionError):
+        return jsonify({"ok": False, "error": str(exc)}), 403
+    if isinstance(exc, ValueError):
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
-def _err(msg, code=400):
-    return jsonify({"ok": False, "error": str(msg)}), code
+    return jsonify({"ok": False, "error": str(exc)}), code
 
 
 @bp.post("")
@@ -24,124 +44,148 @@ def ensure_sponsor():
         payload = request.get_json(force=True, silent=False) or {}
         entity_ulid = (payload.get("entity_ulid") or "").strip()
         if not entity_ulid:
-            return _err("entity_ulid is required", 400)
+            return _err(ValueError("entity_ulid is required"), 400)
         req, actor = ensure_request_id(), get_actor_ulid()
-        sponsor_ulid = sp_svc.ensure_sponsor(
-            entity_ulid=entity_ulid, request_id=req, actor_ulid=actor
+        sponsor_entity_ulid = sp_svc.ensure_sponsor(
+            sponsor_entity_ulid=entity_ulid,
+            request_id=req,
+            actor_ulid=actor,
         )
-        return _ok({"sponsor_ulid": sponsor_ulid})
+        db.session.commit()
+        return _ok(
+            {"sponsor_entity_ulid": sponsor_entity_ulid}, request_id=req
+        )
     except Exception as e:
-        return _err(e)
+        db.session.rollback()
+        return _err(e, 400)
 
 
-@bp.get("/<sponsor_ulid>")
-def get_sponsor(sponsor_ulid: str):
-    dto = sp_svc.sponsor_view(sponsor_ulid)
-    return _ok(dto) if dto else _err("not found", 404)
+@bp.get("/<sponsor_entity_ulid>")
+def get_sponsor(sponsor_entity_ulid: str):
+    dto = sp_svc.sponsor_view(sponsor_entity_ulid)
+    return (
+        _ok(dto, request_id=ensure_request_id())
+        if dto
+        else _err(LookupError("not found"), 404)
+    )
 
 
-@bp.post("/<sponsor_ulid>/capabilities")
-def upsert_caps(sponsor_ulid: str):
+@bp.post("/<sponsor_entity_ulid>/capabilities")
+def upsert_caps(sponsor_entity_ulid: str):
     try:
         payload = request.get_json(force=True, silent=False) or {}
         req, actor = ensure_request_id(), get_actor_ulid()
         hist = sp_svc.upsert_capabilities(
-            sponsor_ulid=sponsor_ulid,
+            sponsor_entity_ulid=sponsor_entity_ulid,
             payload=payload,
             request_id=req,
             actor_ulid=actor,
         )
+        db.session.commit()
         return _ok(
             {
                 "history_ulid": hist,
-                "sponsor": sp_svc.sponsor_view(sponsor_ulid),
-            }
+                "sponsor": sp_svc.sponsor_view(sponsor_entity_ulid),
+            },
+            request_id=req,
         )
     except Exception as e:
-        return _err(e)
+        db.session.rollback()
+        return _err(e, 400)
 
 
-@bp.patch("/<sponsor_ulid>/capabilities")
-def patch_caps(sponsor_ulid: str):
+@bp.patch("/<sponsor_entity_ulid>/capabilities")
+def patch_caps(sponsor_entity_ulid: str):
     try:
         payload = request.get_json(force=True, silent=False) or {}
         req, actor = ensure_request_id(), get_actor_ulid()
         hist = sp_svc.patch_capabilities(
-            sponsor_ulid=sponsor_ulid,
+            sponsor_entity_ulid=sponsor_entity_ulid,
             payload=payload,
             request_id=req,
             actor_ulid=actor,
         )
+        db.session.commit()
         return _ok(
             {
                 "history_ulid": hist,
-                "sponsor": sp_svc.sponsor_view(sponsor_ulid),
-            }
+                "sponsor": sp_svc.sponsor_view(sponsor_entity_ulid),
+            },
+            request_id=req,
         )
     except Exception as e:
-        return _err(e)
+        db.session.rollback()
+        return _err(e, 400)
 
 
-@bp.post("/<sponsor_ulid>/readiness")
-def set_readiness(sponsor_ulid: str):
+@bp.post("/<sponsor_entity_ulid>/readiness")
+def set_readiness(sponsor_entity_ulid: str):
     try:
-        status = (
-            (request.get_json(force=True).get("status") or "").strip().lower()
-        )
+        payload = request.get_json(force=True, silent=False) or {}
+        status = (payload.get("status") or "").strip().lower()
         req, actor = ensure_request_id(), get_actor_ulid()
         sp_svc.set_readiness_status(
-            sponsor_ulid=sponsor_ulid,
+            sponsor_entity_ulid=sponsor_entity_ulid,
             status=status,
             request_id=req,
             actor_ulid=actor,
         )
-        return _ok({"readiness_status": status})
+        db.session.commit()
+        return _ok({"readiness_status": status}, request_id=req)
     except Exception as e:
-        return _err(e)
+        db.session.rollback()
+        return _err(e, 400)
 
 
-@bp.post("/<sponsor_ulid>/mou")
-def set_mou(sponsor_ulid: str):
+@bp.post("/<sponsor_entity_ulid>/mou")
+def set_mou(sponsor_entity_ulid: str):
     try:
-        status = (
-            (request.get_json(force=True).get("status") or "").strip().lower()
-        )
+        payload = request.get_json(force=True, silent=False) or {}
+        status = (payload.get("status") or "").strip().lower()
         req, actor = ensure_request_id(), get_actor_ulid()
         sp_svc.set_mou_status(
-            sponsor_ulid=sponsor_ulid,
+            sponsor_entity_ulid=sponsor_entity_ulid,
             status=status,
             request_id=req,
             actor_ulid=actor,
         )
-        return _ok({"mou_status": status})
+        db.session.commit()
+        return _ok({"mou_status": status}, request_id=req)
     except Exception as e:
-        return _err(e)
+        db.session.rollback()
+        return _err(e, 400)
 
 
-@bp.post("/<sponsor_ulid>/pledges")
-def upsert_pledge(sponsor_ulid: str):
+@bp.post("/<sponsor_entity_ulid>/pledges")
+def upsert_pledge(sponsor_entity_ulid: str):
     try:
         pledge = request.get_json(force=True, silent=False) or {}
         req, actor = ensure_request_id(), get_actor_ulid()
         pid = sp_svc.upsert_pledge(
-            sponsor_ulid=sponsor_ulid,
+            sponsor_entity_ulid=sponsor_entity_ulid,
             pledge=pledge,
             request_id=req,
             actor_ulid=actor,
         )
+        db.session.commit()
         return _ok(
-            {"pledge_ulid": pid, "sponsor": sp_svc.sponsor_view(sponsor_ulid)}
+            {
+                "pledge_ulid": pid,
+                "sponsor": sp_svc.sponsor_view(sponsor_entity_ulid),
+            },
+            request_id=req,
         )
     except Exception as e:
-        return _err(e)
+        db.session.rollback()
+        return _err(e, 400)
 
 
 @bp.post("/pledges/<pledge_ulid>/status")
 def set_pledge_status(pledge_ulid: str):
     try:
-        status = (
-            (request.get_json(force=True).get("status") or "").strip().lower()
-        )
+        payload = request.get_json(force=True, silent=False) or {}
+        status = (payload.get("status") or "").strip().lower()
+
         req, actor = ensure_request_id(), get_actor_ulid()
         sp_svc.set_pledge_status(
             pledge_ulid=pledge_ulid,
@@ -149,13 +193,18 @@ def set_pledge_status(pledge_ulid: str):
             request_id=req,
             actor_ulid=actor,
         )
-        return _ok({"pledge_ulid": pledge_ulid, "status": status})
+        db.session.commit()
+        return _ok(
+            {"pledge_ulid": pledge_ulid, "status": status}, request_id=req
+        )
     except Exception as e:
-        return _err(e)
+        db.session.rollback()
+        return _err(e, 400)
 
 
 @bp.get("")
 def search_sponsors():
+    req = ensure_request_id()
     try:
         any_param = request.args.get("any", "")
         readiness = [
@@ -181,15 +230,22 @@ def search_sponsors():
         rows, total = sp_svc.find_sponsors(
             any_of=any_of or None,
             readiness_in=readiness,
-            has_active_pledges=None
-            if has_act is None
-            else (has_act.lower() in ("1", "true", "yes")),
-            admin_review_required=None
-            if review is None
-            else (review.lower() in ("1", "true", "yes")),
+            has_active_pledges=(
+                None
+                if has_act is None
+                else (has_act.lower() in ("1", "true", "yes"))
+            ),
+            admin_review_required=(
+                None
+                if review is None
+                else (review.lower() in ("1", "true", "yes"))
+            ),
             page=page,
             per=per,
         )
-        return _ok({"rows": rows, "total": total, "page": page, "per": per})
+        return _ok(
+            {"rows": rows, "total": total, "page": page, "per": per},
+            request_id=req,
+        )
     except Exception as e:
-        return _err(e)
+        return _err(e, 400)

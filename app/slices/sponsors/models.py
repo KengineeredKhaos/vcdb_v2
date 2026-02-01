@@ -13,20 +13,24 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.models import ULIDFK, ULIDPK, IsoTimestamps
+from app.lib.models import ULIDPK, IsoTimestamps
 
 
-class Sponsor(db.Model, ULIDPK, IsoTimestamps):
+class Sponsor(db.Model, IsoTimestamps):
     """
-    A Sponsor is an org (EntityOrg) that provides cash, in-kind, or services.
-    One Sponsor per Entity.
+    FACET TABLE (anchor = entity_ulid):
+
+    One row per Entity (typically EntityOrg) that acts as a service provider.
+    Primary key is entity_ulid (same ULID as the Entity row).
     """
 
     __tablename__ = "sponsor_sponsor"
 
-    entity_ulid: Mapped[str] = ULIDFK("entity_entity", index=True)
-    __table_args__ = (
-        UniqueConstraint("entity_ulid", name="uq_sponsor_entity"),
+    # Facet PK == FK to Entity.ulid
+    entity_ulid: Mapped[str] = mapped_column(
+        String(26),
+        db.ForeignKey("entity_entity.ulid", ondelete="CASCADE"),
+        primary_key=True,
     )
     onboard_step: Mapped[str | None] = mapped_column(
         String(16), nullable=True, index=True
@@ -85,6 +89,11 @@ class Sponsor(db.Model, ULIDPK, IsoTimestamps):
         cascade="all, delete-orphan",
     )
 
+    __table_args__ = (
+        # PK already implies uniqueness; this index helps some query planners.
+        Index("ix_sponsor_entity_ulid", "entity_ulid"),
+    )
+
 
 class SponsorHistory(db.Model, ULIDPK, IsoTimestamps):
     """
@@ -95,7 +104,12 @@ class SponsorHistory(db.Model, ULIDPK, IsoTimestamps):
 
     __tablename__ = "sponsor_history"
 
-    sponsor_ulid: Mapped[str] = ULIDFK("sponsor_sponsor", index=True)
+    sponsor_entity_ulid: Mapped[str] = mapped_column(
+        String(26),
+        db.ForeignKey("sponsor_sponsor.entity_ulid", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     section: Mapped[str] = mapped_column(
         String(64), nullable=False, index=True
     )
@@ -122,7 +136,13 @@ class SponsorCapabilityIndex(db.Model, ULIDPK, IsoTimestamps):
 
     __tablename__ = "sponsor_capability_index"
 
-    sponsor_ulid: Mapped[str] = ULIDFK("sponsor_sponsor", index=True)
+    sponsor_entity_ulid: Mapped[str] = mapped_column(
+        String(26),
+        db.ForeignKey("sponsor_sponsor.entity_ulid", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
     domain: Mapped[str] = mapped_column(
         String(48), nullable=False, index=True
     )
@@ -137,7 +157,10 @@ class SponsorCapabilityIndex(db.Model, ULIDPK, IsoTimestamps):
 
     __table_args__ = (
         UniqueConstraint(
-            "sponsor_ulid", "domain", "key", name="uq_sponsor_cap_idx_triplet"
+            "sponsor_entity_ulid",
+            "domain",
+            "key",
+            name="uq_sponsor_cap_idx_triplet",
         ),
     )
 
@@ -156,8 +179,11 @@ class FundingProspect(db.Model, ULIDPK, IsoTimestamps):
 
     __tablename__ = "sponsor_funding_prospect"
 
-    sponsor_ulid: Mapped[str] = ULIDFK(
-        "sponsor_sponsor", index=True, nullable=False
+    sponsor_entity_ulid: Mapped[str] = mapped_column(
+        String(26),
+        db.ForeignKey("sponsor_sponsor.entity_ulid", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
     )
 
     # Governance-backed keys (validated by policy_semantics in services)
@@ -229,7 +255,13 @@ class SponsorPledgeIndex(db.Model, ULIDPK, IsoTimestamps):
 
     __tablename__ = "sponsor_pledge_index"
 
-    sponsor_ulid: Mapped[str] = ULIDFK("sponsor_sponsor", index=True)
+    sponsor_entity_ulid: Mapped[str] = mapped_column(
+        String(26),
+        db.ForeignKey("sponsor_sponsor.entity_ulid", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
     pledge_ulid: Mapped[str] = mapped_column(
         String(26), nullable=False, index=True, unique=True
     )
@@ -259,11 +291,17 @@ class SponsorPledgeIndex(db.Model, ULIDPK, IsoTimestamps):
 class SponsorPOC(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "sponsor_poc"
 
-    sponsor_ulid: Mapped[str] = ULIDFK(
-        "sponsor_sponsor", ondelete="CASCADE", nullable=False, index=True
+    sponsor_entity_ulid: Mapped[str] = mapped_column(
+        String(26),
+        db.ForeignKey("sponsor_sponsor.entity_ulid", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
-    person_entity_ulid: Mapped[str] = ULIDFK(
-        "entity_entity", ondelete="RESTRICT", nullable=False, index=True
+    person_entity_ulid: Mapped[str] = mapped_column(
+        String(26),
+        db.ForeignKey("entity_entity.ulid", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
 
     relation: Mapped[str] = mapped_column(
@@ -296,7 +334,7 @@ class SponsorPOC(db.Model, ULIDPK, IsoTimestamps):
 
     __table_args__ = (
         UniqueConstraint(
-            "sponsor_ulid",
+            "sponsor_entity_ulid",
             "person_entity_ulid",
             "relation",
             "scope",
@@ -304,14 +342,14 @@ class SponsorPOC(db.Model, ULIDPK, IsoTimestamps):
         ),
         Index(
             "ix_sponsor_poc_org_scope_rank",
-            "sponsor_ulid",
+            "sponsor_entity_ulid",
             "relation",
             "scope",
             "rank",
         ),
         Index(
             "ix_sponsor_poc_primary",
-            "sponsor_ulid",
+            "sponsor_entity_ulid",
             "relation",
             "scope",
             "is_primary",

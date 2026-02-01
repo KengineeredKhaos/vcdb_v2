@@ -30,7 +30,7 @@ CAPS_SECTION = "sponsor:capability:v1"
 PLEDGE_SECTION = "sponsor:pledge:v1"
 POC_RELATION = "poc"  # table-level convention, not board policy
 PROSPECT_REAL_SECTION = "sponsor:prospect_realization:v1"
-_SPONSOR_POC_SPEC = poc_svc.POCSpec(owner_col="sponsor_ulid")
+_SPONSOR_POC_SPEC = poc_svc.POCSpec(owner_col="sponsor_entity_ulid")
 
 
 # -----------------
@@ -102,39 +102,6 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
 
 
 # -----------------
-# Help for POC Validation
-# thru Entity contract
-# -----------------
-
-
-def _require_person_entity_ulid(
-    person_entity_ulid: str, *, where: str
-) -> None:
-    core = entity_v2.get_entity_core(db.session, person_entity_ulid)
-
-    if core.kind != "person":
-        raise ContractError(
-            code="bad_request",
-            where=where,
-            message=f"person_entity_ulid must be a person entity (got kind='{core.kind}')",
-            http_status=400,
-            data={"entity_ulid": person_entity_ulid, "kind": core.kind},
-        )
-
-    if core.archived_at:
-        raise ContractError(
-            code="conflict",
-            where=where,
-            message="person entity is archived",
-            http_status=409,
-            data={
-                "entity_ulid": person_entity_ulid,
-                "archived_at": core.archived_at,
-            },
-        )
-
-
-# -----------------
 # Point of Contact
 # wrappers for
 # app.services.poc
@@ -143,7 +110,7 @@ def _require_person_entity_ulid(
 
 def sponsor_link_poc(
     *,
-    sponsor_ulid: str,
+    sponsor_entity_ulid: str,
     person_entity_ulid: str,
     scope: str | None = None,
     rank: int = 0,
@@ -163,7 +130,7 @@ def sponsor_link_poc(
         POCModel=SponsorPOC,
         spec=_SPONSOR_POC_SPEC,
         domain="sponsors",
-        owner_ulid=sponsor_ulid,
+        owner_ulid=sponsor_entity_ulid,
         person_entity_ulid=person_entity_ulid,
         scope=scope,
         rank=rank,
@@ -177,7 +144,7 @@ def sponsor_link_poc(
 
 def sponsor_update_poc(
     *,
-    sponsor_ulid: str,
+    sponsor_entity_ulid: str,
     person_entity_ulid: str,
     scope: str | None = None,
     rank: int | None = None,
@@ -190,14 +157,14 @@ def sponsor_update_poc(
     require_person_entity_ulid(
         db.session,
         person_entity_ulid,
-        where="sponsors.sponsor_link_poc",
+        where="sponsors.sponsor_update_poc",
     )
     return poc_svc.update_poc(
         db.session,
         POCModel=SponsorPOC,
         spec=_SPONSOR_POC_SPEC,
         domain="sponsors",
-        owner_ulid=sponsor_ulid,
+        owner_ulid=sponsor_entity_ulid,
         person_entity_ulid=person_entity_ulid,
         scope=scope,
         rank=rank,
@@ -211,7 +178,7 @@ def sponsor_update_poc(
 
 def sponsor_unlink_poc(
     *,
-    sponsor_ulid: str,
+    sponsor_entity_ulid: str,
     person_entity_ulid: str,
     scope: str | None = None,
     actor_ulid: str | None = None,
@@ -220,14 +187,14 @@ def sponsor_unlink_poc(
     require_person_entity_ulid(
         db.session,
         person_entity_ulid,
-        where="sponsors.sponsor_link_poc",
+        where="sponsors.sponsor_unlink_poc",
     )
     return poc_svc.unlink_poc(
         db.session,
         POCModel=SponsorPOC,
         spec=_SPONSOR_POC_SPEC,
         domain="sponsors",
-        owner_ulid=sponsor_ulid,
+        owner_ulid=sponsor_entity_ulid,
         person_entity_ulid=person_entity_ulid,
         scope=scope,
         actor_ulid=actor_ulid,
@@ -235,12 +202,12 @@ def sponsor_unlink_poc(
     )
 
 
-def sponsor_list_pocs(*, sponsor_ulid: str) -> list[dict]:
+def sponsor_list_pocs(*, sponsor_entity_ulid: str) -> list[dict]:
     return poc_svc.list_pocs(
         db.session,
         POCModel=SponsorPOC,
         spec=_SPONSOR_POC_SPEC,
-        owner_ulid=sponsor_ulid,
+        owner_ulid=sponsor_entity_ulid,
     )
 
 
@@ -347,10 +314,12 @@ def _flatten_caps_payload(
 # -----------------
 
 
-def _latest_snapshot(sponsor_ulid: str, section: str) -> dict[str, dict]:
+def _latest_snapshot(
+    sponsor_entity_ulid: str, section: str
+) -> dict[str, dict]:
     h = (
         db.session.query(SponsorHistory)
-        .filter_by(sponsor_ulid=sponsor_ulid, section=section)
+        .filter_by(sponsor_entity_ulid=sponsor_entity_ulid, section=section)
         .order_by(desc(SponsorHistory.version))
         .first()
     )
@@ -379,14 +348,14 @@ def _validate_caps(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return flat
 
 
-def _latest_caps(sponsor_ulid: str) -> dict[str, dict]:
-    return _latest_snapshot(sponsor_ulid, CAPS_SECTION)
+def _latest_caps(sponsor_entity_ulid: str) -> dict[str, dict]:
+    return _latest_snapshot(sponsor_entity_ulid, CAPS_SECTION)
 
 
-def _next_version(sponsor_ulid: str, section: str) -> int:
+def _next_version(sponsor_entity_ulid: str, section: str) -> int:
     cur = (
         db.session.query(func.max(SponsorHistory.version))
-        .filter_by(sponsor_ulid=sponsor_ulid, section=section)
+        .filter_by(sponsor_entity_ulid=sponsor_entity_ulid, section=section)
         .scalar()
     )
     return int(cur or 0) + 1
@@ -433,14 +402,16 @@ def _default_mou() -> str:
 
 
 def ensure_sponsor(
-    *, entity_ulid: str, request_id: str, actor_ulid: Optional[str]
+    *, sponsor_entity_ulid: str, request_id: str, actor_ulid: Optional[str]
 ) -> str:
     _ensure_reqid(request_id)
-    s = db.session.query(Sponsor).filter_by(entity_ulid=entity_ulid).first()
+
+    s = db.session.get(Sponsor, sponsor_entity_ulid)
+    now = now_iso8601_ms()
+
     if not s:
-        now = now_iso8601_ms()
         s = Sponsor(
-            entity_ulid=entity_ulid,
+            entity_ulid=sponsor_entity_ulid,
             first_seen_utc=now,
             last_touch_utc=now,
             readiness_status="draft",
@@ -448,19 +419,21 @@ def ensure_sponsor(
         )
         db.session.add(s)
         db.session.flush()
+
         event_bus.emit(
             domain="sponsors",
             operation="created_insert",
             actor_ulid=actor_ulid,
-            target_ulid=s.ulid,
+            target_ulid=s.entity_ulid,  # facet pk
             request_id=request_id,
-            happened_at_utc=now_iso8601_ms(),
-            refs={"entity_ulid": entity_ulid},
+            happened_at_utc=now,
+            refs={"entity_ulid": s.entity_ulid},
         )
     else:
-        s.last_touch_utc = now_iso8601_ms()
+        s.last_touch_utc = now
         db.session.flush()
-    return s.ulid
+
+    return s.entity_ulid
 
 
 # -----------------
@@ -471,19 +444,20 @@ def ensure_sponsor(
 
 def upsert_capabilities(
     *,
-    sponsor_ulid: str,
+    sponsor_entity_ulid: str,
     payload: Dict[str, Any],
     request_id: str,
     actor_ulid: Optional[str],
 ) -> str | None:
     _ensure_reqid(request_id)
-    s = db.session.get(Sponsor, sponsor_ulid)
+    now = now_iso8601_ms()
+    s = db.session.get(Sponsor, sponsor_entity_ulid)
     if not s:
         raise ValueError("sponsor not found")
     norm = _validate_caps(payload)
-    last = _latest_caps(sponsor_ulid)
+    last = _latest_caps(sponsor_entity_ulid)
     if last and stable_dumps(last) == stable_dumps(norm):
-        s.last_touch_utc = now_iso8601_ms()
+        s.last_touch_utc = now
         db.session.flush()
         return None
 
@@ -491,9 +465,9 @@ def upsert_capabilities(
     after = {k for k, v in norm.items() if v.get("has")}
     added, removed = sorted(after - before), sorted(before - after)
 
-    ver = _next_version(sponsor_ulid, CAPS_SECTION)
+    ver = _next_version(sponsor_entity_ulid, CAPS_SECTION)
     hist = SponsorHistory(
-        sponsor_ulid=sponsor_ulid,
+        sponsor_entity_ulid=sponsor_entity_ulid,
         section=CAPS_SECTION,
         version=ver,
         data_json=stable_dumps(norm),
@@ -505,10 +479,10 @@ def upsert_capabilities(
     existing = {
         (c.domain, c.key): c
         for c in db.session.query(SponsorCapabilityIndex).filter_by(
-            sponsor_ulid=sponsor_ulid
+            sponsor_entity_ulid=sponsor_entity_ulid
         )
     }
-    now = now_iso8601_ms()
+
     seen: set[tuple[str, str]] = set()
     for flat, obj in norm.items():
         d, k = _split(flat)
@@ -521,7 +495,7 @@ def upsert_capabilities(
         else:
             db.session.add(
                 SponsorCapabilityIndex(
-                    sponsor_ulid=sponsor_ulid,
+                    sponsor_entity_ulid=sponsor_entity_ulid,
                     domain=d,
                     key=k,
                     active=active,
@@ -545,7 +519,7 @@ def upsert_capabilities(
             domain="sponsors",
             operation="capability_add",
             actor_ulid=actor_ulid,
-            target_ulid=sponsor_ulid,
+            target_ulid=sponsor_entity_ulid,
             request_id=request_id,
             happened_at_utc=now,
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
@@ -556,7 +530,7 @@ def upsert_capabilities(
             domain="sponsors",
             operation="capability_remove",
             actor_ulid=actor_ulid,
-            target_ulid=sponsor_ulid,
+            target_ulid=sponsor_entity_ulid,
             request_id=request_id,
             happened_at_utc=now,
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
@@ -566,17 +540,18 @@ def upsert_capabilities(
 
 def patch_capabilities(
     *,
-    sponsor_ulid: str,
+    sponsor_entity_ulid: str,
     payload: Dict[str, Any],
     request_id: str,
     actor_ulid: Optional[str],
 ) -> str | None:
     _ensure_reqid(request_id)
-    s = db.session.get(Sponsor, sponsor_ulid)
+    now = now_iso8601_ms()
+    s = db.session.get(Sponsor, sponsor_entity_ulid)
     if not s:
         raise ValueError("sponsor not found")
     patch = _validate_caps(payload)
-    last = _latest_caps(sponsor_ulid)
+    last = _latest_caps(sponsor_entity_ulid)
     merged = {k: dict(v) for k, v in last.items()}
     for flat, obj in patch.items():
         if flat not in merged:
@@ -590,7 +565,7 @@ def patch_capabilities(
             else:
                 merged[flat]["note"] = str(note)[:note_max]
     if stable_dumps(merged) == stable_dumps(last):
-        s.last_touch_utc = now_iso8601_ms()
+        s.last_touch_utc = now
         db.session.flush()
         return None
 
@@ -598,9 +573,9 @@ def patch_capabilities(
     after = {k for k, v in merged.items() if v.get("has")}
     added, removed = sorted(after - before), sorted(before - after)
 
-    ver = _next_version(sponsor_ulid, CAPS_SECTION)
+    ver = _next_version(sponsor_entity_ulid, CAPS_SECTION)
     hist = SponsorHistory(
-        sponsor_ulid=sponsor_ulid,
+        sponsor_entity_ulid=sponsor_entity_ulid,
         section=CAPS_SECTION,
         version=ver,
         data_json=stable_dumps(merged),
@@ -609,13 +584,14 @@ def patch_capabilities(
     db.session.add(hist)
 
     # touch only affected keys in projection (no deletions)
-    now = now_iso8601_ms()
     for flat, obj in patch.items():
         d, k = _split(flat)
         active = bool(obj.get("has"))
         row = (
             db.session.query(SponsorCapabilityIndex)
-            .filter_by(sponsor_ulid=sponsor_ulid, domain=d, key=k)
+            .filter_by(
+                sponsor_entity_ulid=sponsor_entity_ulid, domain=d, key=k
+            )
             .first()
         )
         if row:
@@ -624,7 +600,7 @@ def patch_capabilities(
         else:
             db.session.add(
                 SponsorCapabilityIndex(
-                    sponsor_ulid=sponsor_ulid,
+                    sponsor_entity_ulid=sponsor_entity_ulid,
                     domain=d,
                     key=k,
                     active=active,
@@ -645,7 +621,7 @@ def patch_capabilities(
             domain="sponsors",
             operation="capability_add",
             actor_ulid=actor_ulid,
-            target_ulid=sponsor_ulid,
+            target_ulid=sponsor_entity_ulid,
             request_id=request_id,
             happened_at_utc=now,
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
@@ -656,7 +632,7 @@ def patch_capabilities(
             domain="sponsors",
             operation="capability_remove",
             actor_ulid=actor_ulid,
-            target_ulid=sponsor_ulid,
+            target_ulid=sponsor_entity_ulid,
             request_id=request_id,
             happened_at_utc=now,
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
@@ -672,13 +648,14 @@ def patch_capabilities(
 
 def set_readiness_status(
     *,
-    sponsor_ulid: str,
+    sponsor_entity_ulid: str,
     status: str,
     request_id: str,
     actor_ulid: str | None,
 ) -> None:
     _ensure_reqid(request_id)
-    s = db.session.get(Sponsor, sponsor_ulid)
+    now = now_iso8601_ms()
+    s = db.session.get(Sponsor, sponsor_entity_ulid)
     if not s:
         raise ValueError("sponsor not found")
 
@@ -690,7 +667,6 @@ def set_readiness_status(
         return
 
     prev = s.readiness_status
-    now = now_iso8601_ms()
     s.readiness_status = status
     s.last_touch_utc = now
     db.session.flush()
@@ -699,7 +675,7 @@ def set_readiness_status(
         domain="sponsors",
         operation="readiness_update",
         actor_ulid=actor_ulid,
-        target_ulid=sponsor_ulid,
+        target_ulid=sponsor_entity_ulid,
         request_id=request_id,
         happened_at_utc=now,
         changed={"readiness_status": status, "prev": prev},
@@ -708,13 +684,14 @@ def set_readiness_status(
 
 def set_mou_status(
     *,
-    sponsor_ulid: str,
+    sponsor_entity_ulid: str,
     status: str,
     request_id: str,
     actor_ulid: str | None,
 ) -> None:
     _ensure_reqid(request_id)
-    s = db.session.get(Sponsor, sponsor_ulid)
+    now = now_iso8601_ms()
+    s = db.session.get(Sponsor, sponsor_entity_ulid)
     if not s:
         raise ValueError("sponsor not found")
 
@@ -726,7 +703,6 @@ def set_mou_status(
         return
 
     prev = s.mou_status
-    now = now_iso8601_ms()
     s.mou_status = status
     s.last_touch_utc = now
     db.session.flush()
@@ -735,7 +711,7 @@ def set_mou_status(
         domain="sponsors",
         operation="mou_update",
         actor_ulid=actor_ulid,
-        target_ulid=sponsor_ulid,
+        target_ulid=sponsor_entity_ulid,
         request_id=request_id,
         happened_at_utc=now,
         changed={"mou_status": status, "prev": prev},
@@ -759,8 +735,8 @@ def _allowed_pledge_statuses() -> set[str]:
     return {s["code"] for s in policy.get("statuses", [])}
 
 
-def _latest_pledges(sponsor_ulid: str) -> dict[str, dict]:
-    return _latest_snapshot(sponsor_ulid, PLEDGE_SECTION)
+def _latest_pledges(sponsor_entity_ulid: str) -> dict[str, dict]:
+    return _latest_snapshot(sponsor_entity_ulid, PLEDGE_SECTION)
 
 
 # -----------------
@@ -768,13 +744,13 @@ def _latest_pledges(sponsor_ulid: str) -> dict[str, dict]:
 # -----------------
 
 
-def _latest_prospect_realizations(sponsor_ulid: str) -> dict:
-    return _latest_snapshot(sponsor_ulid, PROSPECT_REAL_SECTION)
+def _latest_prospect_realizations(sponsor_entity_ulid: str) -> dict:
+    return _latest_snapshot(sponsor_entity_ulid, PROSPECT_REAL_SECTION)
 
 
 def record_prospect_realization(
     *,
-    sponsor_ulid: str,
+    sponsor_entity_ulid: str,
     prospect_ulid: str,
     amount_cents: int,
     request_id: str,
@@ -798,13 +774,14 @@ def record_prospect_realization(
     The expectation is that callers will:
 
       1) Log the inbound donation in Finance via finance_v2.log_donation(...).
-      2) Call this function with the same sponsor_ulid / prospect_ulid /
+      2) Call this function with the same sponsor_entity_ulid / prospect_ulid /
          amount_cents and (optionally) the Finance journal_ulid.
     """
     _ensure_reqid(request_id)
+    now = now_iso8601_ms()
 
     # 1) Validate sponsor
-    s = db.session.get(Sponsor, sponsor_ulid)
+    s = db.session.get(Sponsor, sponsor_entity_ulid)
     if not s:
         raise ValueError("sponsor not found")
 
@@ -821,13 +798,13 @@ def record_prospect_realization(
         .filter_by(pledge_ulid=prospect_ulid)
         .first()
     )
-    if pledge_row and pledge_row.sponsor_ulid != sponsor_ulid:
+    if pledge_row and pledge_row.sponsor_entity_ulid != sponsor_entity_ulid:
         raise ValueError("prospect/pledge does not belong to sponsor")
 
-    as_of = happened_at_utc or now_iso8601_ms()
+    as_of = happened_at_utc or now
 
     # 4) Load latest snapshot and append realization
-    latest = _latest_prospect_realizations(sponsor_ulid)
+    latest = _latest_prospect_realizations(sponsor_entity_ulid)
     merged = {k: dict(v) for k, v in latest.items()}
 
     record = dict(merged.get(prospect_ulid) or {})
@@ -848,23 +825,22 @@ def record_prospect_realization(
     merged[prospect_ulid] = record
 
     changed = stable_dumps(merged) != stable_dumps(latest)
-    now = now_iso8601_ms()
 
     if not changed:
         # Nothing mutated; still touch sponsor for freshness.
         s.last_touch_utc = now
         db.session.flush()
         return {
-            "sponsor_ulid": sponsor_ulid,
+            "sponsor_entity_ulid": sponsor_entity_ulid,
             "prospect_ulid": prospect_ulid,
             "realized_total_cents": total,
             "last_amount_cents": int(amount_cents),
             "history_ulid": None,
         }
 
-    ver = _next_version(sponsor_ulid, PROSPECT_REAL_SECTION)
+    ver = _next_version(sponsor_entity_ulid, PROSPECT_REAL_SECTION)
     hist = SponsorHistory(
-        sponsor_ulid=sponsor_ulid,
+        sponsor_entity_ulid=sponsor_entity_ulid,
         section=PROSPECT_REAL_SECTION,
         version=ver,
         data_json=stable_dumps(merged),
@@ -880,9 +856,9 @@ def record_prospect_realization(
         domain="sponsors",
         operation="prospect_realization",
         actor_ulid=actor_ulid,
-        target_ulid=sponsor_ulid,
+        target_ulid=sponsor_entity_ulid,
         request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
+        happened_at_utc=now,
         refs={
             "prospect_ulid": prospect_ulid,
             "history_ulid": hist.ulid,
@@ -895,7 +871,7 @@ def record_prospect_realization(
     )
 
     return {
-        "sponsor_ulid": sponsor_ulid,
+        "sponsor_entity_ulid": sponsor_entity_ulid,
         "prospect_ulid": prospect_ulid,
         "realized_total_cents": total,
         "last_amount_cents": int(amount_cents),
@@ -986,7 +962,7 @@ def _validate_pledge_payload(p: dict) -> dict:
 
 def upsert_pledge(
     *,
-    sponsor_ulid: str,
+    sponsor_entity_ulid: str,
     pledge: dict,
     request_id: str,
     actor_ulid: Optional[str],
@@ -995,24 +971,25 @@ def upsert_pledge(
     Create or update a pledge (by pledge_ulid) in History; update projection; emit names-only event.
     """
     _ensure_reqid(request_id)
-    s = db.session.get(Sponsor, sponsor_ulid)
+    now = now_iso8601_ms()
+    s = db.session.get(Sponsor, sponsor_entity_ulid)
     if not s:
         raise ValueError("sponsor not found")
 
     valid = _validate_pledge_payload(pledge)
-    latest = _latest_pledges(sponsor_ulid)
+    latest = _latest_pledges(sponsor_entity_ulid)
     merged = dict(latest)
     merged[valid["pledge_ulid"]] = valid
 
     changed = stable_dumps(merged) != stable_dumps(latest)
     if not changed:
-        s.last_touch_utc = now_iso8601_ms()
+        s.last_touch_utc = now
         db.session.flush()
         return list(merged.keys())[0]  # return pledge id anyway
 
-    ver = _next_version(sponsor_ulid, PLEDGE_SECTION)
+    ver = _next_version(sponsor_entity_ulid, PLEDGE_SECTION)
     hist = SponsorHistory(
-        sponsor_ulid=sponsor_ulid,
+        sponsor_entity_ulid=sponsor_entity_ulid,
         section=PLEDGE_SECTION,
         version=ver,
         data_json=stable_dumps(merged),
@@ -1021,7 +998,6 @@ def upsert_pledge(
     db.session.add(hist)
 
     # projection row upsert
-    now = now_iso8601_ms()
     pid = valid["pledge_ulid"]
     has_rest = bool(valid.get("restriction"))
     est_val = (
@@ -1046,7 +1022,7 @@ def upsert_pledge(
     else:
         db.session.add(
             SponsorPledgeIndex(
-                sponsor_ulid=sponsor_ulid,
+                sponsor_entity_ulid=sponsor_entity_ulid,
                 pledge_ulid=pid,
                 type=valid["type"],
                 status=valid["status"],
@@ -1065,9 +1041,9 @@ def upsert_pledge(
         domain="sponsors",
         operation="pledge_upsert",
         actor_ulid=actor_ulid,
-        target_ulid=sponsor_ulid,
+        target_ulid=sponsor_entity_ulid,
         request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
+        happened_at_utc=now,
         refs={"pledge_ulid": pid, "version_ptr": hist.ulid},
     )
 
@@ -1082,6 +1058,7 @@ def set_pledge_status(
     actor_ulid: Optional[str],
 ) -> None:
     _ensure_reqid(request_id)
+    now = now_iso8601_ms()
     status = (status or "").strip().lower()
 
     allowed_status = _allowed_pledge_statuses()
@@ -1100,16 +1077,16 @@ def set_pledge_status(
 
     prev = row.status
     row.status = status
-    row.updated_at_utc = now_iso8601_ms()
+    row.updated_at_utc = now
     db.session.flush()
 
     event_bus.emit(
         domain="sponsors",
         operation="pledge_status_update",
         actor_ulid=actor_ulid,
-        target_ulid=row.sponsor_ulid,
+        target_ulid=row.sponsor_entity_ulid,
         request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
+        happened_at_utc=now,
         changed={"pledge_ulid": pledge_ulid, "status": status, "prev": prev},
     )
 
@@ -1119,22 +1096,22 @@ def set_pledge_status(
 # -----------------
 
 
-def sponsor_view(sponsor_ulid: str) -> Optional[dict]:
-    s = db.session.get(Sponsor, sponsor_ulid)
+def sponsor_view(sponsor_entity_ulid: str) -> Optional[dict]:
+    s = db.session.get(Sponsor, sponsor_entity_ulid)
     if not s:
         return None
     caps = (
         db.session.query(SponsorCapabilityIndex)
-        .filter_by(sponsor_ulid=s.ulid, active=True)
+        .filter_by(sponsor_entity_ulid=sponsor_entity_ulid, active=True)
         .all()
     )
     pledges = (
         db.session.query(SponsorPledgeIndex)
-        .filter_by(sponsor_ulid=s.ulid)
+        .filter_by(sponsor_entity_ulid=s.entity_ulid)
         .all()
     )
     return {
-        "sponsor_ulid": s.ulid,
+        "sponsor_entity_ulid": sponsor_entity_ulid,
         "entity_ulid": s.entity_ulid,
         "admin_review_required": s.admin_review_required,
         "readiness_status": s.readiness_status,
@@ -1184,31 +1161,31 @@ def find_sponsors(
         ors = []
         for d, k in any_of:
             ors.append(
-                db.session.query(SponsorCapabilityIndex.sponsor_ulid)
+                db.session.query(SponsorCapabilityIndex.sponsor_entity_ulid)
                 .filter_by(domain=d, key=k, active=True)
-                .with_entities(SponsorCapabilityIndex.sponsor_ulid)
+                .with_entities(SponsorCapabilityIndex.sponsor_entity_ulid)
             )
         ids = set()
         for sub in ors:
             ids.update([r[0] for r in sub.all()])
         if ids:
-            q = q.filter(Sponsor.ulid.in_(list(ids)))
+            q = q.filter(Sponsor.entity_ulid.in_(list(ids)))
         else:
             return [], 0
     # has_active_pledges
     if has_active_pledges is not None:
         sub_ids = [
             r[0]
-            for r in db.session.query(SponsorPledgeIndex.sponsor_ulid)
+            for r in db.session.query(SponsorPledgeIndex.sponsor_entity_ulid)
             .filter(SponsorPledgeIndex.status.in_(("proposed", "active")))
             .distinct()
             .all()
         ]
         if has_active_pledges:
-            q = q.filter(Sponsor.ulid.in_(sub_ids or ["_none_"]))
+            q = q.filter(Sponsor.entity_ulid.in_(sub_ids or ["_none_"]))
         else:
             if sub_ids:
-                q = q.filter(~Sponsor.ulid.in_(sub_ids))
+                q = q.filter(~Sponsor.entity_ulid.in_(sub_ids))
     total = q.count()
     rows = (
         q.order_by(Sponsor.updated_at_utc.desc())

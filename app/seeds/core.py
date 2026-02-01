@@ -70,13 +70,13 @@ def make_faker(seed: int = 1337) -> Faker:
 
 @dataclass(frozen=True)
 class SeedResourceResult:
-    resource_ulid: str
+    resource_entity_ulid: str
     entity_ulid: str
 
 
 @dataclass(frozen=True)
 class SeedSponsorResult:
-    sponsor_ulid: str
+    sponsor_entity_ulid: str
     entity_ulid: str
 
 
@@ -439,7 +439,8 @@ def seed_active_resource(
 
     sess.flush()
     return SeedResourceResult(
-        resource_ulid=res.ulid, entity_ulid=org_entity_ulid
+        resource_entity_ulid=res.entity_ulid,
+        entity_ulid=org_entity_ulid,
     )
 
 
@@ -488,7 +489,8 @@ def seed_sponsor_with_policy(
 
     sess.flush()
     return SeedSponsorResult(
-        sponsor_ulid=sp.ulid, entity_ulid=org_entity_ulid
+        sponsor_entity_ulid=sp.entity_ulid,
+        entity_ulid=org_entity_ulid,
     )
 
 

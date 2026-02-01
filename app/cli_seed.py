@@ -121,7 +121,7 @@ def seed_bootstrap_impl(
         ts = now_iso8601_ms()
         for j, person_entity_ulid in enumerate(pocs):
             resource_link_poc(
-                resource_ulid=res.resource_ulid,
+                resource_entity_ulid=res.resource_entity_ulid,
                 person_entity_ulid=person_entity_ulid,
                 scope=None,
                 rank=j,
@@ -149,7 +149,7 @@ def seed_bootstrap_impl(
         ts = now_iso8601_ms()
         for j, person_entity_ulid in enumerate(pocs):
             sponsor_link_poc(
-                sponsor_ulid=sres.sponsor_ulid,
+                sponsor_entity_ulid=sres.sponsor_entity_ulid,
                 person_entity_ulid=person_entity_ulid,
                 scope=None,
                 rank=j,
@@ -175,7 +175,7 @@ def seed_bootstrap_impl(
         f"OK — bootstrap complete. (RBAC +{n_rbac}, Domain +{n_domain}, "
         f"resources={resources}, sponsors={sponsors}, customers={customers})"
     )
-    return True
+    return
 
 
 @seed_cmd.command("bootstrap")

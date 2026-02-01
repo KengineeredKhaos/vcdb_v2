@@ -10,6 +10,7 @@ from app.lib.ids import new_ulid
 # error helper (tolerate minor ContractError signature drift)
 # -----------------------------------------------------------------------------
 
+
 def _ce(code: str, msg: str, http_status: int | None = None) -> Exception:
     try:
         if http_status is None:
@@ -19,7 +20,9 @@ def _ce(code: str, msg: str, http_status: int | None = None) -> Exception:
         try:
             if http_status is None:
                 return ContractError("sponsors_v2", code, msg)
-            return ContractError("sponsors_v2", code, msg, http_status=http_status)
+            return ContractError(
+                "sponsors_v2", code, msg, http_status=http_status
+            )
         except TypeError:
             if code == "not_found":
                 return LookupError(msg)
@@ -36,7 +39,12 @@ def _wrap(where: str, fn):
     except ValueError as exc:
         raise _ce("invalid_input", f"{where}: {exc}", http_status=400)
     except Exception as exc:
-        raise _ce("internal_error", f"{where}: unexpected error: {exc}", http_status=500)
+        raise _ce(
+            "internal_error",
+            f"{where}: unexpected error: {exc}",
+            http_status=500,
+        )
+
 
 # -----------------------------------------------------------------------------
 # contract surface
