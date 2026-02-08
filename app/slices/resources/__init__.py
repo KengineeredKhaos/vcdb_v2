@@ -18,8 +18,10 @@ bp = Blueprint("resources", __name__, url_prefix="/resources")
 # models first (tables),
 # then services (business),
 # then routes (bp decorators).
-from . import models  # noqa: E402, F401
-from . import services  # noqa: F401
-from . import routes  # noqa: F401
+from . import (
+    models,  # noqa: E402, F401
+    routes,  # noqa: F401
+    services,  # noqa: F401
+)
 
 __all__ = ["bp"]

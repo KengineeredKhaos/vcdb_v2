@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from app.extensions import db
 from app.extensions.contracts import entity_v2
 from app.lib.ids import new_ulid

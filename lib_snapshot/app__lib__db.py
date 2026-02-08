@@ -1,6 +1,6 @@
 # app/lib/db.py
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 
 from flask_sqlalchemy import SQLAlchemy
 

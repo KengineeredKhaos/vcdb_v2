@@ -141,13 +141,13 @@ class Project(db.Model, ULIDPK, IsoTimestamps):
     )
 
     # New: convenience relationship to funding plans
-    funding_plans: Mapped[list["ProjectFundingPlan"]] = relationship(
+    funding_plans: Mapped[list[ProjectFundingPlan]] = relationship(
         "ProjectFundingPlan",
         back_populates="project",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    tasks: Mapped[list["Task"]] = relationship(
+    tasks: Mapped[list[Task]] = relationship(
         "Task",
         back_populates="project",
         cascade="all, delete-orphan",
@@ -173,7 +173,7 @@ class Task(db.Model, ULIDPK, IsoTimestamps):
     )
 
     # NEW: Task -> Project relationship
-    project: Mapped["Project"] = relationship(
+    project: Mapped[Project] = relationship(
         "Project",
         back_populates="tasks",
         passive_deletes=True,
@@ -269,7 +269,7 @@ class ProjectFundingPlan(db.Model, ULIDPK, IsoTimestamps):
 
     # Optional relationship back to Project (handy in services)
     # Link: each funding plan row belongs to a single Calendar Project.
-    project: Mapped["Project"] = relationship(
+    project: Mapped[Project] = relationship(
         "Project",
         back_populates="funding_plans",
         passive_deletes=True,
@@ -280,7 +280,7 @@ class ProjectFundingPlan(db.Model, ULIDPK, IsoTimestamps):
         ondelete="CASCADE",  # or SET NULL if you want it nullable
     )
 
-    project: Mapped["Project"] = relationship(
+    project: Mapped[Project] = relationship(
         "Project",
         back_populates="funding_plans",
         foreign_keys=[project_ulid],

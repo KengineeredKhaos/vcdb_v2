@@ -1,7 +1,11 @@
 from app.extensions import db
 from app.lib.ids import new_ulid
-from app.slices.logistics.models import InventoryItem, InventoryStock, Location
 from app.slices.logistics.issuance_services import available_skus_for_customer
+from app.slices.logistics.models import (
+    InventoryItem,
+    InventoryStock,
+    Location,
+)
 from app.slices.logistics.sku import parse_sku
 
 
@@ -33,8 +37,16 @@ def _policy(*, sku_vet: str, sku_hml: str, sku_open: str) -> dict:
         "sku_constraints": {
             "defaults": {"cadence": {}},
             "rules": [
-                {"match": {"sku": sku_vet}, "qualifiers": {"veteran_required": True}, "cadence": {}},
-                {"match": {"sku": sku_hml}, "qualifiers": {"homeless_required": True}, "cadence": {}},
+                {
+                    "match": {"sku": sku_vet},
+                    "qualifiers": {"veteran_required": True},
+                    "cadence": {},
+                },
+                {
+                    "match": {"sku": sku_hml},
+                    "qualifiers": {"homeless_required": True},
+                    "cadence": {},
+                },
                 {"match": {"sku": sku_open}, "qualifiers": {}, "cadence": {}},
             ],
         },
@@ -54,7 +66,10 @@ def test_available_skus_filters_using_customer_cues(monkeypatch, app):
 
     # No blackout
     import app.extensions.enforcers as enforcers
-    monkeypatch.setattr(enforcers, "calendar_blackout_ok", lambda ctx: (True, {}))
+
+    monkeypatch.setattr(
+        enforcers, "calendar_blackout_ok", lambda ctx: (True, {})
+    )
 
     # Count contract calls: should be exactly one per call
     calls = {"n": 0}
@@ -67,7 +82,7 @@ def test_available_skus_filters_using_customer_cues(monkeypatch, app):
             tier1_min=None,
             tier2_min=None,
             tier3_min=None,
-            is_veteran_verified=True,    # eligible for sku_vet
+            is_veteran_verified=True,  # eligible for sku_vet
             is_homeless_verified=False,  # NOT eligible for sku_hml
             flag_tier1_immediate=False,
             watchlist=False,
@@ -89,9 +104,27 @@ def test_available_skus_filters_using_customer_cues(monkeypatch, app):
         # Ensure parents exist before inserting stock rows (avoids FK ordering edge cases)
         db.session.flush()
 
-        s1 = InventoryStock(ulid=new_ulid(), item_ulid=i1.ulid, location_ulid=loc.ulid, quantity=5, unit="each")
-        s2 = InventoryStock(ulid=new_ulid(), item_ulid=i2.ulid, location_ulid=loc.ulid, quantity=5, unit="each")
-        s3 = InventoryStock(ulid=new_ulid(), item_ulid=i3.ulid, location_ulid=loc.ulid, quantity=5, unit="each")
+        s1 = InventoryStock(
+            ulid=new_ulid(),
+            item_ulid=i1.ulid,
+            location_ulid=loc.ulid,
+            quantity=5,
+            unit="each",
+        )
+        s2 = InventoryStock(
+            ulid=new_ulid(),
+            item_ulid=i2.ulid,
+            location_ulid=loc.ulid,
+            quantity=5,
+            unit="each",
+        )
+        s3 = InventoryStock(
+            ulid=new_ulid(),
+            item_ulid=i3.ulid,
+            location_ulid=loc.ulid,
+            quantity=5,
+            unit="each",
+        )
         db.session.add_all([s1, s2, s3])
 
         db.session.commit()
@@ -102,7 +135,9 @@ def test_available_skus_filters_using_customer_cues(monkeypatch, app):
             include_out_of_stock=False,
         )
 
-    assert calls["n"] == 1, "expected one get_customer_cues() call for the whole SKU list"
+    assert calls["n"] == 1, (
+        "expected one get_customer_cues() call for the whole SKU list"
+    )
     assert sku_vet in skus
     assert sku_open in skus
     assert sku_hml not in skus

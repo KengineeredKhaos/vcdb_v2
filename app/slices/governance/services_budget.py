@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
 
 from app.extensions.policies import (
     load_policy_finance_controls,
@@ -19,11 +18,11 @@ from app.extensions.policies import (
 class DonationIntent:
     sponsor_ulid: str
     amount_cents: int
-    fund_archetype_key: Optional[str] = None
-    period_label: Optional[str] = None
-    source: Optional[str] = None  # e.g. 'grant:ELKS_FREEDOM'
-    prospect_ulid: Optional[str] = None
-    notes: Optional[str] = None
+    fund_archetype_key: str | None = None
+    period_label: str | None = None
+    source: str | None = None  # e.g. 'grant:ELKS_FREEDOM'
+    prospect_ulid: str | None = None
+    notes: str | None = None
 
 
 @dataclass
@@ -31,9 +30,9 @@ class DonationClassification:
     ok: bool
     reason: str
     fund_archetype_key: str
-    journal_flags: List[str]
-    reporting_tags: List[str]
-    restricted_project_type_keys: List[str]
+    journal_flags: list[str]
+    reporting_tags: list[str]
+    restricted_project_type_keys: list[str]
 
 
 @dataclass
@@ -47,8 +46,8 @@ class ProjectBudgetDemand:
 
     project_ulid: str
     project_title: str
-    project_type_key: Optional[str]
-    period_label: Optional[str]
+    project_type_key: str | None
+    period_label: str | None
     total_expected_cents: int
     monetary_expected_cents: int
     in_kind_expected_cents: int
@@ -81,11 +80,11 @@ class BudgetPosition:
     """
 
     fund_archetype_key: str
-    project_type_key: Optional[str]
-    period_label: Optional[str]
-    cap_cents: Optional[int]
-    spent_cents: Optional[int]
-    remaining_cents: Optional[int]
+    project_type_key: str | None
+    period_label: str | None
+    cap_cents: int | None
+    spent_cents: int | None
+    remaining_cents: int | None
 
 
 @dataclass
@@ -101,8 +100,8 @@ class SpendIntent:
     """
 
     fund_archetype_key: str
-    project_type_key: Optional[str]
-    period_label: Optional[str]
+    project_type_key: str | None
+    period_label: str | None
     amount_cents: int
 
 
@@ -127,13 +126,13 @@ class SpendDecision:
     reason: str
 
     fund_archetype_key: str
-    project_type_key: Optional[str]
-    period_label: Optional[str]
+    project_type_key: str | None
+    period_label: str | None
 
     amount_cents: int
-    cap_cents: Optional[int]
-    spent_cents: Optional[int]
-    remaining_cents: Optional[int]
+    cap_cents: int | None
+    spent_cents: int | None
+    remaining_cents: int | None
 
     requires_override: bool
 
@@ -219,9 +218,9 @@ def classify_donation_intent(
 def compute_budget_position(
     *,
     fund_archetype_key: str,
-    project_type_key: Optional[str] = None,
-    period_label: Optional[str] = None,
-    current_spent_cents: Optional[int] = None,
+    project_type_key: str | None = None,
+    period_label: str | None = None,
+    current_spent_cents: int | None = None,
 ) -> BudgetPosition:
     """
     Compute a simple budget position for a fund/project/period.
@@ -239,7 +238,7 @@ def compute_budget_position(
 
     This function is pure / side-effect free.
     """
-    cap_cents: Optional[int] = None
+    cap_cents: int | None = None
 
     try:
         _budget = load_policy_finance_controls()
@@ -253,7 +252,7 @@ def compute_budget_position(
         cap_cents = None
 
     spent_cents = current_spent_cents
-    remaining_cents: Optional[int] = None
+    remaining_cents: int | None = None
 
     if cap_cents is not None and spent_cents is not None:
         remaining_cents = cap_cents - spent_cents
@@ -271,7 +270,7 @@ def compute_budget_position(
 def preview_spend_decision(
     intent: SpendIntent,
     *,
-    current_spent_cents: Optional[int] = None,
+    current_spent_cents: int | None = None,
 ) -> SpendDecision:
     """
     Evaluate a proposed spend against Governance budget policy.

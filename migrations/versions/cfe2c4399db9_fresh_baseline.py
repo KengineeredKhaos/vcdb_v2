@@ -1,8 +1,8 @@
 """fresh baseline
 
-Revision ID: 47dbd1aacdcf
+Revision ID: cfe2c4399db9
 Revises: 
-Create Date: 2026-02-01 08:39:00.191300
+Create Date: 2026-02-01 09:47:13.274629
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '47dbd1aacdcf'
+revision = 'cfe2c4399db9'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -261,7 +261,7 @@ def upgrade():
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
     sa.CheckConstraint("intake_step IS NULL OR intake_step IN ('identity','address_physical','address_postal','contact','eligibility','review','complete')", name='ck_customer_intake_step_enum'),
-    sa.CheckConstraint("last_needs_tier_updated IS NULL OR last_needs_tier_updated IN ('tier1','tier2','tier3'"),
+    sa.CheckConstraint("last_needs_tier_updated IS NULL OR last_needs_tier_updated IN ('tier1','tier2','tier3')"),
     sa.CheckConstraint("status IN ('intake','active','suspended','archived')", name='ck_customer_status_enum'),
     sa.CheckConstraint('tier1_min IS NULL OR (tier1_min BETWEEN 1 AND 3)', name='ck_el_tier1_range'),
     sa.CheckConstraint('tier2_min IS NULL OR (tier2_min BETWEEN 1 AND 3)', name='ck_el_tier2_range'),

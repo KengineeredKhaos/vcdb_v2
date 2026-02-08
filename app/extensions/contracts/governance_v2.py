@@ -119,7 +119,6 @@ them during development but are not part of the production surface.
 
 """
 
-
 from __future__ import annotations
 
 import json
@@ -127,10 +126,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import (
     Any,
-    Dict,
-    List,
     NotRequired,
-    Optional,
     Required,
     TypedDict,
 )
@@ -248,13 +244,13 @@ def _one(name: str, value: Any) -> dict:
     return {"ok": True, "data": {name: value}}
 
 
-def _require_str(name: str, value: Optional[str]) -> str:
+def _require_str(name: str, value: str | None) -> str:
     if not value or not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} must be a non-empty string")
     return value.strip()
 
 
-def _require_ulid(name: str, value: Optional[str]) -> str:
+def _require_ulid(name: str, value: str | None) -> str:
     v = _require_str(name, value)
     if len(v) != 26:
         raise ValueError(f"{name} must be a 26-char ULID")
@@ -277,20 +273,20 @@ def _require_int_ge(name: str, value: Any, minval: int = 0) -> int:
 class DonationIntentDTO:
     sponsor_ulid: str
     amount_cents: int
-    fund_archetype_key: Optional[str] = None
-    period_label: Optional[str] = None
-    source: Optional[str] = None
-    prospect_ulid: Optional[str] = None
-    notes: Optional[str] = None
+    fund_archetype_key: str | None = None
+    period_label: str | None = None
+    source: str | None = None
+    prospect_ulid: str | None = None
+    notes: str | None = None
 
 
 class DonationClassificationDTO:
     ok: bool
     reason: str
     fund_archetype_key: str
-    journal_flags: List[str]
-    reporting_tags: List[str]
-    restricted_project_type_keys: List[str]
+    journal_flags: list[str]
+    reporting_tags: list[str]
+    restricted_project_type_keys: list[str]
 
 
 class SpendingLimitsDTO(TypedDict):
@@ -311,7 +307,7 @@ class ProjectBudgetDemandDTO(TypedDict):
     total_expected_cents: int
     monetary_expected_cents: int
     in_kind_expected_cents: int
-    by_fund_archetype: Dict[str, int]
+    by_fund_archetype: dict[str, int]
 
 
 class BudgetPositionDTO(TypedDict):
@@ -403,12 +399,12 @@ class DecisionDTO(TypedDict):
 
 
 class LifecyclePolicyDTO(TypedDict):
-    readiness_allowed: Required[List[str]]
-    mou_allowed: Required[List[str]]
+    readiness_allowed: Required[list[str]]
+    mou_allowed: Required[list[str]]
 
     readiness_default: NotRequired[str]
     mou_default: NotRequired[str]
-    transitions: NotRequired[Dict[str, Any]]
+    transitions: NotRequired[dict[str, Any]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -420,14 +416,14 @@ class CapabilityPolicyDTO:
 
 class ResourceCapsPolicy:
     note_max: int
-    all_codes: List[str]
-    by_domain: Dict[str, List[str]]
+    all_codes: list[str]
+    by_domain: dict[str, list[str]]
 
 
 class SponsorCapsDTO(TypedDict):
     note_max: int
-    all_codes: List[str]
-    by_domain: Dict[str, List[str]]
+    all_codes: list[str]
+    by_domain: dict[str, list[str]]
 
 
 # -----------------
@@ -643,6 +639,7 @@ def get_poc_policy() -> dict:
 # Customer Contract API
 # -----------------
 
+
 def get_customer_veteran_verification_methods() -> list[str]:
     """
     Read-only contract for the allowed customer veteran verification methods.
@@ -711,7 +708,6 @@ def get_customer_veteran_verification_methods() -> list[str]:
     return methods
 
 
-
 def get_spending_limits() -> SpendingLimitsDTO:
     return {"staff_limit_cents": 20000, "admin_over_cents": 20000}
 
@@ -734,7 +730,9 @@ def evaluate_customer(
     attention_required = bool(getattr(cues, "flag_tier1_immediate", False))
     watchlist = bool(getattr(cues, "watchlist", False))
     eligible_veteran_only = bool(getattr(cues, "is_veteran_verified", False))
-    eligible_homeless_only = bool(getattr(cues, "is_homeless_verified", False))
+    eligible_homeless_only = bool(
+        getattr(cues, "is_homeless_verified", False)
+    )
 
     # Emit governance ledger event (PII-free)
     event_bus.emit(
@@ -1243,26 +1241,26 @@ class PolicyIndexItemDTO(TypedDict, total=False):
     key: str
     has_schema: bool
     schema_valid: bool
-    schema_errors: List[str]
-    domains: List[str]
+    schema_errors: list[str]
+    domains: list[str]
     focus: str
 
 
 class PolicyIndexDTO(TypedDict):
     ok: bool
-    policies: List[PolicyIndexItemDTO]
+    policies: list[PolicyIndexItemDTO]
 
 
 class PolicyUpdatePreviewDTO(TypedDict):
     ok: bool
     dry_run: bool
-    diff_summary: Dict[str, list]  # added_keys / removed_keys / changed_keys
+    diff_summary: dict[str, list]  # added_keys / removed_keys / changed_keys
 
 
 class PolicyUpdateCommitDTO(TypedDict):
     ok: bool
     dry_run: bool
-    diff_summary: Dict[str, list]
+    diff_summary: dict[str, list]
 
 
 # -----------------
@@ -1270,7 +1268,7 @@ class PolicyUpdateCommitDTO(TypedDict):
 # -----------------
 
 
-def list_policies(*, validate: bool = False) -> Dict[str, Any]:
+def list_policies(*, validate: bool = False) -> dict[str, Any]:
     """
     Discover governance policies (PII-free).
     Optionally JSON-Schema validate.
@@ -1278,7 +1276,7 @@ def list_policies(*, validate: bool = False) -> Dict[str, Any]:
     return list_policies_impl(validate=validate)
 
 
-def get_policy(*, key: str, validate: bool = False) -> Dict[str, Any]:
+def get_policy(*, key: str, validate: bool = False) -> dict[str, Any]:
     """
     Fetch one policy’s raw JSON (PII-free).
     Optionally JSON-Schema validate.
@@ -1287,8 +1285,8 @@ def get_policy(*, key: str, validate: bool = False) -> Dict[str, Any]:
 
 
 def preview_policy_update(
-    *, key: str, new_policy: Dict[str, Any]
-) -> Dict[str, Any]:
+    *, key: str, new_policy: dict[str, Any]
+) -> dict[str, Any]:
     """
     Dry-run: canonicalize + validate + diff, but do not write or emit.
     """
@@ -1296,8 +1294,8 @@ def preview_policy_update(
 
 
 def commit_policy_update(
-    *, key: str, new_policy: Dict[str, Any], actor_ulid: str
-) -> Dict[str, Any]:
+    *, key: str, new_policy: dict[str, Any], actor_ulid: str
+) -> dict[str, Any]:
     """
     Commit: canonicalize + validate, atomic write with backup, and
     emit a single ledger event (PII-free).
@@ -1317,11 +1315,11 @@ def evaluate_donation(
     *,
     sponsor_ulid: str,
     amount_cents: int,
-    fund_archetype_key: Optional[str] = None,
-    period_label: Optional[str] = None,
-    source: Optional[str] = None,
-    prospect_ulid: Optional[str] = None,
-    notes: Optional[str] = None,
+    fund_archetype_key: str | None = None,
+    period_label: str | None = None,
+    source: str | None = None,
+    prospect_ulid: str | None = None,
+    notes: str | None = None,
 ) -> DonationClassificationDTO:
     """
     Contract entry point: evaluate an inbound donation against Governance policy.
@@ -1406,7 +1404,7 @@ def evaluate_donation(
 
 def get_budget_demands_for_period(
     *, period_label: str
-) -> List[ProjectBudgetDemandDTO]:
+) -> list[ProjectBudgetDemandDTO]:
     """
     Contract entry point: compute planned budget demands for a period.
 
@@ -1435,7 +1433,7 @@ def get_budget_demands_for_period(
     try:
         period_label = _require_str("period_label", period_label)
         demands = svc_budget.compute_budget_demands_for_period(period_label)
-        out: List[ProjectBudgetDemandDTO] = []
+        out: list[ProjectBudgetDemandDTO] = []
 
         for d in demands:
             out.append(

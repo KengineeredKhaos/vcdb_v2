@@ -1,13 +1,10 @@
 # app/lib/request_ctx.py
 from contextvars import ContextVar
-from typing import Optional
 
 from .ids import new_ulid
 
 _request_id: ContextVar[str] = ContextVar("_request_id", default="")
-_actor_ulid: ContextVar[Optional[str]] = ContextVar(
-    "_actor_ulid", default=None
-)
+_actor_ulid: ContextVar[str | None] = ContextVar("_actor_ulid", default=None)
 
 
 def ensure_request_id() -> str:
@@ -26,9 +23,9 @@ def get_request_id() -> str:
     return _request_id.get()
 
 
-def set_actor_ulid(entity_ulid: Optional[str]) -> None:
+def set_actor_ulid(entity_ulid: str | None) -> None:
     _actor_ulid.set(entity_ulid)
 
 
-def get_actor_ulid() -> Optional[str]:
+def get_actor_ulid() -> str | None:
     return _actor_ulid.get()

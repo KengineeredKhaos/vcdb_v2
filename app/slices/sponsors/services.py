@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from sqlalchemy import desc, func
 
@@ -11,8 +11,8 @@ from app.extensions.contracts import entity_v2
 from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
-from app.services import poc as poc_svc
-from app.services.entity_validate import require_person_entity_ulid
+from app.slices.entity import services_poc as poc_svc
+from app.slices.entity.guards import require_person_entity_ulid
 
 from .models import (
     Sponsor,
@@ -120,13 +120,11 @@ def sponsor_link_poc(
     actor_ulid: str | None = None,
     request_id: str,
 ):
-    require_person_entity_ulid(
-        db.session,
-        person_entity_ulid,
+    entity_v2.require_person_entity_ulid(
+        entity_ulid=person_entity_ulid,
         where="sponsors.sponsor_link_poc",
     )
     return poc_svc.link_poc(
-        db.session,
         POCModel=SponsorPOC,
         spec=_SPONSOR_POC_SPEC,
         domain="sponsors",
@@ -154,13 +152,11 @@ def sponsor_update_poc(
     actor_ulid: str | None = None,
     request_id: str,
 ):
-    require_person_entity_ulid(
-        db.session,
-        person_entity_ulid,
+    entity_ulid.require_person_entity_ulid(
+        entity_ulid=person_entity_ulid,
         where="sponsors.sponsor_update_poc",
     )
     return poc_svc.update_poc(
-        db.session,
         POCModel=SponsorPOC,
         spec=_SPONSOR_POC_SPEC,
         domain="sponsors",
@@ -184,13 +180,11 @@ def sponsor_unlink_poc(
     actor_ulid: str | None = None,
     request_id: str,
 ):
-    require_person_entity_ulid(
-        db.session,
-        person_entity_ulid,
+    entity_v2.require_person_entity_ulid(
+        entity_ulid=person_entity_ulid,
         where="sponsors.sponsor_unlink_poc",
     )
     return poc_svc.unlink_poc(
-        db.session,
         POCModel=SponsorPOC,
         spec=_SPONSOR_POC_SPEC,
         domain="sponsors",
@@ -204,7 +198,6 @@ def sponsor_unlink_poc(
 
 def sponsor_list_pocs(*, sponsor_entity_ulid: str) -> list[dict]:
     return poc_svc.list_pocs(
-        db.session,
         POCModel=SponsorPOC,
         spec=_SPONSOR_POC_SPEC,
         owner_ulid=sponsor_entity_ulid,
@@ -222,7 +215,7 @@ def _ensure_reqid(rid: str | None) -> str:
     return str(rid).strip()
 
 
-def _split(flat_key: str) -> Tuple[str, str]:
+def _split(flat_key: str) -> tuple[str, str]:
     """
     Split 'domain.key' into ('domain', 'key').
     """
@@ -237,8 +230,8 @@ def _split(flat_key: str) -> Tuple[str, str]:
 
 
 def _flatten_caps_payload(
-    payload: Dict[str, Any]
-) -> Dict[str, Dict[str, Any]]:
+    payload: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
     """
     Normalise capability payload into flat keys.
 
@@ -264,7 +257,7 @@ def _flatten_caps_payload(
     Returns a mapping of flat keys to objects of the form:
         { "<domain>.<code>": {"has": bool, "note": str?}, ... }
     """
-    flat: Dict[str, Dict[str, Any]] = {}
+    flat: dict[str, dict[str, Any]] = {}
 
     if not payload:
         return flat
@@ -291,7 +284,7 @@ def _flatten_caps_payload(
             if isinstance(obj, bool):
                 flat[flat_key] = {"has": bool(obj)}
             elif isinstance(obj, dict):
-                out: Dict[str, Any] = {}
+                out: dict[str, Any] = {}
                 if "has" in obj:
                     out["has"] = bool(obj["has"])
                 else:
@@ -402,7 +395,7 @@ def _default_mou() -> str:
 
 
 def ensure_sponsor(
-    *, sponsor_entity_ulid: str, request_id: str, actor_ulid: Optional[str]
+    *, sponsor_entity_ulid: str, request_id: str, actor_ulid: str | None
 ) -> str:
     _ensure_reqid(request_id)
 
@@ -445,9 +438,9 @@ def ensure_sponsor(
 def upsert_capabilities(
     *,
     sponsor_entity_ulid: str,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     request_id: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
 ) -> str | None:
     _ensure_reqid(request_id)
     now = now_iso8601_ms()
@@ -541,9 +534,9 @@ def upsert_capabilities(
 def patch_capabilities(
     *,
     sponsor_entity_ulid: str,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     request_id: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
 ) -> str | None:
     _ensure_reqid(request_id)
     now = now_iso8601_ms()
@@ -754,10 +747,10 @@ def record_prospect_realization(
     prospect_ulid: str,
     amount_cents: int,
     request_id: str,
-    actor_ulid: Optional[str],
-    journal_ulid: Optional[str] = None,
-    source: Optional[str] = None,
-    happened_at_utc: Optional[str] = None,
+    actor_ulid: str | None,
+    journal_ulid: str | None = None,
+    source: str | None = None,
+    happened_at_utc: str | None = None,
 ) -> dict:
     """
     Record realized income against a Sponsor Funding Prospect / Pledge.
@@ -965,7 +958,7 @@ def upsert_pledge(
     sponsor_entity_ulid: str,
     pledge: dict,
     request_id: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
 ) -> str:
     """
     Create or update a pledge (by pledge_ulid) in History; update projection; emit names-only event.
@@ -1055,7 +1048,7 @@ def set_pledge_status(
     pledge_ulid: str,
     status: str,
     request_id: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
 ) -> None:
     _ensure_reqid(request_id)
     now = now_iso8601_ms()
@@ -1096,7 +1089,7 @@ def set_pledge_status(
 # -----------------
 
 
-def sponsor_view(sponsor_entity_ulid: str) -> Optional[dict]:
+def sponsor_view(sponsor_entity_ulid: str) -> dict | None:
     s = db.session.get(Sponsor, sponsor_entity_ulid)
     if not s:
         return None
@@ -1142,10 +1135,10 @@ def sponsor_view(sponsor_entity_ulid: str) -> Optional[dict]:
 
 def find_sponsors(
     *,
-    any_of: Optional[list[tuple[str, str]]] = None,
-    readiness_in: Optional[list[str]] = None,
-    has_active_pledges: Optional[bool] = None,
-    admin_review_required: Optional[bool] = None,
+    any_of: list[tuple[str, str]] | None = None,
+    readiness_in: list[str] | None = None,
+    has_active_pledges: bool | None = None,
+    admin_review_required: bool | None = None,
     page: int = 1,
     per: int = 50,
 ) -> tuple[list[dict], int]:

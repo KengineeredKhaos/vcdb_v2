@@ -20,7 +20,7 @@ def main():
     if not os.path.exists(SQL_PATH):
         print(f"Seed SQL not found: {SQL_PATH}", file=sys.stderr)
         sys.exit(1)
-    with open(SQL_PATH, "r", encoding="utf-8") as f:
+    with open(SQL_PATH, encoding="utf-8") as f:
         sql = f.read()
     with sqlite3.connect(DB_PATH) as conn:
         conn.executescript(sql)

@@ -1,7 +1,8 @@
 # app/extensions/contracts/http.py
 from __future__ import annotations
 
-from typing import Any, Callable, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from flask import current_app, jsonify
 
@@ -23,7 +24,7 @@ def respond_error(e: ContractError):
     return jsonify(e.to_dict(safe=True)), e.http_status
 
 
-def contract_route(func: Callable[[], Any]) -> Tuple[Any, int]:
+def contract_route(func: Callable[[], Any]) -> tuple[Any, int]:
     """
     Small wrapper for routes that only call contract code.
     Usage:

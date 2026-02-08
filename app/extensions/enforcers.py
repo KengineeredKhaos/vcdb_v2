@@ -31,7 +31,8 @@ Future Dev:
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Any
 
 from app.extensions.policies import load_policy_operations
 from app.lib.chrono import now_iso8601_ms
@@ -69,9 +70,9 @@ def calendar_blackout_ok(ctx):
 
 class _Enforcers:
     def __init__(self) -> None:
-        self._map: Dict[str, Callable[..., Any]] = {}
+        self._map: dict[str, Callable[..., Any]] = {}
 
-    def register(self, name: str, fn: Optional[Callable[..., Any]] = None):
+    def register(self, name: str, fn: Callable[..., Any] | None = None):
         """
         Usage:
           enforcers.register("my_check", fn)
@@ -89,7 +90,7 @@ class _Enforcers:
         self._map[name] = fn
         return fn
 
-    def get(self, name: str, default: Optional[Callable[..., Any]] = None):
+    def get(self, name: str, default: Callable[..., Any] | None = None):
         return self._map.get(name, default)
 
     def names(self) -> tuple[str, ...]:

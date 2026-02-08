@@ -1,5 +1,4 @@
 # app/lib/schema.py
-# -*- coding: utf-8 -*-
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 # File: <relative path>
 # Purpose: Stable library primitive for VCDB.
@@ -23,12 +22,12 @@ helpers so validation behavior and error reporting remain consistent
 across the app.
 """
 
-
 from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
+from typing import Any
 
 from jsonschema import Draft202012Validator
 
@@ -36,10 +35,10 @@ from .errors import ValidationError
 from .jsonutil import stable_dumps
 
 # Optional: tiny cache if you validate the same schema often
-_VALIDATOR_CACHE: Dict[int, Draft202012Validator] = {}
+_VALIDATOR_CACHE: dict[int, Draft202012Validator] = {}
 
 
-def validate_json(schema: Dict[str, Any], payload: Any) -> None:
+def validate_json(schema: dict[str, Any], payload: Any) -> None:
     try:
         _get_validator(schema).validate(payload)
     except Exception as e:  # jsonschema.ValidationError subtype
@@ -50,8 +49,8 @@ def validate_json(schema: Dict[str, Any], payload: Any) -> None:
 
 
 def try_validate_json(
-    schema: Dict[str, Any], payload: Any
-) -> Tuple[bool, Optional[str]]:
+    schema: dict[str, Any], payload: Any
+) -> tuple[bool, str | None]:
     try:
         validate_json(schema, payload)
         return True, None
@@ -59,8 +58,8 @@ def try_validate_json(
         return False, str(e)
 
 
-def enum_values(schema: Dict[str, Any], path: Iterable[str]) -> List[str]:
-    node: Dict[str, Any] = schema
+def enum_values(schema: dict[str, Any], path: Iterable[str]) -> list[str]:
+    node: dict[str, Any] = schema
     try:
         for key in path:
             node = node["properties"][key]
@@ -76,12 +75,12 @@ def enum_values(schema: Dict[str, Any], path: Iterable[str]) -> List[str]:
     return []
 
 
-def _schema_cache_key(schema: Dict[str, Any]) -> str:
+def _schema_cache_key(schema: dict[str, Any]) -> str:
     s = stable_dumps(schema)
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
-def _get_validator(schema: Dict[str, Any]) -> Draft202012Validator:
+def _get_validator(schema: dict[str, Any]) -> Draft202012Validator:
     key = _schema_cache_key(schema)
     v = _VALIDATOR_CACHE.get(key)
     if v is None:
@@ -92,7 +91,7 @@ def _get_validator(schema: Dict[str, Any]) -> Draft202012Validator:
 
 def load_json_schema(path: str) -> dict:
     """Read a JSON Schema from disk and return it as a dict."""
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 

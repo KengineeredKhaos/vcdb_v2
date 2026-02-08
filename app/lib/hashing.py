@@ -1,5 +1,4 @@
 # app/lib/hashing.py
-# -*- coding: utf-8 -*-
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 # File: <relative path>
 # Purpose: Stable library primitive for VCDB.

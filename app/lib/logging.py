@@ -94,9 +94,10 @@ def _archiving_rotating_handler(
         final = archive_dir / Path(namer("ignored")).name
         shutil.move(str(src), str(final))
         gz_path = str(final) + ".gz"
-        with open(final, "rb") as f_in, gzip.open(
-            gz_path, "wb", compresslevel=6
-        ) as f_out:
+        with (
+            open(final, "rb") as f_in,
+            gzip.open(gz_path, "wb", compresslevel=6) as f_out,
+        ):
             shutil.copyfileobj(f_in, f_out)
         final.unlink(missing_ok=True)
 

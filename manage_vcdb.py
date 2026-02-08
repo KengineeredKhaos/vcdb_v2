@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 VCDB v2 launcher / CLI entrypoint
 
@@ -11,6 +10,7 @@ Usage:
   flask --app manage_vcdb.py ledger-verify
   flask --app manage_vcdb.py ledger-verify --chain entity
 """
+
 from __future__ import annotations
 
 import argparse
@@ -60,7 +60,9 @@ def pick_attachments_root(env: str) -> str:
     return base
 
 
-def print_banner(env: str, host: str, port: int, cfg_obj: Any, flask_app: Any) ->  None:
+def print_banner(
+    env: str, host: str, port: int, cfg_obj: Any, flask_app: Any
+) -> None:
     """Pretty banner showing key runtime info. Call once in the main process."""
     db_uri = flask_app.config.get("SQLALCHEMY_DATABASE_URI", "<unset>")
     att_root = os.environ.get("ATTACHMENTS_ROOT", "<unset>")
@@ -82,7 +84,6 @@ def print_banner(env: str, host: str, port: int, cfg_obj: Any, flask_app: Any) -
 
 
 def create_app():
-
     # Prefer VCDB_ENV, then FLASK_ENV, default 'dev'
     env = os.environ.get("VCDB_ENV") or os.environ.get("FLASK_ENV") or "dev"
     debug = env == "dev"
@@ -95,7 +96,10 @@ def create_app():
 
     # When running in testing via CLI/Flask CLI,
     # default DB to app/instance/test.db
-    if env in ("test", "testing") and "SQLALCHEMY_DATABASE_URI" not in os.environ:
+    if (
+        env in ("test", "testing")
+        and "SQLALCHEMY_DATABASE_URI" not in os.environ
+    ):
         inst_dir = ensure_dir(os.path.join("app", "instance"))
         test_db_path = os.path.abspath(os.path.join(inst_dir, "test.db"))
         os.environ["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{test_db_path}"
@@ -108,7 +112,6 @@ def create_app():
     )  # import here to avoid cycles
 
     flask_app = _create_flask_app(config_object=cfg_object)
-
 
     # CLI commands already registered by the factory
 
@@ -127,7 +130,6 @@ def create_app():
 
 
 def run(env: str, host: str, port: int | None, debug_flag: bool | None):
-
     # Decide debug FIRST
     debug = (env == "dev") if debug_flag is None else bool(debug_flag)
 
@@ -142,7 +144,10 @@ def run(env: str, host: str, port: int | None, debug_flag: bool | None):
     ensure_dir(os.environ.get("VCDB_LOG_DIR", "app/logs"))
 
     # When running the testing server, default DB to app/instance/test.db
-    if env in ("test", "testing") and "SQLALCHEMY_DATABASE_URI" not in os.environ:
+    if (
+        env in ("test", "testing")
+        and "SQLALCHEMY_DATABASE_URI" not in os.environ
+    ):
         inst_dir = ensure_dir(os.path.join("app", "instance"))
         test_db_path = os.path.abspath(os.path.join(inst_dir, "test.db"))
         os.environ["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{test_db_path}"

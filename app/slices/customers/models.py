@@ -34,7 +34,7 @@ Ownership and boundaries:
 * The Customers slice owns these tables and is responsible for enforcing the
   PII boundary: detailed profile values go into CustomerHistory; only coarse,
   derived indicators are surfaced in Customer and CustomerEligibility.
-* Other slices should reference customers by `customer_ulid` (never by internal
+* Other slices should reference customers by `entity_ulid` only (never by internal
   structure here) and interact through extensions/contracts, not by importing
   these models directly.
 * Ledger and logging must continue to refer only to ULIDs and non-PII flags,
@@ -58,7 +58,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.models import ULIDFK, ULIDPK, IsoTimestamps
+from app.lib.models import ULIDPK, IsoTimestamps
 
 
 class Customer(db.Model, IsoTimestamps):
@@ -124,7 +124,7 @@ class Customer(db.Model, IsoTimestamps):
         String(30), nullable=True
     )
 
-    histories: Mapped[list["CustomerHistory"]] = relationship(
+    histories: Mapped[list[CustomerHistory]] = relationship(
         "CustomerHistory",
         back_populates="customer",
         cascade="all, delete-orphan",
@@ -152,7 +152,7 @@ class Customer(db.Model, IsoTimestamps):
             name="ck_el_tier3_range",
         ),
         CheckConstraint(
-            "last_needs_tier_updated IS NULL OR last_needs_tier_updated IN ('tier1','tier2','tier3'"
+            "last_needs_tier_updated IS NULL OR last_needs_tier_updated IN ('tier1','tier2','tier3')"
         ),
     )
 
@@ -181,7 +181,7 @@ class CustomerHistory(db.Model, ULIDPK, IsoTimestamps):
         String(26), nullable=True
     )
 
-    customer: Mapped["Customer"] = relationship(
+    customer: Mapped[Customer] = relationship(
         "Customer", back_populates="histories"
     )
 

@@ -1,7 +1,7 @@
 # app/extensions/contracts/finance_v2.py
 from __future__ import annotations
 
-from typing import Any, Dict, List, NotRequired, Optional, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from app.extensions.errors import ContractError
 
@@ -66,13 +66,13 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
     )
 
 
-def _require_str(name: str, value: Optional[str]) -> str:
+def _require_str(name: str, value: str | None) -> str:
     if not value or not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} must be a non-empty string")
     return value.strip()
 
 
-def _require_ulid(name: str, value: Optional[str]) -> str:
+def _require_ulid(name: str, value: str | None) -> str:
     v = _require_str(name, value)
     if len(v) != 26:
         raise ValueError(f"{name} must be a 26-char ULID")
@@ -143,7 +143,7 @@ class GrantDTO(TypedDict):
     end_on: str
     reporting_frequency: str
     # 'monthly'|'quarterly'|'semiannual'|'annual'|'end_of_term'
-    allowable_categories: List[str]
+    allowable_categories: list[str]
     match_required_cents: int
 
 
@@ -199,14 +199,14 @@ class ReimbursementDTO(TypedDict):
 # Reports
 class ActivitiesReportDTO(TypedDict):
     period: str
-    by_restriction: Dict[
-        str, Dict[str, int]
+    by_restriction: dict[
+        str, dict[str, int]
     ]  # {'unrestricted': {'revenue_cents':..,'expense_cents':..,'change_net_assets_cents':..}, ...}
-    by_fund: Dict[
-        str, Dict[str, Any]
+    by_fund: dict[
+        str, dict[str, Any]
     ]  # fund_id -> {'name':..., 'restriction_type':..., 'revenue_cents':..., 'expense_cents':...}
-    by_project: Dict[
-        str, Dict[str, Any]
+    by_project: dict[
+        str, dict[str, Any]
     ]  # project_id -> {'name':..., 'revenue_cents':..., 'expense_cents':...}
 
 
@@ -581,7 +581,7 @@ def get_fund_summary(*, fund_ulid: str) -> FundDTO:
         raise _as_contract_error(where, exc)
 
 
-def list_funds(*, include_inactive: bool = False) -> List[FundDTO]:
+def list_funds(*, include_inactive: bool = False) -> list[FundDTO]:
     """
     Contract entry point: list all funds with their current balances.
 
@@ -616,7 +616,7 @@ def create_grant(
     start_on: str,
     end_on: str,
     reporting_frequency: str,
-    allowable_categories: Optional[List[str]] = None,
+    allowable_categories: list[str] | None = None,
     match_required_cents: int = 0,
 ) -> GrantDTO:
     """
@@ -653,7 +653,7 @@ def create_grant(
             "match_required_cents", match_required_cents, minval=0
         )
 
-        cats: Optional[List[str]] = None
+        cats: list[str] | None = None
         if allowable_categories is not None:
             if not isinstance(allowable_categories, (list, tuple)):
                 raise ValueError(
@@ -671,7 +671,7 @@ def create_grant(
 
         from app.slices.finance import services_grants as svc
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "fund_id": fund_id,
             "sponsor_ulid": sponsor_ulid,
             "amount_awarded_cents": amount_awarded_cents,
@@ -703,8 +703,8 @@ def submit_reimbursement(
     period_end: str,
     amount_cents: int,
     status: str = "submitted",
-    actor_ulid: Optional[str] = None,
-    request_id: Optional[str] = None,
+    actor_ulid: str | None = None,
+    request_id: str | None = None,
 ) -> ReimbursementDTO:
     """
     Contract entry point: record a reimbursement request against a Grant.
@@ -740,7 +740,7 @@ def submit_reimbursement(
 
         from app.slices.finance import services_grants as svc
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "grant_id": grant_id,
             "submitted_on": submitted_on,
             "period_start": period_start,
@@ -769,8 +769,8 @@ def mark_disbursed(
     *,
     reimbursement_id: str,
     status: str = "paid",
-    actor_ulid: Optional[str] = None,
-    request_id: Optional[str] = None,
+    actor_ulid: str | None = None,
+    request_id: str | None = None,
 ) -> ReimbursementDTO:
     """
     Contract entry point: mark a Grant reimbursement as disbursed.
@@ -797,7 +797,7 @@ def mark_disbursed(
 
         from app.slices.finance import services_grants as svc
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "reimbursement_id": reimbursement_id,
             "status": status,
         }
@@ -843,7 +843,7 @@ def prepare_grant_report(
 
         from app.slices.finance import services_grants as svc
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "grant_id": grant_id,
             "period_start": period_start,
             "period_end": period_end,

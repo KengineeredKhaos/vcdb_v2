@@ -15,8 +15,6 @@ bp = Blueprint(
 # models first (tables),
 # then services (business),
 # then routes (bp decorators).
-from . import models
-from . import services
-from . import routes
+from . import models, routes, services
 
 __all__ = ["bp"]

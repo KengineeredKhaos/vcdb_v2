@@ -131,7 +131,7 @@ def init_extensions(flask_app: Flask) -> None:
     if getattr(flask_app, "_vcdb_teardowns_installed", False):
         return
 
-    def _teardown_request(exc: Optional[BaseException]) -> None:  # type: ignore[override]
+    def _teardown_request(exc: BaseException | None) -> None:  # type: ignore[override]
         """
         Request-level cleanup:
         - Roll back the session on exceptions.
@@ -148,7 +148,7 @@ def init_extensions(flask_app: Flask) -> None:
         except Exception:
             pass
 
-    def _teardown_appcontext(exc: Optional[BaseException]) -> None:
+    def _teardown_appcontext(exc: BaseException | None) -> None:
         """
         App-context-level safety net; always remove the scoped Session.
         """

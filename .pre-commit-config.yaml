@@ -1,0 +1,13 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.14
+    hooks:
+      - id: ruff-check
+
+  - repo: local
+    hooks:
+      - id: vcdb-guardrails
+        name: VCDB architecture guardrails
+        entry: python tools/guardrails_architecture.py --strict
+        language: system
+        pass_filenames: true

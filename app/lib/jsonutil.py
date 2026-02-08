@@ -1,5 +1,4 @@
 # app/lib/jsonutil.py
-# -*- coding: utf-8 -*-
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 # File: <relative path>
 # Purpose: Stable library primitive for VCDB.
@@ -29,8 +28,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any, Iterable, Iterator, TextIO, Union
+from typing import Any, TextIO, Union
 
 Pathish = Union[str, Path]
 

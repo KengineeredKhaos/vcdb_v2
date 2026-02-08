@@ -1,5 +1,4 @@
 # app/lib/ids.py
-# -*- coding: utf-8 -*-
 # VCDB CANON — ULID generator + SQLAlchemy PK/FK helpers
 # (python-ulid required)
 
@@ -22,7 +21,7 @@ or ad-hoc strings.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ulid import ULID  # python-ulid
 
@@ -51,9 +50,9 @@ def _encode_crockford_base32(value: int, length: int) -> str:
 
 def _dt_to_ms(dt: datetime) -> int:
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     else:
-        dt = dt.astimezone(timezone.utc)
+        dt = dt.astimezone(UTC)
     return int(dt.timestamp() * 1000)
 
 
@@ -102,7 +101,7 @@ def ulid_ts_ms(s: str) -> int:
     """Extract timestamp (ms) from a ULID string."""
     u = ULID.from_str(s)  # type: ignore[attr-defined]
     # python-ulid exposes .timestamp as datetime; convert to ms
-    dt = u.timestamp().replace(tzinfo=timezone.utc)
+    dt = u.timestamp().replace(tzinfo=UTC)
     return int(dt.timestamp() * 1000)
 
 

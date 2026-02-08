@@ -25,31 +25,32 @@ from . import bp
 from . import services as svc
 
 
-def _ok(data: dict, request_id: str):
-    return jsonify({"ok": True, "request_id": request_id, "data": data}), 200
+def _ok(*, request_id: str, data: object, status: int = 200):
+    return (
+        jsonify({"ok": True, "request_id": request_id, "data": data}),
+        status,
+    )
 
 
-def _err(exc: Exception, code: int = 400):
-    # Prefer ContractError shaping
+def _err(*, request_id: str, exc: Exception):
     if isinstance(exc, ContractError):
-        payload = {
-            "ok": False,
-            "error": exc.message,
-            "code": exc.code,
-            "where": exc.where,
-        }
-        if getattr(exc, "data", None):
-            payload["data"] = exc.data
-        return jsonify(payload), exc.http_status
-
-    if isinstance(exc, LookupError):
-        return jsonify({"ok": False, "error": str(exc)}), 404
-    if isinstance(exc, PermissionError):
-        return jsonify({"ok": False, "error": str(exc)}), 403
-    if isinstance(exc, ValueError):
-        return jsonify({"ok": False, "error": str(exc)}), 400
-
-    return jsonify({"ok": False, "error": str(exc)}), code
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "request_id": request_id,
+                    "error": exc.message,
+                    "code": exc.code,
+                    "where": exc.where,
+                    "data": getattr(exc, "data", None),
+                }
+            ),
+            exc.http_status,
+        )
+    return (
+        jsonify({"ok": False, "request_id": request_id, "error": str(exc)}),
+        400,
+    )
 
 
 def _parse_cap_code(raw: str) -> tuple[str, str]:
@@ -179,3 +180,36 @@ def patch_capabilities(resource_entity_ulid: str):
     except Exception as e:
         db.session.rollback()
         return _err(e, 400)
+
+
+# -----------------
+# Wizard Routes
+# -----------------
+
+
+def _ok(*, request_id: str, data: object, status: int = 200):
+    return (
+        jsonify({"ok": True, "request_id": request_id, "data": data}),
+        status,
+    )
+
+
+def _err(*, request_id: str, exc: Exception):
+    if isinstance(exc, ContractError):
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "request_id": request_id,
+                    "error": exc.message,
+                    "code": exc.code,
+                    "where": exc.where,
+                    "data": getattr(exc, "data", None),
+                }
+            ),
+            exc.http_status,
+        )
+    return (
+        jsonify({"ok": False, "request_id": request_id, "error": str(exc)}),
+        400,
+    )

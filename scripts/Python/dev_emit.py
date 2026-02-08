@@ -7,6 +7,7 @@ Usage:
   python scripts/dev_emit.py remove-role 2 user
   python scripts/dev_emit.py policy-set staff_spend_cap_cents 25000
 """
+
 import argparse
 import os
 import sys
@@ -22,7 +23,7 @@ APP = create_app("config.DevConfig")
 
 
 def uniq_req(prefix):
-    return f"{prefix}-{int(time.time()*1000)}"
+    return f"{prefix}-{int(time.time() * 1000)}"
 
 
 def main():

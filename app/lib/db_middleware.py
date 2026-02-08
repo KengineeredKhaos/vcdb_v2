@@ -8,10 +8,10 @@ SQLite/SQLAlchemy request guardrails:
 - On errors: always rollback
 - Always remove the session
 """
+
 from __future__ import annotations
 
 import sqlite3
-from typing import Optional
 
 from flask import g, request
 
@@ -61,7 +61,7 @@ def init_request_db_guards(app) -> None:
         return resp
 
     @app.teardown_request
-    def _teardown_request(exc: Optional[BaseException]):
+    def _teardown_request(exc: BaseException | None):
         if exc is not None:
             try:
                 db.session.rollback()

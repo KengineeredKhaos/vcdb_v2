@@ -11,7 +11,7 @@ import hashlib
 import json
 import os
 import pathlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from app import create_app
 from app.slices.transactions.models import LedgerEvent, db
@@ -30,7 +30,7 @@ def sha256(path):
 with APP.app_context():
     outdir = pathlib.Path("var/public-ledger")
     outdir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     data_path = outdir / f"ledger-{ts}.jsonl"
     with open(data_path, "w", encoding="utf-8") as f:
         q = db.session.query(LedgerEvent).order_by(

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import select
 
 from app.extensions import db
 from app.extensions.contracts import entity_v2

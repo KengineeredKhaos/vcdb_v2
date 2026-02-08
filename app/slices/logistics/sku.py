@@ -70,8 +70,8 @@ Store without hyphens in system for compact codes;
 Print with hyphens for humans.
 
 """
+
 import re
-from typing import Dict, Tuple
 
 NEW_RE = re.compile(
     r"^(?P<cat>UW|OW|CW|FW|CG|AC|FD|DG)-"
@@ -151,7 +151,7 @@ def from_parts(
         ValueError:
     if the resulting SKU is not valid per NEW_RE/validate_sku().
     """
-    parts: Dict[str, str] = {
+    parts: dict[str, str] = {
         "cat": cat.upper(),
         "sub": sub.upper(),
         "src": src.upper(),
@@ -184,7 +184,7 @@ def validate_sku(sku: str) -> bool:
     return bool(NEW_RE.match(normalize(sku)))
 
 
-def parse_sku(sku: str) -> Dict[str, str]:
+def parse_sku(sku: str) -> dict[str, str]:
     m = NEW_RE.match(normalize(sku))
     if not m:
         raise ValueError("invalid SKU")
@@ -233,7 +233,7 @@ def b36_to_int(s: str) -> int:
     return n
 
 
-def family_key(p: Dict[str, str]) -> Tuple[str, ...]:
+def family_key(p: dict[str, str]) -> tuple[str, ...]:
     return (
         p["cat"],
         p["sub"],

@@ -1,8 +1,8 @@
 # tests/conftest.py
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import pytest
 from flask import Flask
@@ -78,8 +78,8 @@ def _db_session_per_test(app_ctx, engine):
     outer = connection.begin()
 
     options = dict(bind=connection, binds={})
-    maker = getattr(db, "create_scoped_session", None) or getattr(
-        db, "_make_scoped_session"
+    maker = (
+        getattr(db, "create_scoped_session", None) or db._make_scoped_session
     )
     try:
         scoped = maker(options=options)

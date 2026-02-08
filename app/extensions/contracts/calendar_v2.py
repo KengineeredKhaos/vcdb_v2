@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, TypedDict
+from typing import Any, TypedDict
 
 from app.extensions.errors import ContractError
 
@@ -56,13 +56,13 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
     )
 
 
-def _require_str(name: str, value: Optional[str]) -> str:
+def _require_str(name: str, value: str | None) -> str:
     if not value or not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} must be a non-empty string")
     return value.strip()
 
 
-def _require_ulid(name: str, value: Optional[str]) -> str:
+def _require_ulid(name: str, value: str | None) -> str:
     v = _require_str(name, value)
     if len(v) != 26:
         raise ValueError(f"{name} must be a 26-char ULID")
@@ -99,7 +99,7 @@ class TaskDTO(TypedDict):
 
 class CalendarGateDTO(TypedDict):
     ok: bool
-    label: Optional[str]
+    label: str | None
     reason: str  # ok|calendar_blackout|calendar_unavailable
 
 

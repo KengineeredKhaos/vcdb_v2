@@ -7,6 +7,7 @@ Usage:
   python scripts/print_ledger.py --type auth.user_role.assigned
   python scripts/print_ledger.py --slice governance
 """
+
 import argparse
 import os
 import sys

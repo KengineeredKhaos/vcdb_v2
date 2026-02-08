@@ -49,7 +49,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import text
 
@@ -88,7 +88,7 @@ except Exception:  # pragma: no cover
 
 def _policy_key_and_schema_for_path(
     policy_path: Path,
-) -> tuple[str, Optional[Path], str]:
+) -> tuple[str, Path | None, str]:
     """
     Returns (policy_key, schema_path, root) where root is 'governance' or 'auth'.
 
@@ -134,9 +134,9 @@ def _policy_key_and_schema_for_path(
 @dataclass
 class PolicyValidationResult:
     ok: bool
-    errors: List[str]
-    hints: List[str]
-    doc: Dict[str, Any] | None
+    errors: list[str]
+    hints: list[str]
+    doc: dict[str, Any] | None
 
 
 def _ensure_policy_path(policy_path: Path) -> Path:
@@ -192,8 +192,8 @@ def validate_policy_raw(
 
     p = _ensure_policy_path(policy_path)
 
-    errors: List[str] = []
-    hints: List[str] = []
+    errors: list[str] = []
+    hints: list[str] = []
 
     try:
         policy_key, schema_path, root = _policy_key_and_schema_for_path(p)

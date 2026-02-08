@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, TypedDict
+from typing import TypedDict
 
 from app.slices.logistics.issuance_services import available_skus_for_customer
 from app.slices.logistics.services import (
@@ -13,7 +13,7 @@ from app.slices.logistics.services import (
 
 class CadenceGateDTO(TypedDict, total=False):
     eligible: bool
-    next_eligible_at_iso: Optional[str]
+    next_eligible_at_iso: str | None
     rule_id: str
     label: str
 

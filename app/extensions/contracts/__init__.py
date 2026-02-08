@@ -31,4 +31,5 @@ DTO model: contracts return plain dicts/DTOs;
 
 Versioning rule: never mutate *_v1 once published; changes go into *_v2.
 """
+
 pass

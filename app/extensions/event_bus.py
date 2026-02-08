@@ -1,5 +1,4 @@
 # app/extensions/event_bus.py
-# -*- coding: utf-8 -*-
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 # Purpose: Single source of truth for the Ledger write-path surface.
 # Ethos: skinny routes, fat services, ULID everywhere, ISO timestamps, NO PII in Ledger.
@@ -90,11 +89,10 @@ Invariants:
   prevents CLI vs HTTP route drift.
 """
 
-
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 from app.extensions.contracts import ledger_v2
 
@@ -126,13 +124,13 @@ def emit(
     domain: str,
     operation: str,
     request_id: str,
-    actor_ulid: Optional[str],
-    target_ulid: Optional[str],
-    refs: Optional[Dict[str, Any]] = None,
-    changed: Optional[Dict[str, Any]] = None,
-    meta: Optional[Dict[str, Any]] = None,
-    happened_at_utc: Optional[str] = None,
-    chain_key: Optional[str] = None,
+    actor_ulid: str | None,
+    target_ulid: str | None,
+    refs: dict[str, Any] | None = None,
+    changed: dict[str, Any] | None = None,
+    meta: dict[str, Any] | None = None,
+    happened_at_utc: str | None = None,
+    chain_key: str | None = None,
 ):
     """
     Forward a canonical ledger event to the Ledger contract.

@@ -44,12 +44,12 @@ def seed_policies():
         _say(f"• governance skipped: {e}")
 
 
-def seed_auth() -> Dict[str, str]:
+def seed_auth() -> dict[str, str]:
     """
     Ensure minimal RBAC + users.
     Returns {'admin_ulid': ..., 'staff_ulid': ..., 'auditor_ulid': ...} (existing or new).
     """
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     if not _has_tables("auth_user", "auth_role", "auth_user_role"):
         _say("• auth seeding skipped (auth tables not present)")
         return out
@@ -129,12 +129,12 @@ def seed_auth() -> Dict[str, str]:
     return out
 
 
-def seed_entities() -> Dict[str, str]:
+def seed_entities() -> dict[str, str]:
     """
     Create one person (future customer) and two orgs (resource + sponsor).
     Returns {'person_ulid': ..., 'resource_entity_ulid': ..., 'sponsor_entity_ulid': ...}
     """
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     if not _has_tables("entity_entity", "entity_person", "entity_org"):
         _say("• entity seeding skipped (entity tables not present)")
         return out

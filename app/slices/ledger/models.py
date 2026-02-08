@@ -1,5 +1,4 @@
 # app/slices/ledger/models.py
-# -*- coding: utf-8 -*-
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 # File: <set to the relative path of this file>
 # Purpose: Single source of truth for audit/ledger write-path.
@@ -56,8 +55,6 @@ controls.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from sqlalchemy import Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -82,8 +79,8 @@ class LedgerEvent(db.Model, ULIDPK, IsoTimestamps):
     event_type: Mapped[str] = mapped_column(String(120), nullable=False)
 
     # Actor/target ULIDs (may be None)
-    actor_ulid: Mapped[Optional[str]] = mapped_column(String(26))
-    target_ulid: Mapped[Optional[str]] = mapped_column(String(26))
+    actor_ulid: Mapped[str | None] = mapped_column(String(26))
+    target_ulid: Mapped[str | None] = mapped_column(String(26))
 
     # Request correlation (required)
     request_id: Mapped[str] = mapped_column(String(26), nullable=False)
@@ -92,16 +89,16 @@ class LedgerEvent(db.Model, ULIDPK, IsoTimestamps):
     happened_at_utc: Mapped[str] = mapped_column(String(30), nullable=True)
 
     # JSON payloads (compact/normalized)
-    refs_json: Mapped[Optional[str]] = mapped_column(
+    refs_json: Mapped[str | None] = mapped_column(
         Text
     )  # e.g., {"policy":{...}}
-    changed_json: Mapped[Optional[str]] = mapped_column(
+    changed_json: Mapped[str | None] = mapped_column(
         Text
     )  # compact diff/summary
-    meta_json: Mapped[Optional[str]] = mapped_column(Text)  # optional extras
+    meta_json: Mapped[str | None] = mapped_column(Text)  # optional extras
 
     # Hash links (hex-encoded current hash; prev as raw bytes for speed if you prefer)
-    prev_hash_hex: Mapped[Optional[str]] = mapped_column(String(64))
+    prev_hash_hex: Mapped[str | None] = mapped_column(String(64))
     curr_hash_hex: Mapped[str] = mapped_column(String(64), nullable=False)
 
     __table_args__ = (

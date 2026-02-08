@@ -7,6 +7,7 @@ Repair the transactions_ledger link+hash chain for the most-recent N events.
 - Recomputes event_hash via app.slices.transactions.services.compute_event_hash
 - Dry-run by default; use --commit to write updates
 """
+
 from __future__ import annotations
 
 import argparse
@@ -96,7 +97,7 @@ def main():
             f"LEDGER: head={head}  tail(window)={tail}  checked={len(window_rows)}"
         )
 
-        updates: List[Tuple[str, str | None, str | None, str]] = []
+        updates: list[tuple[str, str | None, str | None, str]] = []
         prev_id = seed_prev_id
         prev_hash = seed_prev_hash
 
@@ -135,7 +136,7 @@ def main():
                 f"  id={rid} prev_event_id={npid} prev_hash={nph} event_hash={neh}"
             )
         if len(updates) > 10:
-            print(f"  ... and {len(updates)-10} more")
+            print(f"  ... and {len(updates) - 10} more")
 
         if not args.commit:
             print("\nDry run only. Re-run with --commit to write changes.")

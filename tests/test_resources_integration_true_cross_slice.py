@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from app.extensions import db
 from app.extensions.contracts import entity_v2
 from app.lib.ids import new_ulid
@@ -79,7 +77,10 @@ def test_resources_true_cross_slice_route_flow(staff_client):
     r2 = staff_client.post(f"/resources/{rid}/capabilities", json=cap_payload)
     data2 = _assert_ok(r2)
     assert data2["resource"]["resource_entity_ulid"] == rid
-    assert {c["domain"] + "." + c["key"] for c in data2["resource"]["active_capabilities"]} >= {
+    assert {
+        c["domain"] + "." + c["key"]
+        for c in data2["resource"]["active_capabilities"]
+    } >= {
         "basic_needs.food_pantry",
         "events.stand_down",
     }

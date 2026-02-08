@@ -8,6 +8,7 @@ Adds: from app.lib.time import _now  (if missing)
 Run (dry):   PYTHONPATH=. python scripts/Python/codemods/normalize_time_calls.py
 Run (write): PYTHONPATH=. python scripts/Python/codemods/normalize_time_calls.py --apply
 """
+
 from __future__ import annotations
 
 import argparse

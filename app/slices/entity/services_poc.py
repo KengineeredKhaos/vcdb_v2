@@ -78,8 +78,8 @@ for display.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Optional, Type
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -115,11 +115,11 @@ class POCSpec:
     valid_to_col: str = "valid_to_utc"
 
 
-def _c(POCModel: Type, name: str):
+def _c(POCModel: type, name: str):
     return getattr(POCModel, name)
 
 
-def _normalize_scope_rank(*, scope: Optional[str], rank: Optional[int]):
+def _normalize_scope_rank(*, scope: str | None, rank: int | None):
     policy = get_poc_policy()  # {poc_scopes, default_scope, max_rank}
     scopes = policy["poc_scopes"]
     default_scope = policy["default_scope"]
@@ -165,17 +165,17 @@ def _flip_existing_primary(sess, POCModel, spec, owner_ulid, scope):
 def link_poc(
     sess: Session,
     *,
-    POCModel: Type,
+    POCModel: type,
     spec: POCSpec,
     domain: str,
     owner_ulid: str,  # sponsor_ulid or resource_ulid
     person_entity_ulid: str,  # entity_entity.ulid
-    scope: Optional[str] = None,
+    scope: str | None = None,
     rank: int = 0,
     is_primary: bool = False,
-    window: Optional[dict] = None,
-    org_role: Optional[str] = None,
-    actor_ulid: Optional[str] = None,
+    window: dict | None = None,
+    org_role: str | None = None,
+    actor_ulid: str | None = None,
     request_id: str,
 ):
     if not request_id or not str(request_id).strip():
@@ -235,17 +235,17 @@ def link_poc(
 def update_poc(
     sess: Session,
     *,
-    POCModel: Type,
+    POCModel: type,
     spec: POCSpec,
     domain: str,
     owner_ulid: str,
     person_entity_ulid: str,
-    scope: Optional[str] = None,
-    rank: Optional[int] = None,
-    is_primary: Optional[bool] = None,
-    window: Optional[dict] = None,
-    org_role: Optional[str] = None,
-    actor_ulid: Optional[str] = None,
+    scope: str | None = None,
+    rank: int | None = None,
+    is_primary: bool | None = None,
+    window: dict | None = None,
+    org_role: str | None = None,
+    actor_ulid: str | None = None,
     request_id: str,
 ):
     if not request_id or not str(request_id).strip():
@@ -339,13 +339,13 @@ def update_poc(
 def unlink_poc(
     sess: Session,
     *,
-    POCModel: Type,
+    POCModel: type,
     spec: POCSpec,
     domain: str,
     owner_ulid: str,
     person_entity_ulid: str,
-    scope: Optional[str] = None,  # if provided, constrain to that scope
-    actor_ulid: Optional[str] = None,
+    scope: str | None = None,  # if provided, constrain to that scope
+    actor_ulid: str | None = None,
     request_id: str,
 ):
     if not request_id or not str(request_id).strip():
@@ -411,7 +411,7 @@ def unlink_poc(
 def list_pocs(
     sess: Session,
     *,
-    POCModel: Type,
+    POCModel: type,
     spec: POCSpec,
     owner_ulid: str,
 ) -> list[dict]:

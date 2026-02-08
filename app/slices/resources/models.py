@@ -114,17 +114,17 @@ class Resource(db.Model, IsoTimestamps):
     )
 
     # Relationships
-    histories: Mapped[list["ResourceHistory"]] = relationship(
+    histories: Mapped[list[ResourceHistory]] = relationship(
         "ResourceHistory",
         back_populates="resource",
         cascade="all, delete-orphan",
     )
-    capabilities: Mapped[list["ResourceCapabilityIndex"]] = relationship(
+    capabilities: Mapped[list[ResourceCapabilityIndex]] = relationship(
         "ResourceCapabilityIndex",
         back_populates="resource",
         cascade="all, delete-orphan",
     )
-    pocs: Mapped[list["ResourcePOC"]] = relationship(
+    pocs: Mapped[list[ResourcePOC]] = relationship(
         "ResourcePOC",
         back_populates="resource",
         cascade="all, delete-orphan",
@@ -157,7 +157,7 @@ class ResourceHistory(db.Model, ULIDPK, IsoTimestamps):
         String(26), nullable=True
     )
 
-    resource: Mapped["Resource"] = relationship(
+    resource: Mapped[Resource] = relationship(
         "Resource", back_populates="histories"
     )
 
@@ -184,7 +184,7 @@ class ResourceCapabilityIndex(db.Model, ULIDPK, IsoTimestamps):
         Boolean, default=False, nullable=False, index=True
     )
 
-    resource: Mapped["Resource"] = relationship(
+    resource: Mapped[Resource] = relationship(
         "Resource", back_populates="capabilities"
     )
 
@@ -233,7 +233,7 @@ class ResourcePOC(db.Model, ULIDPK, IsoTimestamps):
         Boolean, nullable=False, default=True
     )
 
-    resource: Mapped["Resource"] = relationship(
+    resource: Mapped[Resource] = relationship(
         "Resource", back_populates="pocs"
     )
 

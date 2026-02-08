@@ -109,7 +109,6 @@ def issue():
         return _err(e)
 
 
-
 @bp.post("/transfer")
 def transfer():
     try:

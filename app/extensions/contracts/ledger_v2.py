@@ -1,5 +1,4 @@
 # app/extensions/contracts/ledger_v2.py
-# -*- coding: utf-8 -*-
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 # File: <set to the relative path of this file>
 # Purpose: Single source of truth for audit/ledger write-path.
@@ -9,7 +8,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from app.extensions.errors import ContractError
 from app.slices.ledger import services as ledger_svc
@@ -33,13 +32,13 @@ def emit(
     domain: str,
     operation: str,
     request_id: str,
-    actor_ulid: Optional[str],
-    target_ulid: Optional[str],
-    refs: Optional[Dict[str, Any]] = None,
-    changed: Optional[Dict[str, Any]] = None,
-    meta: Optional[Dict[str, Any]] = None,
-    happened_at_utc: Optional[str] = None,
-    chain_key: Optional[str] = None,
+    actor_ulid: str | None,
+    target_ulid: str | None,
+    refs: dict[str, Any] | None = None,
+    changed: dict[str, Any] | None = None,
+    meta: dict[str, Any] | None = None,
+    happened_at_utc: str | None = None,
+    chain_key: str | None = None,
 ) -> EmitResult:
     """
     Canonical ledger write contract.
@@ -86,5 +85,5 @@ def emit(
     )
 
 
-def verify(chain_key: Optional[str] = None) -> Dict[str, Any]:
+def verify(chain_key: str | None = None) -> dict[str, Any]:
     return ledger_svc.verify_chain(chain_key=chain_key)

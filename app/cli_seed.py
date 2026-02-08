@@ -106,7 +106,7 @@ def seed_bootstrap_impl(
 
     # Resources + POCs
     for i in range(resources):
-        label = f"Resource Org {i+1}"
+        label = f"Resource Org {i + 1}"
         res = seed_core.seed_active_resource(
             sess=db.session, label=label, faker=faker
         )
@@ -134,7 +134,7 @@ def seed_bootstrap_impl(
 
     # Sponsors + POCs
     for i in range(sponsors):
-        label = f"Sponsor Org {i+1}"
+        label = f"Sponsor Org {i + 1}"
         sres = seed_core.seed_sponsor_with_policy(
             sess=db.session, label=label, faker=faker
         )
@@ -165,7 +165,7 @@ def seed_bootstrap_impl(
         seed_core.seed_minimal_customer(
             sess=db.session,
             first="Test",
-            last=f"User{i+1}",
+            last=f"User{i + 1}",
             faker=faker,
         )
 
@@ -175,7 +175,7 @@ def seed_bootstrap_impl(
         f"OK — bootstrap complete. (RBAC +{n_rbac}, Domain +{n_domain}, "
         f"resources={resources}, sponsors={sponsors}, customers={customers})"
     )
-    return
+    return True
 
 
 @seed_cmd.command("bootstrap")

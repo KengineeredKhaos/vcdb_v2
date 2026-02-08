@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Flask, g, jsonify, request
@@ -185,52 +185,7 @@ def create_app(config_object="config.DevConfig"):
             g.current_user = user  # allow code that prefers g.current_user
 
     # -------------
-    # import & register
-    # a temporary root
-    # landing page for
-    # browser &
-    # Development Server
-    # -------------
-
-    from app.slices.devtools.routes_smoke import bp as dev_smoke_bp
-
-    flask_app.register_blueprint(dev_smoke_bp)
-
-    # for Testing server
-    # from .web import bp as web_bp
-    # flask_app.register_blueprint(web_bp)
-
-    # -------------
-    # Conditionally
-    # import & register
-    # devtools blueprints
-    # for both @bp & @bp_api
-    # routes
-    # -------------
-
-    # env = (flask_app.config.get("ENV") or "").lower()
-    # # Always ok to mount in dev/testing; harmless if also mounted in dev
-    # if env in {"dev", "development", "test", "testing"}:
-    #     from app.slices.devtools.routes import (
-    #         bp as devtools_bp,
-    #     )
-    #     from app.slices.devtools.routes import (
-    #         bp_api as devtools_api_bp,
-    #     )
-    #     from app.slices.devtools.routes import (
-    #         bp_api_public as devtools_api_public_bp,
-    #     )
-    #     from app.slices.devtools.routes import (
-    #         bp_api_v2 as devtools_api_v2_bp,
-    #     )
-
-    # flask_app.register_blueprint(devtools_bp)  # /dev/...
-    # flask_app.register_blueprint(devtools_api_bp)  # /api/dev/...
-    # flask_app.register_blueprint(devtools_api_public_bp)  # /api/...
-    # flask_app.register_blueprint(devtools_api_v2_bp)
-
-    # -------------
-    # Register remaining
+    # Register
     # <slice> blueprints
     # after  CSRF/Jinja
     # are set & loaded
@@ -287,7 +242,7 @@ def create_app(config_object="config.DevConfig"):
             # tweak if you prefer
 
         return {
-            "current_year": datetime.now(timezone.utc).year,
+            "current_year": datetime.now(UTC).year,
             "has_endpoint": has_endpoint,
             "has_blueprint": has_blueprint,
             "user_is_admin": user_is_admin,
@@ -300,7 +255,7 @@ def create_app(config_object="config.DevConfig"):
                 getattr(current_user, "is_authenticated", False)
             ) and (
                 getattr(current_user, "is_admin", False)
-                or ("admin" in ((getattr(current_user, "roles", []) or [])))
+                or ("admin" in (getattr(current_user, "roles", []) or []))
             )
         except Exception:
             return False
@@ -494,7 +449,7 @@ def _boot_sanity(app):
     print(f"DATABASE            : {app.config.get('DATABASE')}")
     sk = app.config.get("SECRET_KEY")
     print(
-        f"SECRET_KEY set?     : {'OK (len='+str(len(sk))+')' if sk else 'NO'}"
+        f"SECRET_KEY set?     : {'OK (len=' + str(len(sk)) + ')' if sk else 'NO'}"
     )
     print(f"Jinja Undefined     : {type(app.jinja_env.undefined).__name__}")
     print(f"Blueprints          : {', '.join(sorted(app.blueprints.keys()))}")

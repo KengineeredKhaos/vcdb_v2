@@ -1,5 +1,4 @@
 # app/lib/request_ctx.py
-# -*- coding: utf-8 -*-
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 # File: <relative path>
 # Purpose: Stable library primitive for VCDB.
@@ -23,17 +22,13 @@ correlate actions across layers. Do not stash request-specific data in
 global variables—use this module instead.
 """
 
-
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Optional
 
 from .ids import new_ulid
 
 _request_id: ContextVar[str] = ContextVar("_request_id", default="")
-_actor_ulid: ContextVar[Optional[str]] = ContextVar(
-    "_actor_ulid", default=None
-)
+_actor_ulid: ContextVar[str | None] = ContextVar("_actor_ulid", default=None)
 
 
 def ensure_request_id() -> str:
@@ -52,11 +47,11 @@ def get_request_id() -> str:
     return _request_id.get()
 
 
-def set_actor_ulid(entity_ulid: Optional[str]) -> None:
+def set_actor_ulid(entity_ulid: str | None) -> None:
     _actor_ulid.set(entity_ulid)
 
 
-def get_actor_ulid() -> Optional[str]:
+def get_actor_ulid() -> str | None:
     return _actor_ulid.get()
 
 
@@ -66,7 +61,7 @@ def reset_request_ctx() -> None:
 
 
 @contextmanager
-def use_request_ctx(request_id: str, actor_ulid: Optional[str] = None):
+def use_request_ctx(request_id: str, actor_ulid: str | None = None):
     """Temporarily set request/actor context and restore on exit."""
     prev_rid = _request_id.get()
     prev_actor = _actor_ulid.get()

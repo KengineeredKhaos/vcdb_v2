@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 from sqlalchemy import select
 
@@ -398,12 +398,12 @@ def _external_restriction_type(internal: str) -> str:
 def post_journal(
     *,
     source: str,
-    external_ref_ulid: Optional[str],
+    external_ref_ulid: str | None,
     happened_at_utc: str,
     currency: str,
-    memo: Optional[str],
+    memo: str | None,
     lines: list[dict],
-    created_by_actor: Optional[str],
+    created_by_actor: str | None,
 ) -> str:
     """
     Write a balanced journal entry (header + lines) and update BalanceMonthly.
@@ -541,7 +541,7 @@ def post_journal(
 
 
 def reverse_journal(
-    *, journal_ulid: str, created_by_actor: Optional[str]
+    *, journal_ulid: str, created_by_actor: str | None
 ) -> str:
     """Create an exact reversal of an existing journal."""
     j = db.session.get(Journal, journal_ulid)
@@ -947,9 +947,9 @@ def record_inkind(
     amount_cents: int,
     expense_acct: str | None = None,
     revenue_acct: str | None = None,
-    memo: Optional[str],
-    external_ref_ulid: Optional[str],
-    created_by_actor: Optional[str],
+    memo: str | None,
+    external_ref_ulid: str | None,
+    created_by_actor: str | None,
     valuation_basis: str,
 ) -> str:
     if amount_cents is None or int(amount_cents) <= 0:
@@ -1014,8 +1014,8 @@ def release_restriction(
     unrestricted_fund: str = "unrestricted",
     net_assets_with_restr_acct: str = "3100",
     net_assets_without_restr_acct: str = "3000",
-    memo: Optional[str],
-    created_by_actor: Optional[str],
+    memo: str | None,
+    created_by_actor: str | None,
 ) -> str:
     """
     Move net assets from restricted -> unrestricted (names-only).
@@ -1056,7 +1056,7 @@ def release_restriction(
 
 
 def _apply_to_balances(*, lines: Iterable[dict], period_key: str) -> None:
-    buckets: dict[tuple[str, str, Optional[str]], int] = defaultdict(int)
+    buckets: dict[tuple[str, str, str | None], int] = defaultdict(int)
     for l in lines:
         k = (l["account_code"], l["fund_code"], l.get("project_ulid"))
         buckets[k] += int(l["amount_cents"])
@@ -1165,7 +1165,7 @@ def record_stat_metric(
     quantity: int,
     unit: str,
     source: str,
-    source_ref_ulid: Optional[str],
+    source_ref_ulid: str | None,
 ) -> str:
     """
     Off-GL non-monetary snapshot (e.g., STAT_FOOD_LBS). Use from Logistics.

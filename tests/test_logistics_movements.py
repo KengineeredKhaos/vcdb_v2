@@ -4,7 +4,6 @@ import json
 
 from app.extensions import db
 from app.lib.ids import new_ulid
-
 from app.slices.logistics.models import (
     InventoryBatch,
     InventoryMovement,

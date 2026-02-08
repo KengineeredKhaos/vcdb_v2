@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import timedelta
 from fnmatch import fnmatch
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import func, select
 
@@ -54,28 +54,28 @@ class IssueContext:
     Keep this a dumb container. No side effects.
     """
 
-    customer_ulid: Optional[str]
-    sku_code: Optional[str]
-    when_iso: Optional[str] = None
+    customer_ulid: str | None
+    sku_code: str | None
+    when_iso: str | None = None
 
     # Optional task context (Scenario #3 durable goods)
-    project_ulid: Optional[str] = None
+    project_ulid: str | None = None
 
     # Optional operational details (write path)
-    location_ulid: Optional[str] = None
-    batch_ulid: Optional[str] = None
+    location_ulid: str | None = None
+    batch_ulid: str | None = None
 
     # Actor info (for overrides, audit)
-    actor_ulid: Optional[str] = None
-    actor_domain_roles: Optional[list[str]] = None
+    actor_ulid: str | None = None
+    actor_domain_roles: list[str] | None = None
 
     # Controls
     force_blackout: bool = False
     override_cadence: bool = False
 
     # Derived / cached
-    sku_parts: Optional[dict[str, str]] = None
-    classification_key: Optional[str] = None
+    sku_parts: dict[str, str] | None = None
+    classification_key: str | None = None
 
     # Cached cross-slice snapshot (avoid N calls for N SKUs)
     customer_cues: CustomerCuesDTO | None = None
@@ -90,9 +90,9 @@ class IssueDecision:
     allowed: bool
     reason: str
 
-    approver_required: Optional[str] = None
-    limit_window_label: Optional[str] = None
-    next_eligible_at_iso: Optional[str] = None
+    approver_required: str | None = None
+    limit_window_label: str | None = None
+    next_eligible_at_iso: str | None = None
 
 
 @dataclass(frozen=True)
@@ -100,13 +100,13 @@ class IssueResult:
     ok: bool
     reason: str
 
-    issue_ulid: Optional[str] = None
-    movement_ulid: Optional[str] = None
-    item_ulid: Optional[str] = None
-    batch_ulid: Optional[str] = None
+    issue_ulid: str | None = None
+    movement_ulid: str | None = None
+    item_ulid: str | None = None
+    batch_ulid: str | None = None
     qty_each: int = 0
 
-    decision: Optional[IssueDecision] = None
+    decision: IssueDecision | None = None
 
 
 # -----------------
@@ -119,17 +119,17 @@ def issue_inventory(
     customer_ulid: str | None,
     sku_code: str,
     qty_each: int = 1,
-    when_iso: Optional[str] = None,
-    project_ulid: Optional[str] = None,
-    location_ulid: Optional[str] = None,
-    batch_ulid: Optional[str] = None,
-    actor_ulid: Optional[str] = None,
-    actor_domain_roles: Optional[list[str]] = None,
+    when_iso: str | None = None,
+    project_ulid: str | None = None,
+    location_ulid: str | None = None,
+    batch_ulid: str | None = None,
+    actor_ulid: str | None = None,
+    actor_domain_roles: list[str] | None = None,
     override_cadence: bool = False,
     force_blackout: bool = False,
-    request_id: Optional[str] = None,
-    reason: Optional[str] = None,
-    note: Optional[str] = None,
+    request_id: str | None = None,
+    reason: str | None = None,
+    note: str | None = None,
 ) -> dict[str, Any]:
     """Mutating entry point: evaluate policy then write Issue + decrement stock.
 
@@ -368,11 +368,11 @@ def decide_issue(ctx: IssueContext) -> IssueDecision:
 def available_skus_for_customer(
     *,
     customer_ulid: str,
-    as_of_iso: Optional[str] = None,
-    location_ulid: Optional[str] = None,
+    as_of_iso: str | None = None,
+    location_ulid: str | None = None,
     include_out_of_stock: bool = False,
-    actor_ulid: Optional[str] = None,
-    actor_domain_roles: Optional[list[str]] = None,
+    actor_ulid: str | None = None,
+    actor_domain_roles: list[str] | None = None,
     override_cadence: bool = False,
 ) -> list[str]:
     """
@@ -724,9 +724,9 @@ def _decision(
     ok: bool,
     reason: str,
     *,
-    approver_required: Optional[str] = None,
-    limit_window_label: Optional[str] = None,
-    next_eligible_at_iso: Optional[str] = None,
+    approver_required: str | None = None,
+    limit_window_label: str | None = None,
+    next_eligible_at_iso: str | None = None,
 ) -> IssueDecision:
     return IssueDecision(
         allowed=bool(ok),
@@ -791,9 +791,9 @@ def _nth_oldest_issue_at_in_window(
     window_start_iso: str,
     as_of_iso: str,
     n: int,
-    sku_code: Optional[str] = None,
-    classification_key: Optional[str] = None,
-) -> Optional[str]:
+    sku_code: str | None = None,
+    classification_key: str | None = None,
+) -> str | None:
     """
     Return the issued_at ISO for the Nth oldest issue in the window (1-based).
     """

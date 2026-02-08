@@ -1,7 +1,8 @@
 # app/extensions/contracts/sponsors_v2.py
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from app.extensions.errors import ContractError
 from app.lib.ids import new_ulid

@@ -1,5 +1,5 @@
-from app.slices.logistics.qualifiers import evaluate
 from app.extensions.contracts.customers_v2 import CustomerCuesDTO
+from app.slices.logistics.qualifiers import evaluate
 
 
 def cues(**kw) -> CustomerCuesDTO:

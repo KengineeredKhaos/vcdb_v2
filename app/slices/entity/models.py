@@ -76,21 +76,21 @@ class Entity(db.Model, ULIDPK, IsoTimestamps):
 
     archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
     # One-to-ones
-    person: Mapped["EntityPerson"] = relationship(
+    person: Mapped[EntityPerson] = relationship(
         "EntityPerson", back_populates="entity", uselist=False
     )
-    org: Mapped["EntityOrg"] = relationship(
+    org: Mapped[EntityOrg] = relationship(
         "EntityOrg", back_populates="entity", uselist=False
     )
 
     # One-to-many
-    roles: Mapped[list["EntityRole"]] = relationship(
+    roles: Mapped[list[EntityRole]] = relationship(
         "EntityRole", back_populates="entity", cascade="all, delete-orphan"
     )
-    contacts: Mapped[list["EntityContact"]] = relationship(
+    contacts: Mapped[list[EntityContact]] = relationship(
         "EntityContact", back_populates="entity", cascade="all, delete-orphan"
     )
-    addresses: Mapped[list["EntityAddress"]] = relationship(
+    addresses: Mapped[list[EntityAddress]] = relationship(
         "EntityAddress", back_populates="entity", cascade="all, delete-orphan"
     )
 

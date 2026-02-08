@@ -47,7 +47,7 @@ def policy_lint(
         flags.append("--print-paths")
     _run(
         c,
-        f'{FLASK} dev policy-lint --which all --base {base} --schema-base {schemas} {" ".join(flags)}',
+        f"{FLASK} dev policy-lint --which all --base {base} --schema-base {schemas} {' '.join(flags)}",
     )
 
 

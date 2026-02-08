@@ -4,7 +4,6 @@ import hashlib
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List
 
 ROOT = Path(__file__).resolve().parents[1]
 LIB = ROOT / "app" / "lib"
@@ -22,7 +21,7 @@ def read(p: Path) -> bytes:
     return p.read_bytes()
 
 
-def parse_symbols(py_path: Path) -> Dict[str, object]:
+def parse_symbols(py_path: Path) -> dict[str, object]:
     src = py_path.read_text(encoding="utf-8", errors="replace")
     try:
         tree = ast.parse(src, filename=str(py_path))
@@ -37,7 +36,7 @@ def parse_symbols(py_path: Path) -> Dict[str, object]:
             toplevel_classes.append(node.name)
 
     # Try to capture __all__ if it’s a simple list/tuple of strings
-    public: List[str] = []
+    public: list[str] = []
     for node in tree.body:
         if isinstance(node, ast.Assign):
             for tgt in node.targets:
@@ -67,8 +66,8 @@ def main():
         [p for p in LIB.rglob("*.py") if "__pycache__" not in p.parts]
     )
     index = []
-    by_hash: Dict[str, List[str]] = {}
-    public_index: Dict[str, List[str]] = {}  # symbol -> [module,...]
+    by_hash: dict[str, list[str]] = {}
+    public_index: dict[str, list[str]] = {}  # symbol -> [module,...]
 
     for f in files:
         b = read(f)

@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import desc, func
 
@@ -12,8 +11,8 @@ from app.extensions.contracts import entity_v2
 from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
-from app.services import poc as poc_svc
-from app.services.entity_validate import require_person_entity_ulid
+from app.slices.entity import services_poc as poc_svc
+from app.slices.entity.guards import require_person_entity_ulid
 from app.slices.resources.models import (
     Resource,
     ResourceCapabilityIndex,
@@ -115,7 +114,7 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
 # -----------------
 
 
-def resource_link_poc(
+def resourse_link_poc(
     *,
     resource_entity_ulid: str,
     person_entity_ulid: str,
@@ -127,13 +126,11 @@ def resource_link_poc(
     actor_ulid: str | None = None,
     request_id: str,
 ):
-    require_person_entity_ulid(
-        db.session,
-        person_entity_ulid,
+    entity_v2.require_person_entity_ulid(
+        entity_ulid=person_entity_ulid,
         where="resources.resource_link_poc",
     )
     return poc_svc.link_poc(
-        db.session,
         POCModel=ResourcePOC,
         spec=_RESOURCE_POC_SPEC,
         domain="resources",
@@ -161,9 +158,8 @@ def resource_update_poc(
     actor_ulid: str | None = None,
     request_id: str,
 ):
-    require_person_entity_ulid(
-        db.session,
-        person_entity_ulid,
+    entity_v2.require_person_entity_ulid(
+        entity_ulid=person_entity_ulid,
         where="resources.resource_update_poc",
     )
     return poc_svc.update_poc(
@@ -191,13 +187,11 @@ def resource_unlink_poc(
     actor_ulid: str | None = None,
     request_id: str,
 ):
-    require_person_entity_ulid(
-        db.session,
-        person_entity_ulid,
+    entity_v2.require_person_entity_ulid(
+        Entity_ulid=person_entity_ulid,
         where="resources.resource_unlink_poc",
     )
     return poc_svc.unlink_poc(
-        db.session,
         POCModel=ResourcePOC,
         spec=_RESOURCE_POC_SPEC,
         domain="resources",
@@ -211,7 +205,6 @@ def resource_unlink_poc(
 
 def resource_list_pocs(*, resource_entity_ulid: str) -> list[dict]:
     return poc_svc.list_pocs(
-        db.session,
         POCModel=ResourcePOC,
         spec=_RESOURCE_POC_SPEC,
         owner_ulid=resource_entity_ulid,
@@ -223,7 +216,7 @@ def resource_list_pocs(*, resource_entity_ulid: str) -> list[dict]:
 # -----------------
 
 
-def _ensure_reqid(rid: Optional[str]) -> str:
+def _ensure_reqid(rid: str | None) -> str:
     if not rid or not str(rid).strip():
         raise ValueError("request_id must be non-empty")
     return str(rid).strip()
@@ -278,7 +271,7 @@ def _split(flat_key: str) -> tuple[str, str]:
 
 
 def _flatten_caps_payload(
-    payload: dict[str, object]
+    payload: dict[str, object],
 ) -> dict[str, dict[str, object]]:
     """
     Normalise capability payload into flat keys.
@@ -341,7 +334,7 @@ def _flatten_caps_payload(
 
 
 def _validate_caps(
-    payload: dict[str, object]
+    payload: dict[str, object],
 ) -> dict[str, dict[str, object]]:
     """
     Validate and normalise a capability payload against Board policy.
@@ -379,7 +372,7 @@ def _validate_caps(
 
 
 def _validate_caps_patch(
-    payload: dict[str, object]
+    payload: dict[str, object],
 ) -> dict[str, dict[str, object]]:
     """
     Patch semantics.
@@ -479,7 +472,7 @@ def _default_mou() -> str:
 
 
 def ensure_resource(
-    *, resource_entity_ulid: str, request_id: str, actor_ulid: Optional[str]
+    *, resource_entity_ulid: str, request_id: str, actor_ulid: str | None
 ) -> str:
     _ensure_reqid(request_id)
     r = db.session.get(Resource, resource_entity_ulid)
@@ -517,8 +510,8 @@ def upsert_capabilities(
     resource_entity_ulid: str,
     payload: dict[str, Any],
     request_id: str,
-    actor_ulid: Optional[str],
-    idempotency_key: Optional[str] = None,
+    actor_ulid: str | None,
+    idempotency_key: str | None = None,
 ) -> str:
     """
     Replace semantics: incoming payload is the new truth.
@@ -619,7 +612,7 @@ def upsert_capabilities(
     return hist.ulid
 
 
-def resource_view(resource_entity_ulid: str) -> Optional[dict]:
+def resource_view(resource_entity_ulid: str) -> dict | None:
     r = db.session.get(Resource, resource_entity_ulid)
     if not r:
         return None
@@ -646,10 +639,10 @@ def resource_view(resource_entity_ulid: str) -> Optional[dict]:
 
 def find_resources(
     *,
-    any_of: Optional[list[tuple[str, str]]] = None,
-    all_of: Optional[list[tuple[str, str]]] = None,
-    admin_review_required: Optional[bool] = None,
-    readiness_in: Optional[list[str]] = None,
+    any_of: list[tuple[str, str]] | None = None,
+    all_of: list[tuple[str, str]] | None = None,
+    admin_review_required: bool | None = None,
+    readiness_in: list[str] | None = None,
     page: int = 1,
     per: int = 50,
 ) -> tuple[list[dict], int]:

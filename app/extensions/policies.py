@@ -25,9 +25,9 @@ NOTE: JSON does not support comments. Use `meta.notes[]` in policy files.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
 
 from app.extensions.validate import validate_json_payload
 from app.lib.jsonutil import canonical_hash, read_json_file, write_json_file
@@ -66,9 +66,7 @@ def _cache_key(path: Path) -> str:
     return str(path.resolve())
 
 
-def _load_and_cache(
-    path: Path, *, schema_path: Optional[Path] = None
-) -> dict:
+def _load_and_cache(path: Path, *, schema_path: Path | None = None) -> dict:
     """
     Load JSON from disk, validate (if schema_path is provided and exists),
     and cache by file mtime.
@@ -162,13 +160,13 @@ def reload_policy_catalog() -> None:
 
 def _resolve_governance_policy_paths(
     policy_key: str,
-) -> tuple[Path, Optional[Path]]:
+) -> tuple[Path, Path | None]:
     cat = _load_catalog()
     if policy_key not in cat:
         raise KeyError(f"Unknown governance policy_key: {policy_key!r}")
     entry = cat[policy_key]
     policy_path = GOV_DATA / entry.filename
-    schema_path: Optional[Path] = None
+    schema_path: Path | None = None
     if entry.schema_filename:
         schema_path = GOV_DATA / entry.schema_filename
     return policy_path, schema_path
@@ -187,7 +185,7 @@ def save_governance_policy(
     policy_key: str,
     payload: dict,
     *,
-    auditor: Optional[Callable[[dict], None]] = None,
+    auditor: Callable[[dict], None] | None = None,
 ) -> dict:
     """
     Validate (if schema is known), write pretty JSON, bust cache,

@@ -1,15 +1,14 @@
 # app/lib/geo.py
 from __future__ import annotations
 
-from functools import lru_cache
-from typing import Dict, Optional, Tuple
+from functools import cache
 
 # Strict state two letter codes plus DC & PR
 # in json format
 # ---- Private, canonical data (immutable tuples) ---------------------------
 # Keep these module-private; only expose getters so callers can’t mutate.
 
-_US_STATES: Tuple[Tuple[str, str], ...] = (
+_US_STATES: tuple[tuple[str, str], ...] = (
     ("AL", "Alabama"),
     ("AK", "Alaska"),
     ("AZ", "Arizona"),
@@ -70,7 +69,7 @@ _US_STATES: Tuple[Tuple[str, str], ...] = (
 )
 
 
-_COUNTRIES: Tuple[Tuple[str, str], ...] = (
+_COUNTRIES: tuple[tuple[str, str], ...] = (
     ("US", "United States"),
     ("CA", "Canada"),
     ("MX", "Mexico"),
@@ -79,32 +78,32 @@ _COUNTRIES: Tuple[Tuple[str, str], ...] = (
 
 
 # ---- Public getters (immutable views) -------------------------------------
-@lru_cache(maxsize=None)
-def us_states() -> Tuple[Tuple[str, str], ...]:
+@cache
+def us_states() -> tuple[tuple[str, str], ...]:
     """Choice-friendly (code, name) pairs for US states (immutable)."""
     return _US_STATES
 
 
-@lru_cache(maxsize=None)
-def state_map() -> Dict[str, str]:
+@cache
+def state_map() -> dict[str, str]:
     """Fast validation/lookup → code -> name (immutable copy)."""
     return dict(_US_STATES)
 
 
-@lru_cache(maxsize=None)
-def countries() -> Tuple[Tuple[str, str], ...]:
+@cache
+def countries() -> tuple[tuple[str, str], ...]:
     """Choice-friendly (code, name) pairs for countries (immutable)."""
     return _COUNTRIES
 
 
-@lru_cache(maxsize=None)
-def country_map() -> Dict[str, str]:
+@cache
+def country_map() -> dict[str, str]:
     """Fast validation/lookup → code -> name (immutable copy)."""
     return dict(_COUNTRIES)
 
 
 # ---- Normalizers / validators --------------------------------------------
-def normalize_state(code_or_name: str) -> Optional[str]:
+def normalize_state(code_or_name: str) -> str | None:
     """Return the 2-letter state code for a code OR display name; else None."""
     if not code_or_name:
         return None
@@ -121,7 +120,7 @@ def is_state_code(code: str) -> bool:
     return bool(code) and code.strip().upper() in state_map()
 
 
-def normalize_country(code_or_name: str) -> Optional[str]:
+def normalize_country(code_or_name: str) -> str | None:
     if not code_or_name:
         return None
     s = code_or_name.strip().upper()

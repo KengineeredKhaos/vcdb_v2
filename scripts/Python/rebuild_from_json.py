@@ -82,7 +82,7 @@ def rebuild_and_load(db_path: str, dumps_dir: Path):
                 continue
 
             placeholders = ",".join(["?"] * len(cols))
-            sql = f'INSERT OR REPLACE INTO {table} ({",".join(cols)}) VALUES ({placeholders})'
+            sql = f"INSERT OR REPLACE INTO {table} ({','.join(cols)}) VALUES ({placeholders})"
             rows = [tuple(item.get(c) for c in cols) for item in data]
             con.executemany(sql, rows)
             print(
@@ -96,9 +96,9 @@ def rebuild_and_load(db_path: str, dumps_dir: Path):
 
 if __name__ == "__main__":
     db_uri = APP.config.get("SQLALCHEMY_DATABASE_URI", "")
-    assert db_uri.startswith(
-        "sqlite:///"
-    ), "This helper expects SQLite in dev."
+    assert db_uri.startswith("sqlite:///"), (
+        "This helper expects SQLite in dev."
+    )
     db_path = db_uri.replace("sqlite:///", "")
 
     dumps_dir = Path("var/json-dumps")

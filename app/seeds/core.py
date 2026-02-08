@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import Optional
 
 from faker import Faker
 from sqlalchemy.orm import Session
@@ -82,7 +81,7 @@ class SeedSponsorResult:
 
 @dataclass(frozen=True)
 class SeedCustomerResult:
-    customer_ulid: str
+    customer_entity_ulid: str
     entity_ulid: str
 
 
@@ -301,7 +300,7 @@ def _ensure_org_entity(
     *,
     org_name: str,
     faker=None,
-    role: Optional[str] = None,
+    role: str | None = None,
 ) -> str:
     """
     Idempotent-ish by legal_name for dev convenience.
@@ -358,9 +357,9 @@ def _create_person_entity(
     *,
     first: str,
     last: str,
-    preferred: Optional[str] = None,
+    preferred: str | None = None,
     faker=None,
-    role: Optional[str] = None,
+    role: str | None = None,
 ) -> str:
     ts = now_iso8601_ms()
     e_ulid = new_ulid()
@@ -439,8 +438,7 @@ def seed_active_resource(
 
     sess.flush()
     return SeedResourceResult(
-        resource_entity_ulid=res.entity_ulid,
-        entity_ulid=org_entity_ulid,
+        resource_entity_ulid=res.entity_ulid, entity_ulid=org_entity_ulid
     )
 
 
@@ -489,8 +487,7 @@ def seed_sponsor_with_policy(
 
     sess.flush()
     return SeedSponsorResult(
-        sponsor_entity_ulid=sp.entity_ulid,
-        entity_ulid=org_entity_ulid,
+        sponsor_entity_ulid=sp.entity_ulid, entity_ulid=org_entity_ulid
     )
 
 
@@ -512,7 +509,7 @@ def seed_org_poc_pair(
     for i in range(2):
         e_ulid = _create_person_entity(
             sess,
-            first=f"{label} POC{i+1}",
+            first=f"{label} POC{i + 1}",
             last="CIV",
             preferred=None,
             faker=faker,
@@ -574,11 +571,11 @@ def seed_minimal_customer(
 
     elig = (
         sess.query(CustomerEligibility)
-        .filter(CustomerEligibility.customer_ulid == c.ulid)
+        .filter(CustomerEligibility.customer_entity_ulid == c.entity_ulid)
         .one_or_none()
     )
     if elig is None:
-        elig = CustomerEligibility(customer_ulid=c.ulid)
+        elig = CustomerEligibility(customer_entity_ulid=c.entity_ulid)
         # --- Veteran verification (must satisfy CHECKs) ---
         verified = bool(random.getrandbits(1))
         if hasattr(elig, "is_veteran_verified"):
@@ -623,4 +620,6 @@ def seed_minimal_customer(
         sess.add(elig)
 
     sess.flush()
-    return SeedCustomerResult(customer_ulid=c.ulid, entity_ulid=e_ulid)
+    return SeedCustomerResult(
+        customer_entity_ulid=c.entity_ulid, entity_ulid=e_ulid
+    )

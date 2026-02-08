@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
-from typing import Optional, Set
 
 from flask import current_app
 from flask_login import UserMixin
@@ -15,7 +14,7 @@ class User(UserMixin):
     id: int
     email: str
     username: str
-    roles: Set[str] = field(default_factory=set)
+    roles: set[str] = field(default_factory=set)
 
     @staticmethod
     def _cx() -> sqlite3.Connection:
@@ -24,9 +23,7 @@ class User(UserMixin):
         return cx
 
     @classmethod
-    def authenticate(
-        cls, login_value: str, password: str
-    ) -> Optional["User"]:
+    def authenticate(cls, login_value: str, password: str) -> User | None:
         if not login_value or not password:
             current_app.logger.info(
                 {"event": "auth_fail", "why": "missing_fields"}
@@ -93,7 +90,7 @@ class User(UserMixin):
         )
 
 
-def load_user(user_id: str) -> Optional[User]:
+def load_user(user_id: str) -> User | None:
     cx = User._cx()
     row = cx.execute(
         "SELECT id, email, COALESCE(username,'') AS username FROM users WHERE id = ?",

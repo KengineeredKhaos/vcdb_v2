@@ -1,6 +1,8 @@
 # app/slices/finance/routes.py
 from __future__ import annotations
 
+from datetime import UTC
+
 from flask import (
     render_template,
     request,
@@ -33,9 +35,9 @@ def activities_report():
     period = request.args.get("period")
     if not period:
         # naive default: current YYYY-MM from UTC now
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        period = datetime.now(timezone.utc).strftime("%Y-%m")
+        period = datetime.now(UTC).strftime("%Y-%m")
 
     report = _soa(period)
     return render_template(

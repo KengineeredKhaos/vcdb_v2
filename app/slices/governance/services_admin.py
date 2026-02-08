@@ -35,7 +35,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from flask import current_app
 
@@ -76,7 +76,7 @@ def _schemas_dir() -> Path:
     return _gov_data_dir() / "schemas"
 
 
-def _read_json(p: Path) -> Dict[str, Any]:
+def _read_json(p: Path) -> dict[str, Any]:
     try:
         with p.open("r", encoding="utf-8") as f:
             return json.load(f)
@@ -101,7 +101,7 @@ def _infer_focus(obj: dict, fname_stem: str) -> str:
     return fname_stem.replace("_", "-")
 
 
-def _extract_domains(obj: dict) -> List[str]:
+def _extract_domains(obj: dict) -> list[str]:
     if isinstance(obj.get("domain_roles"), list):
         return [str(x) for x in obj["domain_roles"]]
     if isinstance(obj.get("applies_to"), list):
@@ -116,7 +116,7 @@ def _extract_domains(obj: dict) -> List[str]:
 
 def _maybe_validate(
     policy_obj: dict, schema_path: Path | None
-) -> Tuple[bool | None, List[str]]:
+) -> tuple[bool | None, list[str]]:
     """
     Returns (schema_valid, errors).
     - if jsonschema unavailable or schema missing: (None, [])
@@ -140,16 +140,16 @@ def _maybe_validate(
 
     if not errors:
         return (True, [])
-    msgs: List[str] = []
+    msgs: list[str] = []
     for err in errors[:10]:
         loc = ".".join(map(str, err.path)) or "(root)"
         msgs.append(f"{loc}: {err.message}")
     if len(errors) > 10:
-        msgs.append(f"... and {len(errors)-10} more")
+        msgs.append(f"... and {len(errors) - 10} more")
     return (False, msgs)
 
 
-def _canonicalize(doc: Dict[str, Any]) -> Dict[str, Any]:
+def _canonicalize(doc: dict[str, Any]) -> dict[str, Any]:
     # simple canonicalization: stable key ordering and no trailing spaces via json dumps/loads
     return json.loads(json.dumps(doc, separators=(",", ":"), sort_keys=True))
 
@@ -166,7 +166,7 @@ def _schema_path_for(key: str) -> Path:
     return _schemas_dir() / f"{key}.schema.json"
 
 
-def _atomic_write_json(dst: Path, doc: Dict[str, Any]) -> None:
+def _atomic_write_json(dst: Path, doc: dict[str, Any]) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     # backup
     backups = _gov_data_dir() / "_backups"
@@ -202,9 +202,9 @@ def _atomic_write_json(dst: Path, doc: Dict[str, Any]) -> None:
 # -----------------
 
 
-def list_policies_impl(*, validate: bool = False) -> Dict[str, Any]:
+def list_policies_impl(*, validate: bool = False) -> dict[str, Any]:
     d, sdir = _gov_data_dir(), _schemas_dir()
-    items: List[Dict[str, Any]] = []
+    items: list[dict[str, Any]] = []
     for p in sorted(d.glob("policy_*.json")):
         key = p.stem
         obj = _read_json(p)
@@ -226,7 +226,7 @@ def list_policies_impl(*, validate: bool = False) -> Dict[str, Any]:
     return {"ok": True, "policies": items}
 
 
-def get_policy_impl(*, key: str, validate: bool = False) -> Dict[str, Any]:
+def get_policy_impl(*, key: str, validate: bool = False) -> dict[str, Any]:
     p = _policy_path_for(key)
     if not p.exists():
         return {"ok": False, "error": "not_found"}
@@ -246,8 +246,8 @@ def get_policy_impl(*, key: str, validate: bool = False) -> Dict[str, Any]:
 
 
 def preview_update_impl(
-    *, key: str, new_policy: Dict[str, Any]
-) -> Dict[str, Any]:
+    *, key: str, new_policy: dict[str, Any]
+) -> dict[str, Any]:
     dst = _policy_path_for(key)
     if not dst.exists():
         return {"ok": False, "error": "not_found"}
@@ -276,8 +276,8 @@ def preview_update_impl(
 
 
 def commit_update_impl(
-    *, key: str, new_policy: Dict[str, Any], actor_ulid: str
-) -> Dict[str, Any]:
+    *, key: str, new_policy: dict[str, Any], actor_ulid: str
+) -> dict[str, Any]:
     dst = _policy_path_for(key)
     if not dst.exists():
         return {"ok": False, "error": "not_found"}

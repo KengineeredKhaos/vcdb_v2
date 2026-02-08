@@ -1,5 +1,4 @@
 # app/lib/pagination.py
-# -*- coding: utf-8 -*-
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 # File: <relative path>
 # Purpose: Stable library primitive for VCDB.
@@ -20,22 +19,19 @@ This module provides a small, slice-agnostic pagination layer:
 Routes and services should use these helpers instead of hand-rolling
 offset/limit logic, so pagination behavior and DTO shapes stay
 consistent across slices.
-"""
 
+see implementation notes below.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from math import ceil
 from typing import (
     Any,
-    Callable,
     Generic,
-    Optional,
-    Sequence,
-    Tuple,
     TypeVar,
-    Union,
     overload,
 )
 
@@ -69,14 +65,14 @@ class Page(Generic[T]):
     total: int
     page: int
     per_page: int
-    next_page: Optional[int]
-    prev_page: Optional[int]
+    next_page: int | None
+    prev_page: int | None
 
     @property
     def pages(self) -> int:
         return ceil(self.total / self.per_page) if self.per_page > 0 else 1
 
-    def map(self, f: Callable[[T], U]) -> "Page[U]":
+    def map(self, f: Callable[[T], U]) -> Page[U]:
         """Transform items, preserve metadata."""
         return Page(
             items=[f(x) for x in self.items],
@@ -87,7 +83,7 @@ class Page(Generic[T]):
             prev_page=self.prev_page,
         )
 
-    def to_dict(self, map_item: Optional[Callable[[T], Any]] = None) -> dict:
+    def to_dict(self, map_item: Callable[[T], Any] | None = None) -> dict:
         """DTO-friendly shape for contracts/responses."""
         data_items = (
             [map_item(x) for x in self.items]
@@ -108,8 +104,8 @@ class Page(Generic[T]):
 
 
 def _normalize(
-    page: int, per_page: int, max_per_page: Optional[int]
-) -> Tuple[int, int]:
+    page: int, per_page: int, max_per_page: int | None
+) -> tuple[int, int]:
     p = 1 if page is None or page < 1 else int(page)
     pp = 10 if per_page is None or per_page < 1 else int(per_page)
     if max_per_page and pp > max_per_page:
@@ -119,11 +115,23 @@ def _normalize(
 
 def _edges(
     page: int, per_page: int, total: int
-) -> Tuple[Optional[int], Optional[int]]:
+) -> tuple[int | None, int | None]:
     pages = ceil(total / per_page) if per_page else 1
     prev_page = page - 1 if page > 1 else None
     next_page = page + 1 if page < pages else None
     return next_page, prev_page
+
+
+def rewrap_page[T, U](page: Page[T], items: Sequence[U]) -> Page[U]:
+    """Reuse paging metadata but replace items."""
+    return Page(
+        items=items,
+        total=page.total,
+        page=page.page,
+        per_page=page.per_page,
+        next_page=page.next_page,
+        prev_page=page.prev_page,
+    )
 
 
 # ----------------------------
@@ -131,12 +139,14 @@ def _edges(
 # ----------------------------
 
 
-def paginate_list(
+def paginate_list[
+    T
+](
     items: Sequence[T],
     *,
     page: int = 1,
     per_page: int = 10,
-    max_per_page: Optional[int] = 100,
+    max_per_page: int | None = 100,
 ) -> Page[T]:
     """Paginate an in-memory list/sequence."""
     page, per_page = _normalize(page, per_page, max_per_page)
@@ -155,35 +165,37 @@ def paginate_list(
 
 @overload
 def paginate_sa(
-    source: "Query",
+    source: Query,
     *,
     page: int = 1,
     per_page: int = 10,
-    max_per_page: Optional[int] = 100,
+    max_per_page: int | None = 100,
 ) -> Page[Any]:
     ...
 
 
 @overload
 def paginate_sa(
-    source: "Select",
+    source: Select,
     *,
     page: int = 1,
     per_page: int = 10,
-    max_per_page: Optional[int] = 100,
+    max_per_page: int | None = 100,
 ) -> Page[Any]:
     ...
 
 
 def paginate_sa(
-    source: Union["Query", "Select"],
+    source: Query | Select,
     *,
     page: int = 1,
     per_page: int = 10,
-    max_per_page: Optional[int] = 100,
+    max_per_page: int | None = 100,
+    scalar: bool = False,
 ) -> Page[Any]:
-    """Paginate a SQLAlchemy Query/Select. Works with ORM Query or Core Select.
-    Requires SQLAlchemy to be installed and configured.
+    """Paginate a SQLAlchemy Query/Select.
+
+    If scalar=True, return a flat list for single-column Query/Select.
     """
     if not _HAS_SA:
         raise RuntimeError(
@@ -191,29 +203,28 @@ def paginate_sa(
         )
 
     from flask import current_app
-    from flask_sqlalchemy import (
-        SQLAlchemy,
-    )  # assume you're using Flask-SQLAlchemy
+    from flask_sqlalchemy import SQLAlchemy
 
     db: SQLAlchemy = current_app.extensions["sqlalchemy"].db  # type: ignore
 
     page, per_page = _normalize(page, per_page, max_per_page)
 
-    # Build count() safely
     if isinstance(source, Query):
         total = source.order_by(None).count()
-        items = source.limit(per_page).offset((page - 1) * per_page).all()
+        rows = source.limit(per_page).offset((page - 1) * per_page).all()
+        if scalar:
+            items = [r[0] if isinstance(r, tuple) else r for r in rows]
+        else:
+            items = rows
     else:
-        # Core Select
         count_stmt = db.select(db.func.count()).select_from(
             source.order_by(None).subquery()
         )
         total = db.session.execute(count_stmt).scalar_one()
-        items = list(
-            db.session.execute(
-                source.limit(per_page).offset((page - 1) * per_page)
-            ).scalars()
-        )
+
+        stmt = source.limit(per_page).offset((page - 1) * per_page)
+        result = db.session.execute(stmt)
+        items = list(result.scalars()) if scalar else list(result.all())
 
     next_page, prev_page = _edges(page, per_page, total)
     return Page(items, total, page, per_page, next_page, prev_page)
@@ -224,16 +235,20 @@ def paginate_sa(
 # ----------------------------
 
 
-def paginate(
-    source: Union[Sequence[T], "Query", "Select"],
+def paginate[
+    T
+](
+    source: Sequence[T] | Query | Select,
     *,
     page: int = 1,
     per_page: int = 10,
-    max_per_page: Optional[int] = 100,
+    max_per_page: int | None = 100,
 ) -> Page[T]:
     """Smart paginate: works for sequences or SQLAlchemy sources."""
     if _HAS_SA and isinstance(source, (Query, Select)):  # type: ignore[arg-type]
-        return paginate_sa(source, page=page, per_page=per_page, max_per_page=max_per_page)  # type: ignore[return-value]
+        return paginate_sa(
+            source, page=page, per_page=per_page, max_per_page=max_per_page
+        )  # type: ignore[return-value]
     if isinstance(source, Sequence):
         return paginate_list(
             source, page=page, per_page=per_page, max_per_page=max_per_page
@@ -243,4 +258,50 @@ def paginate(
     )
 
 
-__all__ = ["Page", "paginate_list", "paginate_sa", "paginate", "T", "U"]
+__all__ = [
+    "Page",
+    "paginate_list",
+    "paginate_sa",
+    "paginate",
+    "T",
+    "U",
+    "rewrap_page",
+]
+
+
+"""
+Routes / contracts usage
+
+If your route/contract wants a JSON-ish response,
+Route (or contract) just calls to_dict():
+
+page_obj = entity_services.list_people(page=page, per_page=per_page)
+return page_obj.to_dict()
+
+That keeps response shape uniform across slices.
+That yields:
+
+{
+  "items": [...],
+  "meta": {
+    "page": 1,
+    "per_page": 20,
+    "total": 123,
+    "pages": 7,
+    "next_page": 2,
+    "prev_page": null
+  }
+}
+
+(That’s exactly what to_dict() builds.)
+
+
+Alternate pattern (sometimes handy):
+If you ever want services to return raw ORM rows and let the caller pick
+the mapping shape:
+
+page_obj = paginate_sa(q, page=page, per_page=per_page)
+return page_obj.to_dict(map_item=map_person_view)
+
+That uses the optional map_item hook in to_dict().
+"""

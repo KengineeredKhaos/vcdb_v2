@@ -18,12 +18,12 @@ Policy Catalog v2.0 notes:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from app.extensions.policies import load_policy_entity_roles
 
 
-def hints_for_entity_type(entity_type: str) -> List[str]:
+def hints_for_entity_type(entity_type: str) -> list[str]:
     """
     Return advisory guidance strings for an entity type, if present.
 
@@ -35,7 +35,7 @@ def hints_for_entity_type(entity_type: str) -> List[str]:
     return list(guidance.get(entity_type, []) or [])
 
 
-def hints_for_customer_sku_gaps() -> Dict[str, Any]:
+def hints_for_customer_sku_gaps() -> dict[str, Any]:
     """
     Placeholder: surface ‘near misses’—e.g. SKUs the customer almost
     qualifies for (needs tier/vet flag).
@@ -43,7 +43,7 @@ def hints_for_customer_sku_gaps() -> Dict[str, Any]:
     return {"todo": "wire after Customer Profile qualifiers are settled"}
 
 
-def hints_for_policy_coverage() -> Dict[str, Any]:
+def hints_for_policy_coverage() -> dict[str, Any]:
     """Which catalog classifications are uncovered by issuance cadence rules?"""
     from app.extensions.policy_semantics import (
         check_logistics_issuance_policy_against_catalog,

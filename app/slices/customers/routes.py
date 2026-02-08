@@ -2,36 +2,28 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
+from typing import Any
 
 from flask import jsonify, request
 
 from app.extensions import db
 from app.extensions.errors import ContractError
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
-from app.services.entity_validate import require_person_entity_ulid
+from app.slices.entity.guards import require_person_entity_ulid
 
 from . import bp
 
 
-def _ok(data=None, **extra):
-    return jsonify({"ok": True, "data": data, **extra}), 200
+def _ok(*, request_id: str, data: Any = None, status: int = 200, **extra):
+    payload = {"ok": True, "request_id": request_id, "data": data, **extra}
+    return jsonify(payload), status
 
 
-def _dto_to_dict(dto):
-    if dto is None:
-        return None
-    if isinstance(dto, dict):
-        return dto
-    if is_dataclass(dto):
-        return asdict(dto)
-    # last resort (namedtuple-ish)
-    return dict(dto)
-
-
-def _err(exc: Exception | str, code: int = 400):
+def _err(*, request_id: str, exc: Exception | str, code: int = 500):
     if isinstance(exc, ContractError):
         payload = {
             "ok": False,
+            "request_id": request_id,
             "error": exc.message,
             "code": exc.code,
             "where": exc.where,
@@ -41,152 +33,155 @@ def _err(exc: Exception | str, code: int = 400):
         return jsonify(payload), exc.http_status
 
     if isinstance(exc, NotImplementedError):
-        return jsonify({"ok": False, "error": "not implemented"}), 501
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "request_id": request_id,
+                    "error": "not implemented",
+                }
+            ),
+            501,
+        )
     if isinstance(exc, PermissionError):
-        return jsonify({"ok": False, "error": str(exc)}), 403
+        return (
+            jsonify(
+                {"ok": False, "request_id": request_id, "error": str(exc)}
+            ),
+            403,
+        )
     if isinstance(exc, LookupError):
-        return jsonify({"ok": False, "error": str(exc)}), 404
+        return (
+            jsonify(
+                {"ok": False, "request_id": request_id, "error": str(exc)}
+            ),
+            404,
+        )
     if isinstance(exc, ValueError):
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return (
+            jsonify(
+                {"ok": False, "request_id": request_id, "error": str(exc)}
+            ),
+            400,
+        )
 
-    return jsonify({"ok": False, "error": str(exc)}), code
+    return (
+        jsonify({"ok": False, "request_id": request_id, "error": str(exc)}),
+        code,
+    )
 
 
-# -----------------
-# Core Customer API (smoke-test surface)
-# -----------------
+def _dto_to_dict(dto: Any) -> Any:
+    if dto is None:
+        return None
+    if isinstance(dto, dict):
+        return dto
+    if is_dataclass(dto):
+        return asdict(dto)
+    return dto
+
+
+def _reject_legacy_keys(payload: dict[str, Any]) -> None:
+    legacy: list[str] = []
+    if "customer_ulid" in payload:
+        legacy.append("customer_ulid")
+    if "ulid" in payload:
+        legacy.append("ulid")
+    if legacy:
+        raise ValueError(
+            "legacy key(s) not allowed: "
+            f"{', '.join(legacy)}; use entity_ulid"
+        )
 
 
 @bp.post("")
-# url_prefix="/customers" => binds to /customers (no trailing slash redirect)
 def create_customer():
     from . import services as cust_svc
 
-    payload = request.get_json(force=True, silent=False) or {}
     req = ensure_request_id()
     actor = get_actor_ulid()
 
-    entity_ulid = (payload.get("entity_ulid") or "").strip()
-    if not entity_ulid:
-        return _err(ValueError("entity_ulid is required"), 400)
-
+    payload = request.get_json(force=True, silent=False) or {}
     try:
-        # Enforce that entity exists and is a person (shared guard; uses entity_v2.get_entity_core)
+        _reject_legacy_keys(payload)
+
+        entity_ulid = (payload.get("entity_ulid") or "").strip()
+        if not entity_ulid:
+            raise ValueError("entity_ulid is required")
+
         require_person_entity_ulid(
             db.session, entity_ulid, where="customers.routes.create_customer"
         )
 
-        customer_ulid = cust_svc.ensure_customer(
+        # NEW CANON: ensure_customer returns entity_ulid (str)
+        ent = cust_svc.ensure_customer(
             entity_ulid=entity_ulid,
             request_id=req,
             actor_ulid=actor,
         )
-        data = {
-            "ulid": customer_ulid,  # canonical id key
-            "customer_ulid": customer_ulid,  # alias (optional, but helps old callers/tests)
-            "entity_ulid": entity_ulid,
-        }
+
         db.session.commit()
-        return _ok(data, request_id=req)
+        return _ok(
+            request_id=req,
+            data={"entity_ulid": ent},
+            status=201,
+        )
 
-    except Exception as e:
+    except Exception as exc:
         db.session.rollback()
-        return _err(e)
+        return _err(request_id=req, exc=exc)
 
 
-@bp.get("/<customer_ulid>")
-def view_customer(customer_ulid: str):
+@bp.get("/<entity_ulid>")
+def view_customer(entity_ulid: str):
     from . import services as cust_svc
 
-    dto = cust_svc.get_dashboard_view(
-        customer_ulid
-    )  # or whatever you named it
-    if not dto:
-        return _err(LookupError("not found"), 404)
-
-    data = _dto_to_dict(dto)
-
-    # canonical external key
-    data["customer_ulid"] = data.get("customer_ulid") or customer_ulid
-    data["ulid"] = data.get("ulid") or data["customer_ulid"]
-
-    return _ok(data)
+    req = ensure_request_id()
+    try:
+        dto = cust_svc.get_dashboard_view(entity_ulid=entity_ulid)
+        if not dto:
+            raise LookupError("not found")
+        return _ok(request_id=req, data=_dto_to_dict(dto))
+    except Exception as exc:
+        return _err(request_id=req, exc=exc)
 
 
-@bp.post("/<customer_ulid>/needs/tier1")
-def update_needs_tier1(customer_ulid: str):
+@bp.post("/<entity_ulid>/needs/<tier_key>")
+def update_needs(entity_ulid: str, tier_key: str):
     from . import services as cust_svc
 
-    payload = request.get_json(force=True, silent=False) or {}
     req = ensure_request_id()
     actor = get_actor_ulid()
+    payload = request.get_json(force=True, silent=False) or {}
+
     try:
-        hist_ulid = cust_svc.record_needs_tier(
-            customer_ulid=customer_ulid,
-            tier_key="tier1",
+        _reject_legacy_keys(payload)
+
+        vptr = cust_svc.record_needs_tier(
+            entity_ulid=entity_ulid,
+            tier_key=tier_key,
             payload=payload,
             request_id=req,
             actor_ulid=actor,
         )
+
         db.session.commit()
-        return _ok({"history_ulid": hist_ulid}, request_id=req)
-    except Exception as e:
+        return _ok(request_id=req, data={"version_ptr": vptr})
+
+    except Exception as exc:
         db.session.rollback()
-        return _err(e, 400)
+        return _err(request_id=req, exc=exc)
 
 
-@bp.post("/<customer_ulid>/needs/tier2")
-def update_needs_tier2(customer_ulid: str):
+@bp.get("/<entity_ulid>/eligibility")
+def get_eligibility(entity_ulid: str):
     from . import services as cust_svc
 
-    payload = request.get_json(force=True, silent=False) or {}
     req = ensure_request_id()
-    actor = get_actor_ulid()
     try:
-        hist_ulid = cust_svc.record_needs_tier(
-            customer_ulid=customer_ulid,
-            tier_key="tier2",
-            payload=payload,
-            request_id=req,
-            actor_ulid=actor,
-        )
-        db.session.commit()
-        return _ok({"history_ulid": hist_ulid}, request_id=req)
-    except Exception as e:
-        db.session.rollback()
-        return _err(e)
-
-
-@bp.post("/<customer_ulid>/needs/tier3")
-def update_needs_tier3(customer_ulid: str):
-    from . import services as cust_svc
-
-    payload = request.get_json(force=True, silent=False) or {}
-    req = ensure_request_id()
-    actor = get_actor_ulid()
-    try:
-        hist_ulid = cust_svc.record_needs_tier(
-            customer_ulid=customer_ulid,
-            tier_key="tier3",
-            payload=payload,
-            request_id=req,
-            actor_ulid=actor,
-        )
-        db.session.commit()
-        return _ok({"history_ulid": hist_ulid}, request_id=req)
-    except Exception as e:
-        db.session.rollback()
-        return _err(e)
-
-
-@bp.get("/<customer_ulid>/eligibility")
-def get_eligibility(customer_ulid: str):
-    dto = cust_svc.get_eligibility_snapshot(customer_ulid)
-    if not dto:
-        return _err(LookupError("not found"), 404)
-    d = asdict(dto)
-
-    d["customer_ulid"] = d.get("customer_ulid") or customer_ulid
-    d["ulid"] = d.get("ulid") or d["customer_ulid"]
-
-    return _ok(d)
+        dto = cust_svc.get_eligibility_snapshot(entity_ulid=entity_ulid)
+        if not dto:
+            raise LookupError("not found")
+        return _ok(request_id=req, data=_dto_to_dict(dto))
+    except Exception as exc:
+        return _err(request_id=req, exc=exc)

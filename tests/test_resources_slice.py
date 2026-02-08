@@ -9,8 +9,6 @@ They intentionally avoid reaching into contracts directly so they smoke out:
 
 from __future__ import annotations
 
-import pytest
-
 from app.extensions import db
 from app.extensions.contracts import entity_v2
 from app.lib.ids import new_ulid
@@ -46,18 +44,27 @@ def test_resources_ensure_idempotent(staff_client):
         actor_ulid="seed",
     )
 
-    r1 = staff_client.post("/resources", json={"entity_ulid": org.entity_ulid})
+    r1 = staff_client.post(
+        "/resources", json={"entity_ulid": org.entity_ulid}
+    )
     d1 = _assert_ok(r1)
     rid1 = d1["resource_ulid"]
     assert rid1 == org.entity_ulid
 
-    r2 = staff_client.post("/resources", json={"entity_ulid": org.entity_ulid})
+    r2 = staff_client.post(
+        "/resources", json={"entity_ulid": org.entity_ulid}
+    )
     d2 = _assert_ok(r2)
     rid2 = d2["resource_ulid"]
     assert rid2 == rid1
 
     # Only one facet row exists
-    assert db.session.query(Resource).filter_by(entity_ulid=org.entity_ulid).count() == 1
+    assert (
+        db.session.query(Resource)
+        .filter_by(entity_ulid=org.entity_ulid)
+        .count()
+        == 1
+    )
 
 
 def test_resources_capabilities_roundtrip(staff_client):
@@ -78,14 +85,22 @@ def test_resources_capabilities_roundtrip(staff_client):
     }
     r1 = staff_client.post(f"/resources/{rid}/capabilities", json=cap_payload)
     d1 = _assert_ok(r1)
-    codes1 = {c["domain"] + "." + c["key"] for c in d1["resource"]["active_capabilities"]}
+    codes1 = {
+        c["domain"] + "." + c["key"]
+        for c in d1["resource"]["active_capabilities"]
+    }
     assert codes1 == {"basic_needs.food_pantry", "events.stand_down"}
 
     # Replace with a single capability (acts like replace)
     cap_payload2 = {"events.stand_down": True}
-    r2 = staff_client.post(f"/resources/{rid}/capabilities", json=cap_payload2)
+    r2 = staff_client.post(
+        f"/resources/{rid}/capabilities", json=cap_payload2
+    )
     d2 = _assert_ok(r2)
-    codes2 = {c["domain"] + "." + c["key"] for c in d2["resource"]["active_capabilities"]}
+    codes2 = {
+        c["domain"] + "." + c["key"]
+        for c in d2["resource"]["active_capabilities"]
+    }
     assert codes2 == {"events.stand_down"}
 
 
@@ -104,7 +119,9 @@ def test_resources_search_any(staff_client):
         json={"events.stand_down": True},
     )
 
-    r = staff_client.get("/resources", query_string={"any": "events.stand_down"})
+    r = staff_client.get(
+        "/resources", query_string={"any": "events.stand_down"}
+    )
     d = _assert_ok(r)
     assert d["total"] >= 1
     assert any(row.get("resource_entity_ulid") == rid for row in d["rows"])
@@ -122,5 +139,7 @@ def test_resources_rejects_bad_capability_code(staff_client):
     )["resource_ulid"]
 
     # Missing '.' should be rejected by parsing/validation
-    resp = staff_client.post(f"/resources/{rid}/capabilities", json={"badcode": True})
+    resp = staff_client.post(
+        f"/resources/{rid}/capabilities", json={"badcode": True}
+    )
     _assert_err(resp, 400)

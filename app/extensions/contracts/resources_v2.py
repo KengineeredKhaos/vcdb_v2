@@ -10,7 +10,8 @@ Ethos:
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional, TypedDict
+from collections.abc import Mapping
+from typing import Any, TypedDict
 
 from sqlalchemy.orm import Session
 
@@ -63,11 +64,20 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
     msg = str(exc) or exc.__class__.__name__
 
     if isinstance(exc, ValueError):
-        return ContractError(code="bad_argument", where=where, message=msg, http_status=400)
+        return ContractError(
+            code="bad_argument", where=where, message=msg, http_status=400
+        )
     if isinstance(exc, PermissionError):
-        return ContractError(code="permission_denied", where=where, message=msg, http_status=403)
+        return ContractError(
+            code="permission_denied",
+            where=where,
+            message=msg,
+            http_status=403,
+        )
     if isinstance(exc, LookupError):
-        return ContractError(code="not_found", where=where, message=msg, http_status=404)
+        return ContractError(
+            code="not_found", where=where, message=msg, http_status=404
+        )
 
     return ContractError(
         code="internal_error",
@@ -89,73 +99,141 @@ def get_resource_view(resource_ulid: str) -> ResourceViewDTO:
         raise _as_contract_error(where, exc)
 
 
-def ensure_resource(*, entity_ulid: str, request_id: str, actor_ulid: Optional[str]) -> dict:
+def ensure_resource(
+    *, entity_ulid: str, request_id: str, actor_ulid: str | None
+) -> dict:
     where = "resources_v2.ensure_resource"
     try:
-        rid = svc.ensure_resource(entity_ulid=entity_ulid, request_id=request_id, actor_ulid=actor_ulid)
+        rid = svc.ensure_resource(
+            entity_ulid=entity_ulid,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
         return _one("resource_ulid", rid)
     except Exception as exc:
         raise _as_contract_error(where, exc)
 
 
-def set_readiness(*, resource_ulid: str, status: str, request_id: str, actor_ulid: Optional[str]) -> dict:
+def set_readiness(
+    *,
+    resource_ulid: str,
+    status: str,
+    request_id: str,
+    actor_ulid: str | None,
+) -> dict:
     where = "resources_v2.set_readiness"
     try:
-        svc.set_readiness_status(resource_ulid=resource_ulid, status=status, request_id=request_id, actor_ulid=actor_ulid)
-        return _ok({"resource_ulid": resource_ulid, "readiness_status": status})
+        svc.set_readiness_status(
+            resource_ulid=resource_ulid,
+            status=status,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+        return _ok(
+            {"resource_ulid": resource_ulid, "readiness_status": status}
+        )
     except Exception as exc:
         raise _as_contract_error(where, exc)
 
 
-def set_mou(*, resource_ulid: str, status: str, request_id: str, actor_ulid: Optional[str]) -> dict:
+def set_mou(
+    *,
+    resource_ulid: str,
+    status: str,
+    request_id: str,
+    actor_ulid: str | None,
+) -> dict:
     where = "resources_v2.set_mou"
     try:
-        svc.set_mou_status(resource_ulid=resource_ulid, status=status, request_id=request_id, actor_ulid=actor_ulid)
+        svc.set_mou_status(
+            resource_ulid=resource_ulid,
+            status=status,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
         return _ok({"resource_ulid": resource_ulid, "mou_status": status})
     except Exception as exc:
         raise _as_contract_error(where, exc)
 
 
-def upsert_capabilities(*, resource_ulid: str, capabilities: dict, request_id: str, actor_ulid: Optional[str]) -> dict:
+def upsert_capabilities(
+    *,
+    resource_ulid: str,
+    capabilities: dict,
+    request_id: str,
+    actor_ulid: str | None,
+) -> dict:
     where = "resources_v2.upsert_capabilities"
     try:
-        hist = svc.upsert_capabilities(resource_ulid=resource_ulid, payload=capabilities, request_id=request_id, actor_ulid=actor_ulid)
+        hist = svc.upsert_capabilities(
+            resource_ulid=resource_ulid,
+            payload=capabilities,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
         return _one("history_ulid", hist or None)
     except Exception as exc:
         raise _as_contract_error(where, exc)
 
 
-def patch_capabilities(*, resource_ulid: str, capabilities: dict, request_id: str, actor_ulid: Optional[str]) -> dict:
+def patch_capabilities(
+    *,
+    resource_ulid: str,
+    capabilities: dict,
+    request_id: str,
+    actor_ulid: str | None,
+) -> dict:
     where = "resources_v2.patch_capabilities"
     try:
-        hist = svc.patch_capabilities(resource_ulid=resource_ulid, payload=capabilities, request_id=request_id, actor_ulid=actor_ulid)
+        hist = svc.patch_capabilities(
+            resource_ulid=resource_ulid,
+            payload=capabilities,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
         return _one("history_ulid", hist or None)
     except Exception as exc:
         raise _as_contract_error(where, exc)
 
 
-def promote_if_clean(*, resource_ulid: str, request_id: str, actor_ulid: Optional[str]) -> dict:
+def promote_if_clean(
+    *, resource_ulid: str, request_id: str, actor_ulid: str | None
+) -> dict:
     where = "resources_v2.promote_if_clean"
     try:
-        promoted = svc.promote_readiness_if_clean(resource_ulid=resource_ulid, request_id=request_id, actor_ulid=actor_ulid)
+        promoted = svc.promote_readiness_if_clean(
+            resource_ulid=resource_ulid,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
         return _one("promoted", bool(promoted))
     except Exception as exc:
         raise _as_contract_error(where, exc)
 
 
-def rebuild_index(*, resource_ulid: str, request_id: str, actor_ulid: Optional[str]) -> dict:
+def rebuild_index(
+    *, resource_ulid: str, request_id: str, actor_ulid: str | None
+) -> dict:
     where = "resources_v2.rebuild_index"
     try:
-        n = svc.rebuild_capability_index(resource_ulid=resource_ulid, request_id=request_id, actor_ulid=actor_ulid)
+        n = svc.rebuild_capability_index(
+            resource_ulid=resource_ulid,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
         return _ok({"reindexed": int(n)})
     except Exception as exc:
         raise _as_contract_error(where, exc)
 
 
-def rebuild_all(*, page: int = 1, per: int = 200, request_id: str, actor_ulid: Optional[str]) -> dict:
+def rebuild_all(
+    *, page: int = 1, per: int = 200, request_id: str, actor_ulid: str | None
+) -> dict:
     where = "resources_v2.rebuild_all"
     try:
-        summary = svc.rebuild_all_capability_indexes(page=page, per=per, request_id=request_id, actor_ulid=actor_ulid)
+        summary = svc.rebuild_all_capability_indexes(
+            page=page, per=per, request_id=request_id, actor_ulid=actor_ulid
+        )
         return _ok(summary)
     except Exception as exc:
         raise _as_contract_error(where, exc)
@@ -184,7 +262,10 @@ def get_org_poc_cards(sess: Session, org_ulid: str) -> list[dict]:
     """
     rows = (
         sess.query(ResourcePOC)
-        .filter(ResourcePOC.resource_ulid == org_ulid, ResourcePOC.relation == "poc")
+        .filter(
+            ResourcePOC.resource_ulid == org_ulid,
+            ResourcePOC.relation == "poc",
+        )
         .order_by(
             ResourcePOC.active.desc(),
             ResourcePOC.scope.asc(),

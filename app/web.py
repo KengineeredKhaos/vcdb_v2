@@ -3,6 +3,7 @@ from flask import Blueprint, current_app, render_template
 
 bp = Blueprint("web", __name__)
 
+
 @bp.get("/")
 def index():
     env = (current_app.config.get("ENV") or "").lower()

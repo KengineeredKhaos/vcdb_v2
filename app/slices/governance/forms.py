@@ -1,5 +1,4 @@
 # app/slices/governance/forms.py
-# -*- coding: utf-8 -*-
 # Governance Admin Forms — skinny forms, JSON validated in-form
 
 from __future__ import annotations

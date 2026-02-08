@@ -50,7 +50,6 @@ effects inside the Auth slice while still giving the rest of the system
 a consistent audit trail.
 """
 
-
 from __future__ import annotations
 
 from sqlalchemy import (

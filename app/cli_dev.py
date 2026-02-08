@@ -148,11 +148,11 @@ Implementation notes
       can see available tools and their side-effects at a glance.
 """
 
-
 from __future__ import annotations
 
 import json
 import os
+from datetime import UTC
 from pathlib import Path
 
 import click
@@ -983,7 +983,7 @@ def dev_issuance_debug(
         )
         d = decide_issue(ctx2)
         click.echo(
-            f"  allowed={getattr(d,'allowed',None)} reason={getattr(d,'reason',None)}"
+            f"  allowed={getattr(d, 'allowed', None)} reason={getattr(d, 'reason', None)}"
         )
     except Exception as e:
         click.echo(f"  (decision skipped/failed) {type(e).__name__}: {e}")
@@ -1045,7 +1045,7 @@ def dev_issuance_tripwires(
     so all callers use the same kwargs surface.
     """
     echo_db_banner("issuance-tripwires")
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
     from types import SimpleNamespace as NS
 
     import click
@@ -1132,13 +1132,13 @@ def dev_issuance_tripwires(
     # ---- blackout helpers (best effort; safe fallbacks) ----
     def _iso(d: datetime) -> str:
         return (
-            d.replace(tzinfo=timezone.utc)
+            d.replace(tzinfo=UTC)
             .isoformat(timespec="microseconds")
             .replace("+00:00", "Z")
         )
 
     def _next_weekday_noon_utc(target_wd: int) -> str:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         days_ahead = (target_wd - now.weekday()) % 7
         if days_ahead == 0:
             days_ahead = 7
@@ -1172,7 +1172,7 @@ def dev_issuance_tripwires(
                         12,
                         0,
                         0,
-                        tzinfo=timezone.utc,
+                        tzinfo=UTC,
                     )
                     return _iso(dt)
                 if t == "weekday" and rule.get("days"):
@@ -1298,8 +1298,8 @@ def dev_decide_issue(
 def dev_whoami():
     """Dump minimal context useful during local debugging."""
     cfg = current_app.config
-    click.echo(f"APP_MODE={cfg.get('APP_MODE','unknown')}")
-    click.echo(f"DB_URI={cfg.get('SQLALCHEMY_DATABASE_URI','?')}")
+    click.echo(f"APP_MODE={cfg.get('APP_MODE', 'unknown')}")
+    click.echo(f"DB_URI={cfg.get('SQLALCHEMY_DATABASE_URI', '?')}")
 
 
 # -----------------
@@ -1684,10 +1684,10 @@ def dev_lint_skus(data_dir: str):
     if not os.path.exists(skus_path):
         raise SystemExit(f"Missing data: {skus_path}")
 
-    with open(schema_path, "r", encoding="utf-8") as f:
+    with open(schema_path, encoding="utf-8") as f:
         schema = json.load(f)
 
-    with open(skus_path, "r", encoding="utf-8") as f:
+    with open(skus_path, encoding="utf-8") as f:
         rows = json.load(f)
 
     if not isinstance(rows, list):

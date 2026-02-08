@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -54,11 +54,13 @@ class ContractError(RuntimeError):
     """
 
     code: str  # short machine code, e.g. "policy_missing", "policy_invalid"
-    where: str  # contract function name, e.g. "governance_v2.get_role_catalogs"
+    where: (
+        str  # contract function name, e.g. "governance_v2.get_role_catalogs"
+    )
     message: str  # human readable one-liner
     http_status: int = 503
     # 4xx for caller misuse, 5xx for system/config problems
-    data: Optional[dict[str, Any]] = None
+    data: dict[str, Any] | None = None
     # safe payload (paths, counts, keys)
 
     def __str__(self) -> str:
@@ -88,6 +90,3 @@ class ContractError(RuntimeError):
         """
         # Use the stable, log-friendly string representation.
         RuntimeError.__init__(self, self.__str__())
-
-
-

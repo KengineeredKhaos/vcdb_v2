@@ -1,5 +1,4 @@
 # app/slices/ledger/services.py
-# -*- coding: utf-8 -*-
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 # File: <set to the relative path of this file>
 # Purpose: Single source of truth for audit/ledger write-path.
@@ -9,8 +8,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable, Mapping
 from datetime import datetime
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any
 
 from sqlalchemy import desc, select
 
@@ -51,14 +51,14 @@ def _canon_envelope(
     domain: str,
     operation: str,
     request_id: str,
-    actor_ulid: Optional[str],
-    target_ulid: Optional[str],
-    refs: Optional[Dict[str, Any]],
-    changed: Optional[Dict[str, Any]],
-    meta: Optional[Dict[str, Any]],
-    happened_at_utc: Optional[str] = None,
-    chain_key: Optional[str] = None,
-) -> Dict[str, Any]:
+    actor_ulid: str | None,
+    target_ulid: str | None,
+    refs: dict[str, Any] | None,
+    changed: dict[str, Any] | None,
+    meta: dict[str, Any] | None,
+    happened_at_utc: str | None = None,
+    chain_key: str | None = None,
+) -> dict[str, Any]:
     """Build a stable, minimal, string-serialized envelope for hashing."""
     event_type = f"{domain}.{operation}"
     ck = chain_key or domain
@@ -78,7 +78,7 @@ def _canon_envelope(
     return env
 
 
-def _hash_env(prev_hash_hex: Optional[str], env: Dict[str, Any]) -> str:
+def _hash_env(prev_hash_hex: str | None, env: dict[str, Any]) -> str:
     """SHA-256 over prev-hash + compact JSON of envelope core fields."""
     h = hashlib.sha256()
     if prev_hash_hex:
@@ -101,13 +101,13 @@ def append_event(
     domain: str,
     operation: str,
     request_id: str,
-    actor_ulid: Optional[str],
-    target_ulid: Optional[str],
-    refs: Optional[Dict[str, Any]] = None,
-    changed: Optional[Dict[str, Any]] = None,
-    meta: Optional[Dict[str, Any]] = None,
-    happened_at_utc: Optional[str] = None,
-    chain_key: Optional[str] = None,
+    actor_ulid: str | None,
+    target_ulid: str | None,
+    refs: dict[str, Any] | None = None,
+    changed: dict[str, Any] | None = None,
+    meta: dict[str, Any] | None = None,
+    happened_at_utc: str | None = None,
+    chain_key: str | None = None,
 ) -> LedgerEvent:
     """
     Append a ledger event. Callers are slice services or the event bus.
@@ -166,12 +166,12 @@ def append_event(
     return row
 
 
-def verify_chain(chain_key: Optional[str] = None) -> Dict[str, Any]:
+def verify_chain(chain_key: str | None = None) -> dict[str, Any]:
     """
     Recompute hashes for one chain or all chains and report the first break (if any).
     """
 
-    def _iter_events(key: Optional[str]) -> Iterable[LedgerEvent]:
+    def _iter_events(key: str | None) -> Iterable[LedgerEvent]:
         q = select(LedgerEvent).order_by(
             LedgerEvent.chain_key, LedgerEvent.ulid
         )
@@ -187,7 +187,7 @@ def verify_chain(chain_key: Optional[str] = None) -> Dict[str, Any]:
     checked = 0
     chains = set()
 
-    prev_for: Dict[str, Optional[str]] = {}
+    prev_for: dict[str, str | None] = {}
     for ev in _iter_events(chain_key):
         chains.add(ev.chain_key)
         prev = prev_for.get(ev.chain_key)

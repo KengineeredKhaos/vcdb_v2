@@ -1,17 +1,16 @@
 # app/lib/security.py
-# -*- coding: utf-8 -*-
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from functools import wraps
-from typing import Iterable, Set
 
 from flask import abort, current_app, session
 from flask_login import current_user
 
-from app.slices.auth import services as auth_ro
+from app.extensions.auth_ctx import get_user_roles
 
 ASSUME_KEY = "assumed_domain_roles"
 
@@ -39,7 +38,7 @@ def current_domain_roles(user) -> list[str]:
 # -----------------
 
 
-def _norm(codes: Iterable[str]) -> Set[str]:
+def _norm(codes: Iterable[str]) -> set[str]:
     return {str(c).strip().lower() for c in (codes or []) if c}
 
 
@@ -59,7 +58,7 @@ def _current_user_roles() -> list[str]:
     uid = _current_user_ulid()
     if not uid:
         return []
-    return sorted(_norm(auth_ro.get_user_roles(uid)))
+    return sorted(_norm(get_user_roles(uid)))
 
 
 def _is_authenticated() -> bool:
@@ -221,7 +220,7 @@ def current_user_roles() -> set[str]:
     uid = current_user_ulid()
     if not uid:
         return set()
-    return set(auth_ro.get_user_roles(uid))
+    return set(get_user_roles(uid))
 
 
 def user_is_admin(user_ulid: str | None = None) -> bool:
@@ -232,7 +231,7 @@ def user_is_admin(user_ulid: str | None = None) -> bool:
         uid = user_ulid
     if not uid:
         return False
-    return "admin" in set(auth_ro.get_user_roles(uid))
+    return "admin" in set(get_user_roles(uid))
 
 
 # -----------------

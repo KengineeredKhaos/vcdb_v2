@@ -172,9 +172,10 @@ Runtime rules
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import asc, select
 
@@ -215,10 +216,10 @@ class PolicyValidationError(ValueError):
 @dataclass
 class IssueDecision:
     allowed: bool
-    reason: Optional[str] = None
-    approver_required: Optional[str] = None
-    limit_window_label: Optional[str] = None
-    next_eligible_at_iso: Optional[str] = None
+    reason: str | None = None
+    approver_required: str | None = None
+    limit_window_label: str | None = None
+    next_eligible_at_iso: str | None = None
 
     # ✅ compatibility alias for older callers
     @property
@@ -227,9 +228,7 @@ class IssueDecision:
 
 
 def _iso(s: str) -> datetime:
-    return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(
-        timezone.utc
-    )
+    return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(UTC)
 
 
 # -----------------
@@ -399,7 +398,7 @@ def reconcile_required_domain_for_rbac(
 # -----------------
 
 
-def svc_list_states_rows() -> List[CanonicalState]:
+def svc_list_states_rows() -> list[CanonicalState]:
     """Return ORM rows for active CanonicalState, sorted by code."""
     return (
         db.session.query(CanonicalState)
@@ -415,7 +414,7 @@ def svc_list_states_rows() -> List[CanonicalState]:
 # -----------------
 
 
-def svc_list_domain_roles_rows() -> List[RoleCode]:
+def svc_list_domain_roles_rows() -> list[RoleCode]:
     """Return ORM rows for active RoleCode, sorted by code."""
 
     return (
@@ -436,7 +435,7 @@ def svc_list_domain_roles_rows() -> List[RoleCode]:
 # -----------------
 
 
-ROLES_SCHEMA: Dict[str, Any] = {
+ROLES_SCHEMA: dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "additionalProperties": False,
@@ -460,7 +459,7 @@ ROLES_DEFAULT = {"roles": ["customer", "resource", "sponsor", "governor"]}
 # Normalize policy value
 # for a registered family
 # -----------------
-def _normalize_value(key: str, value: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_value(key: str, value: dict[str, Any]) -> dict[str, Any]:
     """Lower/trim/dedupe the single array field defined by the family’s schema; raise PolicyValidationError on bad entries."""
 
     # Trim/lower/dedupe the single array field
@@ -500,7 +499,7 @@ def list_policy_keys() -> list[str]:
 # Get active policy
 # (value + row)
 # -----------------
-def get_policy(namespace: str, key: str) -> tuple[Dict[str, Any], Policy]:
+def get_policy(namespace: str, key: str) -> tuple[dict[str, Any], Policy]:
     """
     Fetch active Policy row and return (parsed_value, row);
     raise PolicyNotFoundError if none.
@@ -524,7 +523,7 @@ def get_policy(namespace: str, key: str) -> tuple[Dict[str, Any], Policy]:
 # Get policy value
 # (bootstrap with defaults if missing)
 # -----------------
-def get_policy_value(family: str) -> Dict[str, Any]:
+def get_policy_value(family: str) -> dict[str, Any]:
     """
     Return parsed policy value for 'ns.key';
     if missing, create with defaults and return them.
@@ -610,7 +609,7 @@ def _emit_policy_event(
 
 
 # Snapshot: canonical US state codes
-def get_us_states_snapshot() -> List[str]:
+def get_us_states_snapshot() -> list[str]:
     """Return a list of 2-letter state codes owned by Governance."""
     # read-only: Governance owns geo
     return [code for code, _name in us_states()]
@@ -618,12 +617,12 @@ def get_us_states_snapshot() -> List[str]:
 
 # Seed: domain roles catalog
 def seed_domain_roles(
-    roles: List[Dict[str, Any]],
+    roles: list[dict[str, Any]],
     *,
     dry_run: bool = True,
     actor_ulid: str | None = None,
     happened_at: str | None = None,  # kept for signature symmetry; not used
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Upsert governance.roles@1 with a normalized unique list of role codes;
     emits 'role.catalog.updated'. Normalize to lowercase codes
@@ -663,12 +662,12 @@ def seed_domain_roles(
 
 # Seed: officer catalog
 def seed_office_catalog(
-    offices: List[Dict[str, Any]],
+    offices: list[dict[str, Any]],
     *,
     dry_run: bool = True,
     actor_ulid: str | None = None,
     happened_at: str | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Upsert governance.officers@1 catalog (code/name/cycle/term);
     emits 'officer.catalog.updated'.
@@ -731,12 +730,12 @@ def seed_office_catalog(
 
 # Seed: spending policy v1
 def seed_spending_policy_v1(
-    policy: Dict[str, Any],
+    policy: dict[str, Any],
     *,
     dry_run: bool = True,
     actor_ulid: str | None = None,
     happened_at: str | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Upsert governance.spending.matrix@version with action→role caps;
     emits 'spending.policy.updated'.
@@ -795,12 +794,12 @@ def seed_spending_policy_v1(
 
 # Seed: restriction policy by opaque key
 def seed_restriction_policies_v1(
-    policy_row: Dict[str, Any],
+    policy_row: dict[str, Any],
     *,
     dry_run: bool = True,
     actor_ulid: str | None = None,
     happened_at: str | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Upsert <namespace>.restrictions@version inferred from policy_key;
     emits 'restriction.policy.updated'.
@@ -849,11 +848,11 @@ def seed_restriction_policies_v1(
 
 
 def publish_state_machine(
-    sm: Dict[str, Any],
+    sm: dict[str, Any],
     dry_run: bool = True,
     actor_ulid: str | None = None,
     happened_at: str | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Validate and upsert governance.state_machine:
     <policy_key>:<entity>@version with states/transitions;
@@ -1042,9 +1041,9 @@ def _parse_date(s: str) -> datetime:
     dt = (
         datetime.fromisoformat(s.replace("Z", "+00:00"))
         if s
-        else datetime.now(timezone.utc)
+        else datetime.now(UTC)
     )
-    return dt.astimezone(timezone.utc)
+    return dt.astimezone(UTC)
 
 
 def _term_bounds_for_office(
@@ -1053,8 +1052,8 @@ def _term_bounds_for_office(
     start = _parse_date(elected_on_iso)
     end = add_years_utc(start, term_years)
     return (
-        start.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
-        end.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        start.astimezone(UTC).isoformat().replace("+00:00", "Z"),
+        end.astimezone(UTC).isoformat().replace("+00:00", "Z"),
     )
 
 

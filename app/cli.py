@@ -31,7 +31,7 @@ def echo_db_banner(tag: str = ""):
     cfg = current_app.config
     tag = f" {tag}" if tag else ""
     click.secho(
-        f"[vcdb{tag}] ENV={cfg.get('APP_MODE','?')} "
-        f"DB={cfg.get('SQLALCHEMY_DATABASE_URI','?')}",
+        f"[vcdb{tag}] ENV={cfg.get('APP_MODE', '?')} "
+        f"DB={cfg.get('SQLALCHEMY_DATABASE_URI', '?')}",
         fg="cyan",
     )

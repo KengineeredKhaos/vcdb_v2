@@ -1,5 +1,4 @@
 # app/lib/models.py
-# -*- coding: utf-8 -*-
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 # File: <relative path>
 # Purpose: Stable library primitive for VCDB.
@@ -22,8 +21,6 @@ uniform across the codebase. If you need another timestamp style, add
 it here so we preserve a single source of truth.
 """
 
-from typing import Optional, Tuple
-
 from sqlalchemy import CheckConstraint, ForeignKey, String
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
@@ -41,14 +38,14 @@ class ULIDPK:
         )
 
     @declared_attr.directive
-    def __table_args__(cls) -> Tuple[CheckConstraint]:
+    def __table_args__(cls) -> tuple[CheckConstraint]:
         return (CheckConstraint("length(ulid) = 26", name="ck_ulid_len_26"),)
 
 
 def ULIDFK(
     target_table: str,
     *,
-    ondelete: Optional[str] = "RESTRICT",
+    ondelete: str | None = "RESTRICT",
     nullable: bool = False,
     index: bool = True,
 ):

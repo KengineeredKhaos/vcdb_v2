@@ -1,12 +1,12 @@
 # app/lib/time.py
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 # Always produce ISO-8601 UTC with 'Z' and 3 decimal milliseconds
 # Write now: utc_now()
 # Stamp new rows/events (created_at, happened_at, request IDs, etc.).
 def utc_now() -> str:
-    dt = datetime.now(timezone.utc)
+    dt = datetime.now(UTC)
     # Truncate to milliseconds
     ms = int(dt.microsecond / 1000)
     return (
@@ -21,8 +21,8 @@ def to_iso8601(dt: datetime) -> str:
     if dt.tzinfo is None:
         # Treat naive as UTC only if it’s explicitly our policy;
         # safer is to reject.
-        dt = dt.replace(tzinfo=timezone.utc)
-    dt = dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    dt = dt.astimezone(UTC)
     ms = int(dt.microsecond / 1000)
     return (
         dt.replace(microsecond=ms * 1000).isoformat().replace("+00:00", "Z")
@@ -42,7 +42,7 @@ def parse_iso8601(s: str) -> datetime:
         raise ValueError(
             "Naive datetime not allowed; include timezone or 'Z'."
         )
-    return dt.astimezone(timezone.utc)
+    return dt.astimezone(UTC)
 
 
 """

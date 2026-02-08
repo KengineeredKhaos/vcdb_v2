@@ -7,6 +7,7 @@ This is a tiny accessor you can import anywhere that already runs
 inside an app context:
 """
 
+
 def cfg():
     """Active Flask config (requires an app context)."""
     return current_app.config

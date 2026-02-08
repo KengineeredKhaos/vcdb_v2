@@ -1,5 +1,4 @@
 # app/lib/errors.py
-# -*- coding: utf-8 -*-
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 # File: <relative path>
 # Purpose: Stable library primitive for VCDB.
@@ -28,7 +27,7 @@ without a migration plan.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 # ---- Core ------------------------------------------------------------------
 
@@ -51,12 +50,12 @@ class AppError(RuntimeError):
 
     def __init__(
         self,
-        message: Optional[str] = None,
+        message: str | None = None,
         *,
-        status: Optional[int] = None,
-        details: Optional[Dict[str, Any]] = None,
-        cause: Optional[BaseException] = None,
-        ctx: Optional[Dict[str, Any]] = None,
+        status: int | None = None,
+        details: dict[str, Any] | None = None,
+        cause: BaseException | None = None,
+        ctx: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message or self.__class__.__name__)
         self.message = (
@@ -71,7 +70,7 @@ class AppError(RuntimeError):
     def __str__(self) -> str:
         return f"{self.code}: {self.message}"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         data = {
             "error": {
                 "code": self.code,
@@ -85,13 +84,13 @@ class AppError(RuntimeError):
         return data
 
     # Fluent helper to add context *without* losing the original type
-    def with_context(self, **ctx: Any) -> "AppError":
+    def with_context(self, **ctx: Any) -> AppError:
         self.ctx.update(ctx)
         return self
 
     # Wrap arbitrary exception as this class (or subclass)
     @classmethod
-    def wrap(cls, exc: BaseException, **kwargs: Any) -> "AppError":
+    def wrap(cls, exc: BaseException, **kwargs: Any) -> AppError:
         return cls(str(exc), cause=exc, **kwargs)
 
 
@@ -108,14 +107,14 @@ class ValidationError(AppError):
     status = 400
 
     @classmethod
-    def field(cls, field: str, msg: str) -> "ValidationError":
+    def field(cls, field: str, msg: str) -> ValidationError:
         return (
             cls("Invalid input")
             .with_context()
             .with_details(errors={field: msg})
         )
 
-    def with_details(self, **details: Any) -> "ValidationError":
+    def with_details(self, **details: Any) -> ValidationError:
         # convenience to attach {"errors": {...}} or other info
         self.details.update(details)
         return self

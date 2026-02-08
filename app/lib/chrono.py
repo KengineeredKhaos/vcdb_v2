@@ -1,5 +1,4 @@
 # app/lib/chrono.py
-# -*- coding: utf-8 -*-
 # VCDB CANON — DO NOT MODIFY WITHOUT EXPLICIT APPROVAL
 # File: <relative path>
 # Purpose: Stable library primitive for VCDB.
@@ -7,7 +6,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 """
 Canonical helpers (final names & meanings)
@@ -58,7 +57,7 @@ Need naive for DB? → as_naive_utc(parse_iso8601(s))
 
 def utcnow_aware() -> datetime:
     """Aware UTC datetime (tzinfo=UTC)."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def utcnow_naive() -> datetime:
@@ -69,8 +68,8 @@ def utcnow_naive() -> datetime:
 def ensure_aware_utc(dt: datetime) -> datetime:
     """Normalize any datetime to aware UTC."""
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def as_naive_utc(dt: datetime) -> datetime:
@@ -94,7 +93,7 @@ def parse_iso8601(s: str) -> datetime:
         raise ValueError(
             "Naive datetime not allowed; include timezone or 'Z'."
         )
-    return dt.astimezone(timezone.utc)
+    return dt.astimezone(UTC)
 
 
 def to_iso8601(dt: datetime) -> str:
@@ -111,7 +110,7 @@ def to_iso8601(dt: datetime) -> str:
 def add_years_utc(dt: datetime, years: int) -> datetime:
     """Add years in UTC; Feb 29 → Feb 28 on non-leap years."""
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     try:
         return dt.replace(year=dt.year + years)
     except ValueError:

@@ -18,10 +18,14 @@ def test_customers_eligibility_snapshot_is_typed(staff_client):
         actor_ulid="seed",
     )
 
-    resp = staff_client.post("/customers", json={"entity_ulid": ent.entity_ulid})
+    resp = staff_client.post(
+        "/customers", json={"entity_ulid": ent.entity_ulid}
+    )
     assert resp.status_code == 200, resp.get_json()
 
-    customer_ulid = (resp.get_json().get("data") or {}).get("ulid") or ent.entity_ulid
+    customer_ulid = (resp.get_json().get("data") or {}).get(
+        "ulid"
+    ) or ent.entity_ulid
 
     snap = cust_svc.get_eligibility_snapshot(customer_ulid)
     assert snap is not None

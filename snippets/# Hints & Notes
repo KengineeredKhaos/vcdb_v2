@@ -1,6 +1,238 @@
 # Hints & Notes
 
 
+Quick Static sanity:
+
+python tools/guardrails_architecture.py
+
+python -m compileall app (must pass)
+
+ruff check app (or your ruff config)
+
+ruff format app / black (your chosen formatter)
+
+Policy sanity
+
+flask dev policy-health
+must run without imports from slice internals that aren’t the target slice.
+
+
+Optional: add a tiny banner so it’s obvious when stub is active:
+
+@app.context_processor
+def _stub_banner():
+    return {"_stub_auth_active": app.config.get("AUTH_MODE") == "stub"}
+
+
+Then in templates (dev only):
+
+{% if _stub_auth_active %}<div class="stub-badge">STUB AUTH</div>{% endif %}
+
+
+curl -s http://127.0.0.1:5000/end/point/routing/symbol | jq .
+
+
+9767  python -m py_compile app/slices/resources/services.py
+9768  clear
+9769  ruff check app/slices/resources/services.py
+
+
+
+
+# -----------------
+# Ethos-driven
+# Architecture Checklist
+# -----------------
+
+
+
+### Architecture Uniformity — Enforcement Checklist
+
+Use this checklist during refactors and code review. If an item fails, the change is not canon-compliant.
+
+#### Boundaries & Imports
+
+- [ ] No slice imports another slice (directly or indirectly). Cross-slice calls go through **extensions/contracts** only.
+- [ ] `app/lib/*` does not import any slice code. Slices may import `app.lib.*`, never the reverse.
+- [ ] No ORM models cross slice boundaries (only DTOs/primitive types cross contracts).
+
+#### Transactions & Side Effects
+
+- [ ] Services are **flush-only** (no `commit()` / `rollback()` anywhere in `services/*`).
+- [ ] Routes/CLI own `commit/rollback` and error boundaries (single consistent transaction pattern per request).
+- [ ] Ledger/event emits occur only at the approved layer (per current canon: route or explicitly designated command service), and never include PII.
+
+#### Mapper Layer
+
+- [ ] Slice has `app/slices/<slice>/mapper.py` and it contains projection logic + typed view/DTO shapes.
+- [ ] Mappers do not run DB queries or cause side effects (no writes, no commits, no emits).
+- [ ] Services call mappers; contracts return mapper/DTO shapes; routes never serialize ORM objects directly.
+
+#### Naming & Identity
+
+- [ ] Identity is always `entity_ulid` (facet PK=FK). No “slice ULID” used as an identity anchor.
+- [ ] Function signatures use explicit names (`entity_ulid`, `request_id`, `actor_ulid`) and avoid ambiguous variables like `ent` for multiple meanings.
+
+#### PII Discipline
+
+- [ ] No PII outside the Entity slice (except approved snapshot stores). No PII in logs/Ledger.
+- [ ] Entity mappers/projectors return only the minimum allowed display/contact fields for the caller’s need (least-privilege).
+
+#### Pagination & Shapes
+
+- [ ] Paginated reads use the shared pagination primitive (`Page` / `paginate_sa`) and return a consistent page shape.
+- [ ] Query functions return typed view/DTO shapes (TypedDict/dataclass DTO), not raw dicts or ORM objects.
+
+#### “Before Adding Code”
+
+- [ ] If you need a generic helper: check `app/lib` first; if it’s generic + non-PII, put it there.
+- [ ] If you need a projection: put it in the slice’s `mapper.py`.
+- [ ] If you need business logic: put it in `services/*` (queries vs commands), not in contracts/routes.
+
+
+
+
+
+# -----------------
+# JSON Notes:
+#------------------
+
+
+
+{ } vs [ ] (objects vs arrays),
+
+and how the schema describes the shape of the policy.
+
+Within the JSON policy file below:
+Think “Python types”:
+Outer { ... } → a dict:
+keys: "version", "rules", "allowed_units", "allowed_sources".
+"rules": [ ... ] → a list of dicts (each rule is an object).
+"allowed_units": [ ... ] → a list of strings.
+"allowed_sources": [ ... ] → a list of strings.
+
+So:
+{ ... } → “mapping: names → values”
+[ ... ] → “ordered list of values”
+
+That’s all the punctuation is really saying.
+
+{
+  "version": 1,
+  "rules": [
+    {
+      "if": { "source": "DR" },
+      "then": { "issuance_class": "V" },
+      "why": "All DRMO items are veteran-only"
+    },
+    {
+      "if": { "category": "CG", "subcategory": "SL", "source": "LC" },
+      "then": { "issuance_class": "H" },
+      "why": "Commercial sleeping gear reserved for homeless issuance"
+    }
+  ],
+  "allowed_units": ["each", "lbs", "kit", "box", "pack" ],
+  "allowed_sources": ["donation", "purchase", "transfer", "drmo"]
+}
+
+
+The schema: describing what the policy must look like:
+That's another kettle of fish...   same fish, different kettle. 
+
+Again: treat this like Python dict-of-dicts, just with special keys:
+"type": "object" → this thing must be a dict.
+"type": "array" → this thing must be a list.
+"properties": { ... } → for a dict, here are the allowed keys and their types.
+"items": { ... } → for a list, here’s what each element must look like.
+"required": [ ... ] → keys that must be present.
+"enum": [ ... ] → allowed values (like a whitelist).
+
+All we need to do is add allowed_units and allowed_sources into the schema’s
+"properties" and, if you want, into "required".
+
+
+
+
+# -----------------
+# Python Groupings
+# -----------------
+
+
+
+
+Quick “brackets vs braces vs parentheses” cheatsheet
+
+{ ... : ,,, } → dict / object  Dictionary  (unordered, immutable, unique)
+
+Inside: "key": value pairs.
+Keys are strings; values can be string, number, bool, null, object, or array.
+Commas separate pairs.
+
+Python dictionary (dict) is a built-in, mutable, and ordered collection
+that stores data as flexible key-value pairs.
+
+{"key": value_number, "key": "value_text", (label_key): ["data_key", data]}
+
+Keys must be unique and immutable (like strings, numbers, or tuples),
+while values can be of any data type. Dictionaries are optimized for
+efficient data retrieval and modification using their keys, acting as
+Python's native implementation of a hash map.
+
+
+[ ..., ... ] → list / array  List (ordered, mutable, duplicates allowed)
+
+Inside: values, no keys.
+Commas separate items.
+
+Python list is a built-in, ordered, and changeable (mutable) collection
+data type used to store multiple items in a single variable.
+Lists are a versatile and fundamental data structure in Python,
+allowing for elements of different data types, including numbers, strings,
+and even other lists.
+
+
+( ..., ... ) parentheses  Tuples (ordered, immutable, duplicates overwrite)
+
+A Python tuple is an ordered, immutable collection of elements
+that can hold multiple data types. Unlike lists, the items in a tuple
+cannot be changed (added, removed, or modified) after the tuple is created.
+
+
+Examples:
+
+A dict of two keys:
+{ "version": 1, "rules": [] }
+
+
+A list of three strings:
+[ "each", "lbs", "kit" ]
+
+
+A dict that contains a list:
+{
+  "allowed_units": ["each", "lbs", "kit"]
+}
+
+
+A list of dicts:
+[
+  { "if": { "source": "DR" }, "then": { "issuance_class": "V" } },
+  { "if": { "category": "CG" }, "then": { "issuance_class": "H" } }
+]
+
+
+Once you map “braces = dict” and “brackets = list” to your Python brain, 
+most of the scariness of JSON goes away.
+
+
+
+
+# -----------------
+# Architecture Checklist
+# -----------------
+
+
+
 The Foundation Checklist:
 When reading code,
 
@@ -73,7 +305,12 @@ you’re detecting red patterns, not parsing Python grammar.
 
 
 
+
+# -----------------
 Flask Shell Primer:
+# -----------------
+
+
 
 In a Flask shell, a DTO is usually a class (dataclass, pydantic model, attrs class, etc.). You inspect it by looking at either:
 
@@ -152,265 +389,3 @@ print(inspect.signature(fn))
 That last line is usually the smoking gun when the contract call is failing.
 
 If you paste the output of `print(inspect.signature(fn))`, I’ll tell you exactly what mismatch you’ve got (missing `sess`, different kw names, etc.) and what the smallest fix is.
-
-
-
-
-Quick Static sanity:
-
-python -m compileall app (must pass)
-
-ruff check app (or your ruff config)
-
-ruff format app / black (your chosen formatter)
-
-Policy sanity
-
-flask dev policy-health
-must run without imports from slice internals that aren’t the target slice.
-
-Boundary sanity
-
-Non-devtools code must not do from app.slices.<other_slice>... imports.
-
-Cross-slice goes through app.extensions.contracts.*
-(or a clearly marked, heavily-guarded admin-only provider).
-
-Optional: add a tiny banner so it’s obvious when stub is active:
-
-@app.context_processor
-def _stub_banner():
-    return {"_stub_auth_active": app.config.get("AUTH_MODE") == "stub"}
-
-
-Then in templates (dev only):
-
-{% if _stub_auth_active %}<div class="stub-badge">STUB AUTH</div>{% endif %}
-
-
-Pytest trick: set stub headers on the test client
-
-When you need a specific role in a test:
-
-def test_admin_endpoint(client):
-    r = client.get("/dev/whoami", headers={"X-Auth-Stub": "admin"})
-    assert r.status_code == 200
-
-
-For a whole class/module:
-
-import pytest
-@pytest.fixture(autouse=True)
-def _stub_admin_headers(monkeypatch):
-    # only in tests that need it; otherwise be explicit per-call
-    pass
-
-
-
-
-curl -s http://127.0.0.1:5000/end/point/routing/symbol | jq .
-
-
-9767  python -m py_compile app/slices/resources/services.py
-9768  clear
-9769  ruff check app/slices/resources/services.py
-
-
-JSON Notes:
-
-{ } vs [ ] (objects vs arrays),
-
-and how the schema describes the shape of the policy.
-
-Within the JSON policy file below:
-Think “Python types”:
-Outer { ... } → a dict:
-keys: "version", "rules", "allowed_units", "allowed_sources".
-"rules": [ ... ] → a list of dicts (each rule is an object).
-"allowed_units": [ ... ] → a list of strings.
-"allowed_sources": [ ... ] → a list of strings.
-
-So:
-{ ... } → “mapping: names → values”
-[ ... ] → “ordered list of values”
-
-That’s all the punctuation is really saying.
-
-{
-  "version": 1,
-  "rules": [
-    {
-      "if": { "source": "DR" },
-      "then": { "issuance_class": "V" },
-      "why": "All DRMO items are veteran-only"
-    },
-    {
-      "if": { "category": "CG", "subcategory": "SL", "source": "LC" },
-      "then": { "issuance_class": "H" },
-      "why": "Commercial sleeping gear reserved for homeless issuance"
-    }
-  ],
-  "allowed_units": ["each", "lbs", "kit", "box", "pack" ],
-  "allowed_sources": ["donation", "purchase", "transfer", "drmo"]
-}
-
-
-The schema: describing what the policy must look like:
-That's another kettle of fish...   same fish, different kettle. 
-
-Again: treat this like Python dict-of-dicts, just with special keys:
-"type": "object" → this thing must be a dict.
-"type": "array" → this thing must be a list.
-"properties": { ... } → for a dict, here are the allowed keys and their types.
-"items": { ... } → for a list, here’s what each element must look like.
-"required": [ ... ] → keys that must be present.
-"enum": [ ... ] → allowed values (like a whitelist).
-
-All we need to do is add allowed_units and allowed_sources into the schema’s
-"properties" and, if you want, into "required".
-
-
-Quick “brackets vs braces” cheatsheet
-
-{ ... } → dict / object
-Inside: "key": value pairs.
-Keys are strings; values can be string, number, bool, null, object, or array.
-Commas separate pairs.
-
-[ ... ] → list / array
-Inside: values, no keys.
-Commas separate items.
-
-Examples:
-
-A dict of two keys:
-{ "version": 1, "rules": [] }
-
-
-A list of three strings:
-[ "each", "lbs", "kit" ]
-
-
-A dict that contains a list:
-{
-  "allowed_units": ["each", "lbs", "kit"]
-}
-
-
-A list of dicts:
-[
-  { "if": { "source": "DR" }, "then": { "issuance_class": "V" } },
-  { "if": { "category": "CG" }, "then": { "issuance_class": "H" } }
-]
-
-
-Once you map “braces = dict” and “brackets = list” to your Python brain, 
-most of the scariness of JSON goes away.
-
-
-
-
-# -----------------
-# SelectField values
-# -----------------
-
-
-
-Customer Slice SelectField Values:
-
-Categories for Customer Needs Profile Questionaire:
-Tier 1 (physiological): food, hygiene, health, housing, clothing
-Tier 2 (security): income, employment, transportation, education
-Tier 3 (social): family, peergroup, tech
-
-Scale: SelectField [1=immediate, 2=marginal, 3=sufficient, unknown, n/a]
-
-Intake Wizard Intake Step For Customer
-[identity|address_physical|address_postal|contact|eligibility|review|complete]
-
-Customer Status
-[intake|active|suspended|archived]
-
-In your wizard Step 1 (start intake) service/route, explicitly set:
-status = "intake"
-intake_step = "identity"
-
-…and in completion step:
-status = "active"
-intake_step = None (or "complete")
-
-
-
-Entity Slice SelectField Values:
-
-veteran_method: SelectField [dd214|va_id|state_dl_veteran|other ]
-
-branch: SelectField [USA|USMC|USN|USAF|USSF|USCG]
-
-era: SelectField [WWI|WWII|Korea|Vietnam|ColdWar|GW|OIF|OEF|PsyWar]
-
-
-
-Finance Slice SelectField Values:
-
-Fund Restriction Type
-'unrestricted'|'temporarily_restricted'|'permanently_restricted'
-
-Grant Reporting Frequency
-'monthly'|'quarterly'|'semiannual'|'annual'|'end_of_term'
-
-
-ALLOWED_TYPES = {"asset", "liability", "net_assets", "revenue", "expense"}
-ALLOWED_PERIOD_STATUS = {"open", "soft_closed", "closed"}
-
-
-Resource Slice SelectField Values:
-
-Onboard Wizard for Resources
-[profile|capabilities|capacity|pocs|mou|review|complete]
-
-Resource Readiness Status
-[draft|review|active|suspended]
-
-Resource MOU Status
-[none|pending|active|expired|terminated]
-
-Resource Classifications:
-- veterans_affairs: federal, state, local
-- logistics: dmro, regional_stand_down, local_civil, local_commercial
-- events: event_coordination, promotions_newsprint_radio, promotions_social_media, graphic_design, print_media, facility_rental, equipment_rental, food_service, security_service, staffing_coordination, branded_swag
-- basic_needs: food_pantry, mobile_shower, shelter_temp_men, shelter_temp_women_children, clothing, barber
-- health_wellness: urgent_care, hospital, dental, vision, audiology, mobility_aids, in_home_health_care, service_animals
-- counseling_services: employment, education, behavioral_psychological, substance_abuse, domestic_violence, peer_group, financial, legal_criminal, legal_civil
-- housing: public_housing_coordination, rent_assistance, utilities_assistance, household_goods, internet_phone, childcare_assistance, handyman_general, yard_maintenance, weed_abatement, junk_trash_removal
-- transportation: public_transit, ride_share, medical_transport, auto_repair
-- meta: unclassified
-
-
-
-
-
-
-
-Sponsor Slice SelectField Values:
-
- # Lifecycle of the prospect (no money yet, just pipeline state) from Models
- FundingProspect.status
-
-SelctField[prospect|approach|active|closed|lost]
-
-Sponsor Readiness Status
-[draft|review|active|suspended]
-
-Onboard Wizard for Sponsors
-[profile|pocs|funding_rules|mou|review|complete]
-
-Sponsor Classifications
-- Fund_Type: cash_grant, restricted_grant, event_sponsor, matching_pledge
-- In-kind: food, goods, services, facility_use, equipment_loan, vol_hours
-- Fund_Restrictions: vet_only, homeless_only, local_only, grant_reporting
-- Spnsr_Tier: Partner, Affiliate, Associate, Valued_Donor
-- Ack_History: t_y_letter, certificate, plaque, recog_event, board_seat
-
-
-

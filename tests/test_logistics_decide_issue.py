@@ -35,13 +35,19 @@ def test_decide_issue_blocks_when_qualifier_not_met(monkeypatch):
 
     # No blackout
     import app.extensions.enforcers as enforcers
-    monkeypatch.setattr(enforcers, "calendar_blackout_ok", lambda ctx: (True, {}))
+
+    monkeypatch.setattr(
+        enforcers, "calendar_blackout_ok", lambda ctx: (True, {})
+    )
 
     # Avoid DB coupling in cadence for this unit test
-    monkeypatch.setattr(iss, "_apply_cadence", lambda rule, ctx: (True, None, None))
+    monkeypatch.setattr(
+        iss, "_apply_cadence", lambda rule, ctx: (True, None, None)
+    )
 
     # Provide cues via contract shim
     from app.extensions.contracts.customers_v2 import CustomerCuesDTO
+
     monkeypatch.setattr(
         iss,
         "get_customer_cues",
@@ -50,7 +56,7 @@ def test_decide_issue_blocks_when_qualifier_not_met(monkeypatch):
             tier1_min=None,
             tier2_min=None,
             tier3_min=None,
-            is_veteran_verified=False,   # <-- not met
+            is_veteran_verified=False,  # <-- not met
             is_homeless_verified=False,
             flag_tier1_immediate=False,
             watchlist=False,
@@ -59,7 +65,9 @@ def test_decide_issue_blocks_when_qualifier_not_met(monkeypatch):
         ),
     )
 
-    ctx = IssueContext(customer_ulid="01CUST00000000000000000000", sku_code=sku)
+    ctx = IssueContext(
+        customer_ulid="01CUST00000000000000000000", sku_code=sku
+    )
     d = decide_issue(ctx)
     assert d.allowed is False
     assert "veteran_required" in (d.reason or "")
@@ -77,11 +85,17 @@ def test_decide_issue_allows_when_qualifier_met(monkeypatch):
     )
 
     import app.extensions.enforcers as enforcers
-    monkeypatch.setattr(enforcers, "calendar_blackout_ok", lambda ctx: (True, {}))
 
-    monkeypatch.setattr(iss, "_apply_cadence", lambda rule, ctx: (True, None, None))
+    monkeypatch.setattr(
+        enforcers, "calendar_blackout_ok", lambda ctx: (True, {})
+    )
+
+    monkeypatch.setattr(
+        iss, "_apply_cadence", lambda rule, ctx: (True, None, None)
+    )
 
     from app.extensions.contracts.customers_v2 import CustomerCuesDTO
+
     monkeypatch.setattr(
         iss,
         "get_customer_cues",
@@ -90,7 +104,7 @@ def test_decide_issue_allows_when_qualifier_met(monkeypatch):
             tier1_min=None,
             tier2_min=None,
             tier3_min=None,
-            is_veteran_verified=True,   # <-- met
+            is_veteran_verified=True,  # <-- met
             is_homeless_verified=False,
             flag_tier1_immediate=False,
             watchlist=False,
@@ -99,6 +113,8 @@ def test_decide_issue_allows_when_qualifier_met(monkeypatch):
         ),
     )
 
-    ctx = IssueContext(customer_ulid="01CUST00000000000000000000", sku_code=sku)
+    ctx = IssueContext(
+        customer_ulid="01CUST00000000000000000000", sku_code=sku
+    )
     d = decide_issue(ctx)
     assert d.allowed is True

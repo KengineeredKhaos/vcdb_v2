@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Optional
 
 from app.extensions import db
 from app.lib.chrono import now_iso8601_ms, parse_iso8601, to_iso8601
@@ -11,7 +10,7 @@ from app.slices.calendar.models import Calendar, Project
 # ---- helpers ---------------------------------------------------------------
 
 
-def _iso_day_window(anchor_iso: Optional[str] = None) -> tuple[str, str]:
+def _iso_day_window(anchor_iso: str | None = None) -> tuple[str, str]:
     """
     Return a same-day window [00:00:00, 23:59:59.999] in ISO-8601 Z strings.
     If anchor_iso is None, uses 'today' from now_iso8601_ms().

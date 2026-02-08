@@ -67,7 +67,6 @@ class Policy(db.Model, ULIDPK, IsoTimestamps):
         String(26), nullable=True
     )
 
-
     __table_args__ = (
         UniqueConstraint(
             "namespace", "key", "version", name="uq_governance_policy_version"

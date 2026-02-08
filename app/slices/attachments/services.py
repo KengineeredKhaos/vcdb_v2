@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
-from typing import BinaryIO, Optional, Tuple
+from typing import BinaryIO
 
 from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
@@ -43,13 +43,13 @@ def get_backend() -> StorageBackend:
 # ---- Helpers ----------------------------------------------------------------
 
 
-def _ensure_reqid(rid: Optional[str]) -> str:
+def _ensure_reqid(rid: str | None) -> str:
     if not rid or not str(rid).strip():
         raise ValueError("request_id must be non-empty")
     return str(rid)
 
 
-def _sha256_and_len(stream: BinaryIO) -> Tuple[str, int]:
+def _sha256_and_len(stream: BinaryIO) -> tuple[str, int]:
     h = hashlib.sha256()
     total = 0
     for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -58,7 +58,7 @@ def _sha256_and_len(stream: BinaryIO) -> Tuple[str, int]:
     return h.hexdigest(), total
 
 
-def _ext_from_filename(name: Optional[str]) -> str:
+def _ext_from_filename(name: str | None) -> str:
     if not name:
         return ""
     _, ext = os.path.splitext(name)
@@ -78,11 +78,11 @@ def upload_register(
     *,
     file_stream: BinaryIO,
     mime: str,
-    original_filename: Optional[str],
+    original_filename: str | None,
     privacy_level: str = "A",
-    retention_policy_code: Optional[str] = None,
+    retention_policy_code: str | None = None,
     request_id: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
 ) -> str:
     """
     Register (and store) a blob. Content-addressed, deduped by sha256.
@@ -154,9 +154,9 @@ def link_attachment(
     slice_name: str,
     domain: str,
     target_ulid: str,
-    note: Optional[str],
+    note: str | None,
     request_id: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
 ) -> str:
     """
     Link an existing attachment to a domain object.
@@ -214,7 +214,7 @@ def unlink_attachment(
     *,
     link_ulid: str,
     request_id: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
 ) -> None:
     """Archive the link (do not delete blob)."""
     _ensure_reqid(request_id)
@@ -246,7 +246,7 @@ def sign_url(
     attachment_ulid: str,
     ttl_seconds: int = 300,
     request_id: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
 ) -> str:
     """
     Produce a short-lived URL to access the blob. In dev, returns file:// path.

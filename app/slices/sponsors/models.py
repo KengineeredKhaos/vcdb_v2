@@ -62,28 +62,28 @@ class Sponsor(db.Model, IsoTimestamps):
     # Relationships
     # -------------
 
-    histories: Mapped[list["SponsorHistory"]] = relationship(
+    histories: Mapped[list[SponsorHistory]] = relationship(
         "SponsorHistory",
         back_populates="sponsor",
         cascade="all, delete-orphan",
     )
-    capabilities: Mapped[list["SponsorCapabilityIndex"]] = relationship(
+    capabilities: Mapped[list[SponsorCapabilityIndex]] = relationship(
         "SponsorCapabilityIndex",
         back_populates="sponsor",
         cascade="all, delete-orphan",
     )
-    pledges: Mapped[list["SponsorPledgeIndex"]] = relationship(
+    pledges: Mapped[list[SponsorPledgeIndex]] = relationship(
         "SponsorPledgeIndex",
         back_populates="sponsor",
         cascade="all, delete-orphan",
     )
-    pocs: Mapped[list["SponsorPOC"]] = relationship(
+    pocs: Mapped[list[SponsorPOC]] = relationship(
         "SponsorPOC",
         back_populates="sponsor",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    funding_prospects: Mapped[list["FundingProspect"]] = relationship(
+    funding_prospects: Mapped[list[FundingProspect]] = relationship(
         "FundingProspect",
         back_populates="sponsor",
         cascade="all, delete-orphan",
@@ -120,7 +120,7 @@ class SponsorHistory(db.Model, ULIDPK, IsoTimestamps):
         String(26), nullable=True
     )
 
-    sponsor: Mapped["Sponsor"] = relationship(
+    sponsor: Mapped[Sponsor] = relationship(
         "Sponsor", back_populates="histories"
     )
 
@@ -151,7 +151,7 @@ class SponsorCapabilityIndex(db.Model, ULIDPK, IsoTimestamps):
         Boolean, default=False, nullable=False, index=True
     )
 
-    sponsor: Mapped["Sponsor"] = relationship(
+    sponsor: Mapped[Sponsor] = relationship(
         "Sponsor", back_populates="capabilities"
     )
 
@@ -222,7 +222,7 @@ class FundingProspect(db.Model, ULIDPK, IsoTimestamps):
         Integer, nullable=False, default=0
     )
 
-    sponsor: Mapped["Sponsor"] = relationship(
+    sponsor: Mapped[Sponsor] = relationship(
         "Sponsor",
         back_populates="funding_prospects",
     )
@@ -283,7 +283,7 @@ class SponsorPledgeIndex(db.Model, ULIDPK, IsoTimestamps):
         String(8), nullable=True
     )  # USD etc.
 
-    sponsor: Mapped["Sponsor"] = relationship(
+    sponsor: Mapped[Sponsor] = relationship(
         "Sponsor", back_populates="pledges"
     )
 
@@ -327,7 +327,7 @@ class SponsorPOC(db.Model, ULIDPK, IsoTimestamps):
     # Relationships
     # -------------
 
-    sponsor: Mapped["Sponsor"] = relationship(
+    sponsor: Mapped[Sponsor] = relationship(
         "Sponsor",
         back_populates="pocs",
     )

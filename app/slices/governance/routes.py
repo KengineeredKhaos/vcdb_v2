@@ -10,6 +10,7 @@ from . import services as svc
 
 bp = Blueprint("governance", __name__, url_prefix="/governance")
 
+
 def _ok(data=None, **extra):
     return jsonify({"ok": True, "data": data, **extra}), 200
 
@@ -58,4 +59,9 @@ def canonicals():
 @bp.get("/roles")
 def roles():
     d = governance_v2.describe()
-    return jsonify({"domain_roles": d["domain_roles"], "rbac_to_domain": d["rbac_to_domain"]})
+    return jsonify(
+        {
+            "domain_roles": d["domain_roles"],
+            "rbac_to_domain": d["rbac_to_domain"],
+        }
+    )

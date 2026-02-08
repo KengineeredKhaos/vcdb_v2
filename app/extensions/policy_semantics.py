@@ -19,7 +19,8 @@ This module is safe to run in CLI/tests/admin tooling:
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Tuple
+from collections.abc import Iterable
+from typing import Any
 
 from app.extensions.policies import (
     load_policy_entity_roles,
@@ -59,7 +60,7 @@ def _as_set(value: Iterable[str] | None) -> set[str]:
     return set(value or [])
 
 
-def _uniq(seq: Iterable[str]) -> List[str]:
+def _uniq(seq: Iterable[str]) -> list[str]:
     seen, out = set(), []
     for s in seq:
         if s not in seen:
@@ -73,14 +74,14 @@ def _uniq(seq: Iterable[str]) -> List[str]:
 # -----------------
 
 
-def policy_health_report() -> Tuple[List[str], List[str]]:
+def policy_health_report() -> tuple[list[str], list[str]]:
     """
     Returns (warnings, infos). Raises PolicyError on fatal issues.
 
     Intended to be called by CLI/admin tooling.
     """
-    infos: List[str] = []
-    warns: List[str] = []
+    infos: list[str] = []
+    warns: list[str] = []
 
     infos += check_rbac_policy()
     infos += check_entity_roles_policy()
@@ -129,7 +130,7 @@ def check_entity_roles_policy() -> list[str]:
     Returns list of human messages.
     Raises PolicyError on fatal issues.
     """
-    msgs: List[str] = []
+    msgs: list[str] = []
     pol = load_policy_entity_roles()
     roles = _domain_role_codes(pol)
     rules = pol.get("assignment_rules") or {}
@@ -175,7 +176,7 @@ def check_rbac_domain_relationship() -> list[str]:
     - admin/staff RBAC must imply domain governor requirement.
     - civilian disallows any RBAC (recommended hint if missing).
     """
-    msgs: List[str] = []
+    msgs: list[str] = []
     rbac = _as_set(load_policy_rbac().get("rbac_roles"))
     dom = load_policy_entity_roles()
     rules = dom.get("assignment_rules") or {}
@@ -311,7 +312,7 @@ def check_operations_policy() -> list[str]:
             continue
         for k in exp:
             if k not in valid_expense_kinds:
-                bad_refs.append(f"{tk.get('key','<no-key>')} -> {k}")
+                bad_refs.append(f"{tk.get('key', '<no-key>')} -> {k}")
 
     if bad_refs:
         raise PolicyError(
@@ -353,7 +354,7 @@ def check_logistics_issuance_policy_against_catalog() -> list[str]:
     from app.extensions import db
     from app.slices.logistics.models import InventoryItem
 
-    msgs: List[str] = []
+    msgs: list[str] = []
     pol = load_policy_logistics_issuance()
 
     issuance = pol.get("issuance") or {}
@@ -363,7 +364,7 @@ def check_logistics_issuance_policy_against_catalog() -> list[str]:
         _cadence_sanity(default_cad, where="issuance.defaults.cadence")
 
     sku_constraints = pol.get("sku_constraints") or {}
-    rules: List[Dict[str, Any]] = list(sku_constraints.get("rules") or [])
+    rules: list[dict[str, Any]] = list(sku_constraints.get("rules") or [])
 
     for i, r in enumerate(rules):
         cad = r.get("cadence") or {}
@@ -375,7 +376,10 @@ def check_logistics_issuance_policy_against_catalog() -> list[str]:
     }
     rule_keys.discard(None)
 
-    attr = getattr(InventoryItem, "classification_key", None) or InventoryItem.category
+    attr = (
+        getattr(InventoryItem, "classification_key", None)
+        or InventoryItem.category
+    )
     cats = [
         c[0]
         for c in db.session.execute(select(distinct(attr))).all()

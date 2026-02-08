@@ -48,7 +48,7 @@ class Attachment(db.Model, ULIDPK, IsoTimestamps):
     )
 
     # ORM relationship (inferred via FK on AttachmentLink.attachment_ulid)
-    links: Mapped[list["AttachmentLink"]] = relationship(
+    links: Mapped[list[AttachmentLink]] = relationship(
         "AttachmentLink",
         back_populates="attachment",
         cascade="all, delete-orphan",
@@ -89,7 +89,7 @@ class AttachmentLink(db.Model, ULIDPK, IsoTimestamps):
         String(26), nullable=True
     )
 
-    attachment: Mapped["Attachment"] = relationship(
+    attachment: Mapped[Attachment] = relationship(
         "Attachment",
         back_populates="links",
         foreign_keys="[AttachmentLink.attachment_ulid]",

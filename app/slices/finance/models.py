@@ -123,7 +123,7 @@ class Journal(db.Model, ULIDPK, IsoTimestamps):
         String(26), nullable=True
     )
 
-    lines: Mapped[list["JournalLine"]] = relationship(
+    lines: Mapped[list[JournalLine]] = relationship(
         "JournalLine",
         back_populates="journal",
         cascade="all, delete-orphan",
@@ -166,9 +166,7 @@ class JournalLine(db.Model, ULIDPK):
         String(7), nullable=False, index=True
     )  # duplicate for fast rollups
 
-    journal: Mapped["Journal"] = relationship(
-        "Journal", back_populates="lines"
-    )
+    journal: Mapped[Journal] = relationship("Journal", back_populates="lines")
 
     __table_args__ = (
         CheckConstraint("amount_cents != 0", name="ck_line_nonzero"),
@@ -324,7 +322,7 @@ class Grant(db.Model, ULIDPK, IsoTimestamps):
         ),
     )
 
-    reimbursements: Mapped[list["Reimbursement"]] = relationship(
+    reimbursements: Mapped[list[Reimbursement]] = relationship(
         "Reimbursement",
         back_populates="grant",
         cascade="all, delete-orphan",
@@ -385,6 +383,6 @@ class Reimbursement(db.Model, ULIDPK, IsoTimestamps):
         ),
     )
 
-    grant: Mapped["Grant"] = relationship(
+    grant: Mapped[Grant] = relationship(
         "Grant", back_populates="reimbursements"
     )

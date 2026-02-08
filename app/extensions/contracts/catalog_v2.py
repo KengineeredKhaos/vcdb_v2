@@ -6,7 +6,6 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
 
 from flask import current_app
 
@@ -111,12 +110,12 @@ def validate_sku(code: str) -> None:  # pragma: no cover
     raise NotImplementedError
 
 
-def list_substitutions(code: str) -> List[Substitution]:  # pragma: no cover
+def list_substitutions(code: str) -> list[Substitution]:  # pragma: no cover
     raise NotImplementedError
 
 
 def cost_for(
-    code: str, as_of_iso: Optional[str] = None
+    code: str, as_of_iso: str | None = None
 ) -> int:  # pragma: no cover
     """Return effective cost in cents at as_of_iso (UTC ISO-8601)."""
     raise NotImplementedError

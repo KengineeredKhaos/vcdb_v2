@@ -38,7 +38,7 @@ def load_schema(module_file: str, rel_path: str) -> dict:
     # module_file is __file__ of the contract package; rel_path like
     # "schemas/event.request.json"
     pkg = module_file.rsplit("/", 1)[0]  # package directory
-    with open(f"{pkg}/{rel_path}", "r", encoding="utf-8") as f:
+    with open(f"{pkg}/{rel_path}", encoding="utf-8") as f:
         return json.load(f)
 
 

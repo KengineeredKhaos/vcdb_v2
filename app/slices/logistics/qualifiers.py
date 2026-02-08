@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Final, Optional
+from typing import Any, Final
 
 from app.extensions.contracts.customers_v2 import CustomerCuesDTO
 
@@ -63,7 +63,7 @@ SUPPORTED_QUALIFIER_KEYS: Final[frozenset[str]] = frozenset(
 @dataclass(frozen=True)
 class QualifierOutcome:
     ok: bool
-    reason: Optional[str] = None
+    reason: str | None = None
     # Immutable “debug trace” of evaluated checks (name -> pass/fail)
     checks: tuple[tuple[str, bool], ...] = ()
 

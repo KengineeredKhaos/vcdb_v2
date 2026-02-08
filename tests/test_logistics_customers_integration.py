@@ -5,7 +5,11 @@ from app.extensions.contracts import customers_v2, entity_v2
 from app.lib.ids import new_ulid
 from app.slices.customers.models import CustomerEligibility
 from app.slices.logistics.issuance_services import available_skus_for_customer
-from app.slices.logistics.models import InventoryItem, InventoryStock, Location
+from app.slices.logistics.models import (
+    InventoryItem,
+    InventoryStock,
+    Location,
+)
 from app.slices.logistics.sku import parse_sku
 
 
@@ -84,7 +88,9 @@ def test_available_skus_true_cross_slice_customer_create_then_cues_filter(
         actor_ulid="seed",
     )
 
-    resp = staff_client.post("/customers", json={"entity_ulid": ent.entity_ulid})
+    resp = staff_client.post(
+        "/customers", json={"entity_ulid": ent.entity_ulid}
+    )
     assert resp.status_code == 200, resp.get_json()
     data = resp.get_json().get("data") or {}
     customer_ulid = (
@@ -142,7 +148,9 @@ def test_available_skus_true_cross_slice_customer_create_then_cues_filter(
     sku_hml = _unique_sku("H")
     sku_open = _unique_sku("U")
 
-    loc = Location(ulid=new_ulid(), code=f"WH-{new_ulid()[-4:]}", name="Warehouse")
+    loc = Location(
+        ulid=new_ulid(), code=f"WH-{new_ulid()[-4:]}", name="Warehouse"
+    )
     db.session.add(loc)
 
     i1 = _mk_item(sku=sku_vet)
@@ -186,9 +194,14 @@ def test_available_skus_true_cross_slice_customer_create_then_cues_filter(
     )
 
     import app.extensions.enforcers as enforcers
-    monkeypatch.setattr(enforcers, "calendar_blackout_ok", lambda ctx: (True, {}))
 
-    monkeypatch.setattr(iss, "_apply_cadence", lambda rule, ctx: (True, None, None))
+    monkeypatch.setattr(
+        enforcers, "calendar_blackout_ok", lambda ctx: (True, {})
+    )
+
+    monkeypatch.setattr(
+        iss, "_apply_cadence", lambda rule, ctx: (True, None, None)
+    )
 
     # 6) Act: compute available SKUs for this customer at the location
     skus = available_skus_for_customer(

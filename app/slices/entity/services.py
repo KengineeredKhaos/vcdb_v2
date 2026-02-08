@@ -1,13 +1,14 @@
 # app/slices/entity/services.py
 from __future__ import annotations
 
-from typing import List, Optional, Set, Tuple
+from dataclasses import dataclass
 
 from sqlalchemy import asc
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.extensions import db, event_bus
 from app.extensions.contracts.governance_v2 import get_role_catalogs
+from app.lib.pagination import Page, paginate_sa, rewrap_page
 from app.lib.utils import (
     normalize_ein,
     normalize_email,
@@ -17,6 +18,7 @@ from app.lib.utils import (
     validate_phone,
 )
 
+from .mapper import OrgView, PersonView, map_org_view, map_person_view
 from .models import (
     Entity,
     EntityAddress,
@@ -26,12 +28,118 @@ from .models import (
     EntityRole,
 )
 
+"""
+Format Hints:
+
+The uniformity pattern
+1) Use explicit naming everywhere
+Never overload ent to mean both “entity_ulid string” and “Entity model object”.
+
+Use:
+entity_ulid: str → the ULID string (PK/FK)
+entity: Entity → the Entity ORM object
+person: EntityPerson
+org: EntityOrg
+primary_contact: EntityContact | None
+
+2) Split service functions into two categories (and name them accordingly)
+This is the simplest pattern that stays consistent across slices:
+
+Queries (read-only):
+Prefix with q_ (or just get_/list_ if you hate prefixes)
+No request_id required
+Return typed view shapes or typed DTOs
+
+Commands (mutations):
+Prefix with cmd_ / create_ / upsert_ / ensure_
+Always include: request_id, actor_ulid
+Flush-only (route owns commit/rollback)
+
+3) Strongly type “view dicts” with TypedDict (no Any)
+If the return is “a dict for templates,” don’t return dict — return a TypedDict.
+
+This gives you:
+type safety
+stable keys
+no need for Any
+no aliasing of model fields (keys can stay explicit)
+
+# ---- View shape (internal: templates/forms only) ----
+
+class PersonView(TypedDict):
+    entity_ulid: str
+    kind: str
+    first_name: str
+    last_name: str
+    preferred_name: str | None
+    email: str | None
+    phone: str | None
+    created_at_utc: datetime | None
+    updated_at_utc: datetime | None
+
+
+def _map_person_view(person: EntityPerson) -> PersonView:
+    # Invariant: EntityPerson PK == FK -> entity_entity.ulid
+    entity_ulid: str = person.entity_ulid
+
+    entity: Entity | None = person.entity
+    if entity is None:
+        # This should never happen if the facet invariant is upheld.
+        raise ValueError("EntityPerson.entity relationship missing")
+
+    primary_contact: EntityContact | None = None
+    if entity.contacts:
+        primary_contact = next((c for c in entity.contacts if c.is_primary), None)
+
+    return {
+        "entity_ulid": entity_ulid,
+        "kind": "person",
+        "first_name": person.first_name,
+        "last_name": person.last_name,
+        "preferred_name": person.preferred_name,
+        "email": primary_contact.email if primary_contact else None,
+        "phone": primary_contact.phone if primary_contact else None,
+        "created_at_utc": entity.created_at_utc,
+        "updated_at_utc": entity.updated_at_utc,
+    }
+
+def q_person_view(*, entity_ulid: str, session: Session | None = None) -> PersonView | None:
+    s = session or db.session
+    person = s.get(EntityPerson, entity_ulid)
+    if person is None:
+        return None
+    # ideally loaded via eager options in the query; OK to lazy-load for single view
+    _ = person.entity and person.entity.contacts
+    return _map_person_view(person)
+
+For consistency everywhere, adopt these three rules:
+
+Identity arg naming:
+Always use entity_ulid for identity keys (facet PK=FK)
+Never introduce person_ulid/resource_ulid/... unless it’s not identity (rare)
+
+Command signature template:
+def cmd_xxx(
+    *, ...,
+    request_id: str,
+    actor_ulid: str | None,
+    session: Session | None = None
+) -> ResultType:
+
+Query signature template:
+
+def q_xxx(*, ..., session: Session | None = None) -> ViewType | DTOType:
+
+Then enforce it with quick greps + a couple of ruff rules (and by deleting back-compat shims as you go).
+
+"""
+
 
 class DuplicateCandidateError(Exception):
     pass
 
 
-def allowed_role_codes(session=None) -> Set[str]:
+def allowed_role_codes(session=None) -> set[str]:
     """
     Return the canonical set of domain role codes allowed by Governance policy.
     This is a read-only call through the v2 contract (no DB writes here).
@@ -44,7 +152,9 @@ def allowed_role_codes(session=None) -> Set[str]:
 # -----------------
 # Internal guard
 # -----------------
-def _ensure_reqid(request_id: Optional[str]) -> str:
+
+
+def _ensure_reqid(request_id: str | None) -> str:
     if request_id is None or not str(request_id).strip():
         raise ValueError("request_id must be non-empty")
     return str(request_id)
@@ -63,45 +173,10 @@ DO NOT refernce these for API data transfer.
 """
 
 
-def _person_view_dict(p: EntityPerson) -> dict:
-    ent = p.entity
-    # We keep a SINGLE primary EntityContact row (is_primary=True);
-    # it may carry email and/or phone (both in same row)
-    primary_contact = None
-    if ent and ent.contacts:
-        primary_contact = next(
-            (c for c in ent.contacts if c.is_primary), None
-        )
-    return {
-        "entity_ulid": ent.ulid if ent else None,
-        "first_name": p.first_name,
-        "last_name": p.last_name,
-        "preferred_name": p.preferred_name,
-        "email": primary_contact.email if primary_contact else None,
-        "phone": primary_contact.phone if primary_contact else None,
-        "created_at_utc": ent.created_at_utc if ent else None,
-        "updated_at_utc": ent.updated_at_utc if ent else None,
-    }
-
-
-def _org_view_dict(o: EntityOrg) -> dict:
-    ent = o.entity
-    primary_contact = None
-    if ent and ent.contacts:
-        primary_contact = next(
-            (c for c in ent.contacts if c.is_primary), None
-        )
-    return {
-        "entity_ulid": ent.ulid if ent else None,
-        "kind": "org",
-        "legal_name": o.legal_name,
-        "dba_name": o.dba_name,
-        "ein": o.ein,
-        "email": primary_contact.email if primary_contact else None,
-        "phone": primary_contact.phone if primary_contact else None,
-        "created_at_utc": ent.created_at_utc if ent else None,
-        "updated_at_utc": ent.updated_at_utc if ent else None,
-    }
+@dataclass(frozen=True, slots=True)
+class EnsurePersonResult:
+    entity_ulid: str
+    created: bool
 
 
 # -----------------
@@ -194,99 +269,97 @@ def ensure_person_by_contact(
     *,
     first_name: str,
     last_name: str,
-    email: Optional[str],
-    phone: Optional[str],
+    email: str | None,
+    phone: str | None,
     request_id: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
 ) -> str:
-    """
-    Idempotently ensure an 'Entity(kind=person)' exists with a Person row.
-    If email/phone are provided, upsert them as the single primary contact record.
-    Returns entity_ulid.
-    """
-    _ensure_reqid(request_id)
-    fn, ln = (first_name or "").strip(), (last_name or "").strip()
-    if not fn or not ln:
-        raise ValueError("first_name and last_name are required")
-
-    email_norm = normalize_email(email) if email else None
-    if email is not None and email_norm and not validate_email(email_norm):
-        raise ValueError("Invalid email")
-    phone_norm = normalize_phone(phone) if phone else None
-    if phone is not None and phone_norm and not validate_phone(phone_norm):
-        raise ValueError("Invalid phone")
-
-    # Try to find an existing person by primary contact (email first, then phone)
-    ent: Entity | None = None
-    if email_norm:
-        ent = (
-            db.session.query(Entity)
-            .join(EntityContact, EntityContact.entity_ulid == Entity.ulid)
-            .filter(
-                Entity.kind == "person",
-                EntityContact.is_primary.is_(True),
-                EntityContact.email == email_norm,
-            )
-            .first()
-        )
-    if not ent and phone_norm:
-        ent = (
-            db.session.query(Entity)
-            .join(EntityContact, EntityContact.entity_ulid == Entity.ulid)
-            .filter(
-                Entity.kind == "person",
-                EntityContact.is_primary.is_(True),
-                EntityContact.phone == phone_norm,
-            )
-            .first()
-        )
-
-    created = False
-    if not ent:
-        ent = Entity(kind="person")  # ulid auto-filled via ULIDPK.default
-        db.session.add(ent)
-        db.session.flush()  # so ent.ulid is available
-        db.session.add(
-            EntityPerson(entity_ulid=ent.ulid, first_name=fn, last_name=ln)
-        )
-        created = True
-    else:
-        p = ent.person
-        if p:
-            p.first_name = fn or p.first_name
-            p.last_name = ln or p.last_name
-        else:
-            db.session.add(
-                EntityPerson(
-                    entity_ulid=ent.ulid, first_name=fn, last_name=ln
-                )
-            )
-
-    db.session.flush()
-
-    # Upsert a single *primary* contact row
-    if email is not None or phone is not None:
-        _upsert_primary_contact(
-            entity_ulid=ent.ulid, email=email_norm, phone=phone_norm
-        )
-        db.session.flush()
-
-    # PII-safe, canon emit
-    event_bus.emit(
-        domain="entity",
-        operation="person_created" if created else "person_upserted",
+    return cmd_person_ensure_by_contact(
+        first_name=first_name,
+        last_name=last_name,
+        email=email,
+        phone=phone,
         request_id=request_id,
         actor_ulid=actor_ulid,
-        target_ulid=ent.ulid,
-        refs=None,
-        changed={
-            "fields": ["first_name", "last_name"]
-            + (["email"] if email is not None else [])
-            + (["phone"] if phone is not None else [])
-        },
-    )
+    ).entity_ulid
 
-    return ent.ulid
+
+def _first_email_phone(entity_ulid: str) -> list[dict[str, str]]:
+    q = (
+        query(EntityContact)
+        .filter(EntityContact.entity_ulid == entity_ulid)
+        .order_by(EntityContact.created_at_utc.asc())
+    )
+    emails: list[dict[str, str]] = []
+    phones: list[dict[str, str]] = []
+    for c in q:
+        if c.kind == "email" and not emails:
+            emails.append({"kind": "email", "value": c.value})
+        if c.kind == "phone" and not phones:
+            phones.append({"kind": "phone", "value": c.value})
+        if emails and phones:
+            break
+    return emails + phones
+
+
+def get_entity_card(entity_ulid: str) -> EntityCardDTO:
+    where = "entity_v2.get_entity_card"
+    try:
+        ent = get(Entity, entity_ulid)
+        if not ent:
+            raise ContractError(
+                "not_found",
+                where,
+                "entity not found",
+                404,
+                data={"entity_ulid": entity_ulid},
+            )
+
+        person = get(EntityPerson, entity_ulid)
+        org = None if person else get(EntityOrg, entity_ulid)
+
+        if person:
+            display = (
+                f"{person.last_name}, {person.first_name}".strip().strip(",")
+            )
+            etype = "person"
+        elif org:
+            display = org.legal_name
+            etype = "org"
+        else:
+            display = entity_ulid
+            etype = "org"
+
+        return EntityCardDTO(
+            ulid=entity_ulid,
+            type=etype,
+            display_name=display,
+            contacts=_first_email_phone(entity_ulid),
+            address_short=None,
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+def get_entity_core(entity_ulid: str) -> EntityCoreDTO:
+    where = "entity_v2.get_entity_core"
+    try:
+        ent = get(Entity, entity_ulid)
+        if not ent:
+            raise ContractError(
+                "not_found",
+                where,
+                "entity not found",
+                404,
+                data={"entity_ulid": entity_ulid},
+            )
+        return EntityCoreDTO(
+            ulid=ent.ulid,
+            kind=(ent.kind or "").strip().lower(),
+            archived_at=ent.archived_at,
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
 
 
 # -----------------
@@ -427,10 +500,10 @@ def create_customer_person(
 def ensure_org(
     *,
     legal_name: str,
-    dba_name: Optional[str] = None,
-    ein: Optional[str] = None,
+    dba_name: str | None = None,
+    ein: str | None = None,
     request_id: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
 ) -> str:
     """
     Create/update an organization entity.
@@ -512,10 +585,10 @@ def ensure_org(
 def upsert_contacts(
     *,
     entity_ulid: str,
-    email: Optional[str],
-    phone: Optional[str],
+    email: str | None,
+    phone: str | None,
     request_id: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
 ) -> None:
     """Upsert the single primary contact row for an entity; emits one event."""
     _ensure_reqid(request_id)
@@ -561,12 +634,12 @@ def upsert_address(
     is_physical: bool = True,
     is_postal: bool = False,
     address1: str = "",
-    address2: Optional[str] = None,
+    address2: str | None = None,
     city: str = "",
     state: str = "",
     postal_code: str = "",
     request_id: str,
-    actor_ulid: Optional[str],
+    actor_ulid: str | None,
 ) -> str:
     """
     Create/update the single 'primary' address by (is_physical, is_postal) flags.
@@ -577,7 +650,7 @@ def upsert_address(
     if not ent:
         raise ValueError("entity not found")
 
-    def _norm(s: Optional[str]) -> Optional[str]:
+    def _norm(s: str | None) -> str | None:
         return (s or "").strip() or None
 
     addr = (
@@ -637,7 +710,7 @@ def ensure_role(
     entity_ulid: str,
     role: str,
     request_id: str,
-    actor_ulid: Optional[str] | None,
+    actor_ulid: str | None | None,
 ) -> bool:
     """
     Attach a role to an entity if allowed by Governance and not already attached.
@@ -680,7 +753,7 @@ def remove_role(
     entity_ulid: str,
     role: str,
     request_id: str,
-    actor_ulid: Optional[str] | None,
+    actor_ulid: str | None | None,
 ) -> bool:
     """
     Remove a role from an entity (idempotent).
@@ -718,29 +791,23 @@ def remove_role(
 # -----------------
 # Views / listings
 # -----------------
-def person_view(person_ulid: str) -> Optional[dict]:
-    p = db.session.get(EntityPerson, person_ulid)
-    if not p:
+def person_view(entity_ulid: str) -> dict | None:
+    person = db.session.get(EntityPerson, entity_ulid)
+    if person is None:
         return None
     # eager-load primary contact for DTO
-    _ = p.entity and p.entity.contacts  # touch relationship
-    return _person_view_dict(p)
+    _ = person.entity and person.entity.contacts
+    return map_person_view(person)
 
 
-def list_people_with_role(
-    role: str, page: int, per: int
-) -> Tuple[List[dict], int]:
-    page = max(int(page or 1), 1)
-    per = min(max(int(per or 20), 1), 100)
-
+def list_people(*, page: int, per_page: int) -> Page[PersonView]:
     q = (
         db.session.query(EntityPerson)
         .join(Entity, EntityPerson.entity_ulid == Entity.ulid)
-        .join(EntityRole, EntityRole.entity_ulid == Entity.ulid)
-        .filter(EntityRole.role == role)
         .options(
             joinedload(EntityPerson.entity).options(
-                selectinload(Entity.contacts), selectinload(Entity.roles)
+                selectinload(Entity.contacts),
+                selectinload(Entity.roles),
             )
         )
         .order_by(
@@ -749,79 +816,13 @@ def list_people_with_role(
             asc(Entity.ulid),
         )
     )
-    total = q.count()
-    if total == 0:
-        return [], 0
 
-    rows = q.offset((page - 1) * per).limit(per).all()
-    return [_person_view_dict(p) for p in rows], total
+    return paginate_sa(q, page=page, per_page=per_page).map(map_person_view)
 
 
-def list_orgs_with_role(
-    role: str, page: int, per: int
-) -> Tuple[List[dict], int]:
-    page = max(int(page or 1), 1)
-    per = min(max(int(per or 20), 1), 100)
-
-    q = (
-        db.session.query(EntityOrg)
-        .join(Entity, EntityOrg.entity_ulid == Entity.ulid)
-        .join(EntityRole, EntityRole.entity_ulid == Entity.ulid)
-        .filter(EntityRole.role == role)
-        .options(
-            joinedload(EntityOrg.entity).options(
-                selectinload(Entity.contacts), selectinload(Entity.roles)
-            )
-        )
-        .order_by(asc(EntityOrg.legal_name), asc(Entity.ulid))
-    )
-    total = q.count()
-    if total == 0:
-        return [], 0
-
-    rows = q.offset((page - 1) * per).limit(per).all()
-    return [_org_view_dict(o) for o in rows], total
-
-
-def list_people(*, page: int, per: int) -> Tuple[List[dict], int]:
-    """
-    List ALL people (no role filter), paginated.
-    """
-    page = max(int(page or 1), 1)
-    per = min(max(int(per or 20), 1), 100)
-
-    q = (
-        db.session.query(EntityPerson)
-        .join(Entity, EntityPerson.entity_ulid == Entity.ulid)
-        .options(
-            joinedload(EntityPerson.entity).options(
-                selectinload(Entity.contacts), selectinload(Entity.roles)
-            )
-        )
-        .order_by(
-            asc(EntityPerson.last_name),
-            asc(EntityPerson.first_name),
-            asc(Entity.ulid),
-        )
-    )
-    total = q.count()
-    if total == 0:
-        return [], 0
-    rows = q.offset((page - 1) * per).limit(per).all()
-    return [_person_view_dict(p) for p in rows], total
-
-
-def list_orgs(
-    *, roles: List[str], page: int, per: int
-) -> Tuple[List[dict], int]:
-    """
-    List orgs whose entity has ANY of the supplied roles (OR semantics),
-    typically roles=['resource','sponsor'].
-    """
-    page = max(int(page or 1), 1)
-    per = min(max(int(per or 20), 1), 100)
-
-    # Select orgs where the backing entity has any of the roles
+def list_orgs_by_roles(
+    *, roles: list[str], page: int, per_page: int
+) -> Page[OrgView]:
     q = (
         db.session.query(EntityOrg)
         .join(Entity, EntityOrg.entity_ulid == Entity.ulid)
@@ -829,26 +830,24 @@ def list_orgs(
         .filter(EntityRole.role.in_(roles))
         .options(
             joinedload(EntityOrg.entity).options(
-                selectinload(Entity.contacts), selectinload(Entity.roles)
+                selectinload(Entity.contacts),
+                selectinload(Entity.roles),
             )
         )
         .order_by(asc(EntityOrg.legal_name), asc(Entity.ulid))
-        .distinct(EntityOrg.ulid)  # avoid dup rows for multi-role orgs
+        .distinct(EntityOrg.entity_ulid)
     )
 
-    total = q.count()
-    if total == 0:
-        return [], 0
-
-    rows = q.offset((page - 1) * per).limit(per).all()
-    return [_org_view_dict(o) for o in rows], total
+    org_page = paginate_sa(q, page=page, per_page=per_page)
+    views = [map_org_view(o) for o in org_page.items]
+    return rewrap_page(org_page, views)
 
 
 # -----------------
 # Internals
 # -----------------
 def _upsert_primary_contact(
-    *, entity_ulid: str, email: Optional[str], phone: Optional[str]
+    *, entity_ulid: str, email: str | None, phone: str | None
 ) -> None:
     """
     Maintain exactly one primary EntityContact row per entity.
@@ -875,3 +874,115 @@ def _upsert_primary_contact(
         c.email = email
     if phone is not None:
         c.phone = phone
+
+
+# -----------------
+# New Wizard-related
+# function definitions
+# below this banner
+# -----------------
+
+
+def cmd_person_ensure_by_contact(
+    *,
+    first_name: str,
+    last_name: str,
+    email: str | None,
+    phone: str | None,
+    request_id: str,
+    actor_ulid: str | None,
+) -> EnsurePersonResult:
+    fn = (first_name or "").strip()
+    ln = (last_name or "").strip()
+    if not fn or not ln:
+        raise ValueError("first_name and last_name are required")
+
+    email_norm = normalize_email(email) if email else None
+    if email is not None and email_norm and not validate_email(email_norm):
+        raise ValueError("invalid email")
+
+    phone_norm = normalize_phone(phone) if phone else None
+    if phone is not None and phone_norm and not validate_phone(phone_norm):
+        raise ValueError("invalid phone")
+
+    ent: Entity | None = None
+
+    if email_norm:
+        ent = (
+            db.session.query(Entity)
+            .join(EntityContact, EntityContact.entity_ulid == Entity.ulid)
+            .filter(
+                Entity.kind == "person",
+                EntityContact.is_primary.is_(True),
+                EntityContact.email == email_norm,
+            )
+            .first()
+        )
+
+    if not ent and phone_norm:
+        ent = (
+            db.session.query(Entity)
+            .join(EntityContact, EntityContact.entity_ulid == Entity.ulid)
+            .filter(
+                Entity.kind == "person",
+                EntityContact.is_primary.is_(True),
+                EntityContact.phone == phone_norm,
+            )
+            .first()
+        )
+
+    created = False
+
+    if not ent:
+        ent = Entity(kind="person")
+        db.session.add(ent)
+        db.session.flush()
+
+        db.session.add(
+            EntityPerson(
+                entity_ulid=ent.ulid,
+                first_name=fn,
+                last_name=ln,
+            )
+        )
+        created = True
+    else:
+        p = ent.person
+        if p:
+            p.first_name = fn
+            p.last_name = ln
+        else:
+            db.session.add(
+                EntityPerson(
+                    entity_ulid=ent.ulid,
+                    first_name=fn,
+                    last_name=ln,
+                )
+            )
+
+    db.session.flush()
+
+    # optional: upsert primary contact if explicitly provided
+    if email is not None or phone is not None:
+        _upsert_primary_contact(
+            entity_ulid=ent.ulid,
+            email=email_norm,
+            phone=phone_norm,
+        )
+        db.session.flush()
+
+    event_bus.emit(
+        domain="entity",
+        operation="person_created" if created else "person_upserted",
+        request_id=request_id,
+        actor_ulid=actor_ulid,
+        target_ulid=ent.ulid,
+        refs=None,
+        changed={
+            "fields": ["first_name", "last_name"]
+            + (["email"] if email is not None else [])
+            + (["phone"] if phone is not None else []),
+        },
+    )
+
+    return EnsurePersonResult(entity_ulid=ent.ulid, created=created)

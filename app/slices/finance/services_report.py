@@ -1,8 +1,6 @@
 # app/slices/finance/services_report.py
 from __future__ import annotations
 
-from typing import Dict
-
 from sqlalchemy import text
 
 from app.extensions import db
@@ -87,7 +85,7 @@ def statement_of_activities(period: str):
         db.session.execute(q_proj, {"period": period}).mappings().all()
     )
 
-    by_restriction: Dict[str, Dict[str, int]] = {}
+    by_restriction: dict[str, dict[str, int]] = {}
     for r in fund_rows:
         key = r["restriction_type"]
         bucket = by_restriction.setdefault(

@@ -7,15 +7,15 @@ from app.slices.customers.models import CustomerEligibility
 from app.slices.ledger.models import LedgerEvent
 from app.slices.logistics.issuance_services import (
     IssueContext,
-    decide_issue,
     decide_and_issue_one,
-)
-from app.slices.logistics.services import (
-    ensure_location,
-    ensure_item,
-    receive_inventory,
+    decide_issue,
 )
 from app.slices.logistics.models import InventoryStock, Issue
+from app.slices.logistics.services import (
+    ensure_item,
+    ensure_location,
+    receive_inventory,
+)
 
 
 def _make_customer_veteran(*, is_veteran: bool) -> str:

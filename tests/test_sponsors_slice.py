@@ -75,17 +75,26 @@ def test_sponsors_ensure_idempotent(sponsor_policy, staff_client):
         actor_ulid="seed",
     )
 
-    r1 = staff_client.post("/sponsors", json={"entity_ulid": person.entity_ulid})
+    r1 = staff_client.post(
+        "/sponsors", json={"entity_ulid": person.entity_ulid}
+    )
     d1 = _assert_ok(r1)
     sid1 = d1["sponsor_entity_ulid"]
     assert sid1 == person.entity_ulid
 
-    r2 = staff_client.post("/sponsors", json={"entity_ulid": person.entity_ulid})
+    r2 = staff_client.post(
+        "/sponsors", json={"entity_ulid": person.entity_ulid}
+    )
     d2 = _assert_ok(r2)
     sid2 = d2["sponsor_entity_ulid"]
     assert sid2 == sid1
 
-    assert db.session.query(Sponsor).filter_by(entity_ulid=person.entity_ulid).count() == 1
+    assert (
+        db.session.query(Sponsor)
+        .filter_by(entity_ulid=person.entity_ulid)
+        .count()
+        == 1
+    )
 
 
 def test_sponsors_capabilities_roundtrip(sponsor_policy, staff_client):
@@ -99,7 +108,9 @@ def test_sponsors_capabilities_roundtrip(sponsor_policy, staff_client):
         actor_ulid="seed",
     )
     sid = _assert_ok(
-        staff_client.post("/sponsors", json={"entity_ulid": person.entity_ulid})
+        staff_client.post(
+            "/sponsors", json={"entity_ulid": person.entity_ulid}
+        )
     )["sponsor_entity_ulid"]
 
     r1 = staff_client.post(
@@ -107,7 +118,10 @@ def test_sponsors_capabilities_roundtrip(sponsor_policy, staff_client):
         json={"fund_type.cash_grant": True},
     )
     d1 = _assert_ok(r1)
-    caps = {c["domain"] + "." + c["key"] for c in d1["sponsor"]["active_capabilities"]}
+    caps = {
+        c["domain"] + "." + c["key"]
+        for c in d1["sponsor"]["active_capabilities"]
+    }
     assert caps == {"fund_type.cash_grant"}
 
 
@@ -122,10 +136,14 @@ def test_sponsors_readiness_and_mou(sponsor_policy, staff_client):
         actor_ulid="seed",
     )
     sid = _assert_ok(
-        staff_client.post("/sponsors", json={"entity_ulid": person.entity_ulid})
+        staff_client.post(
+            "/sponsors", json={"entity_ulid": person.entity_ulid}
+        )
     )["sponsor_entity_ulid"]
 
-    r1 = staff_client.post(f"/sponsors/{sid}/readiness", json={"status": "active"})
+    r1 = staff_client.post(
+        f"/sponsors/{sid}/readiness", json={"status": "active"}
+    )
     d1 = _assert_ok(r1)
     assert d1["readiness_status"] == "active"
 
@@ -145,7 +163,9 @@ def test_sponsors_pledges_and_status(sponsor_policy, staff_client):
         actor_ulid="seed",
     )
     sid = _assert_ok(
-        staff_client.post("/sponsors", json={"entity_ulid": person.entity_ulid})
+        staff_client.post(
+            "/sponsors", json={"entity_ulid": person.entity_ulid}
+        )
     )["sponsor_entity_ulid"]
 
     pledge_ulid = new_ulid()
@@ -180,10 +200,14 @@ def test_sponsors_search_filters(sponsor_policy, staff_client):
         actor_ulid="seed",
     )
     sid = _assert_ok(
-        staff_client.post("/sponsors", json={"entity_ulid": person.entity_ulid})
+        staff_client.post(
+            "/sponsors", json={"entity_ulid": person.entity_ulid}
+        )
     )["sponsor_entity_ulid"]
 
-    staff_client.post(f"/sponsors/{sid}/capabilities", json={"fund_type.cash_grant": True})
+    staff_client.post(
+        f"/sponsors/{sid}/capabilities", json={"fund_type.cash_grant": True}
+    )
     staff_client.post(
         f"/sponsors/{sid}/pledges",
         json={

@@ -22,8 +22,6 @@ to seed `request_ctx.set_actor_ulid()` and ledger emissions.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from flask import session
 from flask_login import current_user
 
@@ -34,7 +32,7 @@ from app.lib.ids import new_ulid
 # -----------------------------------------
 
 
-def current_actor_ulid() -> Optional[str]:
+def current_actor_ulid() -> str | None:
     """
     Return a stable ULID for the *actor* in this session.
     In prod you might store an actor ULID on the user row;
@@ -46,3 +44,12 @@ def current_actor_ulid() -> Optional[str]:
     if key not in session:
         session[key] = new_ulid()
     return session[key]
+
+
+def get_user_roles(user_ulid: str) -> list[str]:
+    # Temporary bridge: call Auth slice today (later: Auth contract).
+    from app.slices.auth import (
+        services as auth_ro,
+    )  # local import keeps boundary tight
+
+    return list(auth_ro.get_user_roles(user_ulid))
