@@ -62,12 +62,16 @@ class UserService:
             
         Returns:
             User if found, None otherwise
+            
+        Note:
+            This is a stub implementation for demonstration purposes.
+            In production, this would query the database.
         """
         validate_request_id(request_id)
         logger.info(f"Fetching user: {user_id}", extra={"request_id": request_id})
         
-        # In real implementation, query database
-        # For now, return None as example
+        # STUB: In real implementation, would query database like:
+        # return db.query(User).filter(User.id == user_id).first()
         return None
 
 

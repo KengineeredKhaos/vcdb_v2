@@ -13,11 +13,11 @@ from app.slices.users.routes.user_routes import create_user_route, get_user_rout
 from app.slices.services.services.service_request_service import service_request_service
 from app.lib.database.session import get_db_session
 
-# Configure logging
+# Configure logging with simple format
+# Note: request_id is added via extra parameter in log calls
 logging.basicConfig(
     level=logging.INFO,
-    format='%(levelname)s - %(message)s - [%(request_id)s]' if 'request_id' in logging.LogRecord(
-        '', 0, '', 0, '', (), None).__dict__ else '%(levelname)s - %(message)s'
+    format='%(levelname)s - %(message)s'
 )
 
 print("=" * 80)

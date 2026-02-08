@@ -29,7 +29,11 @@ class UserContract:
         Returns:
             User if found, None otherwise
         """
-        # Import locally to avoid circular dependencies
+        # Import locally to avoid circular dependencies.
+        # This prevents issues when:
+        # 1. user_service imports from extensions
+        # 2. extensions imports from user_service
+        # Local import breaks the circular dependency at module load time.
         from app.slices.users.services.user_service import user_service
         return user_service.get_by_id(db, request_id, user_id)
     
