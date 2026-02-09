@@ -326,7 +326,7 @@ def ensure_account(*, code: str, name: str, type: str) -> str:
         return a.ulid
     a = Account(code=code, name=name, type=type, active=True)
     db.session.add(a)
-    db.session.commit()
+    db.session.flush()
     return a.ulid
 
 
@@ -376,7 +376,7 @@ def ensure_fund(*, code: str, name: str, restriction: str) -> Fund:
 def ensure_project(*, name: str) -> str:
     p = Project(name=name, active=True)
     db.session.add(p)
-    db.session.commit()
+    db.session.flush()
     return p.ulid
 
 
@@ -511,7 +511,7 @@ def post_journal(
         )
 
     _apply_to_balances(lines=lines, period_key=period_key)
-    db.session.commit()
+    db.session.flush()
 
     # Emit cross-slice audit (NOT the Finance journal)
     event_bus.emit(
@@ -1134,7 +1134,7 @@ def rebuild_balances(*, period_from: str, period_to: str) -> dict:
     for pk, bunch in buckets.items():
         _apply_to_balances(lines=bunch, period_key=pk)
 
-    db.session.commit()
+    db.session.flush()
     event_bus.emit(
         domain="finance",
         operation="balance_rebuild",
@@ -1181,7 +1181,7 @@ def record_stat_metric(
         source_ref_ulid=source_ref_ulid,
     )
     db.session.add(m)
-    db.session.commit()
+    db.session.flush()
     event_bus.emit(
         domain="finance",
         operation="stat_recorded",

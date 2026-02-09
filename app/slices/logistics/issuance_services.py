@@ -428,7 +428,7 @@ def decide_and_issue_one(
 ) -> IssueResult:
     """
     Write path: reduce batch + stock, record Movement + Issue, emit Ledger event.
-    Caller must commit (CLI should do db.session.commit()).
+    Caller must commit (CLI should do db.session.commit().
     """
     sku_code = (ctx.sku_code or "").strip()
     if not validate_sku(sku_code):

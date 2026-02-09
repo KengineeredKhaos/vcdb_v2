@@ -571,9 +571,9 @@ def _emit_policy_event(
         "version_prev": prev_version,
         "version_new": new_version,
         # store compact JSON strings to keep envelope small & deterministic
-        "value_prev_json": stable_dumps(prev_value)
-        if prev_value is not None
-        else None,
+        "value_prev_json": (
+            stable_dumps(prev_value) if prev_value is not None else None
+        ),
         "value_new_json": stable_dumps(new_value),
     }
 
@@ -1010,7 +1010,7 @@ def _save_policy_value(
             updated_by_actor_ulid=actor_ulid,
         )
         db.session.add(row)
-    db.session.commit()
+    db.session.flush()
     event_bus.emit(
         domain="governance",
         operation=emit_operation,

@@ -176,7 +176,7 @@ def create_grant(payload: dict) -> GrantDTO:
     grant.allowable_categories = cat_list
 
     db.session.add(grant)
-    db.session.commit()
+    db.session.flush()
 
     # Emit a lightweight event for observability / ledger fan-out
     event_bus.emit(
@@ -298,7 +298,7 @@ def submit_reimbursement(payload: dict) -> ReimbursementDTO:
     )
 
     db.session.add(reimbursement)
-    db.session.commit()
+    db.session.flush()
 
     # Ledger hook – paperwork-only, no money moves here.
     # event_bus signature is canonical: (domain, operation, request_id, actor_ulid, target_ulid, ...)
@@ -397,7 +397,7 @@ def mark_disbursed(payload: dict) -> ReimbursementDTO:
         pass
     else:
         reimbursement.status = new_status
-        db.session.commit()
+        db.session.flush()
 
     # Ledger hook – status change only; no money moves here.
     event_bus.emit(

@@ -98,7 +98,7 @@ def set_period_status(*, period_key: str, status: str) -> None:
         db.session.add(p)
     else:
         p.status = status
-    db.session.commit()
+    db.session.flush()
     event_bus.emit(
         domain="finance",
         operation="period_status_changed",
@@ -274,7 +274,7 @@ def create_fund(
         fund.restriction = restriction_internal
         fund.active = bool(active)
 
-    db.session.commit()
+    db.session.flush()
 
     dto = FundDTO()
     dto.id = fund.ulid
