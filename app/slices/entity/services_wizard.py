@@ -11,14 +11,11 @@ from typing import Any
 
 from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
-from app.lib.geo import normalize_state
 from app.lib.utils import (
     normalize_dob,
-    normalize_ein,
     normalize_email,
     normalize_phone,
     validate_dob,
-    validate_ein,
     validate_email,
     validate_phone,
 )
@@ -139,7 +136,7 @@ def _cmd_wizard_person_upsert_customer_facts(
         if dob_norm and not validate_dob(dob_norm):
             raise ValueError("invalid dob")
         if getattr(p, "dob", None) != dob_norm:
-            setattr(p, "dob", dob_norm)
+            p.dob = dob_norm
             changed.append("dob")
 
     if last_4 is not None:
@@ -147,19 +144,19 @@ def _cmd_wizard_person_upsert_customer_facts(
         if l4 and (not l4.isdigit() or len(l4) != 4):
             raise ValueError("last_4 must be 4 digits")
         if getattr(p, "last_4", None) != (l4 or None):
-            setattr(p, "last_4", l4 or None)
+            p.last_4 = l4 or None
             changed.append("last_4")
 
     if branch is not None:
         b = (branch or "").strip() or None
         if getattr(p, "branch", None) != b:
-            setattr(p, "branch", b)
+            p.branch = b
             changed.append("branch")
 
     if era is not None:
         e = (era or "").strip() or None
         if getattr(p, "era", None) != e:
-            setattr(p, "era", e)
+            p.era = e
             changed.append("era")
 
     return tuple(changed)

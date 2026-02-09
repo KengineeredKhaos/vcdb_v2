@@ -12,7 +12,6 @@ from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
 from app.slices.entity import services_poc as poc_svc
-from app.slices.entity.guards import require_person_entity_ulid
 
 from .models import (
     Sponsor,

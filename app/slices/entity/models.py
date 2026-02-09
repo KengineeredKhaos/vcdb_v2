@@ -166,6 +166,7 @@ class EntityRole(db.Model, ULIDPK, IsoTimestamps):
     role: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
 
     archived_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
     __table_args__ = (
         # Governance enforces allowed values;
         # DB enforces uniqueness per entity

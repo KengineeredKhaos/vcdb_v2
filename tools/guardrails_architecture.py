@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import ast
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
-
 
 # --- Paths ---
 ROOT = Path(__file__).resolve().parents[1]

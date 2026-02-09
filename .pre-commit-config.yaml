@@ -10,4 +10,4 @@ repos:
         name: VCDB architecture guardrails
         entry: python tools/guardrails_architecture.py --strict
         language: system
-        pass_filenames: true
+        pass_filenames: false

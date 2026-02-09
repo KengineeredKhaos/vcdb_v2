@@ -8,6 +8,17 @@ pyrightconfig.json
 .cache/
 *.zip
 
+# --- Repo focus (non-app artifacts/docs)
+/Canon/
+/docs/
+/scaffolding_docs/
+/snapshots/
+/snippets/
+/tools/
+/scripts/
+/Test_rat_hole/
+/lib_snapshot/
+
 # --- Virtual Environment ---
 /bin/
 /include/
@@ -15,6 +26,8 @@ pyrightconfig.json
 /lib64
 /pyvenv.cfg
 env/
+.venv/
+venv/
 .pyenv/
 pip-wheel-metadata/
 pip-log.txt
@@ -24,10 +37,22 @@ __pycache__/
 *.py[cod]
 *.pyd
 *.so
+*.dll
+*.dylib
+*.exe
+*.bin
 *.egg*
 .eggs/
 dist/
 build/
+.tox/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+node_modules/
 
 # --- Databases (SQLite etc.) ---
 *.sqlite
@@ -48,6 +73,7 @@ app/logs/*.log
 archive/**
 !archive/.gitkeep
 exports/**
+wheelhouse/
 
 # --- Secrets & local config ---
 .env
