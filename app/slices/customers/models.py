@@ -210,10 +210,15 @@ class CustomerEligibility(db.Model, ULIDPK, IsoTimestamps):
         nullable=False,
         index=True,
     )
+    # SelectField [USA|USMC|USN|USAF|USSF|USCG]
+    branch: Mapped[str] = mapped_column(String(4), nullable=True)
+    # SelectField [WWI|WWII|KW|VN|CW|PBO|GW|OIF|OEF|5GW|SW]
+    era: Mapped[str] = mapped_column(String(16), nullable=True)
     # Verified qualifiers (coarse booleans)
     is_veteran_verified: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, index=True
     )
+    # SelectField [dd214|va_id|state_dl_veteran|other ]
     veteran_method: Mapped[str | None] = mapped_column(
         String(32), nullable=True, index=True
     )  # dd214|va_id|state_dl_veteran|other

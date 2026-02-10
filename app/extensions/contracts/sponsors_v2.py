@@ -200,3 +200,13 @@ def set_pledge_status(
         }
 
     return _wrap(WHERE_SET_PLEDGE_STATUS, _run)
+
+
+__all__ = [
+    "ensure_sponsor",
+    "upsert_capabilities",
+    "promote_if_clean",
+    "get_sponsor_cues",
+    "upsert_pledge",
+    "set_pledge_status",
+]

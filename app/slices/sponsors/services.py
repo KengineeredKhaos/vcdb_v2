@@ -13,6 +13,12 @@ from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
 from app.slices.entity import services_poc as poc_svc
 
+from .mapper import (
+    SponsorPOCView,
+    SponsorView,
+    map_sponsor_poc_list,
+    map_sponsor_view,
+)
 from .models import (
     Sponsor,
     SponsorCapabilityIndex,
@@ -195,12 +201,13 @@ def sponsor_unlink_poc(
     )
 
 
-def sponsor_list_pocs(*, sponsor_entity_ulid: str) -> list[dict]:
-    return poc_svc.list_pocs(
+def sponsor_list_pocs(*, sponsor_entity_ulid: str) -> list[SponsorPOCView]:
+    rows = poc_svc.list_pocs(
         POCModel=SponsorPOC,
         spec=_SPONSOR_POC_SPEC,
         owner_ulid=sponsor_entity_ulid,
     )
+    return map_sponsor_poc_list(rows)
 
 
 # -----------------
@@ -1088,7 +1095,7 @@ def set_pledge_status(
 # -----------------
 
 
-def sponsor_view(sponsor_entity_ulid: str) -> dict | None:
+def sponsor_view(sponsor_entity_ulid: str) -> SponsorView | None:
     s = db.session.get(Sponsor, sponsor_entity_ulid)
     if not s:
         return None
@@ -1102,34 +1109,7 @@ def sponsor_view(sponsor_entity_ulid: str) -> dict | None:
         .filter_by(sponsor_entity_ulid=s.entity_ulid)
         .all()
     )
-    return {
-        "sponsor_entity_ulid": sponsor_entity_ulid,
-        "entity_ulid": s.entity_ulid,
-        "admin_review_required": s.admin_review_required,
-        "readiness_status": s.readiness_status,
-        "mou_status": s.mou_status,
-        "active_capabilities": [
-            {"domain": c.domain, "key": c.key} for c in caps
-        ],
-        "pledges": [
-            {
-                "pledge_ulid": p.pledge_ulid,
-                "type": p.type,
-                "status": p.status,
-                "has_restriction": p.has_restriction,
-                "est_value_number": p.est_value_number,
-                "currency": p.currency,
-                "updated_at_utc": p.updated_at_utc,
-            }
-            for p in pledges
-        ],
-        "capability_last_update_utc": s.capability_last_update_utc,
-        "pledge_last_update_utc": s.pledge_last_update_utc,
-        "first_seen_utc": s.first_seen_utc,
-        "last_touch_utc": s.last_touch_utc,
-        "created_at_utc": s.created_at_utc,
-        "updated_at_utc": s.updated_at_utc,
-    }
+    return map_sponsor_view(s, caps, pledges)
 
 
 def find_sponsors(
@@ -1140,7 +1120,7 @@ def find_sponsors(
     admin_review_required: bool | None = None,
     page: int = 1,
     per: int = 50,
-) -> tuple[list[dict], int]:
+) -> tuple[list[SponsorView], int]:
     q = db.session.query(Sponsor)
     if readiness_in:
         q = q.filter(Sponsor.readiness_status.in_(list(set(readiness_in))))
@@ -1185,4 +1165,5 @@ def find_sponsors(
         .limit(per)
         .all()
     )
-    return [sponsor_view(r.ulid) for r in rows], total
+    views = [sponsor_view(r.entity_ulid) for r in rows]
+    return [v for v in views if v is not None], total

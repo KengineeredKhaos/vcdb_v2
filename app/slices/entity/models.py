@@ -120,8 +120,6 @@ class EntityPerson(db.Model, IsoTimestamps):
     )
     last_4: Mapped[str] = mapped_column(String(4), nullable=True)
     dob: Mapped[str] = mapped_column(String(10), nullable=True)
-    branch: Mapped[str] = mapped_column(String(4), nullable=True)
-    era: Mapped[str] = mapped_column(String(16), nullable=True)
 
 
 # -------------------------

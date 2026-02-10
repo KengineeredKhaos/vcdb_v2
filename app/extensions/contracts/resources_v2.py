@@ -16,6 +16,7 @@ from typing import Any, TypedDict
 from sqlalchemy.orm import Session
 
 from app.extensions.errors import ContractError
+from app.slices.resources import mapper as res_mapper
 from app.slices.resources import services as svc
 from app.slices.resources.models import ResourcePOC
 
@@ -94,7 +95,7 @@ def get_resource_view(resource_ulid: str) -> ResourceViewDTO:
         view = svc.resource_view(resource_ulid)
         if not view:
             raise LookupError("resource not found")
-        return view  # already PII-free
+        return res_mapper.resource_view_to_dto(view)
     except Exception as exc:
         raise _as_contract_error(where, exc)
 
@@ -249,7 +250,8 @@ def list_pocs(resource_ulid: str) -> list[dict]:
     """
     where = "resources_v2.list_pocs"
     try:
-        return svc.resource_list_pocs(resource_ulid=resource_ulid)
+        views = svc.resource_list_pocs(resource_ulid=resource_ulid)
+        return res_mapper.resource_poc_list_to_dto(views)
     except Exception as exc:
         raise _as_contract_error(where, exc)
 
@@ -290,3 +292,18 @@ def get_org_poc_cards(sess: Session, org_ulid: str) -> list[dict]:
         }
         for r in rows
     ]
+
+
+__all__ = [
+    "get_resource_view",
+    "ensure_resource",
+    "set_readiness",
+    "set_mou",
+    "upsert_capabilities",
+    "patch_capabilities",
+    "promote_if_clean",
+    "rebuild_index",
+    "rebuild_all",
+    "list_pocs",
+    "get_org_poc_cards",
+]

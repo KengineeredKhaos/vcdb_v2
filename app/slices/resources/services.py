@@ -12,6 +12,12 @@ from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
 from app.slices.entity import services_poc as poc_svc
+from app.slices.resources.mapper import (
+    ResourcePOCView,
+    ResourceView,
+    map_resource_poc_list,
+    map_resource_view,
+)
 from app.slices.resources.models import (
     Resource,
     ResourceCapabilityIndex,
@@ -142,7 +148,7 @@ def resourse_link_poc(
         org_role=org_role,
         actor_ulid=actor_ulid,
         request_id=request_id,
-    )
+    )  # type: ignore
 
 
 def resource_update_poc(
@@ -202,12 +208,13 @@ def resource_unlink_poc(
     )
 
 
-def resource_list_pocs(*, resource_entity_ulid: str) -> list[dict]:
-    return poc_svc.list_pocs(
+def resource_list_pocs(*, resource_ulid: str) -> list[ResourcePOCView]:
+    rows = poc_svc.list_pocs(
         POCModel=ResourcePOC,
         spec=_RESOURCE_POC_SPEC,
-        owner_ulid=resource_entity_ulid,
+        owner_ulid=resource_ulid,
     )
+    return map_resource_poc_list(rows)
 
 
 # -----------------
@@ -611,7 +618,7 @@ def upsert_capabilities(
     return hist.ulid
 
 
-def resource_view(resource_entity_ulid: str) -> dict | None:
+def resource_view(resource_entity_ulid: str) -> ResourceView | None:
     r = db.session.get(Resource, resource_entity_ulid)
     if not r:
         return None
@@ -620,20 +627,7 @@ def resource_view(resource_entity_ulid: str) -> dict | None:
         .filter_by(resource_entity_ulid=resource_entity_ulid, active=True)
         .all()
     )
-    return {
-        "resource_entity_ulid": r.entity_ulid,
-        "admin_review_required": r.admin_review_required,
-        "readiness_status": r.readiness_status,
-        "mou_status": r.mou_status,
-        "active_capabilities": [
-            {"domain": c.domain, "key": c.key} for c in caps
-        ],
-        "capability_last_update_utc": r.capability_last_update_utc,
-        "first_seen_utc": r.first_seen_utc,
-        "last_touch_utc": r.last_touch_utc,
-        "created_at_utc": r.created_at_utc,
-        "updated_at_utc": r.updated_at_utc,
-    }
+    return map_resource_view(r, caps)
 
 
 def find_resources(
@@ -644,7 +638,7 @@ def find_resources(
     readiness_in: list[str] | None = None,
     page: int = 1,
     per: int = 50,
-) -> tuple[list[dict], int]:
+) -> tuple[list[ResourceView], int]:
     q = db.session.query(Resource.entity_ulid)
 
     if any_of:
@@ -687,7 +681,8 @@ def find_resources(
         .limit(per)
         .all()
     )
-    return [resource_view(r.entity_ulid) for r in rows], total
+    views = [resource_view(r.entity_ulid) for r in rows]
+    return [v for v in views if v is not None], total
 
 
 def set_readiness_status(
@@ -986,3 +981,18 @@ def rebuild_all_capability_indexes(
         "page": int(page or 1),
         "per": per,
     }
+
+
+__all__ = [
+    "ensure_resource",
+    "upsert_capabilities",
+    "patch_capabilities",
+    "resource_view",
+    "find_resources",
+    "set_readiness_status",
+    "set_mou_status",
+    "rebuild_capability_index",
+    "rebuild_all_capability_indexes",
+    "promote_readiness_if_clean",
+    "resource_list_pocs",
+]
