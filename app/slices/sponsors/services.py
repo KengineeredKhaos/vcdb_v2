@@ -9,9 +9,9 @@ from sqlalchemy import desc, func
 from app.extensions import db, event_bus
 from app.extensions.contracts import entity_v2
 from app.extensions.errors import ContractError
+from app.lib import poc_services as poc
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
-from app.slices.entity import services_poc as poc_svc
 
 from .mapper import (
     SponsorPOCView,
@@ -35,7 +35,7 @@ CAPS_SECTION = "sponsor:capability:v1"
 PLEDGE_SECTION = "sponsor:pledge:v1"
 POC_RELATION = "poc"  # table-level convention, not board policy
 PROSPECT_REAL_SECTION = "sponsor:prospect_realization:v1"
-_SPONSOR_POC_SPEC = poc_svc.POCSpec(owner_col="sponsor_entity_ulid")
+_SPONSOR_POC_SPEC = poc.POCSpec(owner_col="sponsor_entity_ulid")
 
 
 # -----------------
@@ -109,7 +109,7 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
 # -----------------
 # Point of Contact
 # wrappers for
-# app.services.poc
+# app.lib.poc_services
 # -----------------
 
 
@@ -126,10 +126,10 @@ def sponsor_link_poc(
     request_id: str,
 ):
     entity_v2.require_person_entity_ulid(
-        entity_ulid=person_entity_ulid,
-        where="sponsors.sponsor_link_poc",
+        entity_ulid=person_entity_ulid, where="sponsors.sponsor_link_poc"
     )
-    return poc_svc.link_poc(
+    return poc.link_poc(
+        session=db.session(),
         POCModel=SponsorPOC,
         spec=_SPONSOR_POC_SPEC,
         domain="sponsors",
@@ -157,11 +157,12 @@ def sponsor_update_poc(
     actor_ulid: str | None = None,
     request_id: str,
 ):
-    entity_ulid.require_person_entity_ulid(
+    entity_v2.require_person_entity_ulid(
         entity_ulid=person_entity_ulid,
-        where="sponsors.sponsor_update_poc",
+        where=sponsors.sponsor_update_poc,
     )
-    return poc_svc.update_poc(
+    return poc.update_poc(
+        session=db.session(),
         POCModel=SponsorPOC,
         spec=_SPONSOR_POC_SPEC,
         domain="sponsors",
@@ -186,10 +187,10 @@ def sponsor_unlink_poc(
     request_id: str,
 ):
     entity_v2.require_person_entity_ulid(
-        entity_ulid=person_entity_ulid,
-        where="sponsors.sponsor_unlink_poc",
+        entity_ulid=person_entity_ulid, where="sponsors.sponsor_unlink_poc"
     )
-    return poc_svc.unlink_poc(
+    return poc.unlink_poc(
+        session=db.session(),
         POCModel=SponsorPOC,
         spec=_SPONSOR_POC_SPEC,
         domain="sponsors",
@@ -202,7 +203,8 @@ def sponsor_unlink_poc(
 
 
 def sponsor_list_pocs(*, sponsor_entity_ulid: str) -> list[SponsorPOCView]:
-    rows = poc_svc.list_pocs(
+    rows = poc.list_pocs(
+        session=db.session(),
         POCModel=SponsorPOC,
         spec=_SPONSOR_POC_SPEC,
         owner_ulid=sponsor_entity_ulid,
@@ -404,6 +406,10 @@ def ensure_sponsor(
     *, sponsor_entity_ulid: str, request_id: str, actor_ulid: str | None
 ) -> str:
     _ensure_reqid(request_id)
+    # facet must be attached to an org entity
+    entity_v2.require_org_entity_ulid(
+        sponsor_entity_ulid, allow_archived=False
+    )
 
     s = db.session.get(Sponsor, sponsor_entity_ulid)
     now = now_iso8601_ms()

@@ -13,203 +13,192 @@ Endpoints (minimal, test-facing surface):
 - PATCH  /resources/<resource_entity_ulid>/capabilities  -> patch capabilities (note-only, etc.)
 """
 
+# app/slices/resources/routes.py
+
 from __future__ import annotations
 
-from flask import jsonify, request
+from flask import Blueprint, jsonify, request
 
 from app.extensions import db
-from app.extensions.errors import ContractError
-from app.lib.request_ctx import ensure_request_id, get_actor_ulid
+from app.lib.request_ctx import get_actor_ulid, get_request_id
+from app.lib.security import require_permission
 
-from . import bp
-from . import services as svc
+from . import mapper as res_mapper
+from . import services as res_svc
 
-
-def _ok(*, request_id: str, data: object, status: int = 200):
-    return (
-        jsonify({"ok": True, "request_id": request_id, "data": data}),
-        status,
-    )
+bp = Blueprint("resources", __name__, url_prefix="/v2/resources")
 
 
-def _err(*, request_id: str, exc: Exception):
-    if isinstance(exc, ContractError):
+def _ok(*, request_id: str, data: object = None, meta: dict | None = None):
+    out = {"ok": True, "request_id": request_id}
+    if data is not None:
+        out["data"] = data
+    if meta is not None:
+        out["meta"] = meta
+    return jsonify(out), 200
+
+
+def _err(*, request_id: str, exc: Exception, status: int | None = None):
+    if isinstance(exc, ValueError):
         return (
             jsonify(
                 {
                     "ok": False,
                     "request_id": request_id,
-                    "error": exc.message,
-                    "code": exc.code,
-                    "where": exc.where,
-                    "data": getattr(exc, "data", None),
+                    "error": {
+                        "code": "bad_argument",
+                        "message": str(exc),
+                    },
                 }
             ),
-            exc.http_status,
+            status or 400,
         )
     return (
-        jsonify({"ok": False, "request_id": request_id, "error": str(exc)}),
-        400,
+        jsonify(
+            {
+                "ok": False,
+                "request_id": request_id,
+                "error": {
+                    "code": "internal_error",
+                    "message": str(exc),
+                },
+            }
+        ),
+        status or 500,
     )
 
 
-def _parse_cap_code(raw: str) -> tuple[str, str]:
-    """
-    Parse 'domain.key' into ('domain', 'key').
-    """
-    s = (raw or "").strip()
-    if not s or "." not in s:
-        raise ValueError("capability code must be 'domain.key'")
-    domain, key = s.split(".", 1)
-    domain = domain.strip()
-    key = key.strip()
-    if not domain or not key:
-        raise ValueError("capability code must be 'domain.key'")
-    return domain, key
-
-
-@bp.post("")
-# url_prefix="/resources" => binds to /resources (no trailing slash redirect)
+@bp.post("/ensure")
+@require_permission("resources:write")
 def ensure_resource():
-    payload = request.get_json(force=True, silent=False) or {}
-    req = ensure_request_id()
+    req = get_request_id()
     actor = get_actor_ulid()
-
-    entity_ulid = (payload.get("entity_ulid") or "").strip()
-    if not entity_ulid:
-        return _err(ValueError("entity_ulid is required"), 400)
-
     try:
-        rid = svc.ensure_resource(
-            entity_ulid=entity_ulid,
+        payload = request.get_json(force=True, silent=False) or {}
+        entity_ulid = (payload.get("entity_ulid") or "").strip()
+        if not entity_ulid:
+            raise ValueError("entity_ulid is required")
+
+        rid = res_svc.ensure_resource(
+            resource_entity_ulid=entity_ulid,
             request_id=req,
             actor_ulid=actor,
         )
         db.session.commit()
-        return _ok({"resource_entity_ulid": rid}, request_id=req)
-    except Exception as e:
+        return _ok(
+            request_id=req,
+            data={"resource_entity_ulid": rid},
+        )
+    except Exception as exc:
         db.session.rollback()
-        return _err(e, 400)
+        return _err(request_id=req, exc=exc)
 
 
-@bp.get("")
+@bp.get("/<entity_ulid>")
+@require_permission("resources:read")
+def get_resource(entity_ulid: str):
+    req = get_request_id()
+    try:
+        view = res_svc.resource_view(entity_ulid)
+        if view is None:
+            return _err(
+                request_id=req, exc=ValueError("not found"), status=404
+            )
+        return _ok(request_id=req, data=res_mapper.resource_view_to_dto(view))
+    except Exception as exc:
+        return _err(request_id=req, exc=exc)
+
+
+@bp.get("/search")
+@require_permission("resources:read")
 def search_resources():
-    """
-    Minimal capability search:
-      /resources?any=basic_needs.food_pantry
-    Returns:
-      { ok, data: { rows: [...], total, page, per } }
-    """
-    req = ensure_request_id()
-
-    any_code = (request.args.get("any") or "").strip()
-    all_code = (request.args.get("all") or "").strip()
-
-    page = int((request.args.get("page") or 1) or 1)
-    per = int((request.args.get("per") or 50) or 50)
-
+    req = get_request_id()
     try:
-        any_of = None
-        all_of = None
+        page = int(request.args.get("page", "1") or "1")
+        per = int(request.args.get("per", "50") or "50")
 
-        if any_code:
-            d, k = _parse_cap_code(any_code)
-            any_of = [(d, k)]
-        if all_code:
-            d, k = _parse_cap_code(all_code)
-            all_of = [(d, k)]
+        # (Optional) policy-driven filters can be added later.
+        rows, total = res_svc.find_resources(page=page, per=per)
 
-        rows, total = svc.find_resources(
-            any_of=any_of,
-            all_of=all_of,
-            page=page,
-            per=per,
-        )
         return _ok(
-            {"rows": rows, "total": total, "page": page, "per": per},
             request_id=req,
+            data=[res_mapper.resource_view_to_dto(v) for v in rows],
+            meta={"total": total, "page": page, "per": per},
         )
-    except Exception as e:
-        return _err(e, 400)
+    except Exception as exc:
+        return _err(request_id=req, exc=exc)
 
 
-@bp.post("/<resource_entity_ulid>/capabilities")
-def upsert_capabilities(resource_entity_ulid: str):
-    payload = request.get_json(force=True, silent=False) or {}
-    req = ensure_request_id()
+@bp.post("/<entity_ulid>/capabilities")
+@require_permission("resources:write")
+def upsert_capabilities(entity_ulid: str):
+    req = get_request_id()
     actor = get_actor_ulid()
-
     try:
-        hist_ulid = svc.upsert_capabilities(
-            resource_entity_ulid=resource_entity_ulid,
-            payload=payload,
-            request_id=req,
-            actor_ulid=actor,
-            idempotency_key=None,
-        )
-        view = svc.resource_view(resource_entity_ulid)
-        db.session.commit()
-        return _ok(
-            {"history_ulid": hist_ulid or None, "resource": view},
-            request_id=req,
-        )
-    except Exception as e:
-        db.session.rollback()
-        return _err(e, 400)
-
-
-@bp.patch("/<resource_entity_ulid>/capabilities")
-def patch_capabilities(resource_entity_ulid: str):
-    payload = request.get_json(force=True, silent=False) or {}
-    req = ensure_request_id()
-    actor = get_actor_ulid()
-
-    try:
-        hist_ulid = svc.patch_capabilities(
-            resource_entity_ulid=resource_entity_ulid,
+        payload = request.get_json(force=True, silent=False) or {}
+        hist_ulid = res_svc.upsert_capabilities(
+            resource_entity_ulid=entity_ulid,
             payload=payload,
             request_id=req,
             actor_ulid=actor,
         )
-        view = svc.resource_view(resource_entity_ulid)
         db.session.commit()
+
+        view = res_svc.resource_view(entity_ulid)
         return _ok(
-            {"history_ulid": hist_ulid or None, "resource": view},
             request_id=req,
+            data={
+                "changed": hist_ulid is not None,
+                "history_ulid": hist_ulid,
+                "view": None
+                if view is None
+                else res_mapper.resource_view_to_dto(view),
+            },
         )
-    except Exception as e:
+    except Exception as exc:
         db.session.rollback()
-        return _err(e, 400)
+        return _err(request_id=req, exc=exc)
 
 
-# -----------------
-# Wizard Routes
-# -----------------
+@bp.post("/<entity_ulid>/status/readiness")
+@require_permission("resources:write")
+def set_readiness(entity_ulid: str):
+    req = get_request_id()
+    actor = get_actor_ulid()
+    try:
+        payload = request.get_json(force=True, silent=False) or {}
+        status = (payload.get("status") or "").strip()
 
-
-def _ok(*, request_id: str, data: object, status: int = 200):
-    return (
-        jsonify({"ok": True, "request_id": request_id, "data": data}),
-        status,
-    )
-
-
-def _err(*, request_id: str, exc: Exception):
-    if isinstance(exc, ContractError):
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "request_id": request_id,
-                    "error": exc.message,
-                    "code": exc.code,
-                    "where": exc.where,
-                    "data": getattr(exc, "data", None),
-                }
-            ),
-            exc.http_status,
+        res_svc.set_readiness_status(
+            resource_entity_ulid=entity_ulid,
+            status=status,
+            request_id=req,
+            actor_ulid=actor,
         )
-    return (
-        jsonify({"ok": False, "request_id": request_id, "error": str(exc)}),
-        400,
-    )
+        db.session.commit()
+        return _ok(request_id=req)
+    except Exception as exc:
+        db.session.rollback()
+        return _err(request_id=req, exc=exc)
+
+
+@bp.post("/<entity_ulid>/status/mou")
+@require_permission("resources:write")
+def set_mou(entity_ulid: str):
+    req = get_request_id()
+    actor = get_actor_ulid()
+    try:
+        payload = request.get_json(force=True, silent=False) or {}
+        status = (payload.get("status") or "").strip()
+
+        res_svc.set_mou_status(
+            resource_entity_ulid=entity_ulid,
+            status=status,
+            request_id=req,
+            actor_ulid=actor,
+        )
+        db.session.commit()
+        return _ok(request_id=req)
+    except Exception as exc:
+        db.session.rollback()
+        return _err(request_id=req, exc=exc)

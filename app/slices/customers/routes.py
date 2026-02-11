@@ -89,8 +89,7 @@ def _reject_legacy_keys(payload: dict[str, Any]) -> None:
         legacy.append("ulid")
     if legacy:
         raise ValueError(
-            "legacy key(s) not allowed: "
-            f"{', '.join(legacy)}; use entity_ulid"
+            f"legacy key(s) not allowed: {', '.join(legacy)}; use entity_ulid"
         )
 
 

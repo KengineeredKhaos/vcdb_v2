@@ -139,9 +139,7 @@ def rewrap_page[T, U](page: Page[T], items: Sequence[U]) -> Page[U]:
 # ----------------------------
 
 
-def paginate_list[
-    T
-](
+def paginate_list[T](
     items: Sequence[T],
     *,
     page: int = 1,
@@ -170,8 +168,7 @@ def paginate_sa(
     page: int = 1,
     per_page: int = 10,
     max_per_page: int | None = 100,
-) -> Page[Any]:
-    ...
+) -> Page[Any]: ...
 
 
 @overload
@@ -181,8 +178,7 @@ def paginate_sa(
     page: int = 1,
     per_page: int = 10,
     max_per_page: int | None = 100,
-) -> Page[Any]:
-    ...
+) -> Page[Any]: ...
 
 
 def paginate_sa(
@@ -235,9 +231,7 @@ def paginate_sa(
 # ----------------------------
 
 
-def paginate[
-    T
-](
+def paginate[T](
     source: Sequence[T] | Query | Select,
     *,
     page: int = 1,

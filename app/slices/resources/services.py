@@ -9,16 +9,17 @@ from sqlalchemy import desc, func
 from app.extensions import db, event_bus
 from app.extensions.contracts import entity_v2
 from app.extensions.errors import ContractError
+from app.lib import poc_services as poc
 from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
-from app.slices.entity import services_poc as poc_svc
-from app.slices.resources.mapper import (
+
+from .mapper import (
     ResourcePOCView,
     ResourceView,
     map_resource_poc_list,
     map_resource_view,
 )
-from app.slices.resources.models import (
+from .models import (
     Resource,
     ResourceCapabilityIndex,
     ResourceHistory,
@@ -31,7 +32,7 @@ from app.slices.resources.models import (
 
 CAPS_SECTION = "resource:capability:v1"
 POC_RELATION = "poc"  # table-level convention, not board policy
-_RESOURCE_POC_SPEC = poc_svc.POCSpec(owner_col="resource_entity_ulid")
+_RESOURCE_POC_SPEC = poc.POCSpec(owner_col="resource_entity_ulid")
 
 # -----------------
 # Policy access (lazy imports)
@@ -115,11 +116,13 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
 
 
 # -----------------
-# Point of Contact wrappers for app.services.poc
+# Point of Contact
+# wrappers for
+# app.lib.poc_services
 # -----------------
 
 
-def resourse_link_poc(
+def resource_link_poc(
     *,
     resource_entity_ulid: str,
     person_entity_ulid: str,
@@ -135,7 +138,8 @@ def resourse_link_poc(
         entity_ulid=person_entity_ulid,
         where="resources.resource_link_poc",
     )
-    return poc_svc.link_poc(
+    return poc.link_poc(
+        session=db.session(),
         POCModel=ResourcePOC,
         spec=_RESOURCE_POC_SPEC,
         domain="resources",
@@ -167,8 +171,8 @@ def resource_update_poc(
         entity_ulid=person_entity_ulid,
         where="resources.resource_update_poc",
     )
-    return poc_svc.update_poc(
-        db.session,
+    return poc.update_poc(
+        session=db.session(),
         POCModel=ResourcePOC,
         spec=_RESOURCE_POC_SPEC,
         domain="resources",
@@ -193,10 +197,11 @@ def resource_unlink_poc(
     request_id: str,
 ):
     entity_v2.require_person_entity_ulid(
-        Entity_ulid=person_entity_ulid,
+        entity_ulid=person_entity_ulid,
         where="resources.resource_unlink_poc",
     )
-    return poc_svc.unlink_poc(
+    return poc.unlink_poc(
+        session=db.session(),
         POCModel=ResourcePOC,
         spec=_RESOURCE_POC_SPEC,
         domain="resources",
@@ -209,7 +214,8 @@ def resource_unlink_poc(
 
 
 def resource_list_pocs(*, resource_ulid: str) -> list[ResourcePOCView]:
-    rows = poc_svc.list_pocs(
+    rows = poc.list_pocs(
+        session=db.session(),
         POCModel=ResourcePOC,
         spec=_RESOURCE_POC_SPEC,
         owner_ulid=resource_ulid,

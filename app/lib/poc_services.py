@@ -1,80 +1,4 @@
-# app/services/poc.py
-
-"""
-Shared POC (Point-of-Contact) link helpers.
-
-This module is a small, slice-agnostic service for managing the relationship
-between an organization and its point-of-contact people. It is intended to be
-reused by multiple slices (e.g. Resources, Sponsors) rather than each slice
-reinventing its own POC tables and logic. :contentReference[oaicite:0]{index=0}
-
-Core ideas
-----------
-* The POC link itself lives in a slice-owned SQLAlchemy model ("POCModel")
-  with columns:
-    - ulid (PK)
-    - owner_ulid
-    - person_entity_ulid
-    - relation (fixed to "poc" here)
-    - scope (policy-defined string, e.g. "general", "whk", etc.)
-    - rank (0..max_rank within a scope)
-    - is_primary (bool)
-    - org_role (free-text role label)
-    - valid_from_utc / valid_to_utc (optional window)
-    - active (soft-delete flag)
-    - created_at_utc / updated_at_utc
-  The slice passes this model class and a Session into the helper functions.
-
-* All scope/rank semantics come from the Governance POC policy via
-  `get_poc_policy()`. Policy defines:
-    - allowed `poc_scopes`
-    - `default_scope`
-    - `max_rank`
-  `_normalize_scope_rank()` applies those rules and raises `ContractError`
-  (`code="policy_invalid"`) if a scope or rank is out of bounds.
-
-* At most one primary POC is allowed per `(owner_ulid, relation="poc", scope)`.
-  When `is_primary=True` is requested, `_flip_existing_primary()` clears any
-  existing primary for that org/scope before inserting or updating the row.
-
-What the helpers do
--------------------
-* `link_poc(...)`
-    - Validates `request_id` and scope/rank against policy.
-    - Optionally flips existing primary for the same org/scope.
-    - Inserts a new POC row and flushes to obtain its ULID.
-    - Emits a PII-free ledger event via `event_bus.emit` with:
-        domain   : caller-supplied slice name (e.g. "resources", "sponsors")
-        operation: "poc.linked"
-        target_ulid: owner_ulid
-        meta: org/poc linkage details (ULIDs, scope, rank, flags, window).
-
-* `update_poc(...)`
-    - Looks up an existing POC link by `(owner_ulid, person_entity_ulid)`.
-    - Applies optional changes to scope, rank, primary flag, window, org_role.
-    - Enforces the single-primary-per-scope rule when `is_primary=True`.
-    - Emits "poc.updated" with the new linkage metadata (no PII).
-
-* `unlink_poc(...)`
-    - Idempotently marks a POC link inactive (soft delete).
-    - Emits "poc.unlinked" with org + person ULIDs and scope.
-    - Returns quietly if no matching row is found.
-
-* `list_pocs(...)`
-    - Returns a list of simple dicts describing all POC links for an org,
-      ordered by active desc, scope asc, rank asc, ulid asc.
-    - The result is suitable for contracts/UIs that will join to Entity to
-      display human-friendly names and contact details.
-
-Error model & PII boundary
---------------------------
-All helpers raise `ContractError` for caller-visible failures (bad request,
-policy violation, not found). The ledger events are ULID-only and never
-include names, phone numbers, email addresses, or other PII; those remain
-in the Entity slice. Callers are expected to use this module to manage POC
-links and then resolve the related entity ULIDs through the Entity contracts
-for display.
-"""
+# app/lib/poc_services.py
 
 from __future__ import annotations
 
@@ -86,23 +10,15 @@ from sqlalchemy.orm import Session
 
 from app.extensions import event_bus
 from app.extensions.contracts.governance_v2 import get_poc_policy
-from app.extensions.errors import ContractError  # your existing error type
+from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
-
-# The slice model contract expected by this module:
-# - class POCModel with columns:
-#   ulid (PK), owner_ulid, person_entity_ulid, relation, scope, rank, is_primary,
-#   org_role, valid_from_utc, valid_to_utc, active, created_at_utc, updated_at_utc
-#
-# The slice must pass a SQLAlchemy Session, the model class, and constants below.
 
 POC_RELATION = "poc"
 
 
 @dataclass(frozen=True)
 class POCSpec:
-    # which column names exist on the slice POC model
-    owner_col: str  # "sponsor_entity_ulid" or "resource_entity_ulid"
+    owner_col: str
     person_col: str = "person_entity_ulid"
     relation_col: str = "relation"
     scope_col: str = "scope"
@@ -120,7 +36,7 @@ def _c(POCModel: type, name: str):
 
 
 def _normalize_scope_rank(*, scope: str | None, rank: int | None):
-    policy = get_poc_policy()  # {poc_scopes, default_scope, max_rank}
+    policy = get_poc_policy()
     scopes = policy["poc_scopes"]
     default_scope = policy["default_scope"]
     max_rank = int(policy["max_rank"])
@@ -144,32 +60,42 @@ def _normalize_scope_rank(*, scope: str | None, rank: int | None):
             http_status=400,
             data={"max_rank": max_rank},
         )
+
     return sc, rk
 
 
-def _flip_existing_primary(sess, POCModel, spec, owner_ulid, scope):
-    sess.query(POCModel).filter(
-        and_(
-            _c(POCModel, spec.owner_col) == owner_ulid,
-            _c(POCModel, spec.relation_col) == POC_RELATION,
-            _c(POCModel, spec.scope_col) == scope,
-            _c(POCModel, spec.active_col) == True,  # noqa: E712
-            _c(POCModel, spec.primary_col) == True,  # noqa: E712
+def _flip_existing_primary(
+    session: Session,
+    POCModel: type,
+    spec: POCSpec,
+    owner_ulid: str,
+    scope: str,
+) -> None:
+    (
+        session.query(POCModel)
+        .filter(
+            and_(
+                _c(POCModel, spec.owner_col) == owner_ulid,
+                _c(POCModel, spec.relation_col) == POC_RELATION,
+                _c(POCModel, spec.scope_col) == scope,
+                _c(POCModel, spec.active_col) == True,  # noqa: E712
+                _c(POCModel, spec.primary_col) == True,  # noqa: E712
+            )
         )
-    ).update(
-        {_c(POCModel, spec.primary_col): False},
-        synchronize_session=False,
+        .update(
+            {_c(POCModel, spec.primary_col): False}, synchronize_session=False
+        )
     )
 
 
 def link_poc(
-    sess: Session,
     *,
+    session: Session,
     POCModel: type,
     spec: POCSpec,
     domain: str,
-    owner_ulid: str,  # sponsor_ulid or resource_ulid
-    person_entity_ulid: str,  # entity_entity.ulid
+    owner_ulid: str,
+    person_entity_ulid: str,
     scope: str | None = None,
     rank: int = 0,
     is_primary: bool = False,
@@ -188,7 +114,7 @@ def link_poc(
 
     sc, rk = _normalize_scope_rank(scope=scope, rank=rank)
     if is_primary:
-        _flip_existing_primary(sess, POCModel, spec, owner_ulid, sc)
+        _flip_existing_primary(session, POCModel, spec, owner_ulid, sc)
 
     now = now_iso8601_ms()
     row = POCModel(
@@ -207,10 +133,9 @@ def link_poc(
             "updated_at_utc": now,
         }
     )
-    sess.add(row)
-    sess.flush()
+    session.add(row)
+    session.flush()
 
-    # Signal chain: target is the slice aggregate you mutated
     event_bus.emit(
         domain=domain,
         operation="poc_linked",
@@ -233,8 +158,8 @@ def link_poc(
 
 
 def update_poc(
-    sess: Session,
     *,
+    session: Session,
     POCModel: type,
     spec: POCSpec,
     domain: str,
@@ -256,8 +181,7 @@ def update_poc(
             http_status=400,
         )
 
-    # Find target row (scope optional, but must be unambiguous if omitted)
-    q = sess.query(POCModel).filter(
+    q = session.query(POCModel).filter(
         and_(
             _c(POCModel, spec.owner_col) == owner_ulid,
             _c(POCModel, spec.person_col) == person_entity_ulid,
@@ -281,25 +205,20 @@ def update_poc(
         raise ContractError(
             code="conflict",
             where="poc.update_poc",
-            message="multiple POC links exist for this person; specify scope",
+            message="multiple POC links exist; specify scope",
             http_status=409,
-            data={
-                "owner_ulid": owner_ulid,
-                "person_entity_ulid": person_entity_ulid,
-                "available_scopes": scopes,
-            },
+            data={"available_scopes": scopes},
         )
 
     row = rows[0]
 
-    # propose new scope/rank
     new_scope = getattr(row, spec.scope_col) if scope is None else scope
     new_rank = getattr(row, spec.rank_col) if rank is None else rank
     sc, rk = _normalize_scope_rank(scope=new_scope, rank=new_rank)
 
     if is_primary is not None:
         if bool(is_primary):
-            _flip_existing_primary(sess, POCModel, spec, owner_ulid, sc)
+            _flip_existing_primary(session, POCModel, spec, owner_ulid, sc)
         setattr(row, spec.primary_col, bool(is_primary))
 
     setattr(row, spec.scope_col, sc)
@@ -337,14 +256,14 @@ def update_poc(
 
 
 def unlink_poc(
-    sess: Session,
     *,
+    session: Session,
     POCModel: type,
     spec: POCSpec,
     domain: str,
     owner_ulid: str,
     person_entity_ulid: str,
-    scope: str | None = None,  # if provided, constrain to that scope
+    scope: str | None = None,
     actor_ulid: str | None = None,
     request_id: str,
 ):
@@ -356,7 +275,7 @@ def unlink_poc(
             http_status=400,
         )
 
-    q = sess.query(POCModel).filter(
+    q = session.query(POCModel).filter(
         and_(
             _c(POCModel, spec.owner_col) == owner_ulid,
             _c(POCModel, spec.person_col) == person_entity_ulid,
@@ -369,26 +288,21 @@ def unlink_poc(
 
     rows = q.all()
     if not rows:
-        return  # idempotent
+        return
 
     if len(rows) > 1 and not scope:
         scopes = sorted({getattr(r, spec.scope_col) for r in rows})
         raise ContractError(
             code="conflict",
             where="poc.unlink_poc",
-            message="multiple POC links exist for this person; specify scope",
+            message="multiple POC links exist; specify scope",
             http_status=409,
-            data={
-                "owner_ulid": owner_ulid,
-                "person_entity_ulid": person_entity_ulid,
-                "available_scopes": scopes,
-            },
+            data={"available_scopes": scopes},
         )
 
     row = rows[0]
-
-    # --- MISSING BLOCK (this is what your paste lost) ---
     setattr(row, spec.active_col, False)
+
     now = now_iso8601_ms()
     row.updated_at_utc = now
 
@@ -409,14 +323,14 @@ def unlink_poc(
 
 
 def list_pocs(
-    sess: Session,
     *,
+    session: Session,
     POCModel: type,
     spec: POCSpec,
     owner_ulid: str,
 ) -> list[dict]:
     rows: Iterable = (
-        sess.query(POCModel)
+        session.query(POCModel)
         .filter(
             and_(
                 _c(POCModel, spec.owner_col) == owner_ulid,
@@ -449,3 +363,6 @@ def list_pocs(
             }
         )
     return out
+
+
+__all__ = ["link_poc", "update_poc", "unlink_poc", "list_pocs", "POCSpec"]
