@@ -1,18 +1,17 @@
 # app/slices/auth/__init__.py
 from __future__ import annotations
 
-from flask import Blueprint, current_app, request, session
+from flask import current_app, request, session
 from flask_login import current_user, login_user
 from flask_login.utils import login_required
 
 from app.extensions import login_manager
 from app.lib.ids import new_ulid
 
-from . import models
+from .routes import bp
 
-bp = Blueprint(
-    "auth", __name__, url_prefix="/auth", template_folder="templates"
-)
+__all__ = ["bp"]
+
 
 """
 VCDB v2 — Auth slice (__init__)

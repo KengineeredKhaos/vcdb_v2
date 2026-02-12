@@ -50,4 +50,4 @@ def validate_payload(schema: dict, payload: dict) -> None:
     try:
         Draft202012Validator(schema).validate(payload)
     except JSONSchemaValidationError as e:
-        raise ContractValidationError.from_jsonschema(e)
+        raise ContractValidationError.from_jsonschema(e) from e

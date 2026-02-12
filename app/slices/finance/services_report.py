@@ -98,8 +98,10 @@ def statement_of_activities(period: str):
         )
         bucket["revenue_cents"] += int(r["revenue_cents"] or 0)
         bucket["expense_cents"] += int(r["expense_cents"] or 0)
-    for k, v in by_restriction.items():
-        v["change_net_assets_cents"] = v["revenue_cents"] - v["expense_cents"]
+    for _restriction, bucket in by_restriction.items():
+        bucket["change_net_assets_cents"] = (
+            bucket["revenue_cents"] - bucket["expense_cents"]
+        )
 
     by_fund = {
         (r["fund_id"] or "-"): {
@@ -118,13 +120,22 @@ def statement_of_activities(period: str):
         }
         for r in proj_rows
     }
-    return type(
-        "ActivitiesReportDTO", (), {}
-    )()  # keep your DTO wiring as you prefer
+    revenue_total = sum(int(r["revenue_cents"] or 0) for r in fund_rows)
+    expense_total = sum(int(r["expense_cents"] or 0) for r in fund_rows)
 
-
-# Instead of the dynamic DTO above (which is super minimal),
-# you can wire the actual
-# ActivitiesReportDTO by importing it from the contract once that module
-# is discoverable during app init.
-# For now, we keep it cycle-proof and return a plain dict the route can render.
+    return {
+        "period": {
+            "key": period.key,
+            "label": period.label,
+            "starts_on": period.starts_on,
+            "ends_on": period.ends_on,
+        },
+        "summary": {
+            "revenue_cents": revenue_total,
+            "expense_cents": expense_total,
+            "change_net_assets_cents": revenue_total - expense_total,
+        },
+        "by_restriction": by_restriction,
+        "by_fund": by_fund,
+        "by_project": by_project,
+    }

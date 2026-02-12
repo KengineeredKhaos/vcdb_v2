@@ -26,7 +26,7 @@ from app.lib.security import require_permission
 from . import mapper as res_mapper
 from . import services as res_svc
 
-bp = Blueprint("resources", __name__, url_prefix="/v2/resources")
+bp = Blueprint("resources", __name__, url_prefix="/resources")
 
 
 def _ok(*, request_id: str, data: object = None, meta: dict | None = None):

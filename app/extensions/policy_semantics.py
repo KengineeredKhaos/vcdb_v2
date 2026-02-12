@@ -259,7 +259,7 @@ def check_finance_controls_policy() -> list[str]:
     except Exception as e:
         raise PolicyError(
             f"finance_controls.spending.staff_cap_cents must be an int: {e}"
-        )
+        ) from e
     if staff_cap_int < 0:
         raise PolicyError(
             "finance_controls.spending.staff_cap_cents must be >= 0"
@@ -336,7 +336,7 @@ def _cadence_sanity(cad: dict, *, where: str) -> None:
         max_per = int(cad.get("max_per_period", 1))
         period = int(cad.get("period_days", 365))
     except Exception as e:
-        raise PolicyError(f"{where}: cadence fields must be ints: {e}")
+        raise PolicyError(f"{where}: cadence fields must be ints: {e}") from e
     if max_per < 1:
         raise PolicyError(f"{where}: cadence.max_per_period must be >= 1")
     if period < 1:

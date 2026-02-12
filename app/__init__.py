@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from flask import Flask, g, jsonify, request
@@ -13,7 +14,7 @@ from flask_login import (
     login_user,
 )
 from jinja2 import StrictUndefined
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from werkzeug.exceptions import HTTPException
 
 from app.cli import register_cli
@@ -95,7 +96,9 @@ def create_app(config_object="config.DevConfig"):
         from flask_wtf.csrf import CSRFError, generate_csrf
     except Exception:  # allow tests/envs without Flask-WTF
         CSRFError = None
-        generate_csrf = lambda: ""
+
+        def generate_csrf() -> str:
+            return ""
 
     # Make {{ csrf_token() }} available in templates
     flask_app.jinja_env.globals["csrf_token"] = generate_csrf
@@ -177,11 +180,9 @@ def create_app(config_object="config.DevConfig"):
                 domain_roles=domains,
             )
             # Log the user in for this request (sessionless; fine for dev)
-            try:
+            with suppress(Exception):
                 login_user(user, remember=False, force=True, fresh=True)
-            except Exception:
-                # If flask-login isn't fully configured, still expose via g
-                pass
+
             g.current_user = user  # allow code that prefers g.current_user
 
     # -------------

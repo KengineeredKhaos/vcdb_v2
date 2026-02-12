@@ -432,12 +432,12 @@ def post_journal(
     acct_codes: set[str] = set()
     fund_codes: set[str] = set()
 
-    for i, l in enumerate(lines, start=1):
-        if not isinstance(l, dict):
+    for i, line in enumerate(lines, start=1):
+        if not isinstance(line, dict):
             raise ValueError(f"line {i} must be a dict")
-        acct = l.get("account_code")
-        fund = l.get("fund_code")
-        amt = l.get("amount_cents")
+        acct = line.get("account_code")
+        fund = line.get("fund_code")
+        amt = line.get("amount_cents")
 
         if not acct or not isinstance(acct, str):
             raise ValueError(f"line {i}: account_code is required")
@@ -496,16 +496,16 @@ def post_journal(
     db.session.add(j)
     db.session.flush()  # assign j.ulid
 
-    for seq, l in enumerate(lines, start=1):
+    for seq, line in enumerate(lines, start=1):
         db.session.add(
             JournalLine(
                 journal_ulid=j.ulid,
                 seq=seq,
-                account_code=l["account_code"],
-                fund_code=l["fund_code"],
-                project_ulid=l.get("project_ulid"),
-                amount_cents=int(l["amount_cents"]),
-                memo=(l.get("memo") or None),
+                account_code=line["account_code"],
+                fund_code=line["fund_code"],
+                project_ulid=line.get("project_ulid"),
+                amount_cents=int(line["amount_cents"]),
+                memo=(line.get("memo") or None),
                 period_key=period_key,
             )
         )
@@ -559,13 +559,13 @@ def reverse_journal(
         .all()
     )
     lines = []
-    for l in orig_lines:
+    for orig_line in orig_lines:
         lines.append(
             {
-                "account_code": l.account_code,
-                "fund_code": l.fund_code,
-                "project_ulid": l.project_ulid,
-                "amount_cents": -l.amount_cents,  # reverse
+                "account_code": orig_line.account_code,
+                "fund_code": orig_line.fund_code,
+                "project_ulid": orig_line.project_ulid,
+                "amount_cents": -orig_line.amount_cents,  # reverse
                 "memo": f"Reversal of {j.ulid}",
             }
         )
@@ -1057,9 +1057,13 @@ def release_restriction(
 
 def _apply_to_balances(*, lines: Iterable[dict], period_key: str) -> None:
     buckets: dict[tuple[str, str, str | None], int] = defaultdict(int)
-    for l in lines:
-        k = (l["account_code"], l["fund_code"], l.get("project_ulid"))
-        buckets[k] += int(l["amount_cents"])
+    for line in lines:
+        k = (
+            line["account_code"],
+            line["fund_code"],
+            line.get("project_ulid"),
+        )
+        buckets[k] += int(line["amount_cents"])
 
     now = now_iso8601_ms()
     for (acct, fund, project), net in buckets.items():
@@ -1122,13 +1126,13 @@ def rebuild_balances(*, period_from: str, period_to: str) -> dict:
         .all()
     )
     buckets: dict[str, list[dict]] = defaultdict(list)
-    for l in lines:
-        buckets[l.period_key].append(
+    for jl in lines:
+        buckets[jl.period_key].append(
             {
-                "account_code": l.account_code,
-                "fund_code": l.fund_code,
-                "project_ulid": l.project_ulid,
-                "amount_cents": l.amount_cents,
+                "account_code": jl.account_code,
+                "fund_code": jl.fund_code,
+                "project_ulid": jl.project_ulid,
+                "amount_cents": jl.amount_cents,
             }
         )
     for pk, bunch in buckets.items():

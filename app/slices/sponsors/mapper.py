@@ -169,19 +169,19 @@ def sponsor_view_to_dto(view: SponsorView) -> dict[str, Any]:
 
 
 def sponsor_poc_view_to_dto(view: SponsorPOCView) -> dict[str, Any]:
-    l = view.link
+    link = view.link
     return {
         "link": {
-            "sponsor_ulid": l.sponsor_ulid,
-            "person_entity_ulid": l.person_entity_ulid,
-            "relation": l.relation,
-            "scope": l.scope,
-            "rank": l.rank,
-            "is_primary": l.is_primary,
-            "org_role": l.org_role,
-            "valid_from_utc": l.valid_from_utc,
-            "valid_to_utc": l.valid_to_utc,
-            "active": l.active,
+            "sponsor_ulid": link.sponsor_ulid,
+            "person_entity_ulid": link.person_entity_ulid,
+            "relation": link.relation,
+            "scope": link.scope,
+            "rank": link.rank,
+            "is_primary": link.is_primary,
+            "org_role": link.org_role,
+            "valid_from_utc": link.valid_from_utc,
+            "valid_to_utc": link.valid_to_utc,
+            "active": link.active,
         }
     }
 

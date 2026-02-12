@@ -4,14 +4,20 @@ from __future__ import annotations
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
-from flask import jsonify, request
+from flask import Blueprint, jsonify, request
 
 from app.extensions import db
 from app.extensions.errors import ContractError
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
 from app.slices.entity.guards import require_person_entity_ulid
 
-from . import bp
+bp = Blueprint(
+    "customers",
+    __name__,
+    template_folder="customers",
+    static_folder=None,
+    url_prefix="/customers",
+)
 
 
 def _ok(*, request_id: str, data: Any = None, status: int = 200, **extra):

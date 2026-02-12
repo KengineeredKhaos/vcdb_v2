@@ -28,14 +28,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from math import ceil
-from typing import (
-    Any,
-    Generic,
-    TypeVar,
-    overload,
-)
+from typing import Any, TypeVar, overload
 
-T = TypeVar("T")
 U = TypeVar("U")
 
 # Optional SQLAlchemy support (works whether SA is present or not)
@@ -51,7 +45,7 @@ except Exception:  # pragma: no cover
 
 
 @dataclass(frozen=True)
-class Page(Generic[T]):
+class Page[T]:
     """Immutable pagination result.
 
     items: the items for *this* page
@@ -257,7 +251,6 @@ __all__ = [
     "paginate_list",
     "paginate_sa",
     "paginate",
-    "T",
     "U",
     "rewrap_page",
 ]

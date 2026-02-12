@@ -460,14 +460,14 @@ def _load_json(path: Path, where: str):
     try:
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         raise ContractError(
             code="policy_missing",
             where=where,
             message=f"policy file missing: {path}",
             http_status=503,
             data={"path": str(path)},
-        )
+        ) from e
     except Exception as e:
         raise ContractError(
             code="policy_read_error",
@@ -475,7 +475,7 @@ def _load_json(path: Path, where: str):
             message=str(e),
             http_status=503,
             data={"path": str(path)},
-        )
+        ) from e
 
 
 # -----------------
@@ -988,7 +988,7 @@ def get_sponsor_pledge_policy() -> dict:
     """
     try:
         return gov_svc.svc_get_policy_value("sponsor", "pledge")
-    except Exception as e:  # noqa: B902
+    except Exception as e:  # noqa: BLE001
         # Normalize to ContractError so callers see a single error type
         raise ContractError(
             code="policy_read_error",
@@ -1399,7 +1399,7 @@ def evaluate_donation(
             ),
         )
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 def get_budget_demands_for_period(
@@ -1451,7 +1451,7 @@ def get_budget_demands_for_period(
 
         return out
     except Exception as exc:  # noqa: BLE001 - boundary wrapper
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 def get_budget_position(
@@ -1507,7 +1507,7 @@ def get_budget_position(
             remaining_cents=pos.remaining_cents,
         )
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 def preview_spend_decision(
@@ -1581,4 +1581,4 @@ def preview_spend_decision(
             requires_override=decision.requires_override,
         )
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc

@@ -16,7 +16,6 @@ The balance of this file is SQLite Database/SQLAlchemy wiring.
 from __future__ import annotations
 
 import sqlite3
-from typing import Optional
 
 from flask import Flask
 from flask_login import LoginManager

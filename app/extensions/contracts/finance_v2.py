@@ -307,7 +307,7 @@ def log_donation(
         return svc.log_donation(payload=payload, dry_run=dry_run)
 
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 # -----------------
@@ -391,7 +391,7 @@ def preview_expense(
         )
 
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 # -----------------
@@ -460,7 +460,7 @@ def log_expense(
         return svc.log_expense(payload, dry_run=dry_run)
 
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 # -----------------
@@ -529,7 +529,7 @@ def create_fund(
         return svc.create_fund(payload)
 
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 # -----------------
@@ -578,7 +578,7 @@ def get_fund_summary(*, fund_ulid: str) -> FundDTO:
 
         return svc.get_fund_summary(fund_ulid)
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 def list_funds(*, include_inactive: bool = False) -> list[FundDTO]:
@@ -599,7 +599,7 @@ def list_funds(*, include_inactive: bool = False) -> list[FundDTO]:
             include_inactive=include_inactive,
         )
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 # -----------------
@@ -686,7 +686,7 @@ def create_grant(
         return svc.create_grant(payload)
 
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 # -----------------
@@ -756,7 +756,7 @@ def submit_reimbursement(
         return svc.submit_reimbursement(payload)
 
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 # -----------------
@@ -809,7 +809,7 @@ def mark_disbursed(
         return svc.mark_disbursed(payload)
 
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 # -----------------
@@ -851,7 +851,7 @@ def prepare_grant_report(
         return svc.prepare_grant_report(payload)
 
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 # -----------------

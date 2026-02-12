@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from flask import (
+    Blueprint,
     current_app,
     flash,
     jsonify,
@@ -16,8 +17,11 @@ from app.extensions import csrf
 from app.lib.request_ctx import ensure_request_id
 from app.lib.security import rbac
 
-from . import bp
 from . import services as svc
+
+bp = Blueprint(
+    "auth", __name__, url_prefix="/auth", template_folder="templates"
+)
 
 
 @bp.get("/login", endpoint="login")

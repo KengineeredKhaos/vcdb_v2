@@ -1,15 +1,9 @@
 # app/slices/finance/__init__.py
 from __future__ import annotations
 
-from flask import Blueprint
+from .routes import bp
 
-bp = Blueprint(
-    "finance",
-    __name__,
-    template_folder="templates",
-    url_prefix="/finance",
-)
-
+__all__ = ["bp"]
 """
 ======
 TL;DR:

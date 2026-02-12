@@ -125,19 +125,19 @@ def resource_view_to_dto(view: ResourceView) -> dict[str, Any]:
 
 
 def resource_poc_view_to_dto(view: ResourcePOCView) -> dict[str, Any]:
-    l = view.link
+    link = view.link
     return {
         "link": {
-            "resource_ulid": l.resource_ulid,
-            "person_entity_ulid": l.person_entity_ulid,
-            "relation": l.relation,
-            "scope": l.scope,
-            "rank": l.rank,
-            "is_primary": l.is_primary,
-            "org_role": l.org_role,
-            "valid_from_utc": l.valid_from_utc,
-            "valid_to_utc": l.valid_to_utc,
-            "active": l.active,
+            "resource_ulid": link.resource_ulid,
+            "person_entity_ulid": link.person_entity_ulid,
+            "relation": link.relation,
+            "scope": link.scope,
+            "rank": link.rank,
+            "is_primary": link.is_primary,
+            "org_role": link.org_role,
+            "valid_from_utc": link.valid_from_utc,
+            "valid_to_utc": link.valid_to_utc,
+            "active": link.active,
         }
     }
 

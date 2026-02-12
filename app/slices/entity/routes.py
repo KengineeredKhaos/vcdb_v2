@@ -1,7 +1,15 @@
 # app/slices/entity/routes.py
 from __future__ import annotations
 
-from flask import flash, jsonify, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import login_required
 
 from app.extensions.auth_ctx import current_actor_ulid
@@ -10,9 +18,12 @@ from app.lib.geo import us_states
 from app.lib.ids import new_ulid
 from app.lib.security import require_permission
 
-from . import bp
 from . import services as svc
 from .models import EntityPerson
+
+bp = Blueprint(
+    "entity", __name__, url_prefix="/entity", template_folder="templates"
+)
 
 
 @bp.get("/hello")

@@ -24,7 +24,7 @@ import gzip
 import json
 import logging
 import shutil
-from datetime import datetime
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -86,7 +86,7 @@ def _archiving_rotating_handler(
 
     def namer(default_name: str) -> str:
         stem = Path(filename).stem  # "app"
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        ts = datetime.now(tz=UTC).strftime("%Y%m%d-%H%M%S")
         return f"{stem}-{ts}.log"  # basename; rotator will place it
 
     def rotator(source: str, dest: str) -> None:

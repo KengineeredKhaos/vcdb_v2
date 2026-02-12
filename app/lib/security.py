@@ -72,13 +72,13 @@ def _is_authenticated() -> bool:
 
 
 def user_has_any_roles(user_ulid: str, *need_codes: str) -> bool:
-    have = set(auth_ro.get_user_roles(user_ulid))
+    have = set(get_user_roles(user_ulid))
     need = _norm(need_codes)
     return not have.isdisjoint(need) if need else True
 
 
 def user_has_all_roles(user_ulid: str, *need_codes: str) -> bool:
-    have = set(auth_ro.get_user_roles(user_ulid))
+    have = set(get_user_roles(user_ulid))
     need = _norm(need_codes)
     return need.issubset(have) if need else True
 
@@ -225,10 +225,7 @@ def current_user_roles() -> set[str]:
 
 def user_is_admin(user_ulid: str | None = None) -> bool:
     """Convenience for the common case."""
-    if user_ulid is None:
-        uid = current_user_ulid()
-    else:
-        uid = user_ulid
+    uid = current_user_ulid() if user_ulid is None else user_ulid
     if not uid:
         return False
     return "admin" in set(get_user_roles(uid))
@@ -286,7 +283,7 @@ def user_has_permission(user_ulid: str, permission: str) -> bool:
     roles_for_perm = perm_map.get(need, set())
     if not roles_for_perm:
         return False
-    have = set(auth_ro.get_user_roles(user_ulid))
+    have = set(get_user_roles(user_ulid))
     return not have.isdisjoint(roles_for_perm)
 
 

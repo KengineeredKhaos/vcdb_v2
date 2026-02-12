@@ -1,5 +1,5 @@
 # slices/governance/routes.py (example)
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from app.extensions.policies import GOV_DATA, save_policy
 from app.lib.security import rbac, require_domain_roles_any

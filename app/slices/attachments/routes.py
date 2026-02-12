@@ -1,13 +1,14 @@
 # app/slices/attachments/routes.py
 from __future__ import annotations
 
-from flask import jsonify, request
+from flask import Blueprint, jsonify, request
 from werkzeug.datastructures import FileStorage
 
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
 
-from . import bp
 from . import services as att_svc
+
+bp = Blueprint("attachments", __name__, url_prefix="/attachments")
 
 
 def _ok(data=None, **extra):

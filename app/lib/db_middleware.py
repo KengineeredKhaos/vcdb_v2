@@ -12,6 +12,7 @@ SQLite/SQLAlchemy request guardrails:
 from __future__ import annotations
 
 import sqlite3
+from contextlib import suppress
 
 from flask import g, request
 
@@ -26,10 +27,8 @@ def _flip_query_only(on: bool) -> None:
     conn = db.session.get_bind()
     raw = conn.connection
     if isinstance(raw, sqlite3.Connection):
-        try:
+        with suppress(Exception):
             raw.execute(f"PRAGMA query_only={'ON' if on else 'OFF'};")
-        except Exception:
-            pass
 
 
 def init_request_db_guards(app) -> None:
@@ -63,11 +62,7 @@ def init_request_db_guards(app) -> None:
     @app.teardown_request
     def _teardown_request(exc: BaseException | None):
         if exc is not None:
-            try:
+            with suppress(Exception):
                 db.session.rollback()
-            except Exception:
-                pass
-        try:
+        with suppress(Exception):
             db.session.remove()
-        except Exception:
-            pass

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import suppress
 
 from sqlalchemy import event
 
@@ -19,8 +20,5 @@ def install_sqlite_engine_hooks() -> None:
     @event.listens_for(eng, "connect")
     def _fk_on(dbapi_conn, _):
         if isinstance(dbapi_conn, sqlite3.Connection):
-            try:
+            with suppress(Exception):
                 dbapi_conn.execute("PRAGMA foreign_keys=ON;")
-            except Exception:
-                # Non-fatal; keep going
-                pass

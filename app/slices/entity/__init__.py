@@ -1,6 +1,6 @@
 # app/slices/entity/__init__.py
-from flask import Blueprint
+from __future__ import annotations
 
-bp = Blueprint(
-    "entity", __name__, url_prefix="/entity", template_folder="templates"
-)
+from .routes import bp
+
+__all__ = ["bp"]

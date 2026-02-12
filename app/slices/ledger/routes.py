@@ -1,10 +1,13 @@
 # app/slices/ledger/routes.py
 from __future__ import annotations
 
-from flask import jsonify, request
+from flask import Blueprint, jsonify, request
 
-from . import bp
 from .services import verify_chain
+
+bp = Blueprint(
+    "ledger", __name__, url_prefix="/ledger", template_folder="templates"
+)
 
 
 @bp.get("/verify")

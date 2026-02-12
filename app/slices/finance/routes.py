@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import UTC
 
 from flask import (
+    Blueprint,
     render_template,
     request,
 )
@@ -11,7 +12,12 @@ from flask_login import login_required
 
 from app.slices.finance.services_report import statement_of_activities as _soa
 
-from . import bp
+bp = Blueprint(
+    "finance",
+    __name__,
+    template_folder="templates",
+    url_prefix="/finance",
+)
 
 
 @bp.get("/hello")

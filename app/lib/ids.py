@@ -22,6 +22,7 @@ or ad-hoc strings.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Final
 
 from ulid import ULID  # python-ulid
 
@@ -49,10 +50,7 @@ def _encode_crockford_base32(value: int, length: int) -> str:
 
 
 def _dt_to_ms(dt: datetime) -> int:
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    else:
-        dt = dt.astimezone(UTC)
+    dt = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
     return int(dt.timestamp() * 1000)
 
 

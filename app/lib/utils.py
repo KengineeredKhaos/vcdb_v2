@@ -196,7 +196,7 @@ def _parse_dob(value: str) -> date | None:
     except ValueError:
         return None
 
-    today = date.today()
+    today = datetime.now(tz=UTC).date()
     if dt.year < _DOB_MIN_YEAR:
         return None
     if dt > today:

@@ -1,8 +1,6 @@
 # app/slices/attachments/__init__.py
 from __future__ import annotations
 
-from flask import Blueprint
+from .routes import bp
 
-bp = Blueprint("attachments", __name__, url_prefix="/attachments")
-
-from . import models  # noqa: E402,F401
+__all__ = ["bp"]

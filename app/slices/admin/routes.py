@@ -13,6 +13,7 @@ import sqlite3
 from pathlib import Path
 
 from flask import (
+    Blueprint,
     current_app,
     flash,
     jsonify,
@@ -33,8 +34,12 @@ from app.lib.security import (
     require_domain_role,
     roles_required,
 )
-from app.slices.admin import bp
-from app.slices.admin import services as admin_svc
+
+from . import services as admin_svc
+
+bp = Blueprint(
+    "admin", __name__, url_prefix="/admin", template_folder="templates"
+)
 
 # -----------------
 # Dashboard

@@ -9,6 +9,8 @@ from app.extensions.contracts.finance_v2 import (
 from app.lib.chrono import now_iso8601_ms
 from app.slices.finance.models import (
     Fund,
+    Grant,
+    Reimbursement,
 )
 
 """

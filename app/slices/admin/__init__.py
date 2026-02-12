@@ -1,7 +1,6 @@
 # app/slices/admin/__init__.py
-from flask import Blueprint
+from __future__ import annotations
 
-bp = Blueprint(
-    "admin", __name__, url_prefix="/admin", template_folder="templates"
-)
-from . import models  # noqa
+from .routes import bp
+
+__all__ = ["bp"]

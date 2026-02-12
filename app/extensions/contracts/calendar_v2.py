@@ -153,7 +153,7 @@ def blackout_ok(when_iso: str | None = None) -> CalendarGateDTO:
             "reason": "calendar_blackout" if blocked else "ok",
         }
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 # -----------------
@@ -252,7 +252,7 @@ def create_project(
             request_id=request_id,
         )
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 # -----------------
@@ -322,7 +322,7 @@ def create_project_funding_plan(
         )
 
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 def list_project_funding_plans(
@@ -354,7 +354,7 @@ def list_project_funding_plans(
 
         return svc.list_funding_plans_for_project(project_ulid)
     except Exception as exc:
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 def list_projects_for_period(*, period_label: str) -> list[ProjectDTO]:
@@ -384,7 +384,7 @@ def list_projects_for_period(*, period_label: str) -> list[ProjectDTO]:
 
         return svc.list_projects_for_period(period_label)
     except Exception as exc:  # noqa: BLE001
-        raise _as_contract_error(where, exc)
+        raise _as_contract_error(where, exc) from exc
 
 
 __all__ = [

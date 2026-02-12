@@ -11,6 +11,7 @@ from typing import Any
 
 from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
+from app.lib.geo import is_state_code
 from app.lib.utils import (
     normalize_dob,
     normalize_email,
@@ -278,7 +279,7 @@ def _cmd_wizard_upsert_address(
     state = (payload.get("state") or "").strip().upper()
     postal_code = (payload.get("postal_code") or "").strip()
 
-    if state and not is_valid_state_code(state):
+    if state and not is_state_code(state):
         raise ValueError("invalid state code")
 
     # TODO: upsert your EntityAddress row here using entity_ulid as FK.

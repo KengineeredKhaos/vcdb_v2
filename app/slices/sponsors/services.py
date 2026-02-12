@@ -159,7 +159,7 @@ def sponsor_update_poc(
 ):
     entity_v2.require_person_entity_ulid(
         entity_ulid=person_entity_ulid,
-        where=sponsors.sponsor_update_poc,
+        where="sponsors.sponsor_update_poc",
     )
     return poc.update_poc(
         session=db.session(),

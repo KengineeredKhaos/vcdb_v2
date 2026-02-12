@@ -30,9 +30,9 @@ import hashlib
 import json
 from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any, TextIO, Union
+from typing import Any, TextIO
 
-Pathish = Union[str, Path]
+Pathish = str | Path
 
 
 # -----------------

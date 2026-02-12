@@ -287,7 +287,7 @@ def dev_policy_health(as_json: bool):
 
     except PolicyError as e:
         click.echo(f"FATAL: {e}", err=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
     # warnings shouldn’t fail CI by default;
     # change to nonzero if you want strict mode
@@ -1247,7 +1247,7 @@ def dev_decide_issue(
         parts = parse_sku(sku_code)
     except ValueError as e:
         click.echo(f"Invalid SKU '{sku_code}': {e}")
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
     if when_iso is None:
         when_iso = now_iso8601_ms()
@@ -1572,7 +1572,7 @@ def dev_ledger_issuance_trace(
             f"FATAL: could not import LedgerEvent from ledger slice: {e}",
             err=True,
         )
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
     # Resolve (or create) location ULID
     loc_ulid = ensure_location(code=location_code, name=location_code)
@@ -1896,7 +1896,7 @@ def sponsor_allocation_spend_cmd(
         import click
 
         click.echo(f"ERROR: {exc.code}: {exc.message}")
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
 
     import click
 

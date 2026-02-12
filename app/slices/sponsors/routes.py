@@ -1,14 +1,20 @@
 # app/slices/sponsors/routes.py
 from __future__ import annotations
 
-from flask import jsonify, request
+from flask import Blueprint, jsonify, request
 
 from app.extensions import db
 from app.extensions.errors import ContractError
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
 
-from . import bp
 from . import services as sp_svc
+
+bp = Blueprint(
+    "sponsors",
+    __name__,
+    template_folder="templates",
+    url_prefix="/sponsors",
+)
 
 
 def _ok(data: dict, request_id: str):

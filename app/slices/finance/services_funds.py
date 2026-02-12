@@ -1,7 +1,7 @@
 # app/slices/finance/services_funds.py
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.extensions import db, event_bus
 from app.extensions.contracts.finance_v2 import (
@@ -14,6 +14,8 @@ from app.slices.finance.models import (
     Fund,
     Period,
 )
+
+from .services_journal import ALLOWED_PERIOD_STATUS
 
 """
 Canonical Mental Model:
@@ -54,6 +56,15 @@ set_budget(payload) -> BudgetDTO
 # Internal helpers
 # besides imports
 # -----------------
+
+
+def _external_restriction_type(value: str | None) -> str:
+    """Normalize internal Fund.restriction to canonical external values."""
+
+    v = (value or "").strip().lower()
+    if not v:
+        return "unrestricted"
+    return v
 
 
 def get_fund_archetypes():
@@ -436,7 +447,7 @@ def get_fund_summary(fund_ulid: str) -> FundDTO:
 
 def list_funds_with_balances(
     *, include_inactive: bool = False
-) -> List[FundDTO]:
+) -> list[FundDTO]:
     """
     Slice implementation for finance_v2.list_funds(...).
 
@@ -460,7 +471,7 @@ def list_funds_with_balances(
         None specific; callers should handle general DB errors if needed.
 
     Returns:
-        List[FundDTO]:
+        list[FundDTO]:
             One DTO per fund, suitable for driving an Admin “Funds”
             status screen or Governance/Calendar allocation views.
     """
@@ -499,7 +510,7 @@ def list_funds_with_balances(
     balances_by_code = {row[0]: int(row[1] or 0) for row in rows}
 
     # ---- Build DTOs ----
-    result: List[FundDTO] = []
+    result: list[FundDTO] = []
 
     for fund in funds:
         dto = FundDTO()
