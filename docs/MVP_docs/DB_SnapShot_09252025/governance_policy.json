@@ -1,0 +1,37 @@
+[
+    {
+        "key": "staff_spend_cap_cents",
+        "type": "int",
+        "updated_at": "2025-09-22 04:34:58",
+        "updated_by": null,
+        "value": "20000"
+    },
+    {
+        "key": "reimbursement_expiry_days",
+        "type": "int",
+        "updated_at": "2025-09-22 04:34:58",
+        "updated_by": null,
+        "value": "45"
+    },
+    {
+        "key": "treasury_notify_overcap_hours",
+        "type": "int",
+        "updated_at": "2025-09-22 04:34:58",
+        "updated_by": null,
+        "value": "24"
+    },
+    {
+        "key": "ledger_retention_days",
+        "type": "int",
+        "updated_at": "2025-09-22 04:34:58",
+        "updated_by": null,
+        "value": "3650"
+    },
+    {
+        "key": "calendar_lead_time_days",
+        "type": "int",
+        "updated_at": "2025-09-22 04:34:58",
+        "updated_by": null,
+        "value": "3"
+    }
+]

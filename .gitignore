@@ -1,7 +1,6 @@
 # .gitignore
 
 # --- Dev, MVP docs, IDE environment and Tests
-/MVP_docs/*
 pyproject.toml
 pyrightconfig.json
 *.sublime-*
@@ -9,15 +8,9 @@ pyrightconfig.json
 *.zip
 
 # --- Repo focus (non-app artifacts/docs)
-/Canon/
-/docs/
-/scaffolding_docs/
-/snapshots/
-/snippets/
 /tools/
 /scripts/
 /Test_rat_hole/
-/lib_snapshot/
 
 # --- Virtual Environment ---
 /bin/

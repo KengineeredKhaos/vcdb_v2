@@ -1,0 +1,23 @@
+[
+    {
+        "created_at_utc": "2025-09-24 12:59:59.037840",
+        "id": "01K5XWYB5QY02XT0ET9R1031SW",
+        "person_id": "01K5XWYB5QY02XT0ET9R1031SV",
+        "role_code": "customer",
+        "updated_at_utc": "2025-09-24 12:59:59.037847"
+    },
+    {
+        "created_at_utc": "2025-09-24 17:21:31.375887",
+        "id": "01K5YBX7QFY13BJK10DEG2JH33",
+        "person_id": "01K5YBX7P636C2KHV79MTPE5KH",
+        "role_code": "customer",
+        "updated_at_utc": "2025-09-24 17:21:31.375892"
+    },
+    {
+        "created_at_utc": "2025-09-24 18:02:28.482090",
+        "id": "01K5YE8781HQZAXWCW8RR1EKGJ",
+        "person_id": "01K5YE8774Q2M3DBVT2S94HVGS",
+        "role_code": "customer",
+        "updated_at_utc": "2025-09-24 18:02:28.482095"
+    }
+]
