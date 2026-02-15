@@ -50,6 +50,84 @@ These are the non‑negotiable rules that keep VCDB v2 maintainable, auditable, 
 - **Extensions is the only bridge.** All inter-slice calls go through  
   `extensions/contracts` (facades), not direct imports.
 
+### DTO Canon
+
+DTOs are the only data shapes allowed to cross slice boundaries
+(especially through Extensions contracts).
+They provide a stable, explicit interface and prevent ORM/model leakage,
+accidental PII exposure, and “schema drift by convenience”.
+
+#### Ownership and Location
+
+Each slice owns its DTOs.
+
+- DTO definitions live in the owning slice at:
+  `app/slices/<slice>/mapper.py`
+
+- Other slices must not import slice models; they consume contracts,
+  which return DTOs (or raise contract-scoped errors).
+
+#### Default DTO Type
+
+- Use @dataclass(frozen=True, slots=True) by default.
+  
+  - Why:
+    
+    - Immutable (frozen=True) → contract results are facts, not mutable objects.
+    
+    - Dot access (dto.field) → minimizes cognitive overhead.
+  
+  - Slots (slots=True) → prevents accidental attribute injection and reduces memory overhead.
+  
+  - Clear, typed fields → easier testing and refactoring.
+
+- When to Use TypedDict
+  Use TypedDict only for “baggy” payloads where:
+  
+  - the shape is inherently dict-like
+  
+  - the schema is external (policy JSON) or intentionally flexible
+  
+  - the payload is rows/buckets/blobs (reporting, aggregation, CSV-ish outputs)
+  
+  - you want a view model that is naturally serialized as JSON without transformation
+
+**Rule: If callers must reliably pluck specific fields, prefer dataclass.
+If callers mostly treat it as a JSON object, TypedDict is fine.**
+
+#### Contract Boundary Rule
+
+- Contracts return dataclasses unless the return value is intentionally a blob/report structure.
+
+- Contracts never return ORM models, SQLAlchemy rows, or arbitrary dicts “because it was easy”.
+
+- If you must return a flexible payload, wrap it in a dataclass and put the blob inside:
+  `ReportDTO(rows=[...], buckets={...}, as_of_iso="...")`
+
+#### Route Boundary Rule
+
+- Routes should not “invent” data structures. Routes should:
+  
+  - parse/validate request inputs (forms)
+  
+  - call contracts
+  
+  - render templates / redirect using DTO fields
+
+#### Naming Conventions
+
+- *DTO suffix for dataclasses crossing boundaries (WizardCreatedDTO, EntityCardDTO).
+- *View suffix for TypedDict view models (PersonView, OrgView).
+- DTOs should be “what the caller needs”, not “everything we happen to have”.
+
+#### Stability Promise
+
+- Adding fields is allowed (non-breaking).
+
+- Removing/renaming fields is breaking and requires a versioned contract (*_v2, *_v3).
+
+- DTOs are treated as part of the public interface of a contract.
+
 ### Slice-local mappers (uniform projection layer)
 
 - **Every slice MUST include a mapper module at a uniform location:**
@@ -211,8 +289,6 @@ change is not canon-compliant.
 
 - If you need business logic: put it in `services/*` (queries vs  
   commands), not in contracts/routes.
-
-
 
 ---
 

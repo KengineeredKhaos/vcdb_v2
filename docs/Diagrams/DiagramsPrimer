@@ -1,0 +1,135 @@
+
+
+
+What to notice:
+
+[] = box
+
+{} = decision (diamond)
+
+--> = arrow
+
+|label| = arrow label
+
+[ * ] is start/end
+
+a --> b is “transition”
+
+
+Totally fair. The good news: Mermaid is *tiny* compared to “learning a new language.” It’s basically “ASCII diagrams with a couple keywords.” If you can read Python indentation, you can read Mermaid.
+
+Here’s a quick peek with the three Mermaid diagram types you’d likely use for VCDB. You can literally copy/paste these into a `.md` file and (on GitHub) they render automatically.
+
+---
+
+## 1) Flowchart (best for “wizard steps” + redirects)
+
+```mermaid
+flowchart TD
+  A[Start] --> K{Entity.kind?}
+  K -->|person| P[Create Entity + EntityPerson]
+  K -->|org| O[Create Entity + EntityOrg]
+  P --> C[Contacts: add 0..N]
+  O --> C
+  C --> D[Addresses: add 0..N]
+  D --> R[Assign domain roles: 1..N]
+  R --> CH[Chooser page]
+  CH -->|customer| CI[Customers: intake start]
+  CH -->|resource| RO[Resources: onboard start]
+  CH -->|sponsor| SO[Sponsors: onboard start]
+```
+
+**What to notice:**
+
+* `[]` = box
+* `{}` = decision (diamond)
+* `-->` = arrow
+* `|label|` = arrow label
+
+That’s basically it.
+
+---
+
+## 2) State machine (best for “valid transitions” and resume logic)
+
+```mermaid
+stateDiagram-v2
+  [*] --> kind
+  kind --> core
+  core --> contacts
+  contacts --> addresses
+  addresses --> roles
+  roles --> chooser
+  chooser --> [*]
+```
+
+**What to notice:**
+
+* `[ * ]` is start/end
+* `a --> b` is “transition”
+
+This is the diagram that keeps your wizard from drifting.
+
+---
+
+## 3) Sequence diagram (best for “route → service → contract → redirect”)
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant ER as Entity Routes
+  participant ES as Entity Services
+  participant GOV as Governance Contract
+  participant CUS as Customers Routes
+
+  U->>ER: POST /entity/wizard/roles
+  ER->>ES: set_roles(entity_ulid, roles)
+  ES->>GOV: validate_roles(roles)
+  GOV-->>ES: ok
+  ES-->>ER: success
+  ER-->>U: redirect -> /entity/chooser/<ulid>
+  U->>CUS: GET /customers/intake/start?entity_ulid=...
+```
+
+**What to notice:**
+
+* It reads like a log of calls.
+* This is perfect for enforcing “routes are thin, services are thick, contracts at boundaries.”
+
+---
+
+## Where do you put these?
+
+Simplest: a markdown file in your repo.
+
+Example:
+`docs/diagrams/entity_wizard.md`
+
+````md
+# Entity Wizard
+
+```mermaid
+flowchart TD
+  ...
+````
+
+```
+
+GitHub will render it automatically.
+
+---
+
+## Minimum “syntax you must know” (cheat sheet)
+- `flowchart TD` = top-down flowchart
+- `A[Box]`, `B{Decision}`
+- `A --> B`
+- `A -->|label| B`
+- `stateDiagram-v2`
+- `sequenceDiagram`
+
+That’s… honestly 95% of it.
+
+---
+
+If you want a super-low-risk trial: tell me which one you want to see first (system map, entity wizard, or UI sitemap) and I’ll write a *single* Mermaid diagram that matches your current naming (customer intake start / resource onboard start / sponsor onboard start + chooser page).
+```

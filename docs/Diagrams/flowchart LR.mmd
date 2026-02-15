@@ -1,0 +1,57 @@
+flowchart LR
+  %% High-level system map: slices and the rule that cross-slice calls go via Extensions contracts
+
+  subgraph UI[Web UI / Routes]
+    WEB[web blueprint]
+    ENT_R[entity routes]
+    CUS_R[customers routes]
+    RES_R[resources routes]
+    SPO_R[sponsors routes]
+    ADM_R[admin routes]
+  end
+
+  subgraph EXT[Extensions Contracts (versioned)]
+    GOV_C[governance_v2]
+    ENT_C[entity_v2]
+    CUS_C[customers_v2]
+    RES_C[resources_v2]
+    SPO_C[sponsors_v2]
+    LED_C[ledger_v2]
+  end
+
+  subgraph SLICES[Slices (data ownership)]
+    ENT_S[Entity slice\n(PII vault)]
+    GOV_S[Governance slice\n(policies JSON)]
+    CUS_S[Customers slice\n(facet table)]
+    RES_S[Resources slice\n(facet table)]
+    SPO_S[Sponsors slice\n(facet table)]
+    LED_S[Ledger slice\n(immutable events)]
+  end
+
+  %% UI -> Contracts
+  ENT_R --> ENT_C
+  CUS_R --> CUS_C
+  RES_R --> RES_C
+  SPO_R --> SPO_C
+  ADM_R --> GOV_C
+
+  %% Contracts -> Owning slice services
+  ENT_C --> ENT_S
+  GOV_C --> GOV_S
+  CUS_C --> CUS_S
+  RES_C --> RES_S
+  SPO_C --> SPO_S
+  LED_C --> LED_S
+
+  %% Cross-slice: only via contracts
+  CUS_S -.calls.-> ENT_C
+  RES_S -.calls.-> ENT_C
+  SPO_S -.calls.-> ENT_C
+  ENT_S -.validates roles.-> GOV_C
+
+  %% Auditing
+  ENT_S --> LED_C
+  CUS_S --> LED_C
+  RES_S --> LED_C
+  SPO_S --> LED_C
+  GOV_S --> LED_C

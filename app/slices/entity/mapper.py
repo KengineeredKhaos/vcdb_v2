@@ -1,7 +1,7 @@
 # app/slices/entity/mapper.py
 from __future__ import annotations
 
-from datetime import datetime
+from dataclasses import dataclass
 from typing import TypedDict
 
 from .models import Entity, EntityContact, EntityOrg, EntityPerson
@@ -28,6 +28,32 @@ Mapped JSON payload: (for reference only)
 """
 
 
+@dataclass(frozen=True, slots=True)
+class WizardSummaryDTO:
+    entity_ulid: str
+    kind: str
+    display_name: str
+    role_code: str | None
+    email: str | None
+    phone: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class WizardEntityCreatedDTO:
+    entity_ulid: str
+    entity_kind: str
+    display_name: str
+    next_step: str
+
+
+@dataclass(frozen=True, slots=True)
+class WizardStepDTO:
+    entity_ulid: str
+    created: bool
+    changed_fields: tuple[str, ...]
+    next_step: str
+
+
 class PersonView(TypedDict):
     entity_ulid: str
     kind: str  # "person"
@@ -36,8 +62,8 @@ class PersonView(TypedDict):
     preferred_name: str | None
     email: str | None
     phone: str | None
-    created_at_utc: datetime | None
-    updated_at_utc: datetime | None
+    created_at_utc: str | None
+    updated_at_utc: str | None
 
 
 class OrgView(TypedDict):
@@ -48,8 +74,40 @@ class OrgView(TypedDict):
     ein: str | None
     email: str | None
     phone: str | None
-    created_at_utc: datetime | None
-    updated_at_utc: datetime | None
+    created_at_utc: str | None
+    updated_at_utc: str | None
+
+
+# -----------------
+# Wizard Summary
+# -----------------
+
+
+def to_wizard_summary(ent: Entity) -> WizardSummaryDTO:
+    p = ent.person
+    o = ent.org
+
+    if p is not None:
+        display = " ".join(x for x in [p.first_name, p.last_name] if x)
+    else:
+        display = (o.legal_name or "") if o is not None else ent.ulid
+
+    role = ent.roles[0].role_code if ent.roles else None
+    c = ent.contacts[0] if ent.contacts else None
+
+    return WizardSummaryDTO(
+        entity_ulid=ent.ulid,
+        kind=ent.kind,
+        display_name=display.strip() or ent.ulid,
+        role_code=role,
+        email=(c.email if c else None),
+        phone=(c.phone if c else None),
+    )
+
+
+# -----------------
+# other functions
+# -----------------
 
 
 def _pick_primary_contact(ent: Entity | None) -> EntityContact | None:

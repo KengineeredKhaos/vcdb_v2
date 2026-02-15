@@ -1,0 +1,34 @@
+{# app/slices/entity/templates/entity/wizard_person_core.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}New Person — Core{% endblock %}
+
+{% block content %}
+<h1>New Person — Core</h1>
+
+<form method="post">
+  {{ form.hidden_tag() }}
+
+  <label>First name</label>
+  {{ form.first_name() }}
+  {% for e in form.first_name.errors %}<div class="err">{{ e }}</div>{% endfor %}
+
+  <label>Last name</label>
+  {{ form.last_name() }}
+  {% for e in form.last_name.errors %}<div class="err">{{ e }}</div>{% endfor %}
+
+  <label>Preferred name</label>
+  {{ form.preferred_name() }}
+  {% for e in form.preferred_name.errors %}<div class="err">{{ e }}</div>{% endfor %}
+
+  <label>DOB</label>
+  {{ form.dob(placeholder="YYYY-MM-DD") }}
+  {% for e in form.dob.errors %}<div class="err">{{ e }}</div>{% endfor %}
+
+  <label>SSN last 4</label>
+  {{ form.last_4() }}
+  {% for e in form.last_4.errors %}<div class="err">{{ e }}</div>{% endfor %}
+
+  <button type="submit">Continue</button>
+</form>
+{% endblock %}

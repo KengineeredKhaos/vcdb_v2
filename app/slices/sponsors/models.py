@@ -323,10 +323,6 @@ class SponsorPOC(db.Model, ULIDPK, IsoTimestamps):
         Boolean, nullable=False, default=True
     )
 
-    # -------------
-    # Relationships
-    # -------------
-
     sponsor: Mapped[Sponsor] = relationship(
         "Sponsor",
         back_populates="pocs",

@@ -1,0 +1,12 @@
+flowchart TD
+  A[Start] --> K{Entity.kind?}
+  K -->|person| P[Create Entity + EntityPerson]
+  K -->|org| O[Create Entity + EntityOrg]
+  P --> C[Contacts: add 0..N]
+  O --> C
+  C --> D[Addresses: add 0..N]
+  D --> R[Assign domain roles: 1..N]
+  R --> CH[Chooser page]
+  CH -->|customer| CI[Customers: intake start]
+  CH -->|resource| RO[Resources: onboard start]
+  CH -->|sponsor| SO[Sponsors: onboard start]

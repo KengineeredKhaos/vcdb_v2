@@ -1,9 +1,10 @@
 # app/slices/sponsors/routes.py
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, redirect, request, url_for
 
 from app.extensions import db
+from app.extensions.contracts import sponsors_v2
 from app.extensions.errors import ContractError
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
 
@@ -13,6 +14,7 @@ bp = Blueprint(
     "sponsors",
     __name__,
     template_folder="templates",
+    static_folder=None,
     url_prefix="/sponsors",
 )
 
@@ -42,6 +44,22 @@ def _err(exc: Exception, code: int = 400):
         return jsonify({"ok": False, "error": str(exc)}), 400
 
     return jsonify({"ok": False, "error": str(exc)}), code
+
+
+# -----------------
+# Wizard Routes
+# -----------------
+
+
+@bp.get("/onboard/start/<entity_ulid>")
+def onboard_start(entity_ulid: str):
+    sponsors_v2.ensure_sponsor_facet(entity_ulid=entity_ulid)
+    return redirect(url_for("sponsors.onboard_step", entity_ulid=entity_ulid))
+
+
+# -----------------
+# Other Stuff
+# -----------------
 
 
 @bp.post("")

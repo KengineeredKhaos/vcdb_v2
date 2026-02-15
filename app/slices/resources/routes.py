@@ -17,16 +17,23 @@ Endpoints (minimal, test-facing surface):
 
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, redirect, request, url_for
 
 from app.extensions import db
+from app.extensions.contracts import resources_v2
 from app.lib.request_ctx import get_actor_ulid, get_request_id
 from app.lib.security import require_permission
 
 from . import mapper as res_mapper
 from . import services as res_svc
 
-bp = Blueprint("resources", __name__, url_prefix="/resources")
+bp = Blueprint(
+    "resources",
+    __name__,
+    template_folder="templates",
+    static_folder=None,
+    url_prefix="/resources",
+)
 
 
 def _ok(*, request_id: str, data: object = None, meta: dict | None = None):
@@ -66,6 +73,24 @@ def _err(*, request_id: str, exc: Exception, status: int | None = None):
         ),
         status or 500,
     )
+
+
+# -----------------
+# Wizard Routes
+# -----------------
+
+
+@bp.get("/onboard/start/<entity_ulid>")
+def onboard_start(entity_ulid: str):
+    resources_v2.ensure_resource_facet(entity_ulid=entity_ulid)
+    return redirect(
+        url_for("resources.onboard_step", entity_ulid=entity_ulid)
+    )
+
+
+# ----------------
+# other Stuff
+# ----------------
 
 
 @bp.post("/ensure")

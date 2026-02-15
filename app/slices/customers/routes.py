@@ -4,17 +4,17 @@ from __future__ import annotations
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, redirect, request, url_for
 
 from app.extensions import db
+from app.extensions.contracts import customers_v2
 from app.extensions.errors import ContractError
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
-from app.slices.entity.guards import require_person_entity_ulid
 
 bp = Blueprint(
     "customers",
     __name__,
-    template_folder="customers",
+    template_folder="templates",
     static_folder=None,
     url_prefix="/customers",
 )
@@ -99,42 +99,12 @@ def _reject_legacy_keys(payload: dict[str, Any]) -> None:
         )
 
 
-@bp.post("")
-def create_customer():
-    from . import services as cust_svc
+@bp.get("/intake/start/<entity_ulid>")
+def intake_start(entity_ulid: str):
+    customers_v2.ensure_customer_facet(entity_ulid=entity_ulid)
 
-    req = ensure_request_id()
-    actor = get_actor_ulid()
-
-    payload = request.get_json(force=True, silent=False) or {}
-    try:
-        _reject_legacy_keys(payload)
-
-        entity_ulid = (payload.get("entity_ulid") or "").strip()
-        if not entity_ulid:
-            raise ValueError("entity_ulid is required")
-
-        require_person_entity_ulid(
-            db.session, entity_ulid, where="customers.routes.create_customer"
-        )
-
-        # NEW CANON: ensure_customer returns entity_ulid (str)
-        ent = cust_svc.ensure_customer(
-            entity_ulid=entity_ulid,
-            request_id=req,
-            actor_ulid=actor,
-        )
-
-        db.session.commit()
-        return _ok(
-            request_id=req,
-            data={"entity_ulid": ent},
-            status=201,
-        )
-
-    except Exception as exc:
-        db.session.rollback()
-        return _err(request_id=req, exc=exc)
+    # later: redirect into your real step route, e.g. eligibility
+    return redirect(url_for("customers.intake_step", entity_ulid=entity_ulid))
 
 
 @bp.get("/<entity_ulid>")

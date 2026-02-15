@@ -1,0 +1,16 @@
+sequenceDiagram
+  participant U as User
+  participant ER as Entity Routes
+  participant ES as Entity Services
+  participant GOV as Governance Contract
+  participant CUS as Customers Routes
+
+  U->>ER: POST /entity/wizard/roles
+  ER->>ES: set_roles(entity_ulid, roles)
+  ES->>GOV: validate_roles(roles)
+  GOV-->>ES: ok
+  ES-->>ER: success
+  ER-->>U: redirect -> /entity/chooser/<ulid>
+  U->>ER: GET chooser
+  ER-->>U: shows "Start Customer Intake"
+  U->>CUS: GET /customers/intake/start?entity_ulid=...

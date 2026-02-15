@@ -5,12 +5,12 @@ from typing import Any
 
 from app.extensions.errors import ContractError
 from app.slices.entity import guards as ent_guards
-from app.slices.entity.mapper import WizardCreatedDTO
+from app.slices.entity import mapper
 from app.slices.entity.services_wizard import (
-    WizardCreatedDTO,
-)
-from app.slices.entity.services_wizard import (
-    wizard_create_person_core as _wizard_create_person_core,
+    cmd_wizard_create_person_core,
+    cmd_wizard_set_address_primary,
+    cmd_wizard_set_contact_primary,
+    cmd_wizard_set_single_role,
 )
 
 
@@ -105,18 +105,42 @@ def wizard_create_person_core(
     preferred_name: str | None = None,
     dob: str | None = None,
     last_4: str | None = None,
-) -> WizardCreatedDTO:
-    where = "entity_v2.wizard_create_person_core"
+) -> WizardStepDTO:
+    ent, changed, as_of_iso = cmd_wizard_create_person_core(
+        first_name=first_name,
+        last_name=last_name,
+        preferred_name=preferred_name,
+        dob=dob,
+        last_4=last_4,
+    )
+    return WizardStepDTO(
+        entity_ulid=ent.ulid,
+        changed_fields=changed,
+        as_of_iso=as_of_iso,
+    )
+
+
+def wizard_commit_person(
+    *,
+    payload: dict[str, Any],
+    request_id: str,
+    actor_ulid: str | None,
+) -> WizardPersonCommitResultDTO:
+    where = "entity_v2.wizard_commit_person"
     try:
-        return _wizard_create_person_core(
-            first_name=first_name,
-            last_name=last_name,
-            preferred_name=preferred_name,
-            dob=dob,
-            last_4=last_4,
+        from app.slices.entity import services_wizard as wiz
+
+        res = wiz.cmd_wizard_person_commit(
+            payload=payload,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
         )
-    except ContractError:
-        raise
+        return WizardPersonCommitResultDTO(
+            entity_ulid=res.entity_ulid,
+            created=res.created,
+            changed_fields=res.changed_fields,
+            as_of_iso=res.as_of_iso,
+        )
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
 

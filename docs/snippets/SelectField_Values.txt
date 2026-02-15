@@ -1,6 +1,17 @@
 SelectField_Values.txt
 
+Entity Role Values:
 
+from app/slices/governance/data/policy_entity_roles.json
+
+domain_roles: [
+    governor,
+    staff,
+    customer,
+    resource,
+    sponsor,
+    civilian
+]
 
 
 Customer Slice SelectField Values:

@@ -1,0 +1,192 @@
+The canonical wizard flow:
+
+1) User hits a GET route
+Route renders a template with a Form.
+Route may also pass small context (titles, next URL, etc.).
+
+2) User submits POST route
+Form does basic validation:
+required fields, max lengths, simple formatting checks
+If form invalid: re-render template with errors (no DB work).
+
+3) Route calls the contract
+Route builds a simple payload (kwargs or a dataclass) from form fields.
+Route calls entity_v2.wizard_*().
+
+4) Contract calls services
+Contract is a thin adapter:
+calls service
+converts exceptions → ContractError
+returns a DTO
+
+5) Services normalize + validate + flush
+Services do the real work:
+normalize/clean (strip, lower, normalize_dob/email/phone)
+domain validation
+create/update ORM rows
+db.session.flush() (so ULIDs exist)
+Services return a DTO describing “what was created/updated” and “what’s next”.
+
+6) Contract returns DTO → route commits + redirects
+Route commits the transaction.
+Route redirects to the next wizard step using the DTO (usually just entity_ulid).
+
+
+Entity Creation Wizard Wireframe:
+A clean “final” conceptual state machine
+
+This is a canonical wireframe:
+kind step: choose person|org
+core step: create Entity + facet (EntityPerson/EntityOrg)
+contacts step: add 0..N contacts (email/phone)
+addresses step: add 0..N addresses
+roles step: select 1..N domain roles (validated)
+chooser step: show next actions based on roles
+    → Customer intake start
+    → Resource onboard start
+    → Sponsor onboard start
+
+And inside Resource/Sponsor onboarding:
+add a “Manage POCs” step
+ (search/create Person → link via ResourcePOC/SponsorPOC)
+
+
+
+Entity Wizard:
+    Entity.kind()
+        if Entity.kind == person
+            create_person_entity(
+                EntityPerson.first_name,
+                EntityPerson.last_name,
+                EntityPerson.preferred_name(Optional),
+                EntityPerson.last_4(Optional),
+            )
+        return EntityPerson.entity
+
+
+        if Entity.kind == org
+            create_org_entity(
+                EnttiyOrg.legal_name,
+                EnttiyOrg.dba_name(Optional),
+                EnttiyOrg.ein(Optional),
+            )
+        return EntityOrg.entity
+
+
+    Entity.contact()
+        create_contact(
+            EntityContact.email,
+            EnttiyContact.phone,
+        )
+        return ("Contact intake complete for" Entity.entity_ulid)
+
+
+    Entity.address()
+        create_address(
+            EntityAddress.is_physical,
+            EntityAddress.is_postal,
+            EntityAddress.address1,
+            EntityAddress.address2,
+            EntityAddress.city,
+            EntityAddress.state,
+            EntityAddress.postal_code,
+        )
+        return ("Address intake complete for" Entity.entity_ulid)
+
+
+    EnttiyRole.role()
+        select_one_role (checkbox)
+            try:
+                validate against governance policy
+
+            except:
+                invalid roles combinations
+        return (role)
+
+    What_to_do_next()
+        next_step_facet_redirect
+            customer_intake_wizard
+            resource onboarding_wizard
+            sponsor_onboarding_wizard
+            link_poc
+
+        return next_step_facet_redirect()
+
+domain_roles: [governor|staff|customer|resource|sponsor|civilian]
+As derivded from app/slices/governance/data/policy_entity_roles.json
+
+
+
+Facet Table Operations:
+
+Customer Intake Wizard
+    create_customer_eligibility(
+        CustomerEligibility.branch,
+        CustomerEligibility.era,
+        CustomerEligibility.is_veteran_verified,
+        CustomerEligibility.veteran_method,
+        CustomerEligibility.approved_by(Optional),
+        CustomerEligibility.approved_at_utc,
+    )
+    return Customer.intake_step("eligibility_intake")
+
+
+    create_customer_needs_profile(
+        CustomerEligibility.tier1_min,
+        CustomerEligibility.tier2_min,
+        CustomerEligibility.tier3_min,
+        CustomerEligibility.is_homeless_verified,
+    )
+    return Customer.intake_step("needs_profile_intake")
+
+
+“Resource/Sponsor onboarding includes a ‘Manage POCs’ step that
+searches/creates a Person and links it.”
+
+Resource Onbouarding Wizard
+    create_resource(
+        Resource.admin_review_required(default),
+        Resource.readiness_status(default),
+        Resource.mou_status(default),
+        Resource.first_seen(now),
+    )
+    return Resource.onboard_step("created")
+
+Resource Manage POC
+    link_poc(
+        ResourcePOC.resource_entity_ulid,
+        ResourcePOC.person_entitty_ulid,
+        ResourcePOC.relation(default),
+        ResourcePOC.rank,
+        ResourcePOC.org_role,
+        ResourcePOC.valid_from_utc(now),
+        ResourcePOC.is_primary,
+        ResourcePOC.active,
+    )
+    return ("POC linked to" EntityOrg.legal_name)
+
+
+Sponsor Onboarding Wizard
+    create_sponsor(
+        Sponsor.admin_review_required(default),
+        Sponsor.readiness_status(default),
+        Sponsor.mou_status(default),
+        Sponsor.first_seen(now),
+    )
+    return Sponsor.onboard_step("created")
+
+Sponsor Manage POC
+    link_poc(
+        SponsorPOC.resource_entity_ulid,
+        SponsorPOC.person_entitty_ulid,
+        SponsorPOC.relation(default),
+        SponsorPOC.rank,
+        SponsorPOC.org_role,
+        SponsorPOC.valid_from_utc(now),
+        SponsorPOC.is_primary,
+        SponsorPOC.active,
+    )
+    return ("POC linked to" EntityOrg.legal_name)
+
+
+
