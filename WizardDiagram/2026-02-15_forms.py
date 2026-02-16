@@ -2,13 +2,7 @@
 from __future__ import annotations
 
 from flask_wtf import FlaskForm
-from wtforms import (
-    BooleanField,
-    EmailField,
-    SelectField,
-    StringField,
-    SubmitField,
-)
+from wtforms import BooleanField, EmailField, StringField
 from wtforms.validators import (
     DataRequired,
     Email,
@@ -19,13 +13,6 @@ from wtforms.validators import (
 )
 
 from app.lib.utils import normalize_dob, validate_dob
-
-LABELS = {
-    "customer": "Customer (person served)",
-    "resource": "Resource (provider/org)",
-    "sponsor": "Sponsor (donor/org)",
-    "civilian": "Civilian (general person)",
-}
 
 
 class PersonCoreForm(FlaskForm):
@@ -71,8 +58,6 @@ class PersonCoreForm(FlaskForm):
         if (not raw.isdigit()) or len(raw) != 4:
             raise ValidationError("Last 4 must be exactly 4 digits")
 
-    submit = SubmitField("Continue")
-
 
 class OrgCoreForm(FlaskForm):
     legal_name = StringField(
@@ -100,8 +85,6 @@ class OrgCoreForm(FlaskForm):
         if (not raw.isdigit()) or len(raw) != 9:
             raise ValidationError("EIN must be exactly nine (9) digits")
 
-    submit = SubmitField("Continue")
-
 
 class ContactForm(FlaskForm):
     # Uses WTF built-in Email validator
@@ -124,8 +107,6 @@ class ContactForm(FlaskForm):
 
     # If checked (True) = Primary, if unchecked (False) = Secondary
     is_primary = BooleanField("Mark as Primary", default=False)
-
-    submit = SubmitField("Continue")
 
 
 class AddressForm(FlaskForm):
@@ -159,14 +140,6 @@ class AddressForm(FlaskForm):
         ],
     )
 
-    state = StringField(
-        "State",
-        validators=[
-            DataRequired(message="Required field"),
-            Length(max=2),
-        ],
-    )
-
     # Pattern explanation:
     # ^\d{5}        -> Starts with exactly 5 digits
     # (-\d{4})?$    -> Optionally ends with a hyphen and 4 digits
@@ -177,15 +150,3 @@ class AddressForm(FlaskForm):
             Regexp(r"^\d{5}(-\d{4})?$", message="Invalid US ZIP Code."),
         ],
     )
-
-    submit = SubmitField("Continue")
-
-
-class RoleForm(FlaskForm):
-    role = SelectField(
-        "Domain role",
-        validators=[DataRequired(message="Pick a role")],
-        choices=[],  # route injects
-        coerce=str,
-    )
-    submit = SubmitField("Continue")

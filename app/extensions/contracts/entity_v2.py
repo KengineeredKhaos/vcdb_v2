@@ -5,9 +5,9 @@ from typing import Any
 
 from app.extensions.errors import ContractError
 from app.slices.entity import guards as ent_guards
-from app.slices.entity.mapper import WizardCreatedDTO
+from app.slices.entity.mapper import WizardStepDTO
 from app.slices.entity.services_wizard import (
-    WizardCreatedDTO,
+    wizard_create_org_core as _wizard_create_org_core,
 )
 from app.slices.entity.services_wizard import (
     wizard_create_person_core as _wizard_create_person_core,
@@ -72,14 +72,6 @@ def require_org_entity_ulid(
 # -----------------
 
 
-@dataclass(frozen=True)
-class WizardPersonCommitResultDTO:
-    entity_ulid: str
-    created: bool
-    changed_fields: tuple[str, ...]
-    as_of_iso: str
-
-
 @dataclass(frozen=True, slots=True)
 class EnsurePersonResultDTO:
     entity_ulid: str
@@ -105,7 +97,7 @@ def wizard_create_person_core(
     preferred_name: str | None = None,
     dob: str | None = None,
     last_4: str | None = None,
-) -> WizardCreatedDTO:
+) -> WizardStepDTO:
     where = "entity_v2.wizard_create_person_core"
     try:
         return _wizard_create_person_core(
@@ -121,35 +113,20 @@ def wizard_create_person_core(
         raise _as_contract_error(where, exc) from exc
 
 
-# -----------------
-# Legacy Contracts
-# -----------------
-
-
-def ensure_person(
+def wizard_create_org_core(
     *,
-    first_name: str,
-    last_name: str,
-    email: str | None = None,
-    phone: str | None = None,
-    request_id: str,
-    actor_ulid: str | None,
-) -> EnsurePersonResultDTO:
-    where = "entity_v2.ensure_person"
+    legal_name: str,
+    dba_name: str | None = None,
+    ein: str | None = None,
+) -> WizardStepDTO:
+    where = "entity_v2.wizard_create_org_core"
     try:
-        from app.slices.entity import services as entity_svc
-
-        res = entity_svc.cmd_person_ensure_by_contact(
-            first_name=first_name,
-            last_name=last_name,
-            email=email,
-            phone=phone,
-            request_id=request_id,
-            actor_ulid=actor_ulid,
+        return _wizard_create_org_core(
+            legal_name=legal_name,
+            dba_name=dba_name,
+            ein=ein,
         )
-        return EnsurePersonResultDTO(
-            entity_ulid=res.entity_ulid,
-            created=res.created,
-        )
+    except ContractError:
+        raise
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc

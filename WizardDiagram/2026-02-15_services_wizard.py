@@ -61,14 +61,6 @@ class WizardPersonCommitResult:
     as_of_iso: str
 
 
-@dataclass(frozen=True, slots=True)
-class WizardOrgCommitResult:
-    entity_ulid: str
-    created: bool
-    changed_fields: tuple[str, ...]
-    as_of_iso: str
-
-
 # -----------------
 # Local Helper
 # Functions

@@ -1,0 +1,62 @@
+flowchart TD
+  U[User / Browser] --> R0GET[GET /entity/wizard/start<br/>routes_wizard.wizard_start]
+  R0GET --> T0[wizard_start.html<br/>Pick kind: person or org]
+  T0 --> R0POST[POST /entity/wizard/start<br/>routes_wizard.wizard_start_post]
+
+  R0POST -->|kind=person| R1GET[GET /entity/wizard/person<br/>wizard_person_core_get]
+  R0POST -->|kind=org| R1oGET[GET /entity/wizard/org<br/>wizard_org_core_get]
+
+  %% ---- PERSON CORE ----
+  R1GET --> F1[PersonCoreForm<br/>forms.PersonCoreForm]
+  F1 --> R1POST[POST /entity/wizard/person<br/>wizard_person_core_post]
+  R1POST -->|form.validate_on_submit| C1[contract entity_v2.wizard_create_person_core]
+  C1 --> S1[services_wizard.wizard_create_person_core]
+  S1 --> DB1[(DB flush<br/>Entity + EntityPerson)]
+  S1 --> D1[DTO: WizardEntityCreatedDTO / WizardCreatedDTO<br/>entity_ulid + display_name + next_step]
+  D1 --> R1POST
+  R1POST -->|event_bus.emit wizard_person_core| L[(LedgerEvent row in ledger slice)]
+  R1POST --> COMMIT1[db.session.commit]
+  COMMIT1 --> RED1[redirect to next_step<br/>usually entity.wizard_contact]
+
+  %% ---- CONTACT ----
+  RED1 --> R2GET[GET /entity/wizard/ulid/contact<br/>wizard_contact]
+  R2GET --> F2[ContactForm<br/>forms.ContactForm]
+  F2 --> R2POST[POST /entity/wizard/ulid/contact<br/>wizard_contact_post]
+  R2POST --> C2[contract entity_v2.wizard_set_contact_primary]
+  C2 --> S2[services_wizard.wizard_upsert_primary_contact]
+  S2 --> DB2[(DB flush<br/>EntityContact PK=entity_ulid)]
+  S2 --> D2[DTO: WizardStepDTO<br/>created + changed_fields + next_step]
+  D2 --> R2POST
+  R2POST -->|event_bus.emit wizard_contact| L
+  R2POST --> COMMIT2[db.session.commit]
+  COMMIT2 --> RED2[redirect dto.next_step<br/>usually entity.wizard_address]
+
+  %% ---- ADDRESS ----
+  RED2 --> R3GET[GET /entity/wizard/ulid/address<br/>wizard_address]
+  R3GET --> F3[AddressForm<br/>forms.AddressForm]
+  F3 --> R3POST[POST /entity/wizard/ulid/address<br/>wizard_address_post]
+  R3POST --> C3[contract entity_v2.wizard_set_address_primary]
+  C3 --> S3[services_wizard.wizard_upsert_address]
+  S3 --> DB3[(DB flush<br/>EntityAddress PK=entity_ulid)]
+  S3 --> D3[DTO: WizardStepDTO<br/>created + changed_fields + next_step]
+  D3 --> R3POST
+  R3POST -->|event_bus.emit wizard_address| L
+  R3POST --> COMMIT3[db.session.commit]
+  COMMIT3 --> RED3[redirect dto.next_step<br/>usually entity.wizard_role]
+
+  %% ---- ROLE ----
+  RED3 --> R4GET[GET /entity/wizard/ulid/role<br/>wizard_role]
+  R4GET --> F4[DomainRoleForm<br/>SelectField from governance policy]
+  F4 --> R4POST[POST /entity/wizard/ulid/role<br/>wizard_role_post]
+  R4POST --> C4[contract entity_v2.wizard_set_single_role]
+  C4 --> S4[services_wizard.wizard_set_single_role]
+  S4 --> DB4[(DB flush<br/>EntityRole PK=entity_ulid)]
+  S4 --> D4[DTO: WizardStepDTO<br/>created + changed_fields + next_step]
+  D4 --> R4POST
+  R4POST -->|event_bus.emit wizard_role| L
+  R4POST --> COMMIT4[db.session.commit]
+  COMMIT4 --> RED4[redirect dto.next_step<br/>entity.wizard_next]
+
+  %% ---- HANDOFF ----
+  RED4 --> R5GET[GET /entity/wizard/ulid/next<br/>wizard_next_intake_or_onboard]
+  R5GET --> NEXT[Button to handoff route:<br/>customers.intake_start OR resources.onboard_start OR sponsors.onboard_start]
