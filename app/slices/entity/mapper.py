@@ -9,8 +9,36 @@ from .models import Entity, EntityContact, EntityOrg, EntityPerson
 """
 Slice-local projection layer.
 
+Naming Conventions:
+    *DTO suffix for dataclasses crossing boundaries
+    (WizardCreatedDTO, EntityCardDTO).
+
+    *View suffix for TypedDict view models
+    (PersonView, OrgView).
+
+DTOs should be “what the caller needs”, not “everything we happen to have”.
+
 This module holds typed view/summary shapes and pure mapping functions.
 It must not perform DB queries/writes, commits/rollbacks, or Ledger emits.
+
+@dataclass(frozen=True, slots=True) DTOS are for transfering slice data
+used in contracts for data that crosses slice boundries. They are:
+
+    Immutable (frozen=True) → contract results are facts, not mutable objects.
+    Dot access (dto.field) → minimizes cognitive overhead.
+    Slots (slots=True) → prevents accidental attribute injection
+    and reduces memory overhead.
+    Clear, typed fields → easier testing and refactoring.
+
+TypedDicts are for READ-ONLY JSON transactions.
+Use TypedDict only for “baggy” payloads where:
+    the shape is inherently dict-like
+    the schema is external (policy JSON) or intentionally flexible
+    the payload is rows/buckets/blobs
+    (reporting, aggregation, CSV-ish outputs)
+    if you want a view model that is naturally serialized as JSON
+    without transformation.
+
 
 Mapped JSON payload: (for reference only)
 {
@@ -26,6 +54,15 @@ Mapped JSON payload: (for reference only)
 }
 
 """
+# -----------------
+# Entity_v2 DTO's
+# -----------------
+
+
+# -----------------
+# services_wizard
+# DTO's
+# -----------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,9 +91,14 @@ class WizardStepDTO:
     next_step: str
 
 
+# -----------------
+# TypedDict
+# Blobs/Views
+# -----------------
+
+
 class PersonView(TypedDict):
     entity_ulid: str
-    kind: str  # "person"
     first_name: str
     last_name: str
     preferred_name: str | None
@@ -68,7 +110,6 @@ class PersonView(TypedDict):
 
 class OrgView(TypedDict):
     entity_ulid: str
-    kind: str  # "org"
     legal_name: str
     dba_name: str | None
     ein: str | None
@@ -150,8 +191,14 @@ def map_org_view(o: EntityOrg) -> OrgView:
 
 
 __all__ = [
+    # Wizard DTOs (dataclasses)
+    "WizardEntityCreatedDTO",
+    "WizardStepDTO",
+    "WizardSummaryDTO",
+    # Views (TypedDict)
     "PersonView",
     "OrgView",
+    # View mappers
     "map_person_view",
     "map_org_view",
 ]

@@ -20,13 +20,6 @@ from wtforms.validators import (
 
 from app.lib.utils import normalize_dob, validate_dob
 
-LABELS = {
-    "customer": "Customer (person served)",
-    "resource": "Resource (provider/org)",
-    "sponsor": "Sponsor (donor/org)",
-    "civilian": "Civilian (general person)",
-}
-
 
 class PersonCoreForm(FlaskForm):
     first_name = StringField(

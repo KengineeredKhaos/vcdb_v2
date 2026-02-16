@@ -1,20 +1,23 @@
 # app/slices/entity/services_wizard.py
 
 """
-Wizard designed for entity creation/editing.
+Wizard designed explictly and solely for entity creation.
+ALL "Edit/Update" paths must flow through entity contract.
+
+DO NOT hijack or repurpose these routes!
+
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from sqlalchemy import select
 
 from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
-from app.lib.geo import normalize_state
+from app.lib.geo import is_state_code
 from app.lib.utils import (
     normalize_dob,
     normalize_ein,
@@ -26,6 +29,7 @@ from app.lib.utils import (
     validate_phone,
 )
 
+from .guards import _validate_entity_shape, require_wizard_entity
 from .mapper import (
     WizardEntityCreatedDTO,
     WizardStepDTO,
@@ -37,7 +41,6 @@ from .models import (
     EntityOrg,
     EntityPerson,
     EntityRole,
-    # EntityAddress,  # <- adjust if your model name differs
 )
 
 # -----------------
@@ -185,11 +188,8 @@ def _normalize_zip5(v: str) -> str:
 
 
 def wizard_next_step(*, entity_ulid: str) -> str:
-    ent = db.session.get(Entity, entity_ulid)
-    if ent is None:
-        raise LookupError("entity not found")
-
-    _validate_entity_shape(ent)  # hard guard
+    ent = require_wizard_entity(entity_ulid)
+    _validate_entity_shape(ent)
 
     has_contact = (
         db.session.execute(
@@ -354,7 +354,7 @@ def wizard_create_org_core(
         entity_ulid=ent.ulid,
         entity_kind="org",
         display_name=_display_name_org(legal_name=ln, dba_name=dba),
-        next_step="entity.wizard_upsert_primary_contact",
+        next_step="entity.wizard_contact",
     )
 
 
@@ -363,8 +363,11 @@ def wizard_upsert_primary_contact(
     entity_ulid: str,
     email: str | None,
     phone: str | None,
-    next_step: str = "entity.wizard_address",
+    request_id: str,
+    actor_ulid: str | None,
 ) -> WizardStepDTO:
+    ent = require_wizard_entity(entity_ulid)
+    _validate_entity_shape(ent)
     email_norm = None
     phone_norm = None
 
@@ -412,11 +415,23 @@ def wizard_upsert_primary_contact(
 
     db.session.flush()
 
+    as_of = now_iso8601_ms()
+    event_bus.emit(
+        domain="entity",
+        operation="wizard_contact_created",
+        request_id=request_id,
+        actor_ulid=actor_ulid,
+        target_ulid=entity_ulid,
+        refs=None,
+        changed={"fields": ["first_name", "last_name"]},
+        happened_at_utc=as_of,
+    )
+
     return WizardStepDTO(
         entity_ulid=entity_ulid,
         created=created,
         changed_fields=tuple(changed),
-        next_step=next_step,
+        next_step="entity.wizard_address",
     )
 
 
@@ -430,8 +445,11 @@ def wizard_upsert_address(
     city: str,
     state: str,
     postal_code: str,
-    next_step: str = "entity.wizard_role",
+    request_id: str,
+    actor_ulid: str | None,
 ) -> WizardStepDTO:
+    ent = require_wizard_entity(entity_ulid)
+    _validate_entity_shape(ent)
     phy = True if is_physical is None else bool(is_physical)
     post = False if is_postal is None else bool(is_postal)
 
@@ -505,11 +523,23 @@ def wizard_upsert_address(
 
     db.session.flush()
 
+    as_of = now_iso8601_ms()
+    event_bus.emit(
+        domain="entity",
+        operation="wizard_address_created",
+        request_id=request_id,
+        actor_ulid=actor_ulid,
+        target_ulid=entity_ulid,
+        refs=None,
+        changed={"fields": ["first_name", "last_name"]},
+        happened_at_utc=as_of,
+    )
+
     return WizardStepDTO(
         entity_ulid=entity_ulid,
         created=created,
         changed_fields=tuple(changed),
-        next_step=next_step,
+        next_step="entity.wizard_role_get",
     )
 
 
@@ -517,8 +547,11 @@ def wizard_set_single_role(
     *,
     entity_ulid: str,
     role: str,
-    next_step: str = "entity.wizard_next",
+    request_id: str,
+    actor_ulid: str | None,
 ) -> WizardStepDTO:
+    ent = require_wizard_entity(entity_ulid)
+    _validate_entity_shape(ent)
     r = (role or "").strip().lower()
     if not r:
         raise ValueError("role is required")
@@ -542,7 +575,7 @@ def wizard_set_single_role(
             entity_ulid=entity_ulid,
             created=False,
             changed_fields=(),
-            next_step=next_step,
+            next_step="Done",
         )
 
     # archive prior actives (MVP: only one “current” role)
@@ -556,9 +589,21 @@ def wizard_set_single_role(
 
     db.session.flush()
 
+    as_of = now_iso8601_ms()
+    event_bus.emit(
+        domain="entity",
+        operation="wizard_domain_role_created",
+        request_id=request_id,
+        actor_ulid=actor_ulid,
+        target_ulid=entity_ulid,
+        refs=None,
+        changed={"fields": ["first_name", "last_name"]},
+        happened_at_utc=as_of,
+    )
+
     return WizardStepDTO(
         entity_ulid=entity_ulid,
         created=created,
         changed_fields=tuple(changed),
-        next_step=next_step,
+        next_step="Done",
     )

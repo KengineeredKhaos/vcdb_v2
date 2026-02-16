@@ -1,17 +1,9 @@
-# app/extensions/contracts/entity_v2.py  (wizard section)
+# app/extensions/contracts/entity_v2.py
 
-from dataclasses import dataclass
-from typing import Any
+from __future__ import annotations
 
 from app.extensions.errors import ContractError
 from app.slices.entity import guards as ent_guards
-from app.slices.entity.mapper import WizardStepDTO
-from app.slices.entity.services_wizard import (
-    wizard_create_org_core as _wizard_create_org_core,
-)
-from app.slices.entity.services_wizard import (
-    wizard_create_person_core as _wizard_create_person_core,
-)
 
 
 def _as_contract_error(where: str, exc: Exception) -> ContractError:
@@ -71,62 +63,10 @@ def require_org_entity_ulid(
 # DTO's
 # -----------------
 
-
-@dataclass(frozen=True, slots=True)
-class EnsurePersonResultDTO:
-    entity_ulid: str
-    created: bool
-
-
-@dataclass(frozen=True)
-class WizardStepDTO:
-    entity_ulid: str
-    changed_fields: tuple[str, ...]
-    as_of_iso: str
+# See Entity Mapper for DTO's
 
 
 # -----------------
-# Wizard Contracts
+# Entity Data
+# Edit/Update
 # -----------------
-
-
-def wizard_create_person_core(
-    *,
-    first_name: str,
-    last_name: str,
-    preferred_name: str | None = None,
-    dob: str | None = None,
-    last_4: str | None = None,
-) -> WizardStepDTO:
-    where = "entity_v2.wizard_create_person_core"
-    try:
-        return _wizard_create_person_core(
-            first_name=first_name,
-            last_name=last_name,
-            preferred_name=preferred_name,
-            dob=dob,
-            last_4=last_4,
-        )
-    except ContractError:
-        raise
-    except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
-
-
-def wizard_create_org_core(
-    *,
-    legal_name: str,
-    dba_name: str | None = None,
-    ein: str | None = None,
-) -> WizardStepDTO:
-    where = "entity_v2.wizard_create_org_core"
-    try:
-        return _wizard_create_org_core(
-            legal_name=legal_name,
-            dba_name=dba_name,
-            ein=ein,
-        )
-    except ContractError:
-        raise
-    except Exception as exc:
-        raise _as_contract_error(where, exc) from exc

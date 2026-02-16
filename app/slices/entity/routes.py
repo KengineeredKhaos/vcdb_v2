@@ -3,27 +3,15 @@ from __future__ import annotations
 
 from flask import (
     Blueprint,
-    flash,
     jsonify,
-    redirect,
     render_template,
     request,
-    url_for,
 )
 from flask_login import login_required
 
-from app.extensions import db
-from app.extensions.auth_ctx import current_actor_ulid
-from app.extensions.contracts import entity_v2 as entity_contract
-from app.extensions.errors import ContractError
-from app.lib.geo import us_states
-from app.lib.ids import new_ulid
-from app.lib.request_ctx import ensure_request_id
 from app.lib.security import require_permission
-from app.slices.entity.services_wizard import wizard_next_step
 
 from . import services as svc
-from .forms import PersonCoreForm
 from .models import EntityPerson
 
 bp = Blueprint(

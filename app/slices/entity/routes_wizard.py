@@ -3,25 +3,21 @@
 from __future__ import annotations
 
 from flask import (
+    current_app,
     flash,
-    jsonify,
     redirect,
     render_template,
     request,
     url_for,
 )
-from flask_login import login_required
 
 from app.extensions import db
 from app.extensions.auth_ctx import current_actor_ulid
-from app.extensions.contracts import entity_v2 as entity_contract
 from app.extensions.contracts import governance_v2
-from app.extensions.errors import ContractError
 from app.lib.request_ctx import ensure_request_id
-from app.lib.security import require_permission
-from app.slices.entity.services_wizard import wizard_next_step
 
-from . import services as svc
+from . import services_wizard as wiz
+from .errors_wizard import WizardError
 from .forms import (
     AddressForm,
     ContactForm,
@@ -30,6 +26,29 @@ from .forms import (
     RoleForm,
 )
 from .routes import bp
+
+LABELS = {
+    "customer": "Customer (person served)",
+    "resource": "Resource (provider/org)",
+    "sponsor": "Sponsor (donor/org)",
+    "civilian": "Civilian (general person)",
+}
+
+
+# -----------------
+# Role Code Helper
+# -----------------
+
+
+def _role_choices() -> list[tuple[str, str]]:
+    allowed = governance_v2.list_entity_role_codes()
+    allowed = [
+        r
+        for r in allowed
+        if r in ("customer", "resource", "sponsor", "civilian")
+    ]
+    return [(r, LABELS.get(r, r)) for r in allowed]
+
 
 # -----------------
 # Wizard Routes
@@ -61,19 +80,45 @@ def wizard_person_core():
         return render_template("entity/wizard_person_core.html", form=form)
 
     try:
-        dto = entity_contract.wizard_create_person_core(
+        dto = wiz.wizard_create_person_core(
             first_name=form.first_name.data or "",
             last_name=form.last_name.data or "",
             preferred_name=form.preferred_name.data,
             dob=form.dob.data,
             last_4=form.last_4.data,
+            request_id=ensure_request_id,
+            actor_ulid=current_actor_ulid,
         )
         db.session.commit()
         flash(f"Created: {dto.display_name}", "success")
         return redirect(url_for(dto.next_step, entity_ulid=dto.entity_ulid))
-    except ContractError as exc:
+    except WizardError as exc:
         db.session.rollback()
-        flash(exc.message or "Unable to create entity.", "error")
+
+        # Attach field-level errors back onto the form when provided.
+        if exc.field_errors:
+            for field_name, msg in exc.field_errors.items():
+                if hasattr(form, field_name):
+                    getattr(form, field_name).errors.append(msg)
+
+        flash(exc.user_message, "error")
+        return render_template("entity/wizard_person_core.html", form=form)
+
+    except Exception:
+        db.session.rollback()
+
+        # Log with correlation id only; NO PII.
+        current_app.logger.exception(
+            "wizard_person_core failed",
+            extra={
+                "request_id": ensure_request_id(),
+                "entity_ulid": dto.entity_ulid,
+                "op": "entity_wizard_person_core",
+            },
+        )
+
+        flash("Unexpected error while saving person core data.", "error")
+        # In dev you may prefer `raise` here; in prod, render.
         return render_template("entity/wizard_person_core.html", form=form)
 
 
@@ -88,17 +133,43 @@ def wizard_org_core():
         return render_template("entity/wizard_org_core.html", form=form)
 
     try:
-        dto = entity_contract.wizard_create_org_core(
+        dto = wiz.wizard_create_org_core(
             legal_name=form.legal_name.data or "",
             dba_name=form.dba_name.data,
             ein=form.ein.data,
+            request_id=ensure_request_id,
+            actor_ulid=current_actor_ulid,
         )
         db.session.commit()
         flash(f"Created: {dto.display_name}", "success")
         return redirect(url_for(dto.next_step, entity_ulid=dto.entity_ulid))
-    except ContractError as exc:
+    except WizardError as exc:
         db.session.rollback()
-        flash(exc.message or "Unable to create entity.", "error")
+
+        # Attach field-level errors back onto the form when provided.
+        if exc.field_errors:
+            for field_name, msg in exc.field_errors.items():
+                if hasattr(form, field_name):
+                    getattr(form, field_name).errors.append(msg)
+
+        flash(exc.user_message, "error")
+        return render_template("entity/wizard_org_core.html", form=form)
+
+    except Exception:
+        db.session.rollback()
+
+        # Log with correlation id only; NO PII.
+        current_app.logger.exception(
+            "wizard_org_core failed",
+            extra={
+                "request_id": ensure_request_id(),
+                "entity_ulid": dto.entity_ulid,
+                "op": "entity_wizard_org_core",
+            },
+        )
+
+        flash("Unexpected error while saving org core data.", "error")
+        # In dev you may prefer `raise` here; in prod, render.
         return render_template("entity/wizard_org_core.html", form=form)
 
 
@@ -110,17 +181,45 @@ def wizard_org_core():
 def wizard_contact(entity_ulid: str):
     form = ContactForm()
     if not form.validate_on_submit():
-        return render_template(..., form=form)
+        return render_template("entity/wizard_contact.html", form=form)
+    try:
+        dto = wiz.wizard_contact(
+            entity_ulid=entity_ulid,
+            email=form.email.data,
+            phone=form.phone.data,
+            request_id=ensure_request_id(),
+            actor_ulid=current_actor_ulid(),
+        )
+        db.session.commit()
+        return redirect(url_for(dto.next_step, entity_ulid=dto.entity_ulid))
+    except WizardError as exc:
+        db.session.rollback()
 
-    dto = entity_contract.wizard_contact(
-        entity_ulid=entity_ulid,
-        email=form.email.data,
-        phone=form.phone.data,
-        request_id=ensure_request_id(),
-        actor_ulid=current_actor_ulid(),
-    )
-    db.session.commit()
-    return redirect(url_for(dto.next_step, entity_ulid=dto.entity_ulid))
+        # Attach field-level errors back onto the form when provided.
+        if exc.field_errors:
+            for field_name, msg in exc.field_errors.items():
+                if hasattr(form, field_name):
+                    getattr(form, field_name).errors.append(msg)
+
+        flash(exc.user_message, "error")
+        return render_template("entity/wizard_contact.html", form=form)
+
+    except Exception:
+        db.session.rollback()
+
+        # Log with correlation id only; NO PII.
+        current_app.logger.exception(
+            "wizard_contact failed",
+            extra={
+                "request_id": ensure_request_id(),
+                "entity_ulid": entity_ulid,
+                "op": "entity_wizard_contact",
+            },
+        )
+
+        flash("Unexpected error while saving contact data.", "error")
+        # In dev you may prefer `raise` here; in prod, render.
+        return render_template("entity/wizard_contact.html", form=form)
 
 
 @bp.route(
@@ -131,39 +230,58 @@ def wizard_contact(entity_ulid: str):
 def wizard_address(entity_ulid: str):
     form = AddressForm()
     if not form.validate_on_submit():
-        return render_template(..., form=form)
-    dto = entity_contract.wizard_address(
-        entity_ulid=entity_ulid,
-        is_physical=form.is_physical.data,
-        is_postal=form.is_postal.data,
-        address1=form.address1.data,
-        address2=form.address2.data,
-        city=form.city.data,
-        state=form.state.data,
-        postal_code=form.postal_code.data,
-        request_id=ensure_request_id(),
-        actor_ulid=current_actor_ulid(),
-    )
-    db.session.commit()
-    return redirect(
-        url_for("entity.wizard_next", entity_ulid=dto.entity_ulid)
-    )
+        return render_template("entity/wizard_address.html", form=form)
+    try:
+        dto = wiz.wizard_address(
+            entity_ulid=entity_ulid,
+            is_physical=form.is_physical.data,
+            is_postal=form.is_postal.data,
+            address1=form.address1.data,
+            address2=form.address2.data,
+            city=form.city.data,
+            state=form.state.data,
+            postal_code=form.postal_code.data,
+            request_id=ensure_request_id(),
+            actor_ulid=current_actor_ulid(),
+        )
+        db.session.commit()
+        return redirect(
+            url_for("entity.wizard_next", entity_ulid=dto.entity_ulid)
+        )
+    except WizardError as exc:
+        db.session.rollback()
+
+        # Attach field-level errors back onto the form when provided.
+        if exc.field_errors:
+            for field_name, msg in exc.field_errors.items():
+                if hasattr(form, field_name):
+                    getattr(form, field_name).errors.append(msg)
+
+        flash(exc.user_message, "error")
+        return render_template("entity/wizard_address.html", form=form)
+
+    except Exception:
+        db.session.rollback()
+
+        # Log with correlation id only; NO PII.
+        current_app.logger.exception(
+            "wizard_address failed",
+            extra={
+                "request_id": ensure_request_id(),
+                "entity_ulid": entity_ulid,
+                "op": "entity_wizard_address",
+            },
+        )
+
+        flash("Unexpected error while saving address data.", "error")
+        # In dev you may prefer `raise` here; in prod, render.
+        return render_template("entity/wizard_address.html", form=form)
 
 
 @bp.get("/wizard/<entity_ulid>/role")
 def wizard_role_get(entity_ulid: str):
-    cats = governance_v2.get_role_codes()
-    allowed = cats.get("domain_roles", [])
-    # MVP: only allow the “intake” roles in wizard
-    allowed = [
-        r
-        for r in allowed
-        if r in ("customer", "resource", "sponsor", "civilian")
-    ]
-
-    choices = [(r, r.capitalize()) for r in allowed]
     form = RoleForm()
-    form.role.choices = choices
+    form.role.choices = _role_choices()
 
     return render_template(
         "entity/wizard_role.html", form=form, entity_ulid=entity_ulid
@@ -172,18 +290,8 @@ def wizard_role_get(entity_ulid: str):
 
 @bp.post("/wizard/<entity_ulid>/role")
 def wizard_role_post(entity_ulid: str):
-    cats = governance_v2.get_role_codes()
-    allowed = cats.get("domain_roles", [])
-    # MVP: only allow the “intake” roles in wizard
-    allowed = [
-        r
-        for r in allowed
-        if r in ("customer", "resource", "sponsor", "civilian")
-    ]
-    choices = [(r, r.capitalize()) for r in allowed]
-
     form = RoleForm()
-    form.role.choices = choices  # MUST set on POST too
+    form.role.choices = _role_choices()  # MUST set on POST too
 
     if not form.validate_on_submit():
         return render_template(
@@ -191,7 +299,7 @@ def wizard_role_post(entity_ulid: str):
         )
 
     try:
-        dto = entity_contract.wizard_set_single_role(
+        dto = wiz.wizard_set_single_role(
             entity_ulid=entity_ulid,
             role=form.role.data,
             request_id=ensure_request_id(),
@@ -199,12 +307,34 @@ def wizard_role_post(entity_ulid: str):
         )
         db.session.commit()
         return redirect(url_for(dto.next_step, entity_ulid=entity_ulid))
-    except ContractError as exc:
+    except WizardError as exc:
         db.session.rollback()
-        flash(exc.message or "Unable to set role.", "error")
-        return render_template(
-            "entity/wizard_role.html", form=form, entity_ulid=entity_ulid
+
+        # Attach field-level errors back onto the form when provided.
+        if exc.field_errors:
+            for field_name, msg in exc.field_errors.items():
+                if hasattr(form, field_name):
+                    getattr(form, field_name).errors.append(msg)
+
+        flash(exc.user_message, "error")
+        return render_template("entity/wizard_role.html", form=form)
+
+    except Exception:
+        db.session.rollback()
+
+        # Log with correlation id only; NO PII.
+        current_app.logger.exception(
+            "wizard_role failed",
+            extra={
+                "request_id": ensure_request_id(),
+                "entity_ulid": entity_ulid,
+                "op": "entity_wizard_role",
+            },
         )
+
+        flash("Unexpected error while saving domain role.", "error")
+        # In dev you may prefer `raise` here; in prod, render.
+        return render_template("entity/wizard_role.html", form=form)
 
 
 @bp.get("/wizard/<entity_ulid>/next")
