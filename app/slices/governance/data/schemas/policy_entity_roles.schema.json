@@ -137,32 +137,6 @@
       ],
       "type": "object"
     },
-    "poc_rules": {
-      "additionalProperties": false,
-      "properties": {
-        "default_scope": {
-          "$ref": "#/$defs/token"
-        },
-        "max_rank": {
-          "maximum": 99,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "poc_scopes": {
-          "items": {
-            "$ref": "#/$defs/token"
-          },
-          "minItems": 1,
-          "type": "array"
-        }
-      },
-      "required": [
-        "poc_scopes",
-        "default_scope",
-        "max_rank"
-      ],
-      "type": "object"
-    },
     "policyStatus": {
       "enum": [
         "draft",
@@ -192,7 +166,7 @@
   "$id": "https://vcdb.local/schemas/policy_entity_roles.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "Validates policy_entity_roles.json (domain roles, assignment rules, and POC scopes).",
+  "description": "Validates policy_entity_roles.json (domain roles and assignment rules).",
   "properties": {
     "assignment_rules": {
       "$ref": "#/$defs/assignment_rules"
@@ -202,16 +176,12 @@
     },
     "meta": {
       "$ref": "#/$defs/meta"
-    },
-    "poc_rules": {
-      "$ref": "#/$defs/poc_rules"
     }
   },
   "required": [
     "meta",
     "domain_roles",
-    "assignment_rules",
-    "poc_rules"
+    "assignment_rules"
   ],
   "title": "Entity Roles Policy Schema",
   "type": "object"

@@ -43,12 +43,26 @@ These are the non‑negotiable rules that keep VCDB v2 maintainable, auditable, 
 
 - **Vertical slices own their data.** Each slice reads/writes only its own  
   tables; no cross-slice DB reach-arounds.
+  
+  - **Wizard = creation-only**, linear, guarded against resubmits/back-button, emits *wizard_* events, and ends at a Review/Confirm + handoff.
+  
+  - **Edit = mutation-only**, non-linear, can be visited anytime, emits *entity_* “facts changed” events, and is allowed to grow richer (diffs, history, etc.).
 
 - **No cross-slice imports.** Slices communicate only via the Extensions  
   integration surface.
 
 - **Extensions is the only bridge.** All inter-slice calls go through  
   `extensions/contracts` (facades), not direct imports.
+
+- **Slice-owned relationships trump DRY coding**
+  
+  - Relationship tables are owned by the slice that stores them.
+  
+  - Shared helpers must not perform writes across slice boundaries.
+  
+  - Cross-slice calls should exchange **ULIDs + read-only snapshots only**, never cross-slice “manager” DTOs.
+  
+  - It is acceptable (preferred) to duplicate small amounts of logic to preserve ownership boundaries and avoid schema leakage.
 
 ### DTO Canon
 
@@ -487,3 +501,30 @@ Do it in this exact order:
 - `next_step` values are **endpoint-qualified** (e.g., `entity.wizard_role_get`).
 
 - (Optional hardening) step GET gating: once the wizard progresses, earlier steps redirect forward unless explicitly allowed (e.g., via Review page).
+
+## Ethos snippets worth adding (based on lessons learned from Entity Wizard and POC removal from shared library functions)
+
+Drop these into your running “snippets at the end” list:
+
+- **Wizard vs Edit separation:** creation wizard flows are immutable once stabilized; all future mutations happen in the edit pipeline.
+
+- **No stale POSTs:** any POST that can create or mutate data must be guarded by PRG + a server-remembered nonce; nonce consumed only on success.
+
+- **No-op quieting:** “correction isn’t spam” → emit events only when `changed_fields` is non-empty (create counts as changed).
+
+- **POC is slice-owned:** org↔POC relationship tables live and mutate inside the owning org slice; Entity only supplies `person_entity_ulid` and a minimal read-only “contact card” when needed.
+
+- **One policy per concept:** avoid duplicated policy definitions (e.g., POC scopes) across multiple governance JSONs.
+
+## Ethos line to add (very short, durable)
+
+> Policies should be **cohesive by concept**: role taxonomy/constraints live in `entity_roles`; relationship constraints like POC scope/rank live in `poc`. Cross-reference via meta.notes, never duplicate.
+
+A short one that stops policy creep:
+
+> **Governance policies are split by concept, not by slice.**  
+> If a policy grows beyond one concept, split it and cross-reference via `meta.notes`. Never duplicate a concept across policies.
+
+That’s your “balance” line in one sentence.
+
+RBAC is a small catalog + guardrail layer. Governance defines domain semantics.

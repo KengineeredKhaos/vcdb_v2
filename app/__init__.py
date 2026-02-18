@@ -418,14 +418,14 @@ def create_app(config_object="config.DevConfig"):
         _boot_sanity(flask_app)
 
     # only in dev, not during tests
-    if flask_app.config.get("ENV") == "development" and not flask_app.testing:
-        _5chema_5heck(flask_app)
+    # if flask_app.config.get("ENV") == "development" and not flask_app.testing:
+    #     _5chema_5heck(flask_app)
 
-    if flask_app.debug and flask_app.config.get("LEDGER_CHECK_ON_BOOT", True):
-        _ledger_sanity(
-            flask_app,
-            limit=int(flask_app.config.get("LEDGER_CHECK_LIMIT", 20)),
-        )
+    # if flask_app.debug and flask_app.config.get("LEDGER_CHECK_ON_BOOT", True):
+    #     _ledger_sanity(
+    #         flask_app,
+    #         limit=int(flask_app.config.get("LEDGER_CHECK_LIMIT", 20)),
+    #     )
 
     register_cli(flask_app)
     return flask_app

@@ -1,1 +1,22 @@
-{ "version": 1, "rbac_roles": ["admin", "staff", "user", "auditor", "dev"] }
+{
+  "meta": {
+    "policy_key": "rbac",
+    "schema_version": 1,
+    "status": "draft",
+    "title": "RBAC Roles",
+    "version": 1,
+    "effective_on": "2026-01-01",
+    "description": "Auth RBAC role codes available in the system.",
+    "notes": [
+      "Auth owns RBAC role definitions.",
+      "Governance constrains RBAC↔domain role assignment."
+    ]
+  },
+  "rbac_roles": [
+    "admin",
+    "auditor",
+    "dev",
+    "staff",
+    "user"
+  ]
+}

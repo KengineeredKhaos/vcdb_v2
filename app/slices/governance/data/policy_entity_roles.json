@@ -1,4 +1,27 @@
 {
+  "meta": {
+    "policy_key": "entity_roles",
+    "schema_version": 1,
+    "status": "draft",
+    "title": "Domain Roles",
+    "version": 1,
+    "effective_on": "2026-01-01",
+    "description": "Allowed domain roles and domain↔RBAC assignment constraints.",
+    "notes": [
+      "This policy concerns Domain roles, rules & constraints.",
+      "See Auth slice for RBAC roles and rules.",
+      "See policy 'poc' for POC scope/rank constraints."
+    ]
+
+  },
+  "domain_roles": [
+    "governor",
+    "staff",
+    "customer",
+    "resource",
+    "sponsor",
+    "civilian"
+  ],
   "assignment_rules": {
     "domain_disallows_rbac": [
       "civilian"
@@ -39,42 +62,5 @@
         "civilian"
       ]
     }
-  },
-  "domain_roles": [
-    "governor",
-    "staff",
-    "customer",
-    "resource",
-    "sponsor",
-    "civilian"
-  ],
-  "meta": {
-    "description": "Allowed domain role - RBAC combinations - POC scope",
-    "effective_on": "2026-01-01",
-    "notes": [
-      "This policy concerns Domain roles, rules & constraints",
-      "See Auth slice for RBAC roles and rules.",
-      "Point Of Contact roles are respective to parent organization."
-    ],
-    "policy_key": "entity_roles",
-    "schema_version": 1,
-    "status": "draft",
-    "title": "Domain Roles & POC Scopes",
-    "version": 1
-  },
-  "poc_rules": {
-    "default_scope": "ops",
-    "max_rank": 9,
-    "poc_scopes": [
-      "ops",
-      "billing",
-      "scheduling",
-      "finance",
-      "admin",
-      "promotions",
-      "social_media",
-      "graphics",
-      "event_coor"
-    ]
   }
 }

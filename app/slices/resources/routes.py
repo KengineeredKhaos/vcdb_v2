@@ -75,21 +75,8 @@ def _err(*, request_id: str, exc: Exception, status: int | None = None):
     )
 
 
-# -----------------
-# Wizard Routes
-# -----------------
-
-
-@bp.get("/onboard/start/<entity_ulid>")
-def onboard_start(entity_ulid: str):
-    resources_v2.ensure_resource_facet(entity_ulid=entity_ulid)
-    return redirect(
-        url_for("resources.onboard_step", entity_ulid=entity_ulid)
-    )
-
-
 # ----------------
-# other Stuff
+# Edit Routes
 # ----------------
 
 

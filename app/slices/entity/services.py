@@ -27,7 +27,9 @@ from .models import (
 )
 
 """
-
+TODO: Create:
+        get_person_view(entity_ulid=entity_ulid)
+        get_org_view(entity_ulid=entity_ulid)
 
 """
 
@@ -206,11 +208,12 @@ def ensure_org(
 
 
 # -----------------
-# Entity Contact (single primary record with email/phone fields)
+# Entity Contact
+# (email/phone)
 # -----------------
 
 
-def upsert_contacts(
+def edit_contact(
     *,
     entity_ulid: str,
     email: str | None,
@@ -218,7 +221,12 @@ def upsert_contacts(
     request_id: str,
     actor_ulid: str | None,
 ) -> None:
-    """Upsert the single primary contact row for an entity; emits one event."""
+    """
+    edit the single primary contact row for an entity;
+    emits one event.
+    """
+    # TODO: add choose primary or secondary contact for edit
+
     _ensure_reqid(request_id)
 
     ent = db.session.get(Entity, entity_ulid)
@@ -234,7 +242,7 @@ def upsert_contacts(
         raise ValueError("Invalid phone")
 
     changed = {}
-    _upsert_primary_contact(entity_ulid=entity_ulid, email=em, phone=ph)
+    _edit_contact(entity_ulid=entity_ulid, email=em, phone=ph)
     if email is not None:
         changed["email"] = em
     if phone is not None:
@@ -251,9 +259,10 @@ def upsert_contacts(
             refs=None,
             changed={"fields": list(changed.keys())},
         )
+    return ()
 
 
-def _upsert_primary_contact(
+def _edit_contact(
     *, entity_ulid: str, email: str | None, phone: str | None
 ) -> None:
     """
@@ -453,7 +462,7 @@ def remove_role(
 # -----------------
 # Views / listings
 # -----------------
-def person_view(entity_ulid: str) -> dict | None:
+def get_person_view(entity_ulid: str) -> dict | None:
     person = db.session.get(EntityPerson, entity_ulid)
     if person is None:
         return None
@@ -480,6 +489,15 @@ def list_people(*, page: int, per_page: int) -> Page[PersonView]:
     )
 
     return paginate_sa(q, page=page, per_page=per_page).map(map_person_view)
+
+
+def get_org_view(entity_ulid: str) -> dict | None:
+    org = db.session.get(EntityOrg, entity_ulid)
+    if org is None:
+        return None
+    # eager-load primary contact for DTO
+    _ = org.entity and org.entity.contacts
+    return map_org_view(org)
 
 
 def list_orgs_by_roles(

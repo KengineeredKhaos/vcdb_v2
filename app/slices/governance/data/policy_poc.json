@@ -1,17 +1,29 @@
 {
-  "meta": {
+    "meta": {
     "policy_key": "poc",
-    "schema_version": 1,
-    "status": "draft",
     "title": "Point of Contact Policy",
-    "version": 1
+    "description": "Constraints for Points-of-Contact to org facets.",
+    "notes": [
+      "Used by Resources/Sponsors POC services.",
+      "Applies to person<->org POC links (scope, rank, default).",
+      "Not a domain-role policy; domain roles live in entity_roles."
+    ]
   },
+
   "poc_scopes": [
     "general",
+    "ops",
+    "billing",
+    "scheduling",
     "finance",
+    "admin",
     "logistics",
     "marketing",
     "publicity",
+    "promotions",
+    "social_media",
+    "graphics",
+    "event_coor",
     "volunteer"
   ],
   "default_scope": "general",

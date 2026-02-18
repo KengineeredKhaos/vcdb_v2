@@ -1,4 +1,4 @@
-# app/lib/poc_services.py
+# app/slices/resources/services_poc.py
 
 from __future__ import annotations
 
@@ -137,7 +137,7 @@ def link_poc(
     session.flush()
 
     event_bus.emit(
-        domain=domain,
+        domain="resources",
         operation="poc_linked",
         target_ulid=owner_ulid,
         actor_ulid=actor_ulid,
@@ -235,7 +235,7 @@ def update_poc(
     row.updated_at_utc = now
 
     event_bus.emit(
-        domain=domain,
+        domain="resources",
         operation="poc_updated",
         target_ulid=owner_ulid,
         actor_ulid=actor_ulid,
@@ -307,7 +307,7 @@ def unlink_poc(
     row.updated_at_utc = now
 
     event_bus.emit(
-        domain=domain,
+        domain="resources",
         operation="poc_unlinked",
         target_ulid=owner_ulid,
         actor_ulid=actor_ulid,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.extensions.errors import ContractError
 from app.slices.entity import guards as ent_guards
 from app.slices.entity import services as ent_services
-from app.slices.entity.mapper import OrgView, PersonView, WizardSummaryDTO
+from app.slices.entity.mapper import OrgView, PersonView
 
 # -----------------
 # Contract Error
@@ -88,14 +88,6 @@ def require_org_entity_ulid(
 # -----------------
 # Summary Views
 # -----------------
-
-
-def get_wizard_summary(entity_ulid: str) -> WizardSummaryDTO:
-    where = "entity_v2.get_wizard_summary"
-    try:
-        return ent_services.get_wizard_summary(entity_ulid=entity_ulid)
-    except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
 
 
 def get_person_view(entity_ulid: str) -> PersonView:

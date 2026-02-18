@@ -46,7 +46,9 @@
     {
       "edit_cadence_hint": "rare",
       "filename": "policy_entity_roles.json",
-      "notes": [],
+      "notes": [
+        "Domain-role Policy"
+      ],
       "owner_role_hint": "governor",
       "policy_key": "entity_roles",
       "schema_filename": "schemas/policy_entity_roles.schema.json"
@@ -103,7 +105,8 @@
       "edit_cadence_hint": "occasional",
       "filename": "policy_poc.json",
       "notes": [
-        "POC scopes/rank constraints for shared POC services."
+        "POC scope/default/rank constraints.",
+        "Used by Resources/Sponsors POC services (org-side ownership)."
       ],
       "owner_role_hint": "governor",
       "policy_key": "poc",
