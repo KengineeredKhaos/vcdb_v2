@@ -430,3 +430,60 @@ Do it in this exact order:
 5. **Downstream ops** (Logistics/Finance integrations)
 
 6. **Cross-slice tests** rebuild
+
+## Ethos Addendum: Entity Creation Wizard
+
+### Creation Wizard is not the Edit Surface
+
+- The Entity Creation Wizard is a **slice-local golden path** whose job is only to create a brand-new Entity in a **minimally valid, editable** state.
+
+- Wizard routes/services are **not** part of the cross-slice contract surface.  
+  Cross-slice reads/edits go through **versioned contracts**; wizard flows stay internal to the owning slice.
+
+### PRG and Back/Refresh Defense are mandatory
+
+- Every wizard step is **GET form + POST mutate + redirect** (Post/Redirect/Get).
+
+- Every wizard step POST must be protected against browser Back/Refresh/resubmit using a **per-step nonce** stored in session:
+  
+  - nonce issued on GET
+  
+  - nonce verified on POST
+  
+  - nonce **consumed before** calling the write path (prevents double-submit races)
+  
+  - nonce preserved/reissued on validation errors so users can correct input without “stale” loops
+
+- Stale submits must **not** reach services (no flush, no ledger spam). They redirect back into the deterministic wizard flow.
+
+### Single active wizard run per session
+
+- After Step 1 creates the Entity ULID, store a session key (e.g., `wiz_active_entity_ulid`).
+
+- Wizard Start should **resume** an active run by default.
+
+- Starting a truly new run requires an explicit reset (`/wizard/start?reset=1` or equivalent).
+
+### Ledger rules for wizard steps
+
+- Wizard services emit ledger events with **field names only** (no PII values).
+
+- Wizard services must emit **only on mutation**:
+  
+  - `created` or `changed_fields` non-empty → flush + emit
+  
+  - no-op → no flush + no emit
+
+### Wizard validation behavior
+
+- User-correctable issues in wizard services raise wizard-domain errors (e.g., `WizardInvalidInput`) so routes can attach **field-level errors**.
+
+- Avoid leaking raw exceptions (`ValueError`, etc.) to the UI; unexpected exceptions may be logged with correlation id only (no PII).
+
+### Deterministic flow
+
+- Wizard transitions are deterministic and computed by `wizard_next_step(entity_ulid)`.
+
+- `next_step` values are **endpoint-qualified** (e.g., `entity.wizard_role_get`).
+
+- (Optional hardening) step GET gating: once the wizard progresses, earlier steps redirect forward unless explicitly allowed (e.g., via Review page).

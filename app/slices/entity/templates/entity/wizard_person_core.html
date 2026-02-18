@@ -1,34 +1,47 @@
-{# app/slices/entity/templates/entity/wizard_person_core.html #}
 {% extends "layout/base.html" %}
 
-{% block title %}New Person — Core{% endblock %}
+{% block title %}Entity Wizard — Person{% endblock %}
 
 {% block content %}
-<h1>New Person — Core</h1>
+  <h1>Step 1 — Person core identity</h1>
 
-<form method="post">
-  {{ form.hidden_tag() }}
+  <form method="post" action="{{ url_for('entity.wizard_person_core') }}" class="card" style="padding:1rem;max-width:42rem;">
+    {{ form.hidden_tag() }}
+    <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
 
-  <label>First name</label>
-  {{ form.first_name() }}
-  {% for e in form.first_name.errors %}<div class="err">{{ e }}</div>{% endfor %}
+    <div class="fld">
+      <div class="lbl">{{ form.first_name.label.text }}</div>
+      {{ form.first_name(size=40) }}
+      {% for err in form.first_name.errors %}<div class="help" style="color:#b00;">{{ err }}</div>{% endfor %}
+    </div>
 
-  <label>Last name</label>
-  {{ form.last_name() }}
-  {% for e in form.last_name.errors %}<div class="err">{{ e }}</div>{% endfor %}
+    <div class="fld">
+      <div class="lbl">{{ form.last_name.label.text }}</div>
+      {{ form.last_name(size=40) }}
+      {% for err in form.last_name.errors %}<div class="help" style="color:#b00;">{{ err }}</div>{% endfor %}
+    </div>
 
-  <label>Preferred name</label>
-  {{ form.preferred_name() }}
-  {% for e in form.preferred_name.errors %}<div class="err">{{ e }}</div>{% endfor %}
+    <div class="fld">
+      <div class="lbl">{{ form.preferred_name.label.text }}</div>
+      {{ form.preferred_name(size=40) }}
+      {% for err in form.preferred_name.errors %}<div class="help" style="color:#b00;">{{ err }}</div>{% endfor %}
+    </div>
 
-  <label>DOB</label>
-  {{ form.dob(placeholder="YYYY-MM-DD") }}
-  {% for e in form.dob.errors %}<div class="err">{{ e }}</div>{% endfor %}
+    <div class="fld">
+      <div class="lbl">{{ form.dob.label.text }}</div>
+      {{ form.dob(size=12, placeholder="YYYY-MM-DD") }}
+      {% for err in form.dob.errors %}<div class="help" style="color:#b00;">{{ err }}</div>{% endfor %}
+    </div>
 
-  <label>SSN last 4</label>
-  {{ form.last_4() }}
-  {% for e in form.last_4.errors %}<div class="err">{{ e }}</div>{% endfor %}
+    <div class="fld">
+      <div class="lbl">{{ form.last_4.label.text }}</div>
+      {{ form.last_4(size=6, placeholder="1234") }}
+      {% for err in form.last_4.errors %}<div class="help" style="color:#b00;">{{ err }}</div>{% endfor %}
+    </div>
 
-  <button type="submit">Continue</button>
-</form>
+    <div style="margin-top:1rem;">
+      {{ form.submit(class_='btn') }}
+      <a class="btn" href="{{ url_for('entity.wizard_start', reset=1) }}" style="margin-left:.5rem;">Start over</a>
+    </div>
+  </form>
 {% endblock %}

@@ -208,6 +208,8 @@ def ensure_org(
 # -----------------
 # Entity Contact (single primary record with email/phone fields)
 # -----------------
+
+
 def upsert_contacts(
     *,
     entity_ulid: str,
@@ -284,6 +286,8 @@ def _upsert_primary_contact(
 # -----------------
 # Entity Address
 # -----------------
+
+
 def upsert_address(
     *,
     entity_ulid: str,
@@ -361,6 +365,8 @@ def upsert_address(
 # -----------------
 # Entity Role Codes
 # -----------------
+
+
 def ensure_role(
     *,
     entity_ulid: str,

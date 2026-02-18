@@ -24,8 +24,7 @@ from app.lib.jsonutil import json
 from app.lib.logging import configure_logging
 
 from .extensions import csrf, init_extensions
-
-# from .web import bp as web_bp
+from .web import bp as web_bp
 
 
 def _bind_contracts(app: Flask) -> None:
@@ -135,6 +134,9 @@ def create_app(config_object="config.DevConfig"):
     @dataclass
     class StubUser(UserMixin):
         id: str = "stub-user"
+        username: str = "stub"
+        name: str = "Stub User"
+        email: str = "stub@example.invalid"
         roles: list[str] = field(default_factory=list)
         domain_roles: list[str] = field(default_factory=list)
 
@@ -205,8 +207,10 @@ def create_app(config_object="config.DevConfig"):
     from app.slices.logistics import bp as logistics_bp
     from app.slices.resources import bp as resources_bp
     from app.slices.sponsors import bp as sponsors_bp
+    from app.web import bp as web_bp
 
     # ---- Registration ----
+    flask_app.register_blueprint(web_bp)
     flask_app.register_blueprint(admin_bp)
     flask_app.register_blueprint(attachments_bp)
     flask_app.register_blueprint(auth_bp)
@@ -409,18 +413,19 @@ def create_app(config_object="config.DevConfig"):
     # -------------
 
     # Silenced during Development
-    # if flask_app.debug:
-    #     _dump_routes(flask_app)
-    #     _boot_sanity(flask_app)
+    if flask_app.debug:
+        _dump_routes(flask_app)
+        _boot_sanity(flask_app)
 
     # only in dev, not during tests
-    # if app.config.get("ENV") == "development" and not app.testing:
-    #     _5chema_5heck(app)
+    if flask_app.config.get("ENV") == "development" and not flask_app.testing:
+        _5chema_5heck(flask_app)
 
-    # if app.debug and app.config.get("LEDGER_CHECK_ON_BOOT", True):
-    #     _ledger_sanity(
-    #         app, limit=int(app.config.get("LEDGER_CHECK_LIMIT", 20))
-    #     )
+    if flask_app.debug and flask_app.config.get("LEDGER_CHECK_ON_BOOT", True):
+        _ledger_sanity(
+            flask_app,
+            limit=int(flask_app.config.get("LEDGER_CHECK_LIMIT", 20)),
+        )
 
     register_cli(flask_app)
     return flask_app

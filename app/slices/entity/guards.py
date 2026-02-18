@@ -6,16 +6,6 @@ from app.lib.ids import is_ulid_strict
 
 from .models import Entity, EntityOrg, EntityPerson
 
-__all__ = [
-    "_clean_ulid",
-    "require_entity",
-    "require_wizard_entity",
-    "require_entity_kind",
-    "require_person_entity_ulid",
-    "require_person_entity_ulid",
-    "_validate_entity_shape",
-]
-
 
 def _clean_ulid(entity_ulid: str | None) -> str:
     val = (entity_ulid or "").strip()
@@ -32,10 +22,13 @@ def require_entity(
     allow_archived: bool = False,
 ) -> Entity:
     """
-    Load + hard-check that an Entity exists.
 
-    Returns the Entity row so callers can avoid repeating db.session.get()
-    and can do further guards (shape checks, kind checks, etc).
+    Load an Entity row or raise.
+
+    Use this anywhere you would otherwise repeat:
+        db.session.get(Entity, ...) + not-found checks.
+
+    Note: This returns the ORM object. Do NOT log/emit PII fields.
     """
     ent_ulid = _clean_ulid(entity_ulid)
 
@@ -49,14 +42,10 @@ def require_entity(
     return ent
 
 
-def require_wizard_entity(
-    entity_ulid: str | None,
-    *,
-    allow_archived: bool = False,
-) -> Entity:
-    ent = require_entity(entity_ulid, allow_archived=allow_archived)
-    _validate_entity_shape(ent, allow_archived=allow_archived)
-    return ent
+def require_wizard_entity(entity_ulid: str | None) -> Entity:
+    """Wizard-only: entity must exist and must not be archived."""
+
+    return require_entity(entity_ulid, allow_archived=False)
 
 
 def require_entity_kind(
@@ -64,19 +53,21 @@ def require_entity_kind(
     *,
     kind: str,
     allow_archived: bool = False,
-) -> None:
+) -> Entity:
     ent = require_entity(entity_ulid, allow_archived=allow_archived)
 
     if ent.kind != kind:
         raise ValueError(f"entity kind must be '{kind}'")
+
+    return ent
 
 
 def require_person_entity_ulid(
     entity_ulid: str | None,
     *,
     allow_archived: bool = False,
-) -> None:
-    require_entity_kind(
+) -> Entity:
+    return require_entity_kind(
         entity_ulid,
         kind="person",
         allow_archived=allow_archived,
@@ -87,50 +78,30 @@ def require_org_entity_ulid(
     entity_ulid: str | None,
     *,
     allow_archived: bool = False,
-) -> None:
-    require_entity_kind(
+) -> Entity:
+    return require_entity_kind(
         entity_ulid,
         kind="org",
         allow_archived=allow_archived,
     )
 
 
-def _validate_entity_shape(
-    ent: Entity,
-    *,
-    allow_archived: bool = False,
-) -> None:
-    """
-    Hard guard: entity must be structurally consistent with its kind.
+def _validate_entity_shape(ent: Entity) -> None:
+    """Hard guard: ensure entity.kind matches its facet rows."""
 
-    - kind must be 'person' or 'org'
-    - if not allow_archived, archived entities are rejected
-    - facet table must exist for the kind (PK=FK anchor = ent.ulid)
-    - the *other* facet must not exist
-    """
-    if ent is None:
-        raise LookupError("entity not found")
-
-    if not is_ulid_strict(getattr(ent, "ulid", "")):
-        raise ValueError("entity ulid must be a valid ULID")
-
-    kind = (getattr(ent, "kind", "") or "").strip().lower()
-    if kind not in {"person", "org"}:
-        raise ValueError("entity kind must be 'person' or 'org'")
-
-    if not allow_archived and getattr(ent, "archived_at", None):
-        raise ValueError("entity is archived")
-
-    # Facet shape checks (facet PK == entity ULID)
+    kind = (ent.kind or "").strip().lower()
     if kind == "person":
-        if db.session.get(EntityPerson, ent.ulid) is None:
-            raise ValueError("entity person facet missing")
-        if db.session.get(EntityOrg, ent.ulid) is not None:
-            raise ValueError("org facet present for person entity")
+        if ent.person is None:
+            raise ValueError("entity.person facet missing")
+        if ent.org is not None:
+            raise ValueError("entity has both person and org facets")
         return
 
-    # kind == "org"
-    if db.session.get(EntityOrg, ent.ulid) is None:
-        raise ValueError("entity org facet missing")
-    if db.session.get(EntityPerson, ent.ulid) is not None:
-        raise ValueError("person facet present for org entity")
+    if kind == "org":
+        if ent.org is None:
+            raise ValueError("entity.org facet missing")
+        if ent.person is not None:
+            raise ValueError("entity has both org and person facets")
+        return
+
+    raise ValueError("unsupported entity kind")

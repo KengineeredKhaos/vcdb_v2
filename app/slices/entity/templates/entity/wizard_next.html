@@ -1,0 +1,26 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Entity Wizard — Handoff{% endblock %}
+
+{% block content %}
+  <h1>Step 5 — Handoff</h1>
+  <p><strong>Entity:</strong> <span class="kbd">{{ entity_ulid }}</span></p>
+
+  <div class="card" style="padding:1rem;max-width:46rem;">
+    <p>Wizard complete. Continue into the appropriate slice:</p>
+    <p>
+      <a class="btn" href="{{ next_url }}">{{ label }}</a>
+    </p>
+    <p>
+      <a class="btn" href="{{ url_for('entity.list_people') }}">People</a>
+      <a class="btn" href="{{ url_for('entity.list_orgs') }}">Organizations</a>
+
+    </p>
+    {% if has_endpoint('entity.view_entity') %}
+      <a class="btn" href="{{ url_for('entity.view_entity', entity_ulid=entity_ulid) }}">
+      View Entity Record
+      </a>
+    {% endif %}
+
+  </div>
+{% endblock %}

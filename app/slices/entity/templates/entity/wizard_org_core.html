@@ -1,0 +1,35 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Entity Wizard — Organization{% endblock %}
+
+{% block content %}
+  <h1>Step 1 — Organization core identity</h1>
+
+  <form method="post" action="{{ url_for('entity.wizard_org_core') }}" class="card" style="padding:1rem;max-width:46rem;">
+    {{ form.hidden_tag() }}
+    <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
+
+    <div class="fld">
+      <div class="lbl">{{ form.legal_name.label.text }}</div>
+      {{ form.legal_name(size=60) }}
+      {% for err in form.legal_name.errors %}<div class="help" style="color:#b00;">{{ err }}</div>{% endfor %}
+    </div>
+
+    <div class="fld">
+      <div class="lbl">{{ form.dba_name.label.text }}</div>
+      {{ form.dba_name(size=60) }}
+      {% for err in form.dba_name.errors %}<div class="help" style="color:#b00;">{{ err }}</div>{% endfor %}
+    </div>
+
+    <div class="fld">
+      <div class="lbl">{{ form.ein.label.text }}</div>
+      {{ form.ein(size=12, placeholder="123456789") }}
+      {% for err in form.ein.errors %}<div class="help" style="color:#b00;">{{ err }}</div>{% endfor %}
+    </div>
+
+    <div style="margin-top:1rem;">
+      {{ form.submit(class_='btn') }}
+      <a class="btn" href="{{ url_for('entity.wizard_start', reset=1) }}" style="margin-left:.5rem;">Start over</a>
+    </div>
+  </form>
+{% endblock %}

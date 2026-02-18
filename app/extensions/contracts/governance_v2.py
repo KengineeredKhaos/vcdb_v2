@@ -3,120 +3,6 @@
 """
 VCDB v2 — Governance contract (v2)
 
-This module is the **only public interface** other slices, CLI commands, and
-UI code should use to interact with Governance policy and decisions.
-
-It sits on top of the internal services layer defined in
-``app.slices.governance.services`` (see that module’s policy map docstring for
-full details of the policy families and storage model).
-
-It is intentionally thin:
-
-    routes / services / CLI
-        -> app.extensions.contracts.governance_v2
-        -> app.slices.governance.services   (read-only helpers & decision engines)
-        -> app.slices.governance.services_admin  (admin write-path only)
-
-The full “policy map” — which policy families exist, where they are stored
-(DB vs JSON files), and which helpers interpret them — lives in the top-of-file
-docstring in ``app.slices.governance.services``. See that file for the
-canonical catalog of policy families and migration plan. :contentReference[oaicite:0]{index=0}
-
-This contract module does three things:
-
-* Expose **stable, versioned functions** that other slices can call
-  (e.g. ``decide_issue``, ``get_role_catalogs``, POC/sponsor catalogs, etc.),
-  returning simple DTOs instead of ORM rows.
-* Normalize error handling, so callers only ever see
-  ``app.extensions.errors.ContractError`` on failure.
-* Hide storage and implementation details so we can move a policy family
-  from JSON files to the ``Policy`` table (or update the decision logic)
-  without touching callers.
-
-Design
-======
-
-* No other slice imports ``app.slices.governance.services`` directly.
-  They *only* import this contract module.
-* This module does *not* reach into Governance models either; it delegates
-  to ``governance.services`` / ``governance.services_admin`` and focuses on
-  arguments, DTOs, and error translation.
-* Once a v2 contract function signature ships, we treat it as stable; new
-  behavior comes in as v3 side-by-side rather than mutating v2 in place.
-
-* Single entry point
-  - Callers import from here, never from ``governance.services`` or the
-    ``Policy`` model directly.
-  - This allows Governance to move policy families from file-backed JSON
-    into DB-backed ``Policy`` rows without breaking callers.
-
-* DTOs, not models
-  - All functions here return simple dataclasses / dicts / primitives
-    (IssueDecision, role catalogs, POC policy, etc.).
-  - No SQLAlchemy models or raw JSON blobs cross this boundary.
-
-* Runtime vs admin
-  - **Runtime contracts** (safe for any slice to use at request time):
-        - ``decide_issue(ctx) -> IssueDecision``
-            Core issuance decision engine for Logistics and dev CLI.
-        - ``get_role_catalogs() -> RoleCatalogDTO``
-            RBAC + domain role vocab for Auth, Governance, Admin UI.
-        - ``get_poc_policy() -> POCPolicyDTO``
-            POC scopes / max rank for shared POC helpers (Resources/Sponsors).
-        - (Planned) ``get_sponsor_capability_catalog() -> SponsorCapsDTO``
-            Capability taxonomy for Sponsors slice.
-        - (Planned) ``get_sponsor_lifecycle_policy() -> SponsorLifecycleDTO``
-            Readiness/MOU vocab for Sponsors slice.
-        - (Planned) Resource policy helpers
-            e.g. availability windows, vendor allow/deny lists, SLA shapes.
-
-  - **Admin contracts** (RBAC/domain guarded; used only by Admin/Devtools):
-        - ``list_policies(validate: bool = False)``
-        - ``get_policy(key: str, validate: bool = False)``
-        - ``preview_policy_update(key: str, new_policy: dict)``
-        - ``commit_policy_update(key: str, new_policy: dict, actor_ulid: str)``
-      These delegate to ``app.slices.governance.services_admin`` to perform
-      JSON Schema validation, atomic writes, and ledger emission when board
-      policy changes.
-
-Error model
-===========
-
-All public functions raise:
-
-    ``extensions.contracts.errors.ContractError``
-
-for caller-visible failures (bad input, missing policy, validation errors,
-downstream contract failures).  Internal exceptions from services are caught
-and normalized to ``ContractError`` so callers have a single error type to
-handle.
-
-Usage
-=====
-
-Runtime code (slices, routes, CLI):
-
-    from app.extensions.contracts import governance_v2
-
-    decision = governance_v2.decide_issue(ctx)
-    catalogs = governance_v2.get_role_catalogs()
-    poc_cfg  = governance_v2.get_poc_policy()
-
-Admin-only code (policy editor UI):
-
-    infos = governance_v2.list_policies(validate=True)
-    old   = governance_v2.get_policy("policy_issuance", validate=True)
-    diff  = governance_v2.preview_policy_update("policy_issuance", new_body)
-    res   = governance_v2.commit_policy_update(
-        "policy_issuance",
-        new_body,
-        actor_ulid=current_user.ulid,
-    )
-
-These admin contracts are intended for the Admin slice UI and for
-offline policy management tools (e.g. CLI). Dev-only endpoints may call
-them during development but are not part of the production surface.
-
 """
 
 from __future__ import annotations
@@ -153,6 +39,8 @@ __all__ = [
     "RestrictionContext",
     "decide_issue",
     "get_role_catalogs",
+    "list_domain_role_codes",
+    "list_entity_role_codes",
     "get_poc_policy",
     "get_customer_veteran_verification_methods",
     "get_sponsor_capability_policy",
@@ -482,28 +370,26 @@ def _load_json(path: Path, where: str):
 # Role Policy Catalog
 # -----------------
 
+# TODO:
+"""
+current policy_entity_roles.json (or just the
+assignment_rules section), to sketch the exact cross-check logic that
+should live in your policy-health CLI so this never regresses.
+"""
+
 
 def get_role_catalogs() -> dict:
     """
-    Canonical role catalogs live in Governance policy: policy_entity_roles.json.
-    Returns: {"rbac_roles":[...], "domain_roles":[...]}
+    Canonical domain role catalog lives in Governance policy: policy_entity_roles.json.
+
+    Returns: {"domain_roles":[...]}
     """
     where = "governance_v2.get_role_catalogs"
     from app.extensions.policies import load_governance_policy
 
     doc = load_governance_policy("entity_roles")
 
-    rbac_roles = sorted({str(x) for x in (doc.get("rbac_roles") or [])})
     domain_roles = sorted({str(x) for x in (doc.get("domain_roles") or [])})
-
-    if not rbac_roles:
-        raise ContractError(
-            code="policy_invalid",
-            where=where,
-            message="entity_roles.rbac_roles is empty",
-            http_status=503,
-            data={},
-        )
     if not domain_roles:
         raise ContractError(
             code="policy_invalid",
@@ -513,7 +399,41 @@ def get_role_catalogs() -> dict:
             data={},
         )
 
-    return {"rbac_roles": rbac_roles, "domain_roles": domain_roles}
+    return {"domain_roles": domain_roles}
+
+
+def _roles_dict() -> dict[str, Any]:
+    """
+    Return the canonical roles structure (domain).
+
+    This is the single internal accessor so other helpers can remain stable
+    even if the storage shape changes later.
+    """
+    return get_role_catalogs()
+
+
+def list_domain_role_codes() -> list[str]:
+    roles = _roles_dict()
+    return [str(x) for x in (roles.get("domain_roles") or [])]
+
+
+def list_entity_role_codes() -> list[str]:
+    domain_codes = list_domain_role_codes()
+    allow = {"customer", "resource", "sponsor"}
+    out = [c for c in domain_codes if c in allow]
+    return out or domain_codes
+
+
+def get_role_assignment_rules() -> dict:
+    """
+    Returns the governance rules mapping RBAC→assignable domain roles.
+    Auth owns the RBAC catalog; governance owns the mapping policy.
+    """
+    from app.extensions.policies import load_governance_policy
+
+    doc = load_governance_policy("entity_roles")
+    rules = doc.get("assignment_rules") or {}
+    return rules
 
 
 # -----------------

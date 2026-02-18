@@ -1,0 +1,53 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Entity Wizard — Address{% endblock %}
+
+{% block content %}
+  <h1>Step 3 — Address</h1>
+  <p><strong>Entity:</strong> <span class="kbd">{{ entity_ulid }}</span></p>
+
+  <form method="post" action="{{ url_for('entity.wizard_address', entity_ulid=entity_ulid) }}" class="card" style="padding:1rem;max-width:46rem;">
+    {{ form.hidden_tag() }}
+    <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
+
+    <div class="fld">
+      <label>{{ form.is_physical() }} {{ form.is_physical.label.text }}</label><br>
+      <label>{{ form.is_postal() }} {{ form.is_postal.label.text }}</label>
+    </div>
+
+    <div class="fld">
+      <div class="lbl">{{ form.address1.label.text }}</div>
+      {{ form.address1(size=60) }}
+      {% for err in form.address1.errors %}<div class="help" style="color:#b00;">{{ err }}</div>{% endfor %}
+    </div>
+
+    <div class="fld">
+      <div class="lbl">{{ form.address2.label.text }}</div>
+      {{ form.address2(size=60) }}
+      {% for err in form.address2.errors %}<div class="help" style="color:#b00;">{{ err }}</div>{% endfor %}
+    </div>
+
+    <div class="fld">
+      <div class="lbl">{{ form.city.label.text }}</div>
+      {{ form.city(size=40) }}
+      {% for err in form.city.errors %}<div class="help" style="color:#b00;">{{ err }}</div>{% endfor %}
+    </div>
+
+    <div class="fld">
+      <div class="lbl">{{ form.state.label.text }}</div>
+      {{ form.state(size=4, placeholder="CA") }}
+      {% for err in form.state.errors %}<div class="help" style="color:#b00;">{{ err }}</div>{% endfor %}
+    </div>
+
+    <div class="fld">
+      <div class="lbl">{{ form.postal_code.label.text }}</div>
+      {{ form.postal_code(size=12, placeholder="12345 or 12345-6789") }}
+      {% for err in form.postal_code.errors %}<div class="help" style="color:#b00;">{{ err }}</div>{% endfor %}
+    </div>
+
+    <div style="margin-top:1rem;">
+      {{ form.submit(class_='btn') }}
+      <a class="btn" href="{{ url_for('entity.wizard_start', reset=1) }}" style="margin-left:.5rem;">Start over</a>
+    </div>
+  </form>
+{% endblock %}

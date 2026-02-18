@@ -1,5 +1,17 @@
 # Hints & Notes
 
+SQLITE Notes:
+
+Set the dbase you want to look at (otherwise there's no frame of reference)
+
+sqlite3 /home/user/Documents/App_Dev/vcdb-v2/var/app-instance/dev.db
+
+> .databases    (lists database signature)
+> .tables       (lists available tables)
+> PRAGMA table_info(entity_role);
+That will list the actual column names so you don’t have to guess.
+
+
 
 Quick Static sanity:
 

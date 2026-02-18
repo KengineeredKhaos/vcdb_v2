@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from app.extensions.errors import ContractError
 from app.slices.entity import guards as ent_guards
+from app.slices.entity import services as ent_services
+from app.slices.entity.mapper import OrgView, PersonView, WizardSummaryDTO
+
+# -----------------
+# Contract Error
+# Handlers
+# -----------------
 
 
 def _as_contract_error(where: str, exc: Exception) -> ContractError:
@@ -29,6 +36,11 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
     )
 
 
+# -----------------
+# Guards and Fills
+# -----------------
+
+
 def require_person_entity_ulid(
     entity_ulid: str | None,
     *,
@@ -38,6 +50,7 @@ def require_person_entity_ulid(
     try:
         return ent_guards.require_person_entity_ulid(
             entity_ulid,
+            kind,
             allow_archived=allow_archived,
         )
     except Exception as exc:
@@ -70,3 +83,36 @@ def require_org_entity_ulid(
 # Entity Data
 # Edit/Update
 # -----------------
+
+
+# -----------------
+# Summary Views
+# -----------------
+
+
+def get_wizard_summary(entity_ulid: str) -> WizardSummaryDTO:
+    where = "entity_v2.get_wizard_summary"
+    try:
+        return ent_services.get_wizard_summary(entity_ulid=entity_ulid)
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+def get_person_view(entity_ulid: str) -> PersonView:
+    where = "entity_v2.get_person_view"
+    try:
+        # Guard: must be a person entity.
+        ent_guards.require_person_entity_ulid(entity_ulid)
+        return ent_services.get_person_view(entity_ulid=entity_ulid)
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+def get_org_view(entity_ulid: str) -> OrgView:
+    where = "entity_v2.get_org_view"
+    try:
+        # Guard: must be an org entity.
+        ent_guards.require_org_entity_ulid(entity_ulid)
+        return ent_services.get_org_view(entity_ulid=entity_ulid)
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc

@@ -1,0 +1,24 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Entity Wizard — Start{% endblock %}
+
+{% block content %}
+  <h1>New Entity Wizard</h1>
+  <p>Select what you are creating.</p>
+
+  <form method="post" action="{{ url_for('entity.wizard_start_post') }}" class="card" style="padding:1rem;max-width:38rem;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <p>
+      <label>
+        <input type="radio" name="kind" value="person"> Person
+      </label>
+      <br>
+      <label>
+        <input type="radio" name="kind" value="org"> Organization
+      </label>
+    </p>
+
+    <button class="btn" type="submit">Continue</button>
+  </form>
+{% endblock %}

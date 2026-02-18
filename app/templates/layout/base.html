@@ -25,39 +25,33 @@
                aria-current="{{ 'page' if bp.startswith('resources') else '' }}">Resources</a>
           {% endif %}
 
-          {% if has_endpoint('customers.view_customer') or has_endpoint('customers.ensure_customer') or has_endpoint('customers.update_tier1') %}
-            <a href="{{ url_for('customers.ensure_customer') }}"
-               aria-current="{{ 'page' if bp.startswith('customers') else '' }}">Customers</a>
-          {% endif %}
+          {# Customers nav disabled until a param-free customers index/search route exists #}
+          {# {% if has_endpoint('customers.index') %}
+            <a href="{{ url_for('customers.index') }}"
+              aria-current="{{ 'page' if bp.startswith('customers') else '' }}">Customers</a>
+          {% endif %} #}
+
 
           {% if has_endpoint('inventory.hello') %}
             <a href="{{ url_for('inventory.hello') }}"
                aria-current="{{ 'page' if bp.startswith('inventory') else '' }}">Inventory</a>
           {% endif %}
 
-          {% if has_endpoint('sponsors.hello') %}
-            <a href="{{ url_for('sponsors.hello') }}"
+          {% if has_endpoint('sponsors.search_sponsor') %}
+            <a href="{{ url_for('sponsors.search_sponsor') }}"
                aria-current="{{ 'page' if bp.startswith('sponsors') else '' }}">Sponsors</a>
           {% endif %}
 
-          {% if has_endpoint('calendar.hello') %}
-            <a href="{{ url_for('calendar.hello') }}"
-               aria-current="{{ 'page' if bp.startswith('calendar') else '' }}">Calendar</a>
-          {% endif %}
-
-          {% if has_endpoint('governance.policy_index') %}
-            <a href="{{ url_for('governance.policy_index') }}"
+          {% if has_endpoint('governance.roles') %}
+            <a href="{{ url_for('governance.roles') }}"
                aria-current="{{ 'page' if bp.startswith('governance') else '' }}">Governance</a>
-          {% endif %}
-
-          {% if has_endpoint('admin.index') and user_is_admin() %}
-            <a href="{{ url_for('admin.index') }}"
-               aria-current="{{ 'page' if bp.startswith('admin') else '' }}">Admin Tools</a>
           {% endif %}
         </nav>
 
         <div class="spacer"></div>
-
+        {{ current_user.username|default('') or
+           current_user.name|default('') or
+           current_user.email|default('') }}
         {% if current_user.is_authenticated %}
           <span class="btn" style="margin-right:.5rem;">
             {{ current_user.username or current_user.name or current_user.email }}
