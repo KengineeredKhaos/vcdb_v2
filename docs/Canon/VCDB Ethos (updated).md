@@ -1,530 +1,421 @@
 # VCDB v2 — Ethos & Canon Invariants
 
-These are the non‑negotiable rules that keep VCDB v2 maintainable, auditable, and safe. If a change conflicts with any item below, the change is **wrong by definition** and must be redesigned.
+These are the non-negotiable rules that keep VCDB v2 maintainable, auditable,
+and safe. If a change conflicts with any item below, the change is wrong by
+definition and must be redesigned.
 
-**Nothing happens in the dark!**
+**Nothing happens in the dark. Nothing is deleted; only archived.**
+
+---
+
+## 0) Vocabulary and Intent
+
+- **Wizard** = creation-only golden path.
+  
+  - Linear, guarded against resubmits/back-button.
+  - Emits `wizard_*` events.
+  - Ends at **Review/Confirm + handoff**.
+
+- **Edit Surface** = mutation-only paths.
+  
+  - Non-linear; can be visited anytime.
+  - Emits `entity_*` “facts changed” events.
+  - May grow richer over time (diffs/history/etc.).
 
 ---
 
 ## 1) Architecture & Slice Boundaries
 
-- **Skinny routes, fat services.** Routes orchestrate  
-  (parse/authorize/respond); services hold business logic.
+### Skinny routes, fat services
+
+- **Routes orchestrate**: parse/authorize/respond.
+- **Services own business logic**: normalize/validate, read/write, flush.
+
+Transaction rules:
+
+- **Routes/CLI own the transaction boundary.**
   
-  - **Routes own the transaction scope.**  
-    Routes own `commit/rollback` and error boundaries.  
-    Contracts/services never create or pass sessions; they only use the  
-    scoped `db.session` and may flush. A commit at the route boundary  
-    commits all flushed work across all slices involved.
+  - Routes/CLI do `commit/rollback` and handle error boundaries.
+  - Services may `flush()` but never `commit()` or `rollback()`.
+
+- **One boundary invocation = one transaction.**
   
-  - **Services flush only.**  
-    Services may `flush()` but never `commit()` or `rollback()`.
+  - A single UI action / HTTP request / CLI command generates one invocation.
+  - That invocation is a single unit of work at the route/CLI boundary.
+
+### Slice ownership is non-negotiable
+
+- **Vertical slices own their tables.**
+  
+  - A slice may read/write only its own tables.
+  - No cross-slice DB reach-arounds.
+
+- **No cross-slice imports.**
+  
+  - Slices do not import other slices directly or indirectly.
+
+### Extensions is the only bridge
+
+- **All inter-slice calls go through `extensions/contracts`.**
+- Contracts are the integration surface; direct imports are forbidden.
+
+### Slice-owned relationships trump DRY
+
+- Relationship tables are owned by the slice that stores them.
+- Shared helpers must not perform cross-slice writes.
+- Cross-slice calls exchange **ULIDs + read-only snapshots only**.
+- Duplicating small amounts of logic is acceptable (preferred) to preserve
+  boundaries and avoid schema leakage.
+
+---
+
+## 2) Correlation and Observability (`request_id`)
 
 - **Correlation is mandatory (`request_id`).**
   
-  - **`request_id` is a correlation ID, not a transaction/session handle.**  
-    It does not control database scope; `db.session` does.
+  - `request_id` is a correlation ID, not a transaction/session handle.
+  - DB scope is controlled by `db.session`, not by `request_id`.
+
+- **One boundary invocation = one `request_id`.**
   
-  - **One boundary invocation = one `request_id`.**  
-    A single UI action / HTTP request / CLI command generates exactly one  
-    `request_id` at the boundary and passes it downward.
+  - Generated at the boundary (route/CLI).
+  - Passed downward to any services/emitters involved.
+
+- **Propagate everywhere.**
   
-  - **Propagate everywhere.**  
-    Contracts accept `request_id` and pass it to services (and/or  
-    `event_bus.emit`). All ledger/events/log records created because of  
-    that invocation MUST carry the same `request_id`.
+  - Any Ledger/event/log record created because of that invocation MUST
+    carry the same `request_id`.
+
+- **Never generate `request_id` inside services.**
   
-  - **Never generate `request_id` inside services.**  
-    Missing `request_id` is a boundary bug. Services may assert it is  
-    present, but must not mint new ones.
-  
-  - **Purpose:** make it trivial to reconstruct and audit the full chain of  
-    effects for one action by filtering logs and Ledger on `request_id`.
-
-- **Vertical slices own their data.** Each slice reads/writes only its own  
-  tables; no cross-slice DB reach-arounds.
-  
-  - **Wizard = creation-only**, linear, guarded against resubmits/back-button, emits *wizard_* events, and ends at a Review/Confirm + handoff.
-  
-  - **Edit = mutation-only**, non-linear, can be visited anytime, emits *entity_* “facts changed” events, and is allowed to grow richer (diffs, history, etc.).
-
-- **No cross-slice imports.** Slices communicate only via the Extensions  
-  integration surface.
-
-- **Extensions is the only bridge.** All inter-slice calls go through  
-  `extensions/contracts` (facades), not direct imports.
-
-- **Slice-owned relationships trump DRY coding**
-  
-  - Relationship tables are owned by the slice that stores them.
-  
-  - Shared helpers must not perform writes across slice boundaries.
-  
-  - Cross-slice calls should exchange **ULIDs + read-only snapshots only**, never cross-slice “manager” DTOs.
-  
-  - It is acceptable (preferred) to duplicate small amounts of logic to preserve ownership boundaries and avoid schema leakage.
-
-### DTO Canon
-
-DTOs are the only data shapes allowed to cross slice boundaries
-(especially through Extensions contracts).
-They provide a stable, explicit interface and prevent ORM/model leakage,
-accidental PII exposure, and “schema drift by convenience”.
-
-#### Ownership and Location
-
-Each slice owns its DTOs.
-
-- DTO definitions live in the owning slice at:
-  `app/slices/<slice>/mapper.py`
-
-- Other slices must not import slice models; they consume contracts,
-  which return DTOs (or raise contract-scoped errors).
-
-#### Default DTO Type
-
-- Use @dataclass(frozen=True, slots=True) by default.
-  
-  - Why:
-    
-    - Immutable (frozen=True) → contract results are facts, not mutable objects.
-    
-    - Dot access (dto.field) → minimizes cognitive overhead.
-  
-  - Slots (slots=True) → prevents accidental attribute injection and reduces memory overhead.
-  
-  - Clear, typed fields → easier testing and refactoring.
-
-- When to Use TypedDict
-  Use TypedDict only for “baggy” payloads where:
-  
-  - the shape is inherently dict-like
-  
-  - the schema is external (policy JSON) or intentionally flexible
-  
-  - the payload is rows/buckets/blobs (reporting, aggregation, CSV-ish outputs)
-  
-  - you want a view model that is naturally serialized as JSON without transformation
-
-**Rule: If callers must reliably pluck specific fields, prefer dataclass.
-If callers mostly treat it as a JSON object, TypedDict is fine.**
-
-#### Contract Boundary Rule
-
-- Contracts return dataclasses unless the return value is intentionally a blob/report structure.
-
-- Contracts never return ORM models, SQLAlchemy rows, or arbitrary dicts “because it was easy”.
-
-- If you must return a flexible payload, wrap it in a dataclass and put the blob inside:
-  `ReportDTO(rows=[...], buckets={...}, as_of_iso="...")`
-
-#### Route Boundary Rule
-
-- Routes should not “invent” data structures. Routes should:
-  
-  - parse/validate request inputs (forms)
-  
-  - call contracts
-  
-  - render templates / redirect using DTO fields
-
-#### Naming Conventions
-
-- *DTO suffix for dataclasses crossing boundaries (WizardCreatedDTO, EntityCardDTO).
-- *View suffix for TypedDict view models (PersonView, OrgView).
-- DTOs should be “what the caller needs”, not “everything we happen to have”.
-
-#### Stability Promise
-
-- Adding fields is allowed (non-breaking).
-
-- Removing/renaming fields is breaking and requires a versioned contract (*_v2, *_v3).
-
-- DTOs are treated as part of the public interface of a contract.
-
-### Slice-local mappers (uniform projection layer)
-
-- **Every slice MUST include a mapper module at a uniform location:**
-  
-  - `app/slices/<slice_name>/mapper.py`
-
-- **Purpose:** mappers are the canonical home for projection code — turning  
-  slice-owned ORM rows into safe, typed, ready-to-eat view/summary shapes  
-  for UI/JSON/contract responses.
-
-- **Mappers are pure:**
-  
-  - no DB queries (assumes inputs are already loaded; do not trigger  
-    lazy-loads)
-  
-  - no DB writes
-  
-  - no commits/rollbacks
-  
-  - no event/Ledger emits
-  
-  - no policy decisions (only formatting/projection/redaction)
-
-- **Slice boundary rule:** mappers are slice-local (not `app/lib`). No  
-  cross-slice imports. Cross-slice reuse happens via contracts + DTOs, not  
-  by importing another slice’s mapper.
-
-- **PII boundary rule:** only the Entity slice may project PII fields under  
-  its rules. Other slices’ mappers must remain non-PII.
-
-- **Naming conventions (uniform across slices):**
-  
-  - DTO/view types: `*DTO` or `*View`  
-    (e.g., `PartyDisplayDTO`, `CustomerSummaryView`)
-  
-  - mapping functions: `map_*` (e.g., `map_party_display(...)`)
-  
-  - private helpers: `_map_*` / `_format_*` / `_pick_*`
-
-- **Services call mappers; contracts return mapper shapes.** Keep business  
-  logic in services; keep shaping/formatting in `mapper.py`.
-
-### Lib-core (shared library primitives)
-
-- **`app/lib/` is VCDB “lib-core”:** centralized, generic, non-PII building  
-  blocks that are safe and widely reusable across all slices.
-
-- **Purpose:** provide small, stable primitives (IDs, time, hashing, JSON  
-  determinism, pagination, schema validation, request context, logging  
-  helpers, generic normalization/validation, etc.) so slices do not  
-  duplicate low-level plumbing.
-
-- **Non-negotiable constraints:**
-  
-  - **No business logic.** `app/lib` contains primitives and guardrails, not  
-    domain workflows.
-  
-  - **No PII.** Nothing in `app/lib` should embed, infer, or expose PII; it  
-    must be safe to import anywhere.
-  
-  - **No slice dependencies.** `app/lib` MUST NOT import slice code. Slices  
-    may import `app.lib.*`, never the reverse.
-  
-  - **No cross-slice DTOs/mappers.** Projection/mapping belongs in  
-    slice-local `app/slices/<slice>/mapper.py`. `app/lib` is not a  
-    presentation layer.
-  
-  - **Stable APIs are canon.** Treat public functions/mixins in `app/lib` as  
-    foundational: change only with explicit approval and a clear migration  
-    plan.
-
-- **Import discipline:** import concrete modules directly (no re-export  
-  barrel pattern). Keep dependencies explicit to avoid circular imports.
-  
-  - Example: `from app.lib.ids import new_ulid` (not `from app.lib import *`)
-
-- **Before adding a helper, check `app/lib` first.** If it’s generic and  
-  non-PII, extend `app/lib`; if it’s slice-semantic or a projection, keep it  
-  in the slice (`mapper.py` / services).
-
-- **Single-source-of-truth rule:** if a primitive is cross-slice and  
-  generic, it lives in `app/lib` (e.g., `chrono`, `ids`, `jsonutil`,  
-  `hashing`, `pagination`, `schema`, `request_ctx`, `utils`). Do not  
-  reimplement the same primitive inside slices.
-
-### Architecture Uniformity — Enforcement Checklist
-
-Use this checklist during refactors and code review. If an item fails, the  
-change is not canon-compliant.
-
-#### Boundaries & Imports
-
-- No slice imports another slice (directly or indirectly). Cross-slice  
-  calls go through `extensions/contracts` only.
-
-- `app/lib/*` does not import any slice code. Slices may import  
-  `app.lib.*`, never the reverse.
-
-- No ORM models cross slice boundaries (only DTOs/primitive types cross  
-  contracts).
-
-#### Transactions & Side Effects
-
-- Services are flush-only (no `commit()` / `rollback()` anywhere in  
-  `services/*`).
-
-- Routes/CLI own `commit/rollback` and error boundaries (single  
-  consistent transaction pattern per request).
-
-- Each boundary invocation creates exactly one `request_id`, propagates  
-  it through contracts/services, and records it on all emits/logs/ledger  
-  entries created by that invocation.
-
-- Ledger/event emits occur only at the approved layer (per current canon:  
-  route or explicitly designated command service), and never include PII.
-
-#### Mapper Layer
-
-- Slice has `app/slices/<slice>/mapper.py` and it contains projection  
-  logic + typed view/DTO shapes.
-
-- Mappers do not run DB queries or cause side effects (no writes, no  
-  commits, no emits).
-
-- Services call mappers; contracts return mapper/DTO shapes; routes never  
-  serialize ORM objects directly.
-
-#### Naming & Identity
-
-- Identity is always `entity_ulid` (facet PK=FK). No “slice ULID” used as  
-  an identity anchor.
-
-- Function signatures use explicit names (`entity_ulid`, `request_id`,  
-  `actor_ulid`) and avoid ambiguous variables like `ent` for multiple  
-  meanings.
-
-#### PII Discipline
-
-- No PII outside the Entity slice (except approved snapshot stores). No  
-  PII in logs/Ledger.
-
-- Entity mappers/projectors return only the minimum allowed  
-  display/contact fields for the caller’s need (least-privilege).
-
-#### Pagination & Shapes
-
-- Paginated reads use the shared pagination primitive (`Page` /  
-  `paginate_sa`) and return a consistent page shape.
-
-- Query functions return typed view/DTO shapes (TypedDict/dataclass DTO),  
-  not raw dicts or ORM objects.
-
-#### Before Adding Code
-
-- If you need a generic helper: check `app/lib` first; if it’s generic +  
-  non-PII, put it there.
-
-- If you need a projection: put it in the slice’s `mapper.py`.
-
-- If you need business logic: put it in `services/*` (queries vs  
-  commands), not in contracts/routes.
+  - Missing `request_id` is a boundary bug.
+  - Services may assert it exists, but must not mint a new one.
+
+Purpose: make it trivial to reconstruct the full chain of effects for a single
+action by filtering logs and Ledger on `request_id`.
 
 ---
 
-## 2) Contracts & DTOs
+## 3) Contracts & DTO Canon
 
-- **Contracts are versioned.** Add `v2` next to `v1`; never mutate `v1` in place.
-- **Contracts are thin adapters.** Contracts do: **validate → call service → return DTO**.
-- **DTOs at the boundary.** Cross-slice inputs/outputs are typed DTOs (and validated where applicable).
-- **Errors are explicit.** Contracts raise contract-scoped errors; routes translate them to consistent responses.
+### Contract rules
+
+- **Contracts are versioned.** Add `*_v2` next to `*_v1`; never mutate `v1`.
+- **Contracts are thin adapters.** Validate → call service → return DTO.
+- **Errors are explicit.** Contracts raise contract-scoped errors; routes
+  translate them to consistent UI/HTTP responses.
+- **Contracts never return ORM models** or raw SA rows.
+
+### DTO rules
+
+DTOs are the only shapes allowed to cross slice boundaries.
+
+Ownership and location:
+
+- DTOs live in the owning slice: `app/slices/<slice>/mapper.py`.
+- Callers must not import slice models; they consume contracts.
+
+Default DTO type:
+
+- Prefer `@dataclass(frozen=True, slots=True)` for stable DTOs.
+- Use `TypedDict` only for intentionally dict-like blobs (reports, buckets,
+  policy JSON passthrough).
+
+Stability promise:
+
+- Adding fields is OK (non-breaking).
+- Removing/renaming fields is breaking → requires a new contract version.
+
+Naming:
+
+- Dataclasses: `*DTO` (e.g., `WizardStepDTO`, `EntityCardDTO`)
+- TypedDict views: `*View` (e.g., `PersonView`, `OrgView`)
 
 ---
 
-## 3) Identity, Keys, and Facets
+## 4) Slice-local Mappers (Uniform Projection Layer)
 
-- **ULID everywhere.** One ULID from creation to archive; all joins, refs, and events use ULIDs.
-- **Entity is the identity spine.** `entity_entity.ulid` is the canonical identity key for every person/org.
-- **Facets are keyed by `entity_ulid` (PK=FK).** Facet tables use **PK=FK → `entity_entity.ulid`**:
+Every slice MUST have:
+
+- `app/slices/<slice>/mapper.py`
+
+Mappers are pure projection:
+
+- no DB queries (inputs must already be loaded)
+- no DB writes
+- no commits/rollbacks
+- no emits/Ledger
+- no policy decisions
+
+PII rule:
+
+- Only the Entity slice may project PII (under strict rules).
+- Other slices’ mappers must remain non-PII.
+
+Services call mappers; contracts return mapper shapes; routes never serialize ORM
+objects directly.
+
+---
+
+## 5) Lib-core (Shared Primitives)
+
+`app/lib/` is VCDB “lib-core”: centralized, generic, non-PII primitives safe to
+import anywhere.
+
+Constraints:
+
+- **No business logic.**
+- **No PII.**
+- **No slice dependencies.** `app/lib` must not import slice code.
+- **No cross-slice DTOs/mappers.** Projections live in slice `mapper.py`.
+
+Single-source-of-truth rule:
+
+- If it’s generic and cross-slice, it belongs in `app/lib`
+  (`chrono`, `ids`, `jsonutil`, `hashing`, `pagination`, `schema`,
+   `request_ctx`, `utils`, etc.).
+
+Import discipline:
+
+- Import concrete modules directly; avoid re-export “barrels”.
+
+---
+
+## 6) Identity, Keys, and Facets
+
+- **ULID everywhere.** One ULID from creation to archive; joins/refs/events
+  use ULIDs.
+- **Entity is the identity spine.** `entity_entity.ulid` is the canonical
+  identity key for every person/org.
+- **Facets are PK=FK by `entity_ulid`.**
   - `EntityPerson.entity_ulid`
   - `EntityOrg.entity_ulid`
   - `Customer.entity_ulid`
   - `Resource.entity_ulid`
   - `Sponsor.entity_ulid`
-- **Slice-to-slice references anchor on `entity_ulid` only.** No slice invents or depends on a secondary “slice ULID” as an identity key.
+- **Cross-slice references anchor on `entity_ulid` only.**
+  - No slice invents or depends on a secondary “slice ULID” as the identity
+    anchor.
 
 ---
 
-## 4) Ledger, Auditing, and Observability
+## 7) Ledger, Auditing, and “Nothing Happens in the Dark”
 
-- **Ledger is the audit spine, not the money book.** Ledger records semantic events (no PII) and links by ULID; Finance remains the authoritative source for monetary facts.
-- **Ledger is Append‑only.** Nothing happens in the dark. Content‑hashed chain; events cross‑link to domain records by ULID. Nothing is deleted, only archived.
-- **Every mutation is ledgered.** All committed state changes emit a Ledger event with stable semantics.
-- **No PII in Ledger or logs.** Ledger/logging stores **ULIDs + semantic field names only**, never values.
-- **Correlation is mandatory.** Routes pass `request_id`/correlation IDs through services and into Ledger events.
+- **Ledger is the audit spine (not the money book).**
+  
+  - Records semantic events (no PII), links by ULID.
+  - Finance remains authoritative for monetary facts.
 
----
+- **Append-only.** Content-hashed chain; nothing deleted—only archived.
 
-## 5) Financial Matters
+- **Every mutation is ledgered.**
+  
+  - Committed state changes emit a Ledger event with stable semantics.
 
-- **Finance is the Single Source of Truth for money facts (actuals).** All authoritative monetary amounts, balances, journal entries, and account/fund semantics originate in (or are recorded by) the Finance slice.
-- **No shadow ledgers outside Finance.** If a persisted amount could be mistaken for an authoritative financial figure, it belongs in Finance.
-- **Other slices may track money intent only.** Budgets, caps, estimates, approvals, reservations, and “planned spend” may live outside Finance, but must be explicitly labeled as non-authoritative intent.
-- **Other slices reference financial facts via ULIDs and semantics.** When a non-Finance slice needs to point at an actual money movement, it stores a reference ULID to the Finance record (not a duplicate amount as “truth”).
-- **Finance records money; Calendar orchestrates spending.** Calendar can schedule and approve work that implies spending, but the only authoritative record of money movement (income/expense/transfer) is the Finance journal.
+- **No PII in Ledger or logs.**
+  
+  - Only ULIDs + semantic field names; never values.
 
----
-
-## 6) Privacy & PII Boundary
-
-- **No PII outside Entity.** PII lives only in the Entity slice (and strictly controlled snapshot stores like `CustomerHistory` / notes vault).
-- **Encrypt sensitive fields.** PII is field‑level protected; non‑Entity slices store anonymized facts keyed by ULID.
-- **Analytics are non-identifying.** Reporting/analytics tables store plaintext enumerations only (no identifying data).
+- **Correlation is mandatory.**
+  
+  - All emits/logs/ledger entries carry the boundary `request_id`.
 
 ---
 
-## 7) Governance, Policy, and “No Schema Leakage”
+## 8) Financial Matters
 
-- **Policy is JSON‑file canon.** Governance policies are stored as JSON under `slices/governance/data/` (single source of truth).
-- **Policy never names other slices’ tables/columns.** Policies contain **semantic hints**, not schema; mapping happens in the target slice.
-- **Schemas + semantic validation.** Every policy file has JSON Schema validation plus semantic checks in the loader pipeline.
-- **Admin editing is gated.** Policy edits are only via the Admin slice and only when the actor satisfies **RBAC `admin` + domain role `governor`**.
-- **Canonical state codes live in one place.** Two‑letter postal state codes are canon in `app/lib/geo.py` (only exception to the policy‑as‑JSON rule).
-
----
-
-## 8) Timekeeping
-
-- **Time = UTC.** Persist in UTC; present local time in the UI only.
-- **DB timestamps are naive UTC.** Use naive UTC for DB `DateTime` fields.
-- **`app/lib/chrono.py` is the single source of truth.** Any time helpers/aliases belong there (and nowhere else).
+- **Finance is the single source of truth for money facts (actuals).**
+- **No shadow ledgers outside Finance.**
+- Other slices may track **intent** only:
+  - budgets, caps, estimates, approvals, reservations, planned spend
+  - must be explicitly labeled as non-authoritative intent
+- Other slices reference Finance truth by ULID; they do not duplicate amounts as
+  “truth”.
+- **Finance records money; Calendar orchestrates spending.**
 
 ---
 
-## 9) Web Safety & Forms
+## 9) Privacy & PII Boundary
 
-- **CSRF on every POST.** All POST forms include CSRF by default.
-- **Consistent form rendering.** Use the namespaced macro import pattern and show inline field errors.
-- **AuthZ at the route boundary.** RBAC decorators live at routes; services assume authorized inputs.
-
----
-
-## 10) Data Retention & Deletion
-
-- **Nothing is deleted.** Data is archived per Governance retention schedules.
-- **Nothing happens in the dark.** State changes are observable and auditable via the Ledger.
+- **No PII outside Entity** (except approved snapshot stores like History or
+  notes vault).
+- Sensitive fields are protected; non-Entity slices store anonymized facts keyed
+  by ULID.
+- Analytics/reporting tables store non-identifying enumerations only.
 
 ---
 
-## 11) Testing & Development Discipline
+## 10) Governance, Policy, and “No Schema Leakage”
 
-- **Tests reflect reality.** Prefer realistic route flows over bending services to tests.
-- **Cross-slice tests compose via contracts.** Compose: Entity → facets → downstream ops → Ledger assertions (no PII).
-- **Deterministic seeds.** Seeds are stable and reproducible; tests run against migrated schema with known fixtures.
+- **Policy is JSON-file canon.**
+  
+  - Governance policies live under `slices/governance/data/`.
+  - Each policy has a schema and semantic validation in the loader.
+
+- **Policy never names other slices’ tables/columns.**
+  
+  - Policy contains semantic hints, not schema.
+  - Mapping happens in the target slice.
+
+- **Admin editing is gated.**
+  
+  - Policy edits only via Admin slice, only when actor satisfies:
+    **RBAC `admin` + domain role `governor`**.
+
+- **Canonical state codes live in one place.**
+  
+  - Two-letter postal state codes are canon in `app/lib/geo.py`
+    (the only exception to the policy-as-JSON rule).
+
+Policy cohesion rule (prevents “giant JSON creep”):
+
+> Policies are split by concept, not by slice. If a policy grows beyond one
+> concept, split it and cross-reference via `meta.notes`. Never duplicate a
+> concept across policies.
 
 ---
 
-## Unda Konstruktion
+## 11) Timekeeping
 
-## X) Slice Responsibilities & Boundaries (Provisional)
+- Persist in UTC; present local time in UI only.
+- DB timestamps are naive UTC.
+- `app/lib/chrono.py` is the single source of truth for time helpers.
 
-These boundaries define ownership and prevent “shadow systems.” Details may evolve, but ownership does not.
+---
+
+## 12) Web Safety & Forms
+
+- CSRF on every POST.
+- Consistent form rendering; inline field errors.
+- AuthZ at the route boundary; services assume authorized inputs.
+
+---
+
+## 13) Data Retention & Deletion
+
+- Nothing is deleted. Data is archived per Governance retention schedules.
+- State changes remain observable and auditable via the Ledger.
+
+---
+
+## 14) Testing & Development Discipline
+
+- Tests reflect reality: prefer realistic route flows over bending services to
+  tests.
+- Cross-slice tests compose via contracts:
+  Entity → facets → downstream ops → Ledger assertions (no PII).
+- Deterministic seeds; tests run against migrated schema with known fixtures.
+
+---
+
+## 15) Slice Responsibilities (Provisional)
+
+Ownership may evolve; ownership boundaries do not.
 
 ### Calendar (Projects / Tasks / Scheduling / Estimates)
 
-- **Calendar owns work intent and schedules.** Projects, tasks, assignments, and time coordination live here.
-- **Calendar may store estimates and plans** (cost estimates, rough budgets, planned spend), clearly labeled as non-authoritative.
-- **Calendar must not store authoritative money facts** (actual spend, balances, journal truth). Actuals are recorded in Finance.
-- **Calendar references financial truth by ULID** when it needs to point to posted/real money movements.
+- Owns work intent and schedules.
+- May store estimates/plans (clearly labeled as intent).
+- Must not store authoritative money facts (Finance owns actuals).
+- References Finance truth by ULID.
 
 ### Governance (Policy / Constraints / Budget Rules)
 
-- **Governance owns policy, not implementation.** It defines constraints, eligibility, caps, templates, and budget-building rules.
-- **Governance policy contains semantic hints only** and must not reference other slices’ tables/columns (“no schema leakage”).
-- **Governance must not be a ledger.** It defines rules; it does not record operational “facts” as authoritative truth.
+- Owns policy, not implementation.
+- Defines constraints, eligibility, caps, templates, budget-building rules.
+- Contains semantic hints only; no schema leakage.
+- Must not become an operational “facts” system.
 
 ### Sponsors (Fundraising / Donor CMS / Commitments)
 
-- **Sponsors owns fundraising and relationship management.** Donors, pledges, acknowledgements, comms, and sponsorship metadata live here.
-- **Sponsors may record commitments and intent** (pledges, restrictions, earmarks) as non-authoritative until posted as money facts.
-- **Sponsors must not maintain authoritative financial truth.** Real money movement and balances are recorded in Finance.
-- **Sponsors references Finance and Ledger by ULID** for posted donations, disbursements, and audit events.
+- Owns fundraising and relationship management.
+- May record commitments/intent (pledges, restrictions, earmarks).
+- Must not maintain authoritative financial truth (Finance owns actuals).
+- References Finance and Ledger by ULID for posted donations and audit events.
 
-### Logistics / Resources / Customers (Operational Facts, Not PII / Not Money Truth)
+### Operational slices (Logistics / Resources / Customers)
 
-- **Operational slices own operational facts** (inventory movements, service fulfillment, customer-facing operations) keyed by `entity_ulid`.
-- **They must not store PII outside Entity** and must not store authoritative money facts outside Finance.
+- Own operational facts keyed by `entity_ulid`.
+- Must not store PII outside Entity.
+- Must not store authoritative money facts outside Finance.
 
-## Refactor Sequence:
+---
 
-Do it in this exact order:
+## 16) Refactor Sequence (Guideline)
 
-1. **Entity** (services → contracts → routes → tests)
+1. Entity (services → contracts → routes → tests)
+2. Customer facet (services → contracts → routes → tests)
+3. Resource facet (services → contracts → routes → tests)
+4. Sponsor facet (services → contracts → routes → tests)
+5. Downstream ops (Logistics/Finance integrations)
+6. Cross-slice tests rebuild
 
-2. **Customer facet** (S → C → R → T)
+---
 
-3. **Resource facet** (S → C → R → T)
+## Addendum A — Entity Creation Wizard (Canon)
 
-4. **Sponsor facet** (S → C → R → T)
+### A1) Creation Wizard is not the Edit Surface
 
-5. **Downstream ops** (Logistics/Finance integrations)
+- Wizard is a slice-local golden path to create a brand-new Entity in a
+  minimally valid, editable state.
+- Wizard flows are not part of the cross-slice contract surface.
+  Cross-slice reads/edits go through versioned contracts; wizard stays internal
+  to the owning slice.
 
-6. **Cross-slice tests** rebuild
+### A2) PRG and Back/Refresh Defense are mandatory
 
-## Ethos Addendum: Entity Creation Wizard
-
-### Creation Wizard is not the Edit Surface
-
-- The Entity Creation Wizard is a **slice-local golden path** whose job is only to create a brand-new Entity in a **minimally valid, editable** state.
-
-- Wizard routes/services are **not** part of the cross-slice contract surface.  
-  Cross-slice reads/edits go through **versioned contracts**; wizard flows stay internal to the owning slice.
-
-### PRG and Back/Refresh Defense are mandatory
-
-- Every wizard step is **GET form + POST mutate + redirect** (Post/Redirect/Get).
-
-- Every wizard step POST must be protected against browser Back/Refresh/resubmit using a **per-step nonce** stored in session:
-  
+- Every step is GET form → POST mutate → redirect (PRG).
+- Every step POST is guarded by a per-step nonce stored in session:
   - nonce issued on GET
-  
   - nonce verified on POST
-  
-  - nonce **consumed before** calling the write path (prevents double-submit races)
-  
-  - nonce preserved/reissued on validation errors so users can correct input without “stale” loops
+  - nonce consumed on successful mutation
+  - nonce preserved/reissued on validation errors
+- Stale submits must not reach services (no flush, no Ledger spam). They redirect
+  back into the deterministic wizard flow.
 
-- Stale submits must **not** reach services (no flush, no ledger spam). They redirect back into the deterministic wizard flow.
+### A3) Single active wizard run per session
 
-### Single active wizard run per session
+- After Step 1 creates the Entity ULID, store `wiz_active_entity_ulid`.
+- Wizard Start resumes the active run by default.
+- Starting a truly new run requires explicit reset (e.g., `?reset=1`).
 
-- After Step 1 creates the Entity ULID, store a session key (e.g., `wiz_active_entity_ulid`).
+### A4) Wizard Ledger rules
 
-- Wizard Start should **resume** an active run by default.
-
-- Starting a truly new run requires an explicit reset (`/wizard/start?reset=1` or equivalent).
-
-### Ledger rules for wizard steps
-
-- Wizard services emit ledger events with **field names only** (no PII values).
-
-- Wizard services must emit **only on mutation**:
-  
-  - `created` or `changed_fields` non-empty → flush + emit
-  
+- Wizard services emit events with field names only (no PII values).
+- Emit only on mutation:
+  - created or `changed_fields` non-empty → flush + emit
   - no-op → no flush + no emit
 
-### Wizard validation behavior
+### A5) Deterministic flow
 
-- User-correctable issues in wizard services raise wizard-domain errors (e.g., `WizardInvalidInput`) so routes can attach **field-level errors**.
+- Wizard transitions are deterministic and computed by `wizard_next_step()`.
+- `next_step` values are endpoint-qualified (e.g., `entity.wizard_role_get`).
+- Optional hardening: step GET gating may redirect forward once progressed,
+  unless explicitly allowed via Review page.
 
-- Avoid leaking raw exceptions (`ValueError`, etc.) to the UI; unexpected exceptions may be logged with correlation id only (no PII).
+---
 
-### Deterministic flow
+## Addendum B — POC Ownership (Canon)
 
-- Wizard transitions are deterministic and computed by `wizard_next_step(entity_ulid)`.
+- Org↔POC relationship tables live and mutate inside the owning org slice
+  (Resources/Sponsors).
+- Entity supplies only:
+  - `person_entity_ulid`
+  - minimal read-only “contact card” when needed
+- Avoid cross-slice “manager DTOs” for relationship mutation; preserve slice
+  ownership even at the cost of small duplication.
 
-- `next_step` values are **endpoint-qualified** (e.g., `entity.wizard_role_get`).
+---
 
-- (Optional hardening) step GET gating: once the wizard progresses, earlier steps redirect forward unless explicitly allowed (e.g., via Review page).
+## Addendum C — Small, Durable “Stop Future Drift” Lines
 
-## Ethos snippets worth adding (based on lessons learned from Entity Wizard and POC removal from shared library functions)
+- Wizard vs Edit separation is mandatory: creation wizard flows stabilize as a
+  golden path; future mutations happen through edit pipelines.
+- No stale POSTs: any POST that mutates data must be guarded by PRG + server
+  nonce; stale submits never hit services.
+- No-op quieting: emit events only when `changed_fields` is non-empty (create
+  counts as change).
+- Governance policies are cohesive by concept; split and cross-reference via
+  `meta.notes`, never duplicate.
 
-Drop these into your running “snippets at the end” list:
-
-- **Wizard vs Edit separation:** creation wizard flows are immutable once stabilized; all future mutations happen in the edit pipeline.
-
-- **No stale POSTs:** any POST that can create or mutate data must be guarded by PRG + a server-remembered nonce; nonce consumed only on success.
-
-- **No-op quieting:** “correction isn’t spam” → emit events only when `changed_fields` is non-empty (create counts as changed).
-
-- **POC is slice-owned:** org↔POC relationship tables live and mutate inside the owning org slice; Entity only supplies `person_entity_ulid` and a minimal read-only “contact card” when needed.
-
-- **One policy per concept:** avoid duplicated policy definitions (e.g., POC scopes) across multiple governance JSONs.
-
-## Ethos line to add (very short, durable)
-
-> Policies should be **cohesive by concept**: role taxonomy/constraints live in `entity_roles`; relationship constraints like POC scope/rank live in `poc`. Cross-reference via meta.notes, never duplicate.
-
-A short one that stops policy creep:
-
-> **Governance policies are split by concept, not by slice.**  
-> If a policy grows beyond one concept, split it and cross-reference via `meta.notes`. Never duplicate a concept across policies.
-
-That’s your “balance” line in one sentence.
-
-RBAC is a small catalog + guardrail layer. Governance defines domain semantics.
+**RBAC is a small catalog + guardrail layer. Governance defines domain semantics.**
