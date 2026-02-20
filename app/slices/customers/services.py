@@ -18,6 +18,18 @@ from .mapper import (
 )
 from .models import Customer, CustomerEligibility, CustomerHistory
 
+"""
+implement the customers.services_history.append_entry(...) function,
+make it responsible for:
+
+validating the envelope (not the payload),
+
+populating the cached columns (title/summary/tags/has_admin_tags/...),
+
+and enforcing “admin_tags never rendered” at the template layer.
+
+That keeps the feature sturdy and boring.
+"""
 # -----------------
 # Canonical values (policy-backed later)
 # -----------------
@@ -178,6 +190,36 @@ def get_dashboard_view(entity_ulid: str) -> CustomerDashboardView | None:
 # -----------------
 # Public commands
 # -----------------
+
+
+def tags_to_csv(tags: tuple[str, ...]) -> str | None:
+    # Canon: stable ordering for deterministic diffs/tests.
+    uniq = sorted(set(t for t in tags if t))
+    if not uniq:
+        return None
+    return ",".join(uniq)
+
+
+def csv_to_tags(csv: str | None) -> tuple[str, ...]:
+    if not csv:
+        return ()
+    parts = [p.strip() for p in csv.split(",")]
+    parts = [p for p in parts if p]
+    return tuple(parts)
+
+
+def append_history_entry(
+    *,
+    target_entity_ulid: str,
+    kind: str,
+    blob_json: str | dict[str, Any],
+    actor_ulid: str | None,
+    request_id: str | None,
+) -> str:
+    """
+    Returns the new customer_history.history_ulid.
+    Raises ContractError on validation failure.
+    """
 
 
 def ensure_customer(

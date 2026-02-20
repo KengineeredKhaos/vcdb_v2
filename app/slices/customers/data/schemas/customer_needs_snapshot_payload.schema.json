@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vcdb.customer_needs_snapshot_payload.schema.json",
+  "title": "Customer Needs Snapshot Payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "assessment_version",
+    "needs_state",
+    "rollups",
+    "ratings"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "enum": [1] },
+    "assessment_version": { "type": "integer", "minimum": 1 },
+    "needs_state": {
+      "type": "string",
+      "enum": ["not_started", "in_progress", "complete", "skipped"]
+    },
+    "rollups": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tier1_min", "tier2_min", "tier3_min"],
+      "properties": {
+        "tier1_min": { "$ref": "#/$defs/tier_rollup" },
+        "tier2_min": { "$ref": "#/$defs/tier_rollup" },
+        "tier3_min": { "$ref": "#/$defs/tier_rollup" }
+      }
+    },
+    "ratings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "food",
+        "hygiene",
+        "health",
+        "housing",
+        "clothing",
+        "income",
+        "employment",
+        "transportation",
+        "education",
+        "family",
+        "peergroup",
+        "tech"
+      ],
+      "properties": {
+        "food": { "$ref": "#/$defs/rating" },
+        "hygiene": { "$ref": "#/$defs/rating" },
+        "health": { "$ref": "#/$defs/rating" },
+        "housing": { "$ref": "#/$defs/rating" },
+        "clothing": { "$ref": "#/$defs/rating" },
+        "income": { "$ref": "#/$defs/rating" },
+        "employment": { "$ref": "#/$defs/rating" },
+        "transportation": { "$ref": "#/$defs/rating" },
+        "education": { "$ref": "#/$defs/rating" },
+        "family": { "$ref": "#/$defs/rating" },
+        "peergroup": { "$ref": "#/$defs/rating" },
+        "tech": { "$ref": "#/$defs/rating" }
+      }
+    }
+  },
+  "$defs": {
+    "rating": {
+      "type": "string",
+      "enum": ["immediate", "marginal", "sufficient", "unknown", "na"]
+    },
+    "tier_rollup": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1, "maximum": 3 },
+        { "type": "string", "enum": ["unknown"] }
+      ]
+    }
+  }
+}

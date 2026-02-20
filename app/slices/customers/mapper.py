@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -142,11 +144,39 @@ def map_customer_eligibility(e) -> CustomerEligibilityView:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class EnvelopeDTO:
+    # Required by envelope schema
+    schema_name: str  # e.g. "logistics.issuance_summary"
+    schema_version: int  # e.g. 1
+    title: str  # timeline title
+    summary: str  # short synopsis (non-authoritative)
+    severity: str  # "info" | "warn"
+    happened_at_iso: str  # ISO 8601 string from envelope
+    source_slice: str  # "customers" | "logistics" | "resources"
+
+    # Optional in envelope
+    source_ref_ulid: str | None
+    created_by_actor_ulid: str | None
+    public_tags: tuple[str, ...]
+    admin_tags: tuple[str, ...]
+    dedupe_key: str | None
+    refs: dict[str, Any] | None
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedHistoryBlobDTO:
+    envelope: EnvelopeDTO
+    payload: dict[str, Any]  # producer-owned; Customers doesn't interpret
+
+
 # Public exports
 __all__ = [
     "CustomerSummaryView",
     "CustomerDashboardView",
     "CustomerEligibilityView",
+    "EnvelopeDTO",
+    "ParsedHistoryBlobDTO",
     "map_customer_summary",
     "map_customer_dashboard",
     "map_customer_eligibility",

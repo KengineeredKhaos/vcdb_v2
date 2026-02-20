@@ -419,3 +419,27 @@ Ownership may evolve; ownership boundaries do not.
   `meta.notes`, never duplicate.
 
 **RBAC is a small catalog + guardrail layer. Governance defines domain semantics.**
+
+
+
+### Ethos doc snippet: CustomerHistory admin tags
+
+- **CustomerHistory entries are “enveloped” JSON blobs**: each `data_json` has a  
+  uniform envelope containing human-friendly timeline fields (`title`,  
+  `summary`, `public_tags`, `severity`, `happened_at`, `source_slice`,  
+  `source_ref_ulid`) plus optional **silent** `admin_tags`.
+
+- **Staff UI shows only the public envelope** (title/summary/public tags). It  
+  never renders `admin_tags` and never records accusations—only operational  
+  history and neutral signals.
+
+- **Producers may set admin_tags**, but they do not “report” them. They simply  
+  write the CustomerHistory entry.
+
+- **Admin owns detection reporting**: a scheduled sweep (cron/systemd timer)  
+  scans CustomerHistory for `has_admin_tags=true` and creates Admin-only alerts  
+  (or tasks) for review. Sweeps are idempotent and cursor-based.
+
+- **Cross-slice boundaries remain intact**: Customers never parses producer  
+  payloads; producers own payload schemas; only the envelope is universally  
+  understood.

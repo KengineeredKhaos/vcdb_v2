@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vcdb.customer_history_blob.schema.json",
+  "title": "VCDB CustomerHistory Blob (Envelope + Payload)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["envelope", "payload"],
+  "properties": {
+    "envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_name",
+        "schema_version",
+        "title",
+        "summary",
+        "severity",
+        "happened_at",
+        "source_slice"
+      ],
+      "properties": {
+        "schema_name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "description": "Producer schema identifier, e.g. logistics.issuance_summary"
+        },
+        "schema_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999,
+          "description": "Producer schema version (integer)."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140,
+          "description": "Short human-friendly timeline title."
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 320,
+          "description": "Short human-friendly synopsis; non-authoritative."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "warn"],
+          "description": "Timeline emphasis level; never an accusation."
+        },
+        "public_tags": {
+          "type": "array",
+          "description": "Staff-facing tags (safe).",
+          "items": { "$ref": "#/$defs/tag" },
+          "maxItems": 16,
+          "uniqueItems": true,
+          "default": []
+        },
+        "admin_tags": {
+          "type": "array",
+          "description": "Silent review signals; never rendered in staff UI.",
+          "items": { "$ref": "#/$defs/tag" },
+          "maxItems": 16,
+          "uniqueItems": true,
+          "default": []
+        },
+        "dedupe_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "description": "Producer-computed stable string for duplication review."
+        },
+        "happened_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Event time (ISO 8601)."
+        },
+        "source_slice": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32,
+          "description": "Producer slice name, e.g. logistics, resources, customers."
+        },
+        "source_ref_ulid": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Optional link to producer record ULID."
+        },
+        "created_by_actor_ulid": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Optional actor ULID (no PII)."
+        },
+        "refs": {
+          "type": "object",
+          "description": "Optional non-PII linkouts for UI navigation (producer-defined).",
+          "additionalProperties": {
+            "type": ["string", "integer", "number", "boolean", "null"]
+          },
+          "maxProperties": 12
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "description": "Producer-owned structured data. Validated by producer schema.",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "tag": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[a-z0-9_\\-]+$"
+    }
+  }
+}
