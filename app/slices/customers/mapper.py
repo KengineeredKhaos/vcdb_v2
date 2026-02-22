@@ -8,140 +8,143 @@ Slice-local projection layer (Customers).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import asdict, dataclass
 from typing import Any
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CustomerSummaryView:
-    """Non-PII list/card projection for operators."""
+    """
+    Non-PII list & card projection for operator quick view.
+    Database fields stored in tables as noted.
+    """
+
+    entity_ulid: str  # Customer table
+    status: str  # Customer table
+    intake_step: str  # Customer table
+    intake_completed_at_iso: str | None  # Customer table
+    needs_state: str  # Customer table
+    tier1_min: int | None  # Customer table
+    flag_tier1_immediate: bool  # Customer table
+    watchlist: bool  # Customer table
+    veteran_status: str  # CustomerEligibility table
+
+
+@dataclass(frozen=True, slots=True)
+class CustomerSummaryRow:
+    """
+    Row DTO for building list views
+    """
 
     entity_ulid: str
     status: str
+    intake_step: str
+    intake_completed_at_iso: str | None
+    needs_state: str
     tier1_min: int | None
-    tier2_min: int | None
-    tier3_min: int | None
     flag_tier1_immediate: bool
     watchlist: bool
-    watchlist_since_utc: str | None
-    first_seen_utc: str | None
-    last_touch_utc: str | None
-    created_at_utc: str | None
-    updated_at_utc: str | None
+    veteran_status: str
 
 
-@dataclass(frozen=True)
+def map_customer_summary(r: CustomerSummaryRow) -> CustomerSummaryView:
+    """
+    Maps Rows to View DTO using comprehensions
+    """
+    return CustomerSummaryView(**asdict(r))
+
+
+@dataclass(frozen=True, slots=True)
 class CustomerDashboardView:
-    """Operator-facing aggregated read (still non-PII)."""
+    """
+    Operator-facing, aggregated, detailed view of
+    Customer status, needs, intake and eligibility triage.
+    Database fields stored in tables as noted.
+    """
+
+    entity_ulid: str  # Customer table
+    status: str  # Customer table
+    intake_step: str  # Customer table
+    intake_completed_at_iso: str | None  # Customer table
+    needs_state: str  # Customer table
+    watchlist: bool  # Customer table
+
+    veteran_status: str  # CustomerEligibility table
+    homeless_status: str  # CustomerEligibility table
+
+    assessment_version: int  # CustomerProfile table
+    last_assessed_at_iso: str | None  # CustomerProfile table
+
+    tier1_min: int | None  # Customer table
+    tier2_min: int | None  # Customer table
+    tier3_min: int | None  # Customer table
+    flag_tier1_immediate: bool  # Customer table
+
+
+@dataclass(frozen=True, slots=True)
+class CustomerDashboardRow:
+    """
+    Row DTO for building list views
+    """
 
     entity_ulid: str
     status: str
+    intake_step: str
+    intake_completed_at_iso: str | None
+    needs_state: str
+    watchlist: bool
+    veteran_status: str
+    homeless_status: str
+    assessment_version: int
+    last_assessed_at_iso: str | None
     tier1_min: int | None
     tier2_min: int | None
     tier3_min: int | None
     flag_tier1_immediate: bool
-    flag_reason: str | None
-    watchlist: bool
-    watchlist_since_utc: str | None
-    tier_factors: Mapping[str, Mapping[str, object]]
-    first_seen_utc: str | None
-    last_touch_utc: str | None
-    last_needs_update_utc: str | None
-    last_needs_tier_updated: str | None
-    created_at_utc: str | None
-    updated_at_utc: str | None
 
 
-@dataclass(frozen=True)
+def map_customer_dashboard(r: CustomerDashboardRow) -> CustomerDashboardView:
+    """
+    Maps Rows to View DTO using comprehensions
+    """
+    return CustomerDashboardView(**asdict(r))
+
+
+@dataclass(frozen=True, slots=True)
 class CustomerEligibilityView:
-    """PII-free eligibility snapshot anchored by entity_ulid."""
+    """
+    PII-free eligibility snapshot anchored by entity_ulid.
+    """
+
+    entity_ulid: str  # CustomerEligibility table
+    veteran_status: str  # CustomerEligibility table
+    veteran_method: str | None  # CustomerEligibility table
+    homeless_status: str  # CustomerEligibility table
+    approved_by_ulid: str | None  # CustomerEligibility table
+    approved_at_iso: str | None  # CustomerEligibility table
+
+
+@dataclass(frozen=True, slots=True)
+class CustomerEligibilityRow:
+    """
+    Row DTO for building list views
+    """
 
     entity_ulid: str
-    is_veteran_verified: bool
+    veteran_status: str
     veteran_method: str | None
+    homeless_status: str
     approved_by_ulid: str | None
-    approved_at_utc: str | None
-    is_homeless_verified: bool
-    tier1_min: int | None
-    tier2_min: int | None
-    tier3_min: int | None
-    notes: str | None
-    created_at_utc: str | None
-    updated_at_utc: str | None
+    approved_at_iso: str | None
 
 
-def map_customer_summary(c) -> CustomerSummaryView:
+def map_customer_eligibility(
+    r: CustomerEligibilityRow,
+) -> CustomerEligibilityView:
     """
-    Map a Customer ORM row to a non-PII summary view.
-
-    NOTE: 'c' is intentionally untyped here so the mapper module stays
-    import-light; the Customers services should pass the correct ORM type.
+    Maps Rows to View DTO using comprehensions
     """
-    return CustomerSummaryView(
-        entity_ulid=c.entity_ulid,
-        status=c.status,
-        tier1_min=c.tier1_min,
-        tier2_min=c.tier2_min,
-        tier3_min=c.tier3_min,
-        flag_tier1_immediate=bool(c.flag_tier1_immediate),
-        watchlist=bool(c.watchlist),
-        watchlist_since_utc=getattr(c, "watchlist_since_utc", None),
-        first_seen_utc=getattr(c, "first_seen_utc", None),
-        last_touch_utc=getattr(c, "last_touch_utc", None),
-        created_at_utc=getattr(c, "created_at_utc", None),
-        updated_at_utc=getattr(c, "updated_at_utc", None),
-    )
-
-
-def map_customer_dashboard(
-    c, tier_factors: Mapping[str, Mapping[str, object]]
-) -> CustomerDashboardView:
-    return CustomerDashboardView(
-        entity_ulid=c.entity_ulid,
-        status=getattr(c, "status", ""),
-        tier1_min=getattr(c, "tier1_min", None),
-        tier2_min=getattr(c, "tier2_min", None),
-        tier3_min=getattr(c, "tier3_min", None),
-        flag_tier1_immediate=bool(getattr(c, "flag_tier1_immediate", False)),
-        flag_reason=getattr(c, "flag_reason", None),
-        watchlist=bool(getattr(c, "watchlist", False)),
-        watchlist_since_utc=getattr(c, "watchlist_since_utc", None),
-        tier_factors=tier_factors,
-        first_seen_utc=getattr(c, "first_seen_utc", None),
-        last_touch_utc=getattr(c, "last_touch_utc", None),
-        last_needs_update_utc=getattr(c, "last_needs_update_utc", None),
-        last_needs_tier_updated=getattr(c, "last_needs_tier_updated", None),
-        created_at_utc=getattr(c, "created_at_utc", None),
-        updated_at_utc=getattr(c, "updated_at_utc", None),
-    )
-
-
-def map_customer_eligibility(e) -> CustomerEligibilityView:
-    def _g(name: str, default=None):
-        return getattr(e, name, default)
-
-    created = _g("created_at_utc", None) or _g("created_at", None)
-    updated = _g("updated_at_utc", None) or _g("updated_at", None)
-
-    return CustomerEligibilityView(
-        entity_ulid=(
-            getattr(e, "customer_entity_ulid", None) or _g("entity_ulid", "")
-        )
-        or "",
-        is_veteran_verified=bool(_g("is_veteran_verified", False)),
-        veteran_method=_g("veteran_method", None),
-        approved_by_ulid=_g("approved_by_ulid", None),
-        approved_at_utc=_g("approved_at_utc", None),
-        is_homeless_verified=bool(_g("is_homeless_verified", False)),
-        tier1_min=_g("tier1_min", None),
-        tier2_min=_g("tier2_min", None),
-        tier3_min=_g("tier3_min", None),
-        notes=_g("notes", None),
-        created_at_utc=created,
-        updated_at_utc=updated,
-    )
+    return CustomerEligibilityView(**asdict(r))
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,8 +173,24 @@ class ParsedHistoryBlobDTO:
     payload: dict[str, Any]  # producer-owned; Customers doesn't interpret
 
 
+# -----------------
+# Intake / Update
+# Confirmation DTO
+# -----------------
+
+
+@dataclass(frozen=True, slots=True)
+class ChangeSetDTO:
+    entity_ulid: str
+    created: bool
+    noop: bool
+    changed_fields: tuple[str, ...]
+    next_step: str | None
+
+
 # Public exports
 __all__ = [
+    "ChangeSetDTO",
     "CustomerSummaryView",
     "CustomerDashboardView",
     "CustomerEligibilityView",

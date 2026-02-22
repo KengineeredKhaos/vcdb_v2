@@ -106,12 +106,12 @@ In Python, these symbols serve specific roles:
 - **Sets:** Define sets, a collection of unique items (e.g., `my_set = {1, 2, 3}`).
 
 - Set:
-
-- A set is an unordered collection of unique items.
-
-- It does not allow duplicate members.
-
-- Sets are defined by curly braces {}.
+  
+  - A set is an unordered collection of unique items.
+  
+  - It does not allow duplicate members.
+  
+  - Sets are defined by curly braces {}.
 
 - **Set Comprehensions:** Used in set comprehensions
   

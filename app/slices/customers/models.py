@@ -35,7 +35,6 @@ from __future__ import annotations
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
-    DateTime,
     Integer,
     String,
     Text,
@@ -133,8 +132,8 @@ class Customer(db.Model, IsoTimestamps):
         index=True,
     )
 
-    intake_completed_at: Mapped[DateTime | None] = mapped_column(
-        DateTime,
+    intake_completed_at_iso: Mapped[str | None] = mapped_column(
+        String(30),
         nullable=True,
     )
 
@@ -177,21 +176,21 @@ class Customer(db.Model, IsoTimestamps):
         index=True,
     )
 
-    eligibility: Mapped["CustomerEligibility"] = relationship(
+    eligibility: Mapped[CustomerEligibility] = relationship(
         "CustomerEligibility",
         back_populates="customer",
         uselist=False,
         cascade="all, delete-orphan",
     )
 
-    profile: Mapped["CustomerProfile"] = relationship(
+    profile: Mapped[CustomerProfile] = relationship(
         "CustomerProfile",
         back_populates="customer",
         uselist=False,
         cascade="all, delete-orphan",
     )
 
-    histories: Mapped[list["CustomerHistory"]] = relationship(
+    histories: Mapped[list[CustomerHistory]] = relationship(
         "CustomerHistory",
         back_populates="customer",
         cascade="all, delete-orphan",
@@ -291,8 +290,8 @@ class CustomerEligibility(db.Model, IsoTimestamps):
         nullable=True,
     )
 
-    approved_at: Mapped[DateTime | None] = mapped_column(
-        DateTime,
+    approved_at_iso: Mapped[str | None] = mapped_column(
+        String(30),
         nullable=True,
     )
 
@@ -331,7 +330,7 @@ class CustomerEligibility(db.Model, IsoTimestamps):
         CheckConstraint(
             "NOT (veteran_status != 'verified' AND "
             "(veteran_method IS NOT NULL OR approved_by_ulid IS NOT NULL OR "
-            "approved_at IS NOT NULL))",
+            "approved_at_iso IS NOT NULL))",
             name="ck_cel_unverified_requires_nulls",
         ),
         # If verified → method is required.
@@ -346,11 +345,11 @@ class CustomerEligibility(db.Model, IsoTimestamps):
             name="ck_cel_other_requires_approval",
         ),
         CheckConstraint(
-            "NOT (approved_by_ulid IS NOT NULL AND approved_at IS NULL)",
+            "NOT (approved_by_ulid IS NOT NULL AND approved_at_iso IS NULL)",
             name="ck_cel_approval_requires_timestamp",
         ),
         CheckConstraint(
-            "NOT (approved_at IS NOT NULL AND approved_by_ulid IS NULL)",
+            "NOT (approved_at_iso IS NOT NULL AND approved_by_ulid IS NULL)",
             name="ck_cel_timestamp_requires_approver",
         ),
     )
@@ -384,8 +383,8 @@ class CustomerProfile(db.Model, IsoTimestamps):
         nullable=False,
     )
 
-    last_assessed_at: Mapped[DateTime | None] = mapped_column(
-        DateTime,
+    last_assessed_at_iso: Mapped[str | None] = mapped_column(
+        String(30),
         nullable=True,
     )
 
@@ -399,7 +398,7 @@ class CustomerProfile(db.Model, IsoTimestamps):
         back_populates="profile",
     )
 
-    ratings: Mapped[list["CustomerProfileRating"]] = relationship(
+    ratings: Mapped[list[CustomerProfileRating]] = relationship(
         "CustomerProfileRating",
         back_populates="profile",
         cascade="all, delete-orphan",
@@ -506,8 +505,8 @@ class CustomerHistory(db.Model, ULIDPK, IsoTimestamps):
         index=True,
     )
 
-    happened_at: Mapped[DateTime] = mapped_column(
-        DateTime,
+    happened_at_iso: Mapped[str] = mapped_column(
+        String(30),
         nullable=False,
         index=True,
     )

@@ -420,7 +420,7 @@ Ownership may evolve; ownership boundaries do not.
 
 **RBAC is a small catalog + guardrail layer. Governance defines domain semantics.**
 
-
+---
 
 ### Ethos doc snippet: CustomerHistory admin tags
 
@@ -443,3 +443,165 @@ Ownership may evolve; ownership boundaries do not.
 - **Cross-slice boundaries remain intact**: Customers never parses producer  
   payloads; producers own payload schemas; only the envelope is universally  
   understood.
+
+---
+
+### Golden Path (UI → DB → UI)
+
+1. **Template/Form** collects or displays data (no rules, no DB).
+
+2. **Route** orchestrates: auth, nonce/PRG, calls service, commit/rollback, emits  
+   ledger on real changes.
+
+3. **Service** owns business logic + DB reads/writes; returns DTOs; flushes only  
+   when needed.
+
+4. **Row DTO** = service-local projection of query results (DB → service).
+
+5. **View DTO** = outward-facing shape for route/template/contract  
+   (service → outside).
+
+6. **Mapper** is pure translation (Row → View), no side effects.
+
+Whenever you’re unsure where something belongs, ask:  
+**Is this a decision? (service)** **Is this orchestration/audit? (route)**  
+**Is this display? (template)** **Is this translation? (mapper/DTO)**
+
+---
+
+### Mutating service guardrails (canon)
+
+All **mutating** service commands must:
+
+- accept `entity_ulid`, `request_id`, and `actor_ulid` as **keyword-only**
+  parameters
+- call `ensure_entity_ulid()`, `ensure_request_id()`, and `ensure_actor_ulid()`
+  at the top (fail fast)
+- never commit (routes commit/rollback); services may `flush()` when needed
+- never emit on no-op
+
+System/automation paths must use a real `actor_ulid` (seeded system actor),
+not `None`.
+
+---
+
+## Taxonomy vs Governance Policy (Canon Boundary)
+
+VCDB v2 distinguishes **taxonomy/semantics** from **governance policy** to avoid
+turning the Governance slice into a micro-management mill.
+
+### Taxonomy (slice-local; code)
+
+**Definition:** Stable keys, enums, and semantic groupings that define a slice’s
+internal language (forms, validation, mapping, UI states). Taxonomy is owned by
+the slice that uses it most and is stored as Python code (e.g.
+`app/slices/<slice>/taxonomy.py`).
+
+**Why code:** These values are referenced constantly, are tightly coupled to UI
+and slice logic, and changing them usually requires a code deploy anyway. JSON
+
++ schema + contracts would add overhead without real operational benefit.
+
+**Examples (slice-local taxonomy):**
+
+- Customers: need category keys, tier groupings, allowed rating values, rank map
+- Logistics: SKU part keys, warehouse/location key shapes, internal workflow states
+- Finance: internal journal kinds, account type enums, posting workflow states
+- Calendar: task kinds, project lifecycle states
+- Resources: capability keys, readiness status enums, POC relation/scopes
+
+**Rule:** If changing it requires a developer to update forms/templates/logic,
+it is taxonomy → keep it slice-local.
+
+### Governance Policy (cross-slice; JSON + schema + Admin-controlled)
+
+**Definition:** Rules that define what is allowed, under what authority, and
+under what limits—especially when the rule affects multiple slices or must be
+editable without a code deploy.
+
+Governance policies are stored as JSON under `app/slices/governance/data/`,
+validated by JSON Schema + semantic checks, and editable only via Admin by a
+user who satisfies BOTH:
+
+- RBAC role `admin`
+- domain role `governor`
+
+**Examples (governance policy):**
+
+- spending caps and countersignature rules (Finance + Sponsors + Admin)
+- sponsor restrictions (vet-only/local-only) enforced by Logistics issuance
+- cadence/eligibility rules that multiple slices must honor
+- retention schedules and override policies
+- SLA enforcement parameters when they impact cross-slice operations
+
+**Rule:** If leadership might reasonably need to change it next week without a
+deploy, and/or it affects more than one slice, it belongs in Governance.
+
+### Middle-ground rule: Governance references taxonomy keys
+
+Governance policy may **reference slice taxonomy keys by name**, but does not
+own the full taxonomy lists.
+
+- Taxonomy defines stable keys (e.g. `housing`, `employment`)
+- Governance policy references those keys (e.g. reassess interval rules)
+- The consuming slice interprets the policy using its local taxonomy
+
+This preserves flexibility without duplicating taxonomies across Governance.
+
+### Contract traffic minimization (implementation rule)
+
+When a slice consumes Governance policy:
+
+- load via a single read-only contract DTO (policy bundle)
+- cache locally with TTL (or app-start cache with admin reload hook)
+- do not call Governance repeatedly within one request
+
+### Summary decision checklist
+
+Before moving a value to Governance, ask:
+
+1) Is this a leadership/authorization/compliance rule?
+2) Does it affect more than one slice?
+3) Is it likely to change without a deploy?
+4) Does JSON+schema reduce risk more than it adds overhead?
+
+**If “no” to (1) and (2), keep it as slice-local taxonomy.**
+
+### Taxonomy file conventions (Canon)
+
+These are IRL-world factors interpreted to code-world semantic labels. They bridge the gap between **code-world attributes** and **real-world facts.**
+
+To keep slice-local taxonomy consistent and low-friction:
+
+- **Location:** each slice owns a single module:
+  - `app/slices/<slice_name>/taxonomy.py`
+- **Scope:** taxonomy contains *names/keys/enums/groupings only* (no DB calls, no
+  service logic, no contracts, no request context).
+- **Naming:**
+  - public constants use `UPPER_SNAKE_CASE`
+  - keys stored in DB or JSON use **lower_snake_case** strings
+  - groupings use tuples (stable order) or frozensets (membership checks)
+- **Types:**
+  - prefer tuples for deterministic iteration order (templates/tests)
+  - use dict maps for rankings/labels (e.g., `RANK = {...}`)
+  - keep values JSON-safe (str/int/bool), avoid custom objects
+- **Stability:**
+  - treat taxonomy keys as **public API** for the slice; changing a key is a
+    breaking change
+  - if a key must change, introduce an alias/migration layer (rare)
+- **Validation usage:**
+  - services validate inputs against taxonomy constants (fast fail)
+  - forms populate SelectFields from taxonomy constants
+- **No duplication:**
+  - other slices must not copy or re-define another slice’s taxonomy
+  - if cross-slice reference is needed, reference taxonomy **keys** (strings) in
+    Governance policy, and let the owning slice interpret them
+- **PII rule:** taxonomy never includes PII or user-entered values.
+- **Docs:** each `taxonomy.py` begins with a short module docstring describing:
+  - what the keys represent
+  - whether keys are persisted in DB
+  - any invariants (e.g., groupings cover all category keys)
+
+---
+
+Next

@@ -269,116 +269,17 @@ def get_dashboard_view(entity_ulid: str) -> DashboardDTO | None:
     )
 
 
-# ---------------------------
-# WRITE CONTRACT
-# ---------------------------
+# -----------------
+# Write contracts
+# -----------------
 
 
-def verify_veteran(
+def append_history_entry(
     *,
-    entity_ulid: str,
-    method: str,
-    verified: bool,
+    target_entity_ulid: str,
+    kind: str,
+    blob_json: str | Mapping[str, Any],
     actor_ulid: str | None,
-    actor_has_governor: bool,
-    request_id: str,
-) -> VerificationResultDTO:
-    where = WHERE_VERIFY_VETERAN
-    try:
-        snap = cust_svc.set_veteran_verification(
-            entity_ulid=entity_ulid,
-            method=method,
-            verified=verified,
-            actor_ulid=actor_ulid,
-            actor_has_governor=actor_has_governor,
-            request_id=request_id,
-        )
-
-        return VerificationResultDTO(
-            entity_ulid=entity_ulid,
-            is_veteran_verified=bool(snap.is_veteran_verified),
-            veteran_method=snap.veteran_method,
-            approved_by_ulid=snap.approved_by_ulid,
-            approved_at_utc=snap.approved_at_utc,
-            as_of_iso=now_iso8601_ms(),
-        )
-    except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
-
-
-def update_tier1(
-    *,
-    entity_ulid: str,
-    payload: dict[str, object],
-    request_id: str,
-    actor_ulid: str | None,
-) -> TierUpdateResultDTO:
-    where = WHERE_UPDATE_TIER1
-    try:
-        vptr = cust_svc.record_needs_tier(
-            entity_ulid=entity_ulid,
-            tier_key="tier1",
-            payload=payload,  # type: ignore[arg-type]
-            request_id=request_id,
-            actor_ulid=actor_ulid,
-        )
-        return TierUpdateResultDTO(
-            entity_ulid=entity_ulid,
-            section="profile:needs:tier1",
-            version_ptr=vptr,
-            as_of_iso=now_iso8601_ms(),
-        )
-    except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
-
-
-def update_tier2(
-    *,
-    entity_ulid: str,
-    payload: dict[str, object],
-    request_id: str,
-    actor_ulid: str | None,
-) -> TierUpdateResultDTO:
-    where = WHERE_UPDATE_TIER2
-    try:
-        vptr = cust_svc.record_needs_tier(
-            entity_ulid=entity_ulid,
-            tier_key="tier2",
-            payload=payload,  # type: ignore[arg-type]
-            request_id=request_id,
-            actor_ulid=actor_ulid,
-        )
-        return TierUpdateResultDTO(
-            entity_ulid=entity_ulid,
-            section="profile:needs:tier2",
-            version_ptr=vptr,
-            as_of_iso=now_iso8601_ms(),
-        )
-    except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
-
-
-def update_tier3(
-    *,
-    entity_ulid: str,
-    payload: dict[str, object],
-    request_id: str,
-    actor_ulid: str | None,
-) -> TierUpdateResultDTO:
-    where = WHERE_UPDATE_TIER3
-    try:
-        vptr = cust_svc.record_needs_tier(
-            entity_ulid=entity_ulid,
-            tier_key="tier3",
-            payload=payload,  # type: ignore[arg-type]
-            request_id=request_id,
-            actor_ulid=actor_ulid,
-        )
-        return TierUpdateResultDTO(
-            entity_ulid=entity_ulid,
-            section="profile:needs:tier3",
-            version_ptr=vptr,
-            as_of_iso=now_iso8601_ms(),
-        )
-    except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
+    request_id: str | None,
+) -> str:
+    pass

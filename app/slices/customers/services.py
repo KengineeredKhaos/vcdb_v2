@@ -2,21 +2,58 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import desc, func
+from jsonschema import Draft202012Validator, FormatChecker
+from sqlalchemy import select
 
 from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
+from app.lib.guards import (
+    ensure_actor_ulid,
+    ensure_entity_ulid,
+    ensure_request_id,
+)
 from app.lib.jsonutil import stable_dumps
+from app.lib.pagination import Page, paginate
 
 from .mapper import (
+    ChangeSetDTO,
+    CustomerDashboardRow,
     CustomerDashboardView,
+    CustomerEligibilityRow,
     CustomerEligibilityView,
+    CustomerSummaryRow,
+    CustomerSummaryView,
+    EnvelopeDTO,
+    ParsedHistoryBlobDTO,
     map_customer_dashboard,
     map_customer_eligibility,
+    map_customer_summary,
 )
-from .models import Customer, CustomerEligibility, CustomerHistory
+from .models import (
+    Customer,
+    CustomerEligibility,
+    CustomerHistory,
+    CustomerProfile,
+    CustomerProfileRating,
+)
+from .taxonomy import (
+    BRANCH,
+    ERA,
+    HOMELESS_STATUS,
+    NEEDS_CATEGORY_KEY,
+    RANK,
+    RATING_ALLOWED,
+    TIER1,
+    TIER2,
+    TIER3,
+    VETERAN_METHOD,
+    VETERAN_STATUS,
+)
 
 """
 implement the customers.services_history.append_entry(...) function,
@@ -34,63 +71,52 @@ That keeps the feature sturdy and boring.
 # Canonical values (policy-backed later)
 # -----------------
 
-TIER_FACTORS: dict[str, tuple[str, ...]] = {
-    "tier1": ("food", "hygiene", "health", "housing", "clothing"),
-    "tier2": ("income", "employment", "transportation", "education"),
-    "tier3": ("family", "peergroup", "tech"),
-}
-ALLOWED_VALUES = {1, 2, 3, "unknown", "n/a", None}
 
 # Intake step order (canonical)
-STEP_IDENTITY = "identity"
-STEP_ADDR_PHYS = "address_physical"
-STEP_ADDR_POST = "address_postal"
-STEP_CONTACT = "contact"
+STEP_INTAKE = (
+    "ensure",
+    "eligibility",
+    "needs_tier1",
+    "needs_tier2",
+    "needs_tier3",
+    "review",
+    "complete",
+)
+STEP_ASSESSMENT = (
+    "needs_begin",
+    "needs_tier1",
+    "needs_tier2",
+    "needs_tier3",
+)
 STEP_ELIGIBILITY = "eligibility"
 STEP_REVIEW = "review"
 STEP_COMPLETE = "complete"
 
 
 # -----------------
-# Helpers
+# Helper Functions
+# & Validators
 # -----------------
 
 
-def _ensure_request_id(request_id: str | None) -> str:
-    rid = (request_id or "").strip()
-    if not rid:
-        raise ValueError("request_id must be non-empty")
-    return rid
+def _norm(s: str | None) -> str | None:
+    if s is None:
+        return None
+    v = s.strip()
+    return v if v else None
 
 
-def _ensure_entity_ulid(entity_ulid: str | None) -> str:
-    ent = (entity_ulid or "").strip()
-    if not ent:
-        raise ValueError("entity_ulid is required")
-    return ent
-
-
-def _validate_tier_payload(
-    tier_key: str,
-    payload: dict[str, Any],
-) -> dict[str, Any]:
-    if tier_key not in TIER_FACTORS:
-        raise ValueError(f"unknown tier '{tier_key}'")
-
-    allowed = set(TIER_FACTORS[tier_key])
-    extra = set(payload.keys()) - allowed
-    if extra:
-        raise ValueError(f"invalid factor(s) for {tier_key}: {sorted(extra)}")
-
-    norm: dict[str, Any] = {}
-    for factor in allowed:
-        v = payload.get(factor)
-        if isinstance(v, str):
-            v = v.strip().lower()
-        if v not in ALLOWED_VALUES:
-            raise ValueError(f"invalid value for {tier_key}.{factor}: {v!r}")
-        norm[factor] = v
-    return norm
+def _tier_min_for(
+    ratings_by_key: dict[str, str],
+    keys: tuple[str, ...],
+) -> int | None:
+    ranks: list[int] = []
+    for k in keys:
+        v = ratings_by_key.get(k, "na")
+        r = RANK.get(v)
+        if r is not None:
+            ranks.append(r)
+    return min(ranks) if ranks else None
 
 
 def _min_numeric(d: dict[str, Any] | None) -> int | None:
@@ -100,104 +126,652 @@ def _min_numeric(d: dict[str, Any] | None) -> int | None:
     return min(nums) if nums else None
 
 
-def _compute_cues(
-    tier1: dict[str, Any] | None,
-    tier2: dict[str, Any] | None,
-    tier3: dict[str, Any] | None,
-) -> tuple[int | None, int | None, int | None, bool, bool]:
-    t1_min = _min_numeric(tier1)
-    t2_min = _min_numeric(tier2)
-    t3_min = _min_numeric(tier3)
-    flag_t1 = t1_min == 1
-    watch = t2_min == 1
-    return t1_min, t2_min, t3_min, flag_t1, watch
-
-
-def _first_worst_factor_tier1(tier1: dict[str, Any]) -> str | None:
-    for f in TIER_FACTORS["tier1"]:
-        v = tier1.get(f)
-        if isinstance(v, int) and v == 1:
-            return f"{f}=1"
-    return None
-
-
-def _latest_tier_map(entity_ulid: str, tier_key: str) -> dict[str, object]:
-    section = f"profile:needs:{tier_key}"
-    row = (
-        db.session.query(CustomerHistory)
-        .filter_by(customer_entity_ulid=entity_ulid, section=section)
-        .order_by(desc(CustomerHistory.version))
-        .first()
-    )
-    return json.loads(row.data_json) if row else {}
-
-
-def _elig_row(entity_ulid: str) -> CustomerEligibility:
-    """Get-or-create eligibility anchored by entity_ulid."""
-    ent = _ensure_entity_ulid(entity_ulid)
-
-    row = (
-        db.session.query(CustomerEligibility)
-        .filter(CustomerEligibility.customer_entity_ulid == ent)
-        .one_or_none()
-    )
-    if row:
-        return row
-
-    row = CustomerEligibility(customer_entity_ulid=ent)  # type: ignore
-    db.session.add(row)
-    db.session.flush()
-    return row
-
-
 # -----------------
-# Public reads
+# Intake/Update
+# Functions
 # -----------------
 
 
-def get_eligibility_snapshot(
+def ensure_customer_facets(
+    *,
     entity_ulid: str,
-) -> CustomerEligibilityView | None:
-    ent = _ensure_entity_ulid(entity_ulid)
+    request_id: str,
+    actor_ulid: str | None,
+) -> ChangeSetDTO:
+    """
+    Ensure facet rows exist:
+      - customer_customer
+      - customer_eligibility
+      - customer_profile
 
-    row = (
-        db.session.query(CustomerEligibility)
-        .filter(CustomerEligibility.customer_entity_ulid == ent)
-        .one_or_none()
+    Service may flush + emit (session-bound). Route commits/rolls back.
+    """
+    ent = ensure_entity_ulid(entity_ulid)
+    rid = ensure_request_id(request_id)
+    act = ensure_actor_ulid(actor_ulid)
+    now = now_iso8601_ms()
+
+    as_of = now
+    changed: list[str] = []
+    created_any = False
+
+    c = db.session.get(Customer, ent)
+    if c is None:
+        c = Customer(
+            entity_ulid=ent,
+            status="intake",
+            intake_step="ensure",
+            needs_state="not_started",
+            watchlist=False,
+        )
+        db.session.add(c)
+        created_any = True
+        changed.extend(
+            [
+                "customer.status",
+                "customer.intake_step",
+                "customer.needs_state",
+                "customer.watchlist",
+            ]
+        )
+
+    e = db.session.get(CustomerEligibility, ent)
+    if e is None:
+        e = CustomerEligibility(entity_ulid=ent)
+        db.session.add(e)
+        created_any = True
+        changed.append("eligibility.created")
+
+    p = db.session.get(CustomerProfile, ent)
+    if p is None:
+        p = CustomerProfile(entity_ulid=ent, assessment_version=0)
+        db.session.add(p)
+        created_any = True
+        changed.append("profile.created")
+
+    noop = not created_any
+    if noop:
+        return ChangeSetDTO(
+            entity_ulid=ent,
+            created=False,
+            noop=True,
+            changed_fields=(),
+            next_step=None,
+        )
+
+    db.session.flush()
+
+    event_bus.emit(
+        domain="customers",
+        operation="customer_facets_ensured",
+        request_id=rid,
+        actor_ulid=act,
+        target_ulid=ent,
+        refs={"step": "ensure"},
+        changed={"fields": changed},
+        happened_at_utc=as_of,
     )
-    if row is None:
-        return None
 
-    return map_customer_eligibility(row)
+    return ChangeSetDTO(
+        entity_ulid=ent,
+        created=True,
+        noop=False,
+        changed_fields=tuple(changed),
+        next_step="eligibility",
+    )
 
 
-def get_dashboard_view(entity_ulid: str) -> CustomerDashboardView | None:
-    ent = _ensure_entity_ulid(entity_ulid)
+def set_customer_eligibility(
+    *,
+    entity_ulid: str,
+    veteran_status: str,
+    homeless_status: str,
+    veteran_method: str | None = None,
+    branch: str | None = None,
+    era: str | None = None,
+    actor_ulid: str | None,
+    request_id: str,
+) -> ChangeSetDTO:
+    """
+    Update CustomerEligibility (PK=FK facet) with strict invariants + no-op.
 
+    Services behavior:
+    - Mutates + flushes only when changes exist.
+    - Emits event_bus after flush only when not noop (unit-of-work semantics).
+    - Never commits.
+
+    changed_fields canon:
+      eligibility.veteran_status
+      eligibility.veteran_method
+      eligibility.branch
+      eligibility.era
+      eligibility.homeless_status
+      eligibility.approved_by_ulid
+      eligibility.approved_at_iso
+    """
+    ent = ensure_entity_ulid(entity_ulid)
+    rid = ensure_request_id(request_id)
+    act = ensure_actor_ulid(actor_ulid)
+    now = now_iso8601_ms()
+    v_status = _norm(veteran_status)
+    h_status = _norm(homeless_status)
+    v_method = _norm(veteran_method)
+    v_branch = _norm(branch)
+    v_era = _norm(era)
+
+    if v_status not in VETERAN_STATUS:
+        raise ValueError(f"invalid veteran_status: {v_status!r}")
+    if h_status not in HOMELESS_STATUS:
+        raise ValueError(f"invalid homeless_status: {h_status!r}")
+    if v_method is not None and v_method not in VETERAN_METHOD:
+        raise ValueError(f"invalid veteran_method: {v_method!r}")
+    if v_branch is not None and v_branch not in BRANCH:
+        raise ValueError(f"invalid branch: {v_branch!r}")
+    if v_era is not None and v_era not in ERA:
+        raise ValueError(f"invalid era: {v_era!r}")
+
+    # Ensure parent facet exists (wizard should have created it, but be robust).
     cust = db.session.get(Customer, ent)
-    if not cust:
-        return None
+    if cust is None:
+        raise LookupError("customer facet missing")
 
-    t1 = _latest_tier_map(ent, "tier1")
-    t2 = _latest_tier_map(ent, "tier2")
-    t3 = _latest_tier_map(ent, "tier3")
+    created = False
+    elig = db.session.get(CustomerEligibility, ent)
+    if elig is None:
+        elig = CustomerEligibility(entity_ulid=ent)  # type: ignore[arg-type]
+        db.session.add(elig)
+        created = True
 
-    return map_customer_dashboard(
-        cust, {"tier1": t1, "tier2": t2, "tier3": t3}
+    # Snapshot old values for no-op + changed_fields.
+    before = {
+        "veteran_status": elig.veteran_status,
+        "veteran_method": elig.veteran_method,
+        "branch": elig.branch,
+        "era": elig.era,
+        "homeless_status": elig.homeless_status,
+        "approved_by_ulid": elig.approved_by_ulid,
+        "approved_at_iso": elig.approved_at_iso,
+    }
+
+    # Apply normalization + invariants (mirror DB constraints).
+    # - If veteran_status != verified: clear method + approvals.
+    # - If verified: method required.
+    # - If method == other: approver required (+ timestamp).
+    elig.veteran_status = v_status  # type: ignore[assignment]
+    elig.homeless_status = h_status  # type: ignore[assignment]
+
+    # Branch/Era are “customer artifacts”; keep them if provided,
+    # but clear if explicitly not a veteran.
+    if v_status == "not_veteran":
+        elig.branch = None
+        elig.era = None
+    else:
+        elig.branch = v_branch  # type: ignore[assignment]
+        elig.era = v_era  # type: ignore[assignment]
+
+    if v_status != "verified":
+        elig.veteran_method = None
+        elig.approved_by_ulid = None
+        elig.approved_at_iso = None
+    else:
+        if v_method is None:
+            raise ValueError(
+                "veteran_method is required when veteran_status='verified'"
+            )
+        elig.veteran_method = v_method  # type: ignore[assignment]
+
+        if v_method == "other":
+            if not actor_ulid:
+                raise ValueError(
+                    "actor_ulid is required to approve method='other'"
+                )
+            # Only update approval timestamp when approval is being established
+            # (prevents spurious “touch” updates on resubmits).
+            needs_approval_ts = (
+                before["veteran_method"] != "other"
+                or before["approved_by_ulid"] != actor_ulid
+                or before["approved_at_iso"] is None
+            )
+            elig.approved_by_ulid = actor_ulid
+            if needs_approval_ts:
+                elig.approved_at_iso = now
+        else:
+            elig.approved_by_ulid = None
+            elig.approved_at_iso = None
+
+    # Compute changed_fields canon names.
+    after = {
+        "veteran_status": elig.veteran_status,
+        "veteran_method": elig.veteran_method,
+        "branch": elig.branch,
+        "era": elig.era,
+        "homeless_status": elig.homeless_status,
+        "approved_by_ulid": elig.approved_by_ulid,
+        "approved_at_iso": elig.approved_at_iso,
+    }
+
+    changed: list[str] = []
+    for k in after:
+        if before[k] != after[k]:
+            changed.append(f"eligibility.{k}")
+
+    noop = (not created) and (len(changed) == 0)
+    if noop:
+        return ChangeSetDTO(
+            entity_ulid=ent,
+            created=False,
+            noop=True,
+            changed_fields=(),
+            next_step=None,
+        )
+
+    db.session.flush()
+
+    # Session-bound emit: safe because it will only “publish” on commit.
+    event_bus.emit(
+        domain="customers",
+        operation="customer_eligibility_updated",
+        request_id=rid,
+        actor_ulid=act,
+        target_ulid=ent,
+        happened_at_utc=now,
+        refs={"step": "eligibility"},
+        changed={"fields": changed},
+    )
+
+    return ChangeSetDTO(
+        entity_ulid=ent,
+        created=created,
+        noop=False,
+        changed_fields=tuple(changed),
+        next_step="needs_tier1",
+    )
+
+
+def needs_begin(
+    *,
+    entity_ulid: str,
+    request_id: str,
+    actor_ulid: str | None,
+) -> ChangeSetDTO:
+    """
+    Begin a needs assessment.
+    - assessment_version += 1
+    - needs_state -> in_progress
+    - create 12 CustomerProfileRating rows as 'na' for the new version
+    """
+    ent = ensure_entity_ulid(entity_ulid)
+    rid = ensure_request_id(request_id)
+    act = ensure_actor_ulid(actor_ulid)
+    now = now_iso8601_ms()
+    as_of = now
+    changed: list[str] = []
+
+    # Ensure facets exist (or call your ensure_customer_facets here)
+    c = db.session.get(Customer, ent)
+    if c is None:
+        raise LookupError(
+            "customer facet missing"
+        )  # wizard should ensure first
+
+    p = db.session.get(CustomerProfile, ent)
+    if p is None:
+        p = CustomerProfile(entity_ulid=ent, assessment_version=0)
+        db.session.add(p)
+        changed.append("profile.created")
+
+    # If already in progress, treat as noop (or raise if you want stricter UX)
+    if c.needs_state == "in_progress":
+        return ChangeSetDTO(ent, False, True, (), None)
+
+    # Start new version
+    p.assessment_version += 1
+    c.needs_state = "in_progress"
+
+    changed.extend(
+        [
+            "profile.assessment_version",
+            "customer.needs_state",
+        ]
+    )
+
+    # Precreate 12 rows for this version
+    v = p.assessment_version
+    rows: list[CustomerProfileRating] = []
+    for k in NEEDS_CATEGORY_KEY:
+        rows.append(
+            CustomerProfileRating(
+                entity_ulid=ent,
+                assessment_version=v,
+                category_key=k,
+                rating_value="na",
+            )
+        )
+    db.session.add_all(rows)
+    changed.append("profile_rating.created_12")
+
+    db.session.flush()
+
+    event_bus.emit(
+        domain="customers",
+        operation="customer_needs_begun",
+        request_id=rid,
+        actor_ulid=act,
+        target_ulid=ent,
+        refs={"step": "needs_begin", "assessment_version": v},
+        changed={"fields": changed},
+        happened_at_utc=as_of,
+    )
+
+    return ChangeSetDTO(
+        entity_ulid=ent,
+        created=True,
+        noop=False,
+        changed_fields=tuple(changed),
+        next_step="needs_tier1",
+    )
+
+
+def needs_set_block(
+    *,
+    entity_ulid: str,
+    ratings: dict[str, str],  # {category_key: rating_value}
+    request_id: str,
+    actor_ulid: str | None,
+    next_step: str | None = None,
+) -> ChangeSetDTO:
+    """
+    Update one or more category ratings for the CURRENT assessment_version,
+    and recompute cached cues on Customer.
+
+    ratings values must be in: immediate|marginal|sufficient|unknown|na
+    """
+    ent = ensure_entity_ulid(entity_ulid)
+    rid = ensure_request_id(request_id)
+    act = ensure_actor_ulid(actor_ulid)
+    now = now_iso8601_ms()
+
+    # Validate input keys/values
+    for k, v in ratings.items():
+        if k not in NEEDS_CATEGORY_KEY:
+            raise ValueError(f"invalid category_key: {k!r}")
+        if v not in RATING_ALLOWED:
+            raise ValueError(f"invalid rating_value for {k!r}: {v!r}")
+
+    c = db.session.get(Customer, ent)
+    if c is None:
+        raise LookupError("customer not found")
+    p = db.session.get(CustomerProfile, ent)
+    if p is None or p.assessment_version < 1:
+        raise ValueError(
+            "needs assessment not started (call needs_begin first)"
+        )
+    if c.needs_state != "in_progress":
+        raise ValueError("needs_state is not in_progress")
+
+    v = p.assessment_version
+    as_of = now
+    changed: list[str] = []
+
+    # Load existing rows for this version
+    stmt = (
+        select(CustomerProfileRating)
+        .where(CustomerProfileRating.entity_ulid == ent)
+        .where(CustomerProfileRating.assessment_version == v)
+    )
+    existing = db.session.execute(stmt).scalars().all()
+    by_key = {r.category_key: r for r in existing}
+
+    # Ensure the 12 rows exist (defensive; begin should have created them)
+    if len(by_key) != len(NEEDS_CATEGORY_KEY):
+        raise RuntimeError("needs rows missing; expected 12 rating rows")
+
+    # Apply updates
+    for k, new_val in ratings.items():
+        r = by_key[k]
+        if r.rating_value != new_val:
+            r.rating_value = new_val
+            changed.append(f"profile_rating.{k}")
+
+    # No changes? return noop
+    if not changed:
+        return ChangeSetDTO(ent, False, True, (), next_step)
+
+    # Recompute rollups from current version rows
+    rating_values = {k: by_key[k].rating_value for k in NEEDS_CATEGORY_KEY}
+    t1 = _tier_min_for(rating_values, TIER1)
+    t2 = _tier_min_for(rating_values, TIER2)
+    t3 = _tier_min_for(rating_values, TIER3)
+
+    if c.tier1_min != t1:
+        c.tier1_min = t1
+        changed.append("customer.tier1_min")
+    if c.tier2_min != t2:
+        c.tier2_min = t2
+        changed.append("customer.tier2_min")
+    if c.tier3_min != t3:
+        c.tier3_min = t3
+        changed.append("customer.tier3_min")
+
+    # "raw" flag (watchlist does NOT rewrite this; compute effective elsewhere)
+    new_flag = t1 == 1
+    if bool(c.flag_tier1_immediate) != new_flag:
+        c.flag_tier1_immediate = new_flag
+        changed.append("customer.flag_tier1_immediate")
+
+    db.session.flush()
+
+    event_bus.emit(
+        domain="customers",
+        operation="customer_needs_updated",
+        request_id=rid,
+        actor_ulid=act,
+        target_ulid=ent,
+        refs={"step": "needs_set_block", "assessment_version": v},
+        changed={"fields": changed},
+        happened_at_utc=as_of,
+    )
+
+    return ChangeSetDTO(
+        entity_ulid=ent,
+        created=False,
+        noop=False,
+        changed_fields=tuple(changed),
+        next_step=next_step,
+    )
+
+
+def needs_skip(
+    *, entity_ulid: str, request_id: str, actor_ulid: str | None
+) -> ChangeSetDTO:
+    ent = ensure_entity_ulid(entity_ulid)
+    rid = ensure_request_id(request_id)
+    act = ensure_actor_ulid(actor_ulid)
+    now = now_iso8601_ms()
+    c = db.session.get(Customer, ent)
+    if c is None:
+        raise LookupError("customer not found")
+    if c.needs_state == "skipped":
+        return ChangeSetDTO(ent, False, True, (), None)
+
+    c.needs_state = "skipped"
+    db.session.flush()
+
+    event_bus.emit(
+        domain="customers",
+        operation="customer_needs_skipped",
+        request_id=rid,
+        actor_ulid=act,
+        target_ulid=ent,
+        refs={"step": "needs_skip"},
+        changed={"fields": ["customer.needs_state"]},
+        happened_at_utc=now,
+    )
+    return ChangeSetDTO(
+        ent, False, False, ("customer.needs_state",), "review"
+    )
+
+
+def needs_complete(
+    *, entity_ulid: str, request_id: str, actor_ulid: str | None
+) -> ChangeSetDTO:
+    ent = ensure_entity_ulid(entity_ulid)
+    rid = ensure_request_id(request_id)
+    act = ensure_actor_ulid(actor_ulid)
+    now = now_iso8601_ms()
+    c = db.session.get(Customer, ent)
+    p = db.session.get(CustomerProfile, ent)
+    if c is None or p is None:
+        raise LookupError("customer/profile missing")
+    if c.needs_state == "complete":
+        return ChangeSetDTO(ent, False, True, (), None)
+
+    c.needs_state = "complete"
+    p.last_assessed_at_iso = now
+    # p.last_assessed_by_ulid = actor_ulid  (if you have that column)
+    db.session.flush()
+
+    event_bus.emit(
+        domain="customers",
+        operation="customer_needs_completed",
+        request_id=rid,
+        actor_ulid=act,
+        target_ulid=ent,
+        refs={
+            "step": "needs_complete",
+            "assessment_version": p.assessment_version,
+        },
+        changed={
+            "fields": ["customer.needs_state", "profile.last_assessed_at_iso"]
+        },
+        happened_at_utc=now,
+    )
+    return ChangeSetDTO(
+        ent, False, False, ("customer.needs_state",), "review"
     )
 
 
 # -----------------
-# Public commands
+# View/List/Summary
+# -----------------
+
+
+def _summary_stmt():
+    return (
+        select(Customer, CustomerEligibility)
+        .outerjoin(
+            CustomerEligibility,
+            CustomerEligibility.entity_ulid == Customer.entity_ulid,
+        )
+        .order_by(Customer.entity_ulid.desc())
+    )
+
+
+def _tuple_to_summary_row(
+    t: tuple[Customer, CustomerEligibility | None],
+) -> CustomerSummaryRow:
+    c, e = t
+    return CustomerSummaryRow(
+        entity_ulid=c.entity_ulid,
+        status=c.status,
+        intake_step=c.intake_step,
+        intake_completed_at_iso=c.intake_completed_at_iso,
+        needs_state=c.needs_state,
+        tier1_min=c.tier1_min,
+        flag_tier1_immediate=bool(c.flag_tier1_immediate),
+        watchlist=bool(c.watchlist),
+        veteran_status=(e.veteran_status if e else "unknown"),
+    )
+
+
+def list_customer_summaries(
+    *, page: int, per_page: int
+) -> Page[CustomerSummaryView]:
+    # Page[tuple]
+    p0 = paginate(_summary_stmt(), page=page, per_page=per_page)
+
+    # Page[View]
+    return p0.map(_tuple_to_summary_row).map(map_customer_summary)
+
+
+def get_customer_summary(entity_ulid: str) -> CustomerSummaryView:
+    stmt = _summary_stmt().where(Customer.entity_ulid == entity_ulid)
+    row = db.session.execute(stmt).first()
+    if row is None:
+        raise LookupError("customer not found")
+    return map_customer_summary(_tuple_to_summary_row(row))
+
+
+def _tuple_to_dashboard_row(
+    t: tuple[Customer, CustomerEligibility | None, CustomerProfile | None],
+) -> CustomerDashboardRow:
+    c, e, p = t
+    return CustomerDashboardRow(
+        entity_ulid=c.entity_ulid,
+        status=c.status,
+        intake_step=c.intake_step,
+        intake_completed_at_iso=c.intake_completed_at_iso,
+        needs_state=c.needs_state,
+        watchlist=bool(c.watchlist),
+        veteran_status=(e.veteran_status if e else "unknown"),
+        homeless_status=(e.homeless_status if e else "unknown"),
+        assessment_version=(p.assessment_version if p else 0),
+        last_assessed_at_iso=(p.last_assessed_at_iso if p else None),
+        tier1_min=c.tier1_min,
+        tier2_min=c.tier2_min,
+        tier3_min=c.tier3_min,
+        flag_tier1_immediate=bool(c.flag_tier1_immediate),
+    )
+
+
+def get_customer_dashboard(entity_ulid: str) -> CustomerDashboardView:
+    stmt = (
+        select(Customer, CustomerEligibility, CustomerProfile)
+        .outerjoin(
+            CustomerEligibility,
+            CustomerEligibility.entity_ulid == Customer.entity_ulid,
+        )
+        .outerjoin(
+            CustomerProfile,
+            CustomerProfile.entity_ulid == Customer.entity_ulid,
+        )
+        .where(Customer.entity_ulid == entity_ulid)
+    )
+
+    row = db.session.execute(stmt).first()
+    if row is None:
+        raise LookupError("customer not found")
+
+    r = _tuple_to_dashboard_row(row)
+    return map_customer_dashboard(r)
+
+
+def get_customer_eligibility(entity_ulid: str) -> CustomerEligibilityView:
+    e = db.session.get(CustomerEligibility, entity_ulid)
+    if e is None:
+        # Either create/ensure facet earlier, or treat as unknown snapshot:
+        raise LookupError("customer eligibility missing")
+
+    r = CustomerEligibilityRow(
+        entity_ulid=e.entity_ulid,
+        veteran_status=e.veteran_status,
+        veteran_method=e.veteran_method,
+        homeless_status=e.homeless_status,
+        approved_by_ulid=e.approved_by_ulid,
+        approved_at_iso=e.approved_at_iso,
+    )
+    return map_customer_eligibility(r)
+
+
+# -----------------
+# History Blob
+# Handling Commands
 # -----------------
 
 
 def tags_to_csv(tags: tuple[str, ...]) -> str | None:
-    # Canon: stable ordering for deterministic diffs/tests.
-    uniq = sorted(set(t for t in tags if t))
-    if not uniq:
-        return None
-    return ",".join(uniq)
+    uniq = sorted({t for t in tags if t})
+    return ",".join(uniq) if uniq else None
 
 
 def csv_to_tags(csv: str | None) -> tuple[str, ...]:
@@ -208,236 +782,105 @@ def csv_to_tags(csv: str | None) -> tuple[str, ...]:
     return tuple(parts)
 
 
+@lru_cache(maxsize=1)
+def _history_blob_validator() -> Draft202012Validator:
+    here = Path(__file__).resolve().parent
+    schema_path = (
+        here / "data" / "schemas" / "customer_history_blob.schema.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    return Draft202012Validator(schema, format_checker=FormatChecker())
+
+
+def _parse_history_blob(
+    blob: str | Mapping[str, Any]
+) -> tuple[str, ParsedHistoryBlobDTO]:
+    if isinstance(blob, str):
+        raw = json.loads(blob)
+        blob_json = stable_dumps(raw)
+    else:
+        raw = dict(blob)
+        blob_json = stable_dumps(raw)
+
+    if not isinstance(raw, dict):
+        raise ValueError("history blob must be a JSON object")
+
+    env = raw.get("envelope")
+    payload = raw.get("payload")
+
+    if not isinstance(env, dict):
+        raise ValueError("history blob missing envelope object")
+    if not isinstance(payload, dict):
+        raise ValueError("history blob missing payload object")
+
+    # Validate envelope+payload shape, but we only *interpret* envelope.
+    _history_blob_validator().validate(raw)
+
+    public_tags = tuple(env.get("public_tags") or ())
+    admin_tags = tuple(env.get("admin_tags") or ())
+
+    dto = ParsedHistoryBlobDTO(
+        envelope=EnvelopeDTO(
+            schema_name=env["schema_name"],
+            schema_version=int(env["schema_version"]),
+            title=env["title"],
+            summary=env["summary"],
+            severity=env["severity"],
+            happened_at_iso=env["happened_at"],
+            source_slice=env["source_slice"],
+            source_ref_ulid=env.get("source_ref_ulid"),
+            created_by_actor_ulid=env.get("created_by_actor_ulid"),
+            public_tags=public_tags,
+            admin_tags=admin_tags,
+            dedupe_key=env.get("dedupe_key"),
+            refs=env.get("refs"),
+        ),
+        payload=payload,
+    )
+    return blob_json, dto
+
+
 def append_history_entry(
     *,
     target_entity_ulid: str,
     kind: str,
-    blob_json: str | dict[str, Any],
-    actor_ulid: str | None,
-    request_id: str | None,
-) -> str:
-    """
-    Returns the new customer_history.history_ulid.
-    Raises ContractError on validation failure.
-    """
-
-
-def ensure_customer(
-    *,
-    entity_ulid: str,
+    blob_json: str | Mapping[str, Any],
+    actor_ulid: str,
     request_id: str,
-    actor_ulid: str | None,
 ) -> str:
-    _ensure_request_id(request_id)
-    ent = _ensure_entity_ulid(entity_ulid)
+    ent = ensure_entity_ulid(target_entity_ulid)
+    act = ensure_actor_ulid(actor_ulid)
 
-    now = now_iso8601_ms()
+    if not kind or not kind.strip():
+        raise ValueError("kind is required")
 
+    # request_id is accepted for correlation;
+    # Customers doesn't emit ledger here.
     cust = db.session.get(Customer, ent)
-    if cust:
-        cust.last_touch_utc = now
-        _elig_row(ent)
-        db.session.flush()
-        return ent
+    if cust is None:
+        raise LookupError("customer facet missing")
 
-    cust = Customer(
-        entity_ulid=ent,  # type: ignore
-        status="active",  # type: ignore
-        intake_step=STEP_COMPLETE,  # type: ignore
-        first_seen_utc=now,  # type: ignore
-        last_touch_utc=now,  # type: ignore
-        tier1_min=None,  # type: ignore
-        tier2_min=None,  # type: ignore
-        tier3_min=None,  # type: ignore
-        flag_tier1_immediate=False,  # type: ignore
-        flag_reason=None,  # type: ignore
-        watchlist=False,  # type: ignore
-        watchlist_since_utc=None,  # type: ignore
-        last_needs_update_utc=None,  # type: ignore
-        last_needs_tier_updated=None,  # type: ignore
+    blob_str, parsed = _parse_history_blob(blob_json)
+    env = parsed.envelope
+
+    row = CustomerHistory(
+        entity_ulid=ent,
+        kind=kind,
+        happened_at_iso=env.happened_at_iso,
+        source_slice=env.source_slice,
+        source_ref_ulid=env.source_ref_ulid,
+        schema_name=env.schema_name,
+        schema_version=env.schema_version,
+        title=env.title,
+        summary=env.summary,
+        severity=env.severity,
+        public_tags_csv=tags_to_csv(env.public_tags),
+        has_admin_tags=bool(env.admin_tags),
+        admin_tags_csv=tags_to_csv(env.admin_tags),
+        created_by_actor_ulid=env.created_by_actor_ulid or act,
+        data_json=blob_str,
     )
-    db.session.add(cust)
 
-    _elig_row(ent)
+    db.session.add(row)
     db.session.flush()
-
-    event_bus.emit(
-        domain="customers",
-        operation="created",
-        actor_ulid=actor_ulid,
-        target_ulid=ent,
-        request_id=request_id,
-        happened_at_utc=now,
-        refs={"entity_ulid": ent},
-    )
-    return ent
-
-
-def record_needs_tier(
-    *,
-    entity_ulid: str,
-    tier_key: str,
-    payload: dict[str, Any],
-    request_id: str,
-    actor_ulid: str | None,
-) -> str:
-    """Write a tier snapshot (values live ONLY in History)."""
-    _ensure_request_id(request_id)
-    ent = _ensure_entity_ulid(entity_ulid)
-
-    cust = db.session.get(Customer, ent)
-    if not cust:
-        raise LookupError("customer not found")
-
-    norm = _validate_tier_payload(tier_key, payload)
-
-    section = f"profile:needs:{tier_key}"
-    cur_max = (
-        db.session.query(func.max(CustomerHistory.version))
-        .filter_by(customer_entity_ulid=ent, section=section)
-        .scalar()
-    )
-    version = int(cur_max or 0) + 1
-
-    hist = CustomerHistory(
-        customer_entity_ulid=ent,  # type: ignore
-        section=section,  # type: ignore
-        version=version,  # type: ignore
-        data_json=stable_dumps(norm),  # type: ignore
-        created_by_actor=actor_ulid,  # type: ignore
-    )
-    db.session.add(hist)
-
-    latest_t1 = (
-        _latest_tier_map(ent, "tier1") if tier_key != "tier1" else norm
-    )
-    latest_t2 = (
-        _latest_tier_map(ent, "tier2") if tier_key != "tier2" else norm
-    )
-    latest_t3 = (
-        _latest_tier_map(ent, "tier3") if tier_key != "tier3" else norm
-    )
-
-    t1_min, t2_min, t3_min, flag_t1, watch = _compute_cues(
-        latest_t1, latest_t2, latest_t3
-    )
-
-    now = now_iso8601_ms()
-    prev_watch = bool(getattr(cust, "watchlist", False))
-
-    cust.tier1_min = t1_min
-    cust.tier2_min = t2_min
-    cust.tier3_min = t3_min
-    cust.flag_tier1_immediate = flag_t1
-    cust.flag_reason = (
-        _first_worst_factor_tier1(latest_t1 or {}) if flag_t1 else None
-    )
-
-    cust.watchlist = watch
-    if (
-        watch
-        and not prev_watch
-        and not getattr(cust, "watchlist_since_utc", None)
-    ):
-        cust.watchlist_since_utc = now
-    if not watch and prev_watch:
-        cust.watchlist_since_utc = None
-
-    cust.last_needs_update_utc = now
-    cust.last_needs_tier_updated = tier_key
-    cust.last_touch_utc = now
-
-    elig = _elig_row(ent)
-    elig.tier1_min = t1_min
-    elig.tier2_min = t2_min
-    elig.tier3_min = t3_min
-
-    housing = (
-        latest_t1.get("housing") if isinstance(latest_t1, dict) else None
-    )
-    elig.is_homeless_verified = bool(
-        isinstance(housing, int) and housing == 1
-    )
-
-    db.session.flush()
-
-    event_bus.emit(
-        domain="customers",
-        operation="needs_tier_recorded",
-        actor_ulid=actor_ulid,
-        target_ulid=ent,
-        request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
-        refs={
-            "section": section,
-            "version_ptr": getattr(hist, "ulid", None),
-        },
-        changed={"fields": [tier_key]},
-    )
-
-    return getattr(hist, "ulid", "")
-
-
-def set_veteran_verification(
-    *,
-    entity_ulid: str,
-    method: str,
-    verified: bool,
-    actor_ulid: str | None,
-    actor_has_governor: bool,
-    request_id: str,
-) -> CustomerEligibilityView:
-    """Update eligibility verification fields (anchored by entity_ulid)."""
-    _ensure_request_id(request_id)
-    ent = _ensure_entity_ulid(entity_ulid)
-
-    from app.extensions.contracts import governance_v2
-
-    allowed = set(governance_v2.get_customer_veteran_verification_methods())
-    if method not in allowed:
-        raise ValueError(f"invalid veteran verification method: {method!r}")
-
-    if method == "other" and not actor_has_governor:
-        raise PermissionError("method 'other' requires governor authority")
-
-    elig = _elig_row(ent)
-
-    if verified:
-        elig.is_veteran_verified = True
-        elig.veteran_method = method
-        if method == "other":
-            elig.approved_by_ulid = actor_ulid
-            elig.approved_at_utc = now_iso8601_ms()
-    else:
-        elig.is_veteran_verified = False
-        elig.veteran_method = None
-        elig.approved_by_ulid = None
-        elig.approved_at_utc = None
-
-    db.session.flush()
-
-    event_bus.emit(
-        domain="customers",
-        operation="veteran_verification_updated",
-        actor_ulid=actor_ulid,
-        target_ulid=ent,
-        request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
-        refs={"kind": "veteran"},
-        changed={"fields": ["is_veteran_verified", "veteran_method"]},
-    )
-
-    snap = get_eligibility_snapshot(ent)
-    if snap is None:
-        raise RuntimeError("eligibility snapshot missing after update")
-    return snap
-
-
-# Public exports
-__all__ = [
-    "get_eligibility_snapshot",
-    "get_dashboard_view",
-    "ensure_customer",
-    "record_needs_tier",
-    "set_veteran_verification",
-]
+    return row.ulid

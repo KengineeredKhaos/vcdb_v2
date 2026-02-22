@@ -4,12 +4,11 @@ from __future__ import annotations
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
-from flask import Blueprint, jsonify, redirect, request, url_for
+from flask import Blueprint, jsonify, redirect, url_for
 
-from app.extensions import db
 from app.extensions.contracts import customers_v2
 from app.extensions.errors import ContractError
-from app.lib.request_ctx import ensure_request_id, get_actor_ulid
+from app.lib.request_ctx import ensure_request_id
 
 bp = Blueprint(
     "customers",
@@ -18,6 +17,71 @@ bp = Blueprint(
     static_folder=None,
     url_prefix="/customers",
 )
+
+"""
+TODO:
+
+In all Intake/Update routes:
+
+Invariant: if created is True, noop must be False.
+Invariant: if noop is True, changed_fields must be empty.
+
+Enforce that in a small constructor helper.
+
+@dataclass(frozen=True, slots=True)
+class ChangeSetDTO:
+    entity_ulid: str
+    created: bool
+    noop: bool
+    changed_fields: tuple[str, ...]
+    next_step: str | None
+
+Typical route behavior becomes mechanical:
+
+if stale nonce → redirect (no call)
+call service → get ChangeSetDTO
+
+if dto.noop → commit/redirect, no ledger
+else → commit, ledger emit with changed_fields, redirect
+
+Minimal Canonical Route Set:
+
+Start / resume
+GET /customers/intake/start/<entity_ulid>
+calls ensure_customer_facets(...)
+commit
+redirect to wizard_next_step(entity_ulid)
+
+Step: eligibility
+GET /customers/intake/<entity_ulid>/eligibility
+POST /customers/intake/<entity_ulid>/eligibility
+
+Steps: needs tier blocks
+GET/POST /customers/intake/<entity_ulid>/needs/tier1
+GET/POST /customers/intake/<entity_ulid>/needs/tier2
+GET/POST /customers/intake/<entity_ulid>/needs/tier3
+
+plus optional:
+
+POST /customers/intake/<entity_ulid>/needs/skip
+POST /customers/intake/<entity_ulid>/needs/complete
+
+Review
+GET /customers/intake/<entity_ulid>/review
+POST /customers/intake/<entity_ulid>/confirm
+
+Customer card view
+GET /customers/<entity_ulid>
+uses get_customer_dashboard(...) and list_customer_history(...)
+renders template (not JSON)
+
+Remove each route from this docstring after it is ewstablished.
+
+"""
+
+# -----------------
+# JSON API Helpers
+# -----------------
 
 
 def _ok(*, request_id: str, data: Any = None, status: int = 200, **extra):
@@ -99,9 +163,16 @@ def _reject_legacy_keys(payload: dict[str, Any]) -> None:
         )
 
 
+# -----------------
+# Wizard Routes
+# -----------------
+
+
 @bp.get("/intake/start/<entity_ulid>")
 def intake_start(entity_ulid: str):
-    customers_v2.ensure_customer_facet(entity_ulid=entity_ulid)
+    customers_v2.ensure_customer_facets(
+        entity_ulid=entity_ulid, request_id=request_id, actor_ulid=actor_ulid
+    )
 
     # later: redirect into your real step route, e.g. eligibility
     return redirect(url_for("customers.intake_step", entity_ulid=entity_ulid))
@@ -116,35 +187,8 @@ def view_customer(entity_ulid: str):
         dto = cust_svc.get_dashboard_view(entity_ulid=entity_ulid)
         if not dto:
             raise LookupError("not found")
-        return _ok(request_id=req, data=_dto_to_dict(dto))
+        return next_template
     except Exception as exc:
-        return _err(request_id=req, exc=exc)
-
-
-@bp.post("/<entity_ulid>/needs/<tier_key>")
-def update_needs(entity_ulid: str, tier_key: str):
-    from . import services as cust_svc
-
-    req = ensure_request_id()
-    actor = get_actor_ulid()
-    payload = request.get_json(force=True, silent=False) or {}
-
-    try:
-        _reject_legacy_keys(payload)
-
-        vptr = cust_svc.record_needs_tier(
-            entity_ulid=entity_ulid,
-            tier_key=tier_key,
-            payload=payload,
-            request_id=req,
-            actor_ulid=actor,
-        )
-
-        db.session.commit()
-        return _ok(request_id=req, data={"version_ptr": vptr})
-
-    except Exception as exc:
-        db.session.rollback()
         return _err(request_id=req, exc=exc)
 
 
