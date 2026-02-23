@@ -21,6 +21,7 @@ Design goals:
 
 NOTE: JSON does not support comments. Use `meta.notes[]` in policy files.
 """
+# app/extensions/policies.py
 
 from __future__ import annotations
 
@@ -40,6 +41,28 @@ AUTH_DATA = _APP_ROOT / "slices" / "auth" / "data"
 
 GOV_SCHEMAS = GOV_DATA / "schemas"
 GOV_INDEX = GOV_DATA / "policy_governance_index.json"
+
+_MOVED_GOVERNANCE_KEYS: dict[str, str] = {
+    "customer": (
+        "Moved to Customers slice taxonomy "
+        "(app/slices/customers/taxonomy.py)."
+    ),
+    "lifecycle": (
+        "Moved to owning slices (logistics/resources/sponsors taxonomy)."
+    ),
+    "locations": (
+        "Moved to Logistics slice data + taxonomy "
+        "(app/slices/logistics/data/locations.json and "
+        "app/slices/logistics/taxonomy.py)."
+    ),
+    "operations": (
+        "Moved to Calendar slice taxonomy "
+        "(app/slices/calendar/taxonomy.py)."
+    ),
+    "service_taxonomy": (
+        "Decomposed into slice-local taxonomies (resources/sponsors/logistics)."
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -163,6 +186,13 @@ def _resolve_governance_policy_paths(
 ) -> tuple[Path, Path | None]:
     cat = _load_catalog()
     if policy_key not in cat:
+
+        hint = _MOVED_GOVERNANCE_KEYS.get(policy_key)
+        if hint:
+            raise KeyError(
+                f"Governance policy_key {policy_key!r} moved out of "
+                f"Governance. {hint}"
+            )
         raise KeyError(f"Unknown governance policy_key: {policy_key!r}")
     entry = cat[policy_key]
     policy_path = GOV_DATA / entry.filename
@@ -226,9 +256,18 @@ def save_governance_policy(
 # Governance typed loaders (v2 keys)
 # ------------------
 
+def _raise_moved(policy_key: str) -> None:
+    hint = _MOVED_GOVERNANCE_KEYS.get(policy_key)
+    msg = (
+        f"Governance policy_key {policy_key!r} moved out of Governance. "
+        f"{hint or ''}"
+    )
+    raise KeyError(msg)
+
 
 def load_policy_customer() -> dict:
-    return load_governance_policy("customer")
+
+    _raise_moved("customer")
 
 
 def load_policy_entity_roles() -> dict:
@@ -244,11 +283,13 @@ def load_policy_finance_taxonomy() -> dict:
 
 
 def load_policy_lifecycle() -> dict:
-    return load_governance_policy("lifecycle")
+
+    _raise_moved("lifecycle")
 
 
 def load_policy_locations() -> dict:
-    return load_governance_policy("locations")
+
+    _raise_moved("locations")
 
 
 def load_policy_logistics_issuance() -> dict:
@@ -256,13 +297,13 @@ def load_policy_logistics_issuance() -> dict:
 
 
 def load_policy_operations() -> dict:
-    return load_governance_policy("operations")
+
+    _raise_moved("operations")
 
 
 def load_policy_service_taxonomy() -> dict:
-    return load_governance_policy("service_taxonomy")
 
-
+    _raise_moved("service_taxonomy")
 def load_policy_governance_index() -> dict:
     # Useful for CLI/admin diagnostics.
     return load_governance_policy("governance_index")

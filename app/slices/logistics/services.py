@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
 from sqlalchemy import and_, func, select
 
-from app.extensions import db
-from app.extensions.policies import (
-    load_policy_locations,
-    load_policy_sku_constraints,
-)
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 from app.lib.jsonutil import pretty_dumps
@@ -20,6 +17,7 @@ from app.slices.logistics.sku import (
     validate_sku,
 )
 
+from . import taxonomy as tax
 from .models import (
     InventoryBatch,
     InventoryItem,
@@ -30,22 +28,55 @@ from .models import (
 )
 from .sku import b36_to_int, int_to_b36
 
-# Load and cache SKU constraints policy (allowed units/sources, rules).
-# If the policy is invalid, this fails fast at startup.
-_SKU_POLICY = load_policy_sku_constraints()
-_ALLOWED_UNITS = frozenset(_SKU_POLICY.get("allowed_units") or [])
-_ALLOWED_SOURCES = frozenset(_SKU_POLICY.get("allowed_sources") or [])
-_LOCATION_POLICY = load_policy_locations()
-_ALLOWED_LOCATIONS = frozenset(
-    loc["code"] for loc in _LOCATION_POLICY.get("locations", [])
+# Slice-local taxonomy/data (not Governance).
+_ALLOWED_UNITS = frozenset(tax.ALLOWED_UNITS)
+_ALLOWED_SOURCES = frozenset(tax.ALLOWED_SOURCES)
+_RACKBIN_PATTERN = re.compile(tax.RACKBIN_PATTERN)
+
+_LOCATIONS_DATA_PATH = (
+    Path(__file__).resolve().parent / "data" / "locations.json"
 )
-_RACKBIN_PATTERN = re.compile(
-    _LOCATION_POLICY.get("patterns", {}).get("rackbin", r"$^")
-)  # default $^ matches nothing
+
+
+def _load_locations_data() -> list[dict]:
+    if not _LOCATIONS_DATA_PATH.exists():
+        return []
+    raw = json.loads(_LOCATIONS_DATA_PATH.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(
+            "logistics/data/locations.json must be a JSON object"
+        )
+    locs = raw.get("locations") or []
+    if not isinstance(locs, list):
+        raise ValueError(
+            "logistics/data/locations.json.locations must be a list"
+        )
+    return list(locs)
+
+
+_ALLOWED_LOCATIONS = frozenset(
+    str(loc.get("code", "")).strip().upper()
+    for loc in _load_locations_data()
+    if loc.get("code")
+)
+
+
+def _assert_sku_constraints_ok(parts: dict) -> None:
+    """
+    Minimal SKU constraint enforcement in-slice (taxonomy-owned).
+    """
+    src = parts.get("src") or parts.get("source")
+    if src is None:
+        return
+    src = str(src).strip().upper()
+    if src and src not in _ALLOWED_SOURCES:
+        raise ValueError(
+            f"invalid sku source {src!r}; allowed={sorted(_ALLOWED_SOURCES)}"
+        )
 
 
 def _require_valid_unit(unit: str) -> None:
-    """Raise ValueError if unit is not allowed by Governance policy."""
+    """Raise ValueError if unit is not allowed by Logistics taxonomy."""
     if unit not in _ALLOWED_UNITS:
         raise ValueError(
             f"invalid unit {unit!r}; allowed={sorted(_ALLOWED_UNITS)}"
@@ -53,7 +84,7 @@ def _require_valid_unit(unit: str) -> None:
 
 
 def _require_valid_source(source: str) -> None:
-    """Raise ValueError if source is not allowed by Governance policy."""
+    """Raise ValueError if source is not allowed by Logistics taxonomy."""
     if source not in _ALLOWED_SOURCES:
         raise ValueError(
             f"invalid source {source!r}; allowed={sorted(_ALLOWED_SOURCES)}"
@@ -61,13 +92,9 @@ def _require_valid_source(source: str) -> None:
 
 
 def _require_valid_location_code(code: str) -> None:
-    policy = load_policy_locations()  # same pattern as SKU policy
-    known_codes = {loc["code"] for loc in policy["locations"]}
-    rackbin_pattern = re.compile(policy["patterns"]["rackbin"])
-
-    if code in known_codes:
+    if code in _ALLOWED_LOCATIONS:
         return
-    if rackbin_pattern.match(code):
+    if _RACKBIN_PATTERN.match(code):
         return
 
     raise ValueError(f"invalid location code {code!r}")
@@ -141,11 +168,10 @@ def ensure_item(
 ) -> str:
     """Idempotently create or return an InventoryItem for the given SKU
     (or parts), validating and enforcing SKU constraints."""
-    # Governance-backed unit validation (No Garbage In).
-    _require_valid_unit(unit)
 
-    # Normalize unit/category/name if you like; optional:
-    unit = unit.strip().lower()  # or .upper(), as long as it matches policy
+    # Normalize + validate (taxonomy-backed).
+    unit = unit.strip().lower()
+    _require_valid_unit(unit)
     category = category.strip()
     name = name.strip()
 
@@ -171,10 +197,7 @@ def ensure_item(
     else:
         raise ValueError("sku or sku_parts required")
 
-    # Enforce construction constraints (raises ValueError if violated)
-    from app.extensions.policy_semantics import assert_sku_constraints_ok
-
-    assert_sku_constraints_ok(parts)
+    _assert_sku_constraints_ok(parts)
 
     # Upsert by SKU
     row = db.session.execute(
@@ -256,13 +279,11 @@ def receive_inventory(
     """Record a receipt: create batch, create 'receipt' movement,
     and increase on-hand stock at the location.
     """
-    # Governance-backed validation for unit/source on ingress.
+    # Normalize + validate (taxonomy-backed).
+    unit = unit.strip().lower()
+    source = source.strip().upper()
     _require_valid_unit(unit)
     _require_valid_source(source)
-
-    # Normalize if needed to match policy casing:
-    unit = unit.strip().lower()
-    source = source.strip().lower()
 
     b = InventoryBatch(
         ulid=new_ulid(),

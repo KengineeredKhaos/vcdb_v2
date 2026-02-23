@@ -381,39 +381,62 @@ def dev_policy_health(as_json: bool):
 
 def _print_location_policy_summary() -> None:
     """
-    Print a compact summary of Location policy vs DB usage.
 
-    - Shows explicit location specs from policy_locations.json
-    - Shows the rack/bin regex pattern
-    - Flags any Location.code in DB that is not covered by policy/pattern
+    Print a compact summary of Logistics locations (slice data) vs DB usage.
+
+    This is intentionally *slice-local* (not Governance):
+      - explicit locations live in slices/logistics/data/locations.json
+      - rack/bin pattern lives in logistics.taxonomy.RACKBIN_PATTERN
     """
+    import json
     import re
+    from pathlib import Path
 
     from app.extensions import db
-    from app.extensions.policies import load_policy_locations
+    from app.slices.logistics import taxonomy as log_tax
     from app.slices.logistics.models import Location
 
-    pol = load_policy_locations()
-    kinds = pol.get("kinds") or []
-    loc_specs = pol.get("locations") or []
-    patterns = pol.get("patterns") or {}
-    rackbin_pattern = re.compile(
-        patterns.get("rackbin", r"$^")
-    )  # match nothing if missing
+    data_path = (
+        Path(current_app.root_path)
+        / "slices"
+        / "logistics"
+        / "data"
+        / "locations.json"
+    )
 
-    allowed_codes = {spec["code"] for spec in loc_specs}
+    loc_specs: list[dict] = []
+    if data_path.exists():
+        try:
+            raw = json.loads(data_path.read_text(encoding="utf-8"))
+            loc_specs = list(raw.get("locations") or [])
+        except Exception as exc:
+            click.echo(f"WARN: failed to read locations.json: {exc}")
 
-    click.echo("Location policy — codes vs DB")
-    click.echo("-----------------------------")
-    click.echo(f"kinds          : {', '.join(kinds) or '(none)'}")
-    click.echo("locations:")
-    for spec in loc_specs:
-        click.echo(
-            f"  - code={spec['code']!r:10s}  "
-            f"kind={spec.get('kind', '?'):10s}  "
-            f"name={spec.get('name', '')}"
-        )
-    click.echo(f"rackbin pattern: {patterns.get('rackbin', '(none)')}")
+    allowed_codes = {
+        str(spec.get("code")) for spec in loc_specs if spec.get("code")
+    }
+
+    rackbin_pattern = re.compile(log_tax.RACKBIN_PATTERN)
+
+    click.echo("Locations — slice data vs DB")
+    click.echo("----------------------------")
+    click.echo(
+        f"kinds (allowed): {', '.join(log_tax.LOCATION_KINDS) or '(none)'}"
+    )
+    click.echo(
+        f"locations.json : {data_path if data_path.exists() else '(missing)'}"
+    )
+    click.echo("explicit locations:")
+    if not loc_specs:
+        click.echo("  (none)")
+    else:
+        for spec in loc_specs:
+            click.echo(
+                f"  - code={spec.get('code', '')!r:10s}  "
+                f"kind={spec.get('kind', '?'):10s}  "
+                f"name={spec.get('name', '')}"
+            )
+    click.echo(f"rackbin pattern: {log_tax.RACKBIN_PATTERN}")
     click.echo("")
 
     rows = (
@@ -433,7 +456,7 @@ def _print_location_policy_summary() -> None:
         matches_pattern = bool(rackbin_pattern.match(code))
         flag = ""
         if not (in_policy or matches_pattern):
-            flag = "  (! not in policy)"
+            flag = "  (! not in locations.json)"
             bad_codes.append(code)
         click.echo(f"  {code!r}{flag}")
 
@@ -459,7 +482,7 @@ def _print_location_policy_summary() -> None:
     "--which",
     default="all",
     show_default=True,
-    help="all | policy_key (from governance_index) | alias: issuance, eligibility, calendar",
+    help="all | policy_key (from governance_index) | alias: issuance, eligibility",
 )
 @click.option(
     "--fix",
@@ -529,8 +552,7 @@ def dev_policy_lint(
     alias_map = {
         # legacy CLI groups
         "issuance": ["logistics_issuance"],
-        "eligibility": ["customer", "entity_roles"],
-        "calendar": ["operations", "lifecycle"],
+        "eligibility": ["entity_roles"],
         "all": list(by_key.keys()),
     }
 
@@ -823,23 +845,26 @@ def _scan_issuance_coverage():
 
 def _print_sku_policy_summary() -> None:
     """
-    Print a compact summary of SKU constraints policy vs DB usage.
+    Print a compact summary of Logistics SKU taxonomy vs DB usage.
 
-    - Shows allowed_units / allowed_sources from policy_sku_constraints.json
-    - Shows InventoryItem.unit usage and flags any units not allowed by policy
+    This is intentionally *slice-local* (not Governance):
+      - allowed_units / allowed_sources live in logistics.taxonomy
+      - we compare those to InventoryItem.unit and SKU source usage
     """
+    from collections import Counter
+
     from sqlalchemy import func, select
 
     from app.extensions import db
-    from app.extensions.policies import load_policy_sku_constraints
+    from app.slices.logistics import taxonomy as log_tax
     from app.slices.logistics.models import InventoryItem
+    from app.slices.logistics.sku import parse_sku
 
-    sku_pol = load_policy_sku_constraints() or {}
-    allowed_units = set(sku_pol.get("allowed_units") or [])
-    allowed_sources = set(sku_pol.get("allowed_sources") or [])
+    allowed_units = set(log_tax.ALLOWED_UNITS)
+    allowed_sources = set(log_tax.ALLOWED_SOURCES)
 
-    click.echo("SKU constraints — policy vs catalog")
-    click.echo("----------------------------------")
+    click.echo("SKU constraints — taxonomy vs catalog")
+    click.echo("-----------------------------------")
     click.echo(
         f"allowed_units   : {', '.join(sorted(allowed_units)) or '(none)'}"
     )
@@ -848,30 +873,73 @@ def _print_sku_policy_summary() -> None:
     )
     click.echo("")
 
-    rows = db.session.execute(
+    unit_rows = db.session.execute(
         select(InventoryItem.unit, func.count())
         .group_by(InventoryItem.unit)
         .order_by(InventoryItem.unit)
     ).all()
 
-    if not rows:
+    if not unit_rows:
         click.echo("InventoryItem units (DB) : (no items)")
         return
 
     click.echo("InventoryItem units (DB usage):")
     bad_units: list[str] = []
-    for unit, count in rows:
+    for unit, count in unit_rows:
         flag = ""
         if unit not in allowed_units:
-            flag = "  (! not in policy)"
+            flag = "  (! not allowed)"
             bad_units.append(unit)
         click.echo(f"  {unit!r:10s}  {count:5d}{flag}")
 
     if bad_units:
         click.echo("")
-        click.echo("WARN: units present in DB but not allowed by policy:")
+        click.echo("WARN: units present in DB but not allowed by taxonomy:")
         for u in sorted(set(bad_units)):
             click.echo(f"  - {u!r}")
+
+    # Also show SKU 'source' usage (best-effort, first 10 unknowns).
+    sku_rows = db.session.execute(select(InventoryItem.sku)).scalars().all()
+    src_counts: Counter[str] = Counter()
+    bad_skus: list[str] = []
+
+    for sku_code in sku_rows:
+        try:
+            parts = parse_sku(sku_code)
+        except Exception:
+            if len(bad_skus) < 10:
+                bad_skus.append(sku_code)
+            continue
+        src = parts.get("source")
+        if src:
+            src_counts[str(src)] += 1
+
+    click.echo("")
+    click.echo("SKU sources (DB usage):")
+    if not src_counts and not bad_skus:
+        click.echo("  (no items)")
+        return
+
+    bad_sources: list[str] = []
+    for src in sorted(src_counts.keys()):
+        count = src_counts[src]
+        flag = ""
+        if src not in allowed_sources:
+            flag = "  (! not allowed)"
+            bad_sources.append(src)
+        click.echo(f"  {src!r:6s}  {count:5d}{flag}")
+
+    if bad_skus:
+        click.echo("")
+        click.echo("WARN: InventoryItem.sku values that failed parse_sku():")
+        for sku in bad_skus:
+            click.echo(f"  - {sku!r}")
+
+    if bad_sources:
+        click.echo("")
+        click.echo("WARN: sources present in DB but not allowed by taxonomy:")
+        for s in sorted(set(bad_sources)):
+            click.echo(f"  - {s!r}")
 
 
 # -----------------
@@ -1148,48 +1216,62 @@ def dev_issuance_tripwires(
         return _iso(dt)
 
     def _blackout_when_from_calendar() -> str | None:
-        # Operations policy is catalog-managed too; try to pick any explicit blackout start.
+        """
+        Best-effort: pull blackout rules from slice-local Calendar data.
+
+        Governance no longer owns operations/calendar taxonomy.
+        If calendar data isn't present yet, return None and the caller
+        will fall back to a deterministic "next Saturday" timestamp.
+        """
         try:
-            cal = load_governance_policy("operations")
+            from pathlib import Path
+
+            app_root = Path(current_app.root_path)
+            cal_path = (
+                app_root / "slices" / "calendar" / "data" / "projects.json"
+            )
+            if not cal_path.exists():
+                return None
+
+            raw = json.loads(cal_path.read_text(encoding="utf-8"))
+            projects = raw.get("projects") or {}
+
+            wd_map = {
+                "MON": 0,
+                "TUE": 1,
+                "WED": 2,
+                "THU": 3,
+                "FRI": 4,
+                "SAT": 5,
+                "SUN": 6,
+            }
+
+            for _pid, pdata in projects.items():
+                for rule in pdata.get("blackout_rules", []):
+                    t = (rule.get("type") or "").lower()
+                    if t == "date_range" and rule.get("start"):
+                        try:
+                            start = datetime.fromisoformat(rule["start"])
+                        except Exception:
+                            continue
+                        dt = datetime(
+                            start.year,
+                            start.month,
+                            start.day,
+                            12,
+                            0,
+                            0,
+                            tzinfo=UTC,
+                        )
+                        return _iso(dt)
+                    if t == "weekday" and rule.get("days"):
+                        for day in rule["days"]:
+                            wd = wd_map.get(str(day).upper())
+                            if wd is not None:
+                                return _next_weekday_noon_utc(wd)
+            return None
         except Exception:
             return None
-
-        projects = cal.get("projects") or {}
-        for _pid, pdata in projects.items():
-            for rule in pdata.get("blackout_rules", []):
-                t = (rule.get("type") or "").lower()
-                if t == "date_range" and rule.get("start"):
-                    try:
-                        start = datetime.fromisoformat(
-                            rule["start"]
-                        )  # 'YYYY-MM-DD'
-                    except Exception:
-                        continue
-                    dt = datetime(
-                        start.year,
-                        start.month,
-                        start.day,
-                        12,
-                        0,
-                        0,
-                        tzinfo=UTC,
-                    )
-                    return _iso(dt)
-                if t == "weekday" and rule.get("days"):
-                    wd_map = {
-                        "MON": 0,
-                        "TUE": 1,
-                        "WED": 2,
-                        "THU": 3,
-                        "FRI": 4,
-                        "SAT": 5,
-                        "SUN": 6,
-                    }
-                    for day in rule["days"]:
-                        wd = wd_map.get(str(day).upper())
-                        if wd is not None:
-                            return _next_weekday_noon_utc(wd)
-        return None
 
     blackout_when = _blackout_when_from_calendar() or _next_weekday_noon_utc(
         5
