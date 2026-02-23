@@ -1,14 +1,25 @@
 # app/slices/customers/routes.py
 from __future__ import annotations
 
-from dataclasses import asdict, is_dataclass
+import secrets
 from typing import Any
 
-from flask import Blueprint, jsonify, redirect, url_for
+from flask import (
+    Blueprint,
+    abort,
+    flash,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 
-from app.extensions.contracts import customers_v2
-from app.extensions.errors import ContractError
-from app.lib.request_ctx import ensure_request_id
+from app.extensions import auth_ctx, db
+from app.lib import request_ctx
+
+from . import services as svc
+from .models import Customer, CustomerEligibility
 
 bp = Blueprint(
     "customers",
@@ -18,189 +29,408 @@ bp = Blueprint(
     url_prefix="/customers",
 )
 
-"""
-TODO:
-
-In all Intake/Update routes:
-
-Invariant: if created is True, noop must be False.
-Invariant: if noop is True, changed_fields must be empty.
-
-Enforce that in a small constructor helper.
-
-@dataclass(frozen=True, slots=True)
-class ChangeSetDTO:
-    entity_ulid: str
-    created: bool
-    noop: bool
-    changed_fields: tuple[str, ...]
-    next_step: str | None
-
-Typical route behavior becomes mechanical:
-
-if stale nonce → redirect (no call)
-call service → get ChangeSetDTO
-
-if dto.noop → commit/redirect, no ledger
-else → commit, ledger emit with changed_fields, redirect
-
-Minimal Canonical Route Set:
-
-Start / resume
-GET /customers/intake/start/<entity_ulid>
-calls ensure_customer_facets(...)
-commit
-redirect to wizard_next_step(entity_ulid)
-
-Step: eligibility
-GET /customers/intake/<entity_ulid>/eligibility
-POST /customers/intake/<entity_ulid>/eligibility
-
-Steps: needs tier blocks
-GET/POST /customers/intake/<entity_ulid>/needs/tier1
-GET/POST /customers/intake/<entity_ulid>/needs/tier2
-GET/POST /customers/intake/<entity_ulid>/needs/tier3
-
-plus optional:
-
-POST /customers/intake/<entity_ulid>/needs/skip
-POST /customers/intake/<entity_ulid>/needs/complete
-
-Review
-GET /customers/intake/<entity_ulid>/review
-POST /customers/intake/<entity_ulid>/confirm
-
-Customer card view
-GET /customers/<entity_ulid>
-uses get_customer_dashboard(...) and list_customer_history(...)
-renders template (not JSON)
-
-Remove each route from this docstring after it is ewstablished.
-
-"""
 
 # -----------------
-# JSON API Helpers
+# Context injection
 # -----------------
 
 
-def _ok(*, request_id: str, data: Any = None, status: int = 200, **extra):
-    payload = {"ok": True, "request_id": request_id, "data": data, **extra}
-    return jsonify(payload), status
+@bp.before_request
+def _inject_request_context() -> None:
+    # Always mint a request_id for this request.
+    request_ctx.ensure_request_id()
+
+    # If authenticated, seed actor_ulid into request_ctx.
+    actor = auth_ctx.current_actor_ulid()
+    request_ctx.set_actor_ulid(actor)
 
 
-def _err(*, request_id: str, exc: Exception | str, code: int = 500):
-    if isinstance(exc, ContractError):
-        payload = {
-            "ok": False,
-            "request_id": request_id,
-            "error": exc.message,
-            "code": exc.code,
-            "where": exc.where,
-        }
-        if getattr(exc, "data", None):
-            payload["data"] = exc.data
-        return jsonify(payload), exc.http_status
-
-    if isinstance(exc, NotImplementedError):
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "request_id": request_id,
-                    "error": "not implemented",
-                }
-            ),
-            501,
-        )
-    if isinstance(exc, PermissionError):
-        return (
-            jsonify(
-                {"ok": False, "request_id": request_id, "error": str(exc)}
-            ),
-            403,
-        )
-    if isinstance(exc, LookupError):
-        return (
-            jsonify(
-                {"ok": False, "request_id": request_id, "error": str(exc)}
-            ),
-            404,
-        )
-    if isinstance(exc, ValueError):
-        return (
-            jsonify(
-                {"ok": False, "request_id": request_id, "error": str(exc)}
-            ),
-            400,
-        )
-
-    return (
-        jsonify({"ok": False, "request_id": request_id, "error": str(exc)}),
-        code,
-    )
+def _ctx_ro() -> str:
+    """Read-only routes: ensure request_id exists, return it."""
+    return request_ctx.ensure_request_id()
 
 
-def _dto_to_dict(dto: Any) -> Any:
-    if dto is None:
-        return None
-    if isinstance(dto, dict):
-        return dto
-    if is_dataclass(dto):
-        return asdict(dto)
-    return dto
-
-
-def _reject_legacy_keys(payload: dict[str, Any]) -> None:
-    legacy: list[str] = []
-    if "customer_ulid" in payload:
-        legacy.append("customer_ulid")
-    if "ulid" in payload:
-        legacy.append("ulid")
-    if legacy:
-        raise ValueError(
-            f"legacy key(s) not allowed: {', '.join(legacy)}; use entity_ulid"
-        )
+def _ctx_mut() -> tuple[str, str]:
+    """Mutating routes: require actor_ulid; return (request_id, actor_ulid)."""
+    rid = request_ctx.ensure_request_id()
+    actor = request_ctx.get_actor_ulid()
+    if not actor:
+        abort(403)
+    return rid, actor
 
 
 # -----------------
-# Wizard Routes
+# Wizard step keys
+# -----------------
+
+STEP_ELIGIBILITY = "eligibility"
+STEP_NEEDS_T1 = "needs_tier1"
+STEP_NEEDS_T2 = "needs_tier2"
+STEP_NEEDS_T3 = "needs_tier3"
+STEP_REVIEW = "review"
+STEP_DONE = "done"
+
+_STEP_TO_ENDPOINT: dict[str, str] = {
+    STEP_ELIGIBILITY: "customers.intake_eligibility_get",
+    STEP_NEEDS_T1: "customers.intake_needs_tier1_get",
+    STEP_NEEDS_T2: "customers.intake_needs_tier2_get",
+    STEP_NEEDS_T3: "customers.intake_needs_tier3_get",
+    STEP_REVIEW: "customers.intake_review_get",
+    STEP_DONE: "customers.intake_done_get",
+}
+
+
+# -----------------
+# Nonce helpers
+# -----------------
+
+
+def _wiz_key(step: str, entity_ulid: str) -> str:
+    return f"custwiz:{entity_ulid}:{step}"
+
+
+def _wiz_issue_nonce(step: str, entity_ulid: str) -> str:
+    k = _wiz_key(step, entity_ulid)
+    token = secrets.token_urlsafe(16)
+    session[k] = token
+    return token
+
+
+def _wiz_expected_nonce(step: str, entity_ulid: str) -> str | None:
+    return session.get(_wiz_key(step, entity_ulid))
+
+
+def _wiz_expect_nonce(
+    step: str, entity_ulid: str, posted: str | None
+) -> bool:
+    exp = _wiz_expected_nonce(step, entity_ulid)
+    return bool(exp and posted and secrets.compare_digest(exp, posted))
+
+
+def _wiz_consume_nonce(step: str, entity_ulid: str) -> None:
+    session.pop(_wiz_key(step, entity_ulid), None)
+
+
+# -----------------
+# Wizard resume logic
+# -----------------
+
+
+def wizard_next_step(entity_ulid: str) -> str:
+    """
+    Deterministic "resume" logic for stale submits / deep links.
+
+    For now, keep this simple and conservative:
+    - If eligibility looks untouched -> eligibility
+    - Else if needs_state is skipped/complete -> review
+    - Else -> needs_tier1
+    """
+    c = db.session.get(Customer, entity_ulid)
+    if c is None:
+        return STEP_ELIGIBILITY
+
+    e = db.session.get(CustomerEligibility, entity_ulid)
+    if e is not None:
+        untouched = (
+            (e.veteran_status == "unknown")
+            and (e.homeless_status == "unknown")
+            and (e.veteran_method is None)
+            and (e.branch is None)
+            and (e.era is None)
+        )
+        if untouched:
+            return STEP_ELIGIBILITY
+
+    if c.needs_state in ("skipped", "complete"):
+        return STEP_REVIEW
+
+    return STEP_NEEDS_T1
+
+
+def _goto_step(entity_ulid: str, step: str) -> Any:
+    ep = _STEP_TO_ENDPOINT[step]
+    return redirect(url_for(ep, entity_ulid=entity_ulid))
+
+
+# -----------------
+# Entry point
 # -----------------
 
 
 @bp.get("/intake/start/<entity_ulid>")
 def intake_start(entity_ulid: str):
-    customers_v2.ensure_customer_facets(
-        entity_ulid=entity_ulid, request_id=request_id, actor_ulid=actor_ulid
+    rid, actor = _ctx_mut()
+
+    dto = svc.ensure_customer_facets(
+        entity_ulid=entity_ulid,
+        request_id=rid,
+        actor_ulid=actor,
+    )
+    db.session.commit()
+
+    step = dto.next_step or wizard_next_step(entity_ulid)
+    return _goto_step(entity_ulid, step)
+
+
+# -----------------
+# Eligibility step
+# -----------------
+
+
+@bp.get("/intake/<entity_ulid>/eligibility")
+def intake_eligibility_get(entity_ulid: str):
+    _ctx_ro()
+    snap = svc.get_customer_eligibility(entity_ulid)
+    wiz_nonce = _wiz_issue_nonce(STEP_ELIGIBILITY, entity_ulid)
+
+    return render_template(
+        "customers/intake_eligibility.html",
+        entity_ulid=entity_ulid,
+        snap=snap,
+        wiz_nonce=wiz_nonce,
     )
 
-    # later: redirect into your real step route, e.g. eligibility
-    return redirect(url_for("customers.intake_step", entity_ulid=entity_ulid))
 
+@bp.post("/intake/<entity_ulid>/eligibility")
+def intake_eligibility_post(entity_ulid: str):
+    if not _wiz_expect_nonce(
+        STEP_ELIGIBILITY,
+        entity_ulid,
+        request.form.get("wiz_nonce"),
+    ):
+        flash("Stale page. Resuming current step.", "warning")
+        return _goto_step(entity_ulid, wizard_next_step(entity_ulid))
 
-@bp.get("/<entity_ulid>")
-def view_customer(entity_ulid: str):
-    from . import services as cust_svc
+    rid, actor = _ctx_mut()
 
-    req = ensure_request_id()
     try:
-        dto = cust_svc.get_dashboard_view(entity_ulid=entity_ulid)
-        if not dto:
-            raise LookupError("not found")
-        return next_template
+        dto = svc.set_customer_eligibility(
+            entity_ulid=entity_ulid,
+            veteran_status=request.form.get("veteran_status", ""),
+            homeless_status=request.form.get("homeless_status", ""),
+            veteran_method=request.form.get("veteran_method") or None,
+            branch=request.form.get("branch") or None,
+            era=request.form.get("era") or None,
+            request_id=rid,
+            actor_ulid=actor,
+        )
+        db.session.commit()
+        _wiz_consume_nonce(STEP_ELIGIBILITY, entity_ulid)
     except Exception as exc:
-        return _err(request_id=req, exc=exc)
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(
+            url_for(
+                "customers.intake_eligibility_get", entity_ulid=entity_ulid
+            )
+        )
+
+    step = dto.next_step or wizard_next_step(entity_ulid)
+    return _goto_step(entity_ulid, step)
 
 
-@bp.get("/<entity_ulid>/eligibility")
-def get_eligibility(entity_ulid: str):
-    from . import services as cust_svc
+# -----------------
+# Needs steps
+# (Tier 1/2/3)
+# -----------------
 
-    req = ensure_request_id()
+
+def _needs_get(entity_ulid: str, step: str, template: str):
+    _ctx_ro()
+    dash = svc.get_customer_dashboard(entity_ulid)
+    wiz_nonce = _wiz_issue_nonce(step, entity_ulid)
+    return render_template(
+        template,
+        entity_ulid=entity_ulid,
+        dash=dash,
+        wiz_nonce=wiz_nonce,
+    )
+
+
+def _needs_post(
+    *,
+    entity_ulid: str,
+    step: str,
+    ratings: dict[str, str],
+    next_step: str,
+):
+    if not _wiz_expect_nonce(
+        step, entity_ulid, request.form.get("wiz_nonce")
+    ):
+        flash("Stale page. Resuming current step.", "warning")
+        return _goto_step(entity_ulid, wizard_next_step(entity_ulid))
+
+    rid, actor = _ctx_mut()
+
     try:
-        dto = cust_svc.get_eligibility_snapshot(entity_ulid=entity_ulid)
-        if not dto:
-            raise LookupError("not found")
-        return _ok(request_id=req, data=_dto_to_dict(dto))
+        # Convenience: begin assessment on first needs POST if not started.
+        try:
+            svc.needs_begin(
+                entity_ulid=entity_ulid,
+                request_id=rid,
+                actor_ulid=actor,
+            )
+        except Exception:
+            pass
+
+        dto = svc.needs_set_block(
+            entity_ulid=entity_ulid,
+            ratings=ratings,
+            request_id=rid,
+            actor_ulid=actor,
+            next_step=next_step,
+        )
+        db.session.commit()
+        _wiz_consume_nonce(step, entity_ulid)
     except Exception as exc:
-        return _err(request_id=req, exc=exc)
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _goto_step(entity_ulid, step)
+
+    step2 = dto.next_step or wizard_next_step(entity_ulid)
+    return _goto_step(entity_ulid, step2)
+
+
+@bp.get("/intake/<entity_ulid>/needs/tier1")
+def intake_needs_tier1_get(entity_ulid: str):
+    return _needs_get(
+        entity_ulid,
+        STEP_NEEDS_T1,
+        "customers/intake_needs_tier1.html",
+    )
+
+
+@bp.post("/intake/<entity_ulid>/needs/tier1")
+def intake_needs_tier1_post(entity_ulid: str):
+    ratings = {
+        "food": request.form.get("food", "na"),
+        "hygiene": request.form.get("hygiene", "na"),
+        "health": request.form.get("health", "na"),
+        "housing": request.form.get("housing", "na"),
+        "clothing": request.form.get("clothing", "na"),
+    }
+    return _needs_post(
+        entity_ulid=entity_ulid,
+        step=STEP_NEEDS_T1,
+        ratings=ratings,
+        next_step=STEP_NEEDS_T2,
+    )
+
+
+@bp.get("/intake/<entity_ulid>/needs/tier2")
+def intake_needs_tier2_get(entity_ulid: str):
+    return _needs_get(
+        entity_ulid,
+        STEP_NEEDS_T2,
+        "customers/intake_needs_tier2.html",
+    )
+
+
+@bp.post("/intake/<entity_ulid>/needs/tier2")
+def intake_needs_tier2_post(entity_ulid: str):
+    ratings = {
+        "income": request.form.get("income", "na"),
+        "employment": request.form.get("employment", "na"),
+        "transportation": request.form.get("transportation", "na"),
+        "education": request.form.get("education", "na"),
+    }
+    return _needs_post(
+        entity_ulid=entity_ulid,
+        step=STEP_NEEDS_T2,
+        ratings=ratings,
+        next_step=STEP_NEEDS_T3,
+    )
+
+
+@bp.get("/intake/<entity_ulid>/needs/tier3")
+def intake_needs_tier3_get(entity_ulid: str):
+    return _needs_get(
+        entity_ulid,
+        STEP_NEEDS_T3,
+        "customers/intake_needs_tier3.html",
+    )
+
+
+@bp.post("/intake/<entity_ulid>/needs/tier3")
+def intake_needs_tier3_post(entity_ulid: str):
+    ratings = {
+        "family": request.form.get("family", "na"),
+        "peergroup": request.form.get("peergroup", "na"),
+        "tech": request.form.get("tech", "na"),
+    }
+    return _needs_post(
+        entity_ulid=entity_ulid,
+        step=STEP_NEEDS_T3,
+        ratings=ratings,
+        next_step=STEP_REVIEW,
+    )
+
+
+@bp.post("/intake/<entity_ulid>/needs/skip")
+def intake_needs_skip(entity_ulid: str):
+    rid, actor = _ctx_mut()
+    dto = svc.needs_skip(
+        entity_ulid=entity_ulid,
+        request_id=rid,
+        actor_ulid=actor,
+    )
+    db.session.commit()
+    step = dto.next_step or STEP_REVIEW
+    return _goto_step(entity_ulid, step)
+
+
+# -----------------
+# Review / Complete / Done
+# -----------------
+
+
+@bp.get("/intake/<entity_ulid>/review")
+def intake_review_get(entity_ulid: str):
+    _ctx_ro()
+    dash = svc.get_customer_dashboard(entity_ulid)
+    wiz_nonce = _wiz_issue_nonce(STEP_REVIEW, entity_ulid)
+    return render_template(
+        "customers/intake_review.html",
+        entity_ulid=entity_ulid,
+        dash=dash,
+        wiz_nonce=wiz_nonce,
+    )
+
+
+@bp.post("/intake/<entity_ulid>/complete")
+def intake_complete_post(entity_ulid: str):
+    if not _wiz_expect_nonce(
+        STEP_REVIEW, entity_ulid, request.form.get("wiz_nonce")
+    ):
+        flash("Stale page. Resuming current step.", "warning")
+        return _goto_step(entity_ulid, wizard_next_step(entity_ulid))
+
+    rid, actor = _ctx_mut()
+    try:
+        svc.needs_complete(
+            entity_ulid=entity_ulid,
+            request_id=rid,
+            actor_ulid=actor,
+        )
+        db.session.commit()
+        _wiz_consume_nonce(STEP_REVIEW, entity_ulid)
+    except Exception as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _goto_step(entity_ulid, STEP_REVIEW)
+
+    return _goto_step(entity_ulid, STEP_DONE)
+
+
+@bp.get("/intake/<entity_ulid>/done")
+def intake_done_get(entity_ulid: str):
+    _ctx_ro()
+    dash = svc.get_customer_dashboard(entity_ulid)
+    return render_template(
+        "customers/intake_done.html",
+        entity_ulid=entity_ulid,
+        dash=dash,
+    )
+
+
+__all__ = ["bp"]
