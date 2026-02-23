@@ -131,13 +131,9 @@ def wizard_start_post():
 def wizard_person_core():
     form = PersonCoreForm()
     step = "person_core"
-
     if request.method == "GET":
-        current = wiz.wizard_next_step(entity_ulid=entity_ulid)
-        if current != request.endpoint:
-            return redirect(url_for(current, entity_ulid=entity_ulid))
-
-        # If a wizard is already active, resume it instead of creating a new one.
+        # No entity_ulid exists yet for the person/org core creation step.
+        # If a wizard is already active, resume instead of starting new one.
         active = session.get(_WIZ_ACTIVE_ENTITY_KEY)
         if active:
             flash("Wizard already in progress — resuming.", "warning")
@@ -178,7 +174,7 @@ def wizard_person_core():
         )
         db.session.commit()
 
-        # Lock this browser session onto the created entity until completion/reset.
+        # Lock browser session onto the created entity until completion/reset.
         session[_WIZ_ACTIVE_ENTITY_KEY] = dto.entity_ulid
 
         flash(f"Created: {dto.display_name}", "success")
@@ -226,11 +222,8 @@ def wizard_org_core():
     form = OrgCoreForm()
     step = "org_core"
     if request.method == "GET":
-        current = wiz.wizard_next_step(entity_ulid=entity_ulid)
-        if current != request.endpoint:
-            return redirect(url_for(current, entity_ulid=entity_ulid))
-
-        # If a wizard is already active, resume it instead of creating a new one.
+        # No entity_ulid exists yet for the person/org core creation step.
+        # If a wizard is already active, resume instead of starting new one.
         active = session.get(_WIZ_ACTIVE_ENTITY_KEY)
         if active:
             flash("Wizard already in progress — resuming.", "warning")
@@ -239,7 +232,7 @@ def wizard_org_core():
 
         wiz_nonce = _wiz_issue_nonce(step, None)
         return render_template(
-            "entity/wizard_org_core.html",
+            "entity/wizard_person_core.html",
             form=form,
             wiz_nonce=wiz_nonce,
         )
@@ -268,7 +261,7 @@ def wizard_org_core():
         )
         db.session.commit()
 
-        # Lock this browser session onto the created entity until completion/reset.
+        # Lock browser session onto the created entity until completion/reset.
         session[_WIZ_ACTIVE_ENTITY_KEY] = dto.entity_ulid
 
         flash(f"Created: {dto.display_name}", "success")

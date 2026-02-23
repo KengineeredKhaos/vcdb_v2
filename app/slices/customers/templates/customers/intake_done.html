@@ -1,0 +1,27 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Customer Intake · Done{% endblock %}
+
+{% block content %}
+<section class="card" style="margin-top:18px;">
+  <h1 style="margin:0 0 8px;">Customer Intake — Done</h1>
+  <div class="muted">Entity: <code>{{ entity_ulid }}</code></div>
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0;">Summary</h2>
+  <table class="table">
+    <tr><th>Status</th><td><code>{{ dash.status }}</code></td></tr>
+    <tr><th>Needs state</th><td><code>{{ dash.needs_state }}</code></td></tr>
+    <tr><th>Tier 1</th><td>{{ dash.tier1_min if dash.tier1_min is not none else "unknown" }}</td></tr>
+    <tr><th>Tier 2</th><td>{{ dash.tier2_min if dash.tier2_min is not none else "unknown" }}</td></tr>
+    <tr><th>Tier 3</th><td>{{ dash.tier3_min if dash.tier3_min is not none else "unknown" }}</td></tr>
+    <tr><th>Watchlist</th><td>{{ "yes" if dash.watchlist else "no" }}</td></tr>
+  </table>
+
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:12px;">
+    <a class="btn" href="{{ url_for('customers.intake_review_get', entity_ulid=entity_ulid) }}">Back to Review</a>
+    <a class="btn" href="{{ url_for('customers.intake_start', entity_ulid=entity_ulid) }}">Resume Wizard</a>
+  </div>
+</section>
+{% endblock %}

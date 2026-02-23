@@ -1,0 +1,86 @@
+{% extends "layout/base.html" %}
+{% import "_macros.html" as macros %}
+
+{% block title %}Customer Intake · Eligibility{% endblock %}
+
+{% block content %}
+<section class="card" style="margin-top:18px;">
+  <h1 style="margin:0 0 8px;">Customer Intake — Eligibility</h1>
+  <div class="muted">Entity: <code>{{ entity_ulid }}</code></div>
+</section>
+
+{# branch/era may not be present on the current view DTO yet #}
+{% set branch = snap.branch|default('') %}
+{% set era = snap.era|default('') %}
+
+<form class="card" method="post"
+      action="{{ url_for('customers.intake_eligibility_post', entity_ulid=entity_ulid) }}">
+  {{ macros.csrf_field() }}
+  <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
+
+  <div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap:12px;">
+
+    <label class="fld">
+      <div class="lbl">Veteran status</div>
+      <select name="veteran_status" id="id_veteran_status" required>
+        {% for opt in ["unknown","verified","unverified","not_veteran"] %}
+          <option value="{{ opt }}" {{ "selected" if snap.veteran_status==opt else "" }}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="fld">
+      <div class="lbl">Verification method</div>
+      <select name="veteran_method" id="id_veteran_method">
+        <option value="" {{ "selected" if not snap.veteran_method else "" }}>(none)</option>
+        {% for opt in ["dd214","va_id","state_dl_veteran","other"] %}
+          <option value="{{ opt }}" {{ "selected" if snap.veteran_method==opt else "" }}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+      <div class="help">If method is <code>other</code>, approval is recorded automatically using the current actor.</div>
+    </label>
+
+    <label class="fld">
+      <div class="lbl">Branch</div>
+      <select name="branch" id="id_branch">
+        <option value="" {{ "selected" if not branch else "" }}>(none)</option>
+        {% for opt in ["USA","USMC","USN","USAF","USSF","USCG"] %}
+          <option value="{{ opt }}" {{ "selected" if branch==opt else "" }}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="fld">
+      <div class="lbl">Era</div>
+      <select name="era" id="id_era">
+        <option value="" {{ "selected" if not era else "" }}>(none)</option>
+        {% for opt in ["WWI","WWII","Korea","Vietnam","ColdWar","GW-IF-EF","PsyWar"] %}
+          <option value="{{ opt }}" {{ "selected" if era==opt else "" }}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="fld">
+      <div class="lbl">Homeless status</div>
+      <select name="homeless_status" id="id_homeless_status" required>
+        {% for opt in ["unknown","verified","unverified"] %}
+          <option value="{{ opt }}" {{ "selected" if snap.homeless_status==opt else "" }}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+  </div>
+
+  {% if snap.approved_by_ulid or snap.approved_at_iso %}
+    <div class="muted" style="margin-top:10px;">
+      Approval: <code>{{ snap.approved_by_ulid or "(none)" }}</code>
+      @ <code>{{ snap.approved_at_iso or "(none)" }}</code>
+    </div>
+  {% endif %}
+
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:14px;">
+    <button class="btn" type="submit">Save &amp; Continue</button>
+    <a class="btn" href="{{ url_for('customers.intake_start', entity_ulid=entity_ulid) }}">Resume</a>
+  </div>
+</form>
+{% endblock %}

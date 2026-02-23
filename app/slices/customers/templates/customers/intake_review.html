@@ -1,0 +1,71 @@
+{% extends "layout/base.html" %}
+{% import "_macros.html" as macros %}
+
+{% block title %}Customer Intake · Review{% endblock %}
+
+{% block content %}
+<section class="card" style="margin-top:18px;">
+  <h1 style="margin:0 0 8px;">Customer Intake — Review</h1>
+  <div class="muted">Entity: <code>{{ entity_ulid }}</code></div>
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0;">Eligibility</h2>
+  <table class="table">
+    <tr><th>Veteran status</th><td><code>{{ dash.veteran_status }}</code></td></tr>
+    <tr><th>Homeless status</th><td><code>{{ dash.homeless_status }}</code></td></tr>
+    <tr><th>Assessment version</th><td>{{ dash.assessment_version }}</td></tr>
+    <tr><th>Last assessed</th><td>{{ dash.last_assessed_at_iso or "(none)" }}</td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0;">Needs rollups (cached cues)</h2>
+  <table class="table">
+    <tr><th>needs_state</th><td><code>{{ dash.needs_state }}</code></td></tr>
+    <tr><th>watchlist</th><td>{{ "yes" if dash.watchlist else "no" }}</td></tr>
+    <tr><th>tier1_min</th><td>{{ dash.tier1_min if dash.tier1_min is not none else "unknown" }}</td></tr>
+    <tr><th>tier2_min</th><td>{{ dash.tier2_min if dash.tier2_min is not none else "unknown" }}</td></tr>
+    <tr><th>tier3_min</th><td>{{ dash.tier3_min if dash.tier3_min is not none else "unknown" }}</td></tr>
+    <tr><th>flag_tier1_immediate</th><td>{{ "yes" if dash.flag_tier1_immediate else "no" }}</td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0;">Current factor values</h2>
+  {% set r = ratings|default({}) %}
+  {% if r %}
+    <table class="table">
+      {% for k in ["food","hygiene","health","housing","clothing",
+                  "income","employment","transportation","education",
+                  "family","peergroup","tech"] %}
+        <tr><th>{{ k }}</th><td><code>{{ r.get(k, "na") }}</code></td></tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p class="muted">Ratings not loaded for this view yet.</p>
+  {% endif %}
+</section>
+
+<form class="card" method="post"
+      action="{{ url_for('customers.intake_complete_post', entity_ulid=entity_ulid) }}">
+  {{ macros.csrf_field() }}
+  <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
+
+  <h2 style="margin-top:0;">Complete assessment session</h2>
+  <p class="muted">Complete marks the current assessment as finished. You can reassess later.</p>
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+    <button class="btn" type="submit">Complete</button>
+    <a class="btn" href="{{ url_for('customers.intake_needs_tier1_get', entity_ulid=entity_ulid) }}">Edit Needs</a>
+    <a class="btn" href="{{ url_for('customers.intake_eligibility_get', entity_ulid=entity_ulid) }}">Edit Eligibility</a>
+  </div>
+</form>
+
+<form class="card" method="post"
+      action="{{ url_for('customers.intake_needs_skip', entity_ulid=entity_ulid) }}">
+  {{ macros.csrf_field() }}
+  <h2 style="margin-top:0;">Skip assessment</h2>
+  <p class="muted">Marks the assessment as skipped. Does not create rating rows.</p>
+  <button class="btn" type="submit">Skip</button>
+</form>
+{% endblock %}

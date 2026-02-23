@@ -1,0 +1,47 @@
+{% extends "layout/base.html" %}
+{% import "_macros.html" as macros %}
+
+{% block title %}Customer Intake · Needs Tier 1{% endblock %}
+
+{% block content %}
+<section class="card" style="margin-top:18px;">
+  <h1 style="margin:0 0 8px;">Customer Intake — Needs Tier 1</h1>
+  <div class="muted">Entity: <code>{{ entity_ulid }}</code></div>
+  <div class="muted">Leave <code>n/a</code> if skipping an item. Use <code>unknown</code> if you attempted assessment but couldn’t determine.</div>
+</section>
+
+{% set r = ratings|default({}) %}
+
+<form class="card" method="post"
+      action="{{ url_for('customers.intake_needs_tier1_post', entity_ulid=entity_ulid) }}">
+  {{ macros.csrf_field() }}
+  <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
+
+  <div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap:12px;">
+
+    {% for key,label in [("food","Food"),("hygiene","Hygiene"),("health","Health"),("housing","Housing"),("clothing","Clothing")] %}
+      {% set v = r.get(key, 'na') %}
+      <label class="fld">
+        <div class="lbl">{{ label }}</div>
+        <select name="{{ key }}" id="id_{{ key }}">
+          <option value="na" {{ 'selected' if v=='na' else '' }}>n/a (not assessed)</option>
+          <option value="unknown" {{ 'selected' if v=='unknown' else '' }}>unknown</option>
+          <option value="immediate" {{ 'selected' if v=='immediate' else '' }}>1 — immediate</option>
+          <option value="marginal" {{ 'selected' if v=='marginal' else '' }}>2 — marginal</option>
+          <option value="sufficient" {{ 'selected' if v=='sufficient' else '' }}>3 — sufficient</option>
+        </select>
+      </label>
+    {% endfor %}
+
+  </div>
+
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:14px;">
+    <button class="btn" type="submit">Save &amp; Continue</button>
+    <a class="btn" href="{{ url_for('customers.intake_review_get', entity_ulid=entity_ulid) }}">Review</a>
+    <button class="btn" type="submit" formmethod="post"
+            formaction="{{ url_for('customers.intake_needs_skip', entity_ulid=entity_ulid) }}">
+      Skip Assessment
+    </button>
+  </div>
+</form>
+{% endblock %}

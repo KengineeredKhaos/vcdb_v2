@@ -126,6 +126,32 @@ def _min_numeric(d: dict[str, Any] | None) -> int | None:
     return min(nums) if nums else None
 
 
+def _set_intake_step(c: Customer, step: str, changed: list[str]) -> None:
+    if c.intake_step != step:
+        c.intake_step = step
+        changed.append("customer.intake_step")
+
+
+def get_current_needs_ratings(entity_ulid: str) -> dict[str, str]:
+    ent = ensure_entity_ulid(entity_ulid)
+    p = db.session.get(CustomerProfile, ent)
+    if p is None or p.assessment_version < 1:
+        return {}
+
+    stmt = (
+        select(
+            CustomerProfileRating.category_key,
+            CustomerProfileRating.rating_value,
+        )
+        .where(CustomerProfileRating.entity_ulid == ent)
+        .where(
+            CustomerProfileRating.assessment_version == p.assessment_version
+        )
+    )
+    rows = db.session.execute(stmt).all()
+    return dict(rows)
+
+
 # -----------------
 # Intake/Update
 # Functions
@@ -151,21 +177,25 @@ def ensure_customer_facets(
     act = ensure_actor_ulid(actor_ulid)
     now = now_iso8601_ms()
 
-    as_of = now
     changed: list[str] = []
-    created_any = False
+    changed_any = False
 
     c = db.session.get(Customer, ent)
+
+    # if customer exists but is still at ensure, advance to eligibility
+    if c is not None and c.intake_step == "ensure":
+        _set_intake_step(c, "eligibility", changed)
+
     if c is None:
         c = Customer(
             entity_ulid=ent,
             status="intake",
-            intake_step="ensure",
+            intake_step="eligibility",
             needs_state="not_started",
             watchlist=False,
         )
         db.session.add(c)
-        created_any = True
+        changed_any = True
         changed.extend(
             [
                 "customer.status",
@@ -179,17 +209,17 @@ def ensure_customer_facets(
     if e is None:
         e = CustomerEligibility(entity_ulid=ent)
         db.session.add(e)
-        created_any = True
+        changed_any = True
         changed.append("eligibility.created")
 
     p = db.session.get(CustomerProfile, ent)
     if p is None:
         p = CustomerProfile(entity_ulid=ent, assessment_version=0)
         db.session.add(p)
-        created_any = True
+        changed_any = True
         changed.append("profile.created")
 
-    noop = not created_any
+    noop = not changed_any
     if noop:
         return ChangeSetDTO(
             entity_ulid=ent,
@@ -209,7 +239,7 @@ def ensure_customer_facets(
         target_ulid=ent,
         refs={"step": "ensure"},
         changed={"fields": changed},
-        happened_at_utc=as_of,
+        happened_at_utc=now,
     )
 
     return ChangeSetDTO(
@@ -274,6 +304,9 @@ def set_customer_eligibility(
     cust = db.session.get(Customer, ent)
     if cust is None:
         raise LookupError("customer facet missing")
+
+    changed: list[str] = []
+    _set_intake_step(cust, "needs_tier1", changed)
 
     created = False
     elig = db.session.get(CustomerEligibility, ent)
@@ -350,10 +383,12 @@ def set_customer_eligibility(
         "approved_at_iso": elig.approved_at_iso,
     }
 
-    changed: list[str] = []
+    elig_changed: list[str] = []
     for k in after:
         if before[k] != after[k]:
-            changed.append(f"eligibility.{k}")
+            elig_changed.append(f"eligibility.{k}")
+
+    changed.extend(elig_changed)
 
     noop = (not created) and (len(changed) == 0)
     if noop:
@@ -404,7 +439,6 @@ def needs_begin(
     rid = ensure_request_id(request_id)
     act = ensure_actor_ulid(actor_ulid)
     now = now_iso8601_ms()
-    as_of = now
     changed: list[str] = []
 
     # Ensure facets exist (or call your ensure_customer_facets here)
@@ -427,6 +461,7 @@ def needs_begin(
     # Start new version
     p.assessment_version += 1
     c.needs_state = "in_progress"
+    _set_intake_step(c, "needs_tier1", changed)
 
     changed.extend(
         [
@@ -460,7 +495,7 @@ def needs_begin(
         target_ulid=ent,
         refs={"step": "needs_begin", "assessment_version": v},
         changed={"fields": changed},
-        happened_at_utc=as_of,
+        happened_at_utc=now,
     )
 
     return ChangeSetDTO(
@@ -486,6 +521,7 @@ def needs_set_block(
 
     ratings values must be in: immediate|marginal|sufficient|unknown|na
     """
+    # variable assignments
     ent = ensure_entity_ulid(entity_ulid)
     rid = ensure_request_id(request_id)
     act = ensure_actor_ulid(actor_ulid)
@@ -506,11 +542,15 @@ def needs_set_block(
         raise ValueError(
             "needs assessment not started (call needs_begin first)"
         )
+
+    # Had to move this down from variable assignments to pick up "p"
+    v = p.assessment_version
+    REFS = {"step": "needs_set_block", "assessment_version": v}
+
     if c.needs_state != "in_progress":
         raise ValueError("needs_state is not in_progress")
 
     v = p.assessment_version
-    as_of = now
     changed: list[str] = []
 
     # Load existing rows for this version
@@ -533,9 +573,34 @@ def needs_set_block(
             r.rating_value = new_val
             changed.append(f"profile_rating.{k}")
 
-    # No changes? return noop
+    # No rating changes? maybe still advance step.
     if not changed:
-        return ChangeSetDTO(ent, False, True, (), next_step)
+        if next_step in ("needs_tier2", "needs_tier3", "review"):
+            _set_intake_step(c, next_step, changed)
+
+        # If still no changes, it's a true noop.
+        if not changed:
+            return ChangeSetDTO(ent, False, True, (), next_step)
+
+        # Step changed only: flush + emit + return (no rollup recompute needed)
+        db.session.flush()
+        event_bus.emit(
+            domain="customers",
+            operation="customer_needs_updated",
+            request_id=rid,
+            actor_ulid=act,
+            target_ulid=ent,
+            refs=REFS,
+            changed={"fields": changed},
+            happened_at_utc=now,
+        )
+        return ChangeSetDTO(
+            entity_ulid=ent,
+            created=False,
+            noop=False,
+            changed_fields=tuple(changed),
+            next_step=next_step,
+        )
 
     # Recompute rollups from current version rows
     rating_values = {k: by_key[k].rating_value for k in NEEDS_CATEGORY_KEY}
@@ -558,6 +623,9 @@ def needs_set_block(
     if bool(c.flag_tier1_immediate) != new_flag:
         c.flag_tier1_immediate = new_flag
         changed.append("customer.flag_tier1_immediate")
+    # advance wizard step if caller provided one
+    if next_step in ("needs_tier2", "needs_tier3", "review"):
+        _set_intake_step(c, next_step, changed)
 
     db.session.flush()
 
@@ -567,9 +635,9 @@ def needs_set_block(
         request_id=rid,
         actor_ulid=act,
         target_ulid=ent,
-        refs={"step": "needs_set_block", "assessment_version": v},
+        refs=REFS,
         changed={"fields": changed},
-        happened_at_utc=as_of,
+        happened_at_utc=now,
     )
 
     return ChangeSetDTO(
@@ -595,6 +663,8 @@ def needs_skip(
         return ChangeSetDTO(ent, False, True, (), None)
 
     c.needs_state = "skipped"
+    _set_intake_step(c, "review", changed := ["customer.needs_state"])
+
     db.session.flush()
 
     event_bus.emit(
@@ -604,12 +674,10 @@ def needs_skip(
         actor_ulid=act,
         target_ulid=ent,
         refs={"step": "needs_skip"},
-        changed={"fields": ["customer.needs_state"]},
+        changed={"fields": changed},
         happened_at_utc=now,
     )
-    return ChangeSetDTO(
-        ent, False, False, ("customer.needs_state",), "review"
-    )
+    return ChangeSetDTO(ent, False, False, tuple(changed), "review")
 
 
 def needs_complete(
@@ -626,9 +694,29 @@ def needs_complete(
     if c.needs_state == "complete":
         return ChangeSetDTO(ent, False, True, (), None)
 
+    changed: list[str] = []
+
     c.needs_state = "complete"
+    changed.append("customer.needs_state")
+
+    _set_intake_step(c, "complete", changed)
+
+    if c.intake_completed_at_iso != now:
+        c.intake_completed_at_iso = now
+        changed.append("customer.intake_completed_at_iso")
+
+    # optional: promote from intake → active
+    if c.status != "active":
+        c.status = "active"
+        changed.append("customer.status")
+
     p.last_assessed_at_iso = now
-    # p.last_assessed_by_ulid = actor_ulid  (if you have that column)
+    changed.append("profile.last_assessed_at_iso")
+
+    if p.last_assessed_by_ulid != act:
+        p.last_assessed_by_ulid = act
+        changed.append("profile.last_assessed_by_ulid")
+
     db.session.flush()
 
     event_bus.emit(
@@ -641,14 +729,10 @@ def needs_complete(
             "step": "needs_complete",
             "assessment_version": p.assessment_version,
         },
-        changed={
-            "fields": ["customer.needs_state", "profile.last_assessed_at_iso"]
-        },
+        changed={"fields": changed},
         happened_at_utc=now,
     )
-    return ChangeSetDTO(
-        ent, False, False, ("customer.needs_state",), "review"
-    )
+    return ChangeSetDTO(ent, False, False, tuple(changed), "review")
 
 
 # -----------------
@@ -850,6 +934,7 @@ def append_history_entry(
 ) -> str:
     ent = ensure_entity_ulid(target_entity_ulid)
     act = ensure_actor_ulid(actor_ulid)
+    ensure_request_id(request_id)
 
     if not kind or not kind.strip():
         raise ValueError("kind is required")

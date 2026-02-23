@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import secrets
+from contextlib import suppress
 from typing import Any
 
 from flask import (
@@ -239,11 +240,13 @@ def _needs_get(entity_ulid: str, step: str, template: str):
     _ctx_ro()
     dash = svc.get_customer_dashboard(entity_ulid)
     wiz_nonce = _wiz_issue_nonce(step, entity_ulid)
+    ratings = svc.get_current_needs_ratings(entity_ulid)
     return render_template(
         template,
         entity_ulid=entity_ulid,
         dash=dash,
         wiz_nonce=wiz_nonce,
+        ratings=ratings,
     )
 
 
@@ -264,14 +267,12 @@ def _needs_post(
 
     try:
         # Convenience: begin assessment on first needs POST if not started.
-        try:
+        with suppress(Exception):
             svc.needs_begin(
                 entity_ulid=entity_ulid,
                 request_id=rid,
                 actor_ulid=actor,
             )
-        except Exception:
-            pass
 
         dto = svc.needs_set_block(
             entity_ulid=entity_ulid,
@@ -389,11 +390,13 @@ def intake_review_get(entity_ulid: str):
     _ctx_ro()
     dash = svc.get_customer_dashboard(entity_ulid)
     wiz_nonce = _wiz_issue_nonce(STEP_REVIEW, entity_ulid)
+    ratings = svc.get_current_needs_ratings(entity_ulid)
     return render_template(
         "customers/intake_review.html",
         entity_ulid=entity_ulid,
         dash=dash,
         wiz_nonce=wiz_nonce,
+        ratings=ratings,
     )
 
 
