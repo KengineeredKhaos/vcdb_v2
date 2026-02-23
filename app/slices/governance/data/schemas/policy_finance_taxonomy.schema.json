@@ -1,66 +1,17 @@
 {
-  "$defs": {
-    "cadence": {
-      "additionalProperties": false,
-      "properties": {
-        "label": {
-          "$ref": "#/$defs/singleLine"
-        },
-        "max_per_period": {
-          "minimum": 1,
-          "type": "integer"
-        },
-        "period_days": {
-          "minimum": 1,
-          "type": "integer"
-        },
-        "scope": {
-          "enum": [
-            "classification",
-            "sku"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "scope",
-        "period_days",
-        "max_per_period"
-      ],
-      "type": "object"
-    },
-    "dateISO": {
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-      "type": "string"
-    },
-    "expense_kinds": {
-      "items": {
-        "additionalProperties": false,
-        "properties": {
-          "key": {
-            "$ref": "#/$defs/token"
-          },
-          "label": {
-            "$ref": "#/$defs/singleLine"
-          }
-        },
-        "required": [
-          "key",
-          "label"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
     "fund_archetypes": {
       "items": {
         "additionalProperties": false,
         "properties": {
           "key": {
-            "$ref": "#/$defs/token"
+            "pattern": "^[a-z0-9_]+$",
+            "type": "string"
           },
           "label": {
-            "$ref": "#/$defs/singleLine"
+            "type": "string"
           },
           "payment_timing": {
             "enum": [
@@ -72,7 +23,8 @@
           "restriction_type": {
             "enum": [
               "unrestricted",
-              "temporarily_restricted"
+              "temporarily_restricted",
+              "permanently_restricted"
             ],
             "type": "string"
           }
@@ -80,8 +32,8 @@
         "required": [
           "key",
           "label",
-          "restriction_type",
-          "payment_timing"
+          "payment_timing",
+          "restriction_type"
         ],
         "type": "object"
       },
@@ -93,10 +45,11 @@
         "additionalProperties": false,
         "properties": {
           "key": {
-            "$ref": "#/$defs/token"
+            "pattern": "^[a-z0-9_]+$",
+            "type": "string"
           },
           "label": {
-            "$ref": "#/$defs/singleLine"
+            "type": "string"
           }
         },
         "required": [
@@ -109,25 +62,26 @@
       "type": "array"
     },
     "meta": {
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "description": {
-          "$ref": "#/$defs/singleLine"
+          "type": "string"
         },
         "effective_on": {
-          "$ref": "#/$defs/dateISO"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string"
         },
         "notes": {
-          "default": [],
           "items": {
-            "maxLength": 70,
-            "pattern": "^[^\\n\\r]*$",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "type": "array"
         },
         "policy_key": {
-          "const": "finance_taxonomy",
+          "pattern": "^[a-z0-9_]+$",
           "type": "string"
         },
         "schema_version": {
@@ -135,10 +89,15 @@
           "type": "integer"
         },
         "status": {
-          "$ref": "#/$defs/policyStatus"
+          "enum": [
+            "draft",
+            "active",
+            "deprecated"
+          ],
+          "type": "string"
         },
         "title": {
-          "$ref": "#/$defs/singleLine"
+          "type": "string"
         },
         "version": {
           "minimum": 1,
@@ -147,97 +106,17 @@
       },
       "required": [
         "policy_key",
-        "effective_on",
-        "description",
-        "version",
-        "schema_version",
         "title",
         "status"
       ],
       "type": "object"
-    },
-    "policyStatus": {
-      "enum": [
-        "draft",
-        "active",
-        "deprecated"
-      ],
-      "type": "string"
-    },
-    "singleLine": {
-      "minLength": 1,
-      "pattern": "^[^\\n\\r]+$",
-      "type": "string"
-    },
-    "sponsor": {
-      "additionalProperties": false,
-      "properties": {
-        "pledge_type": {
-          "items": {
-            "additionalProperties": false,
-            "properties": {
-              "code": {
-                "$ref": "#/$defs/token"
-              },
-              "label": {
-                "$ref": "#/$defs/singleLine"
-              }
-            },
-            "required": [
-              "code",
-              "label"
-            ],
-            "type": "object"
-          },
-          "minItems": 1,
-          "type": "array"
-        }
-      },
-      "required": [
-        "pledge_type"
-      ],
-      "type": "object"
-    },
-    "token": {
-      "pattern": "^[a-z][a-z0-9_]{0,63}$",
-      "type": "string"
-    },
-    "tokenUpper2": {
-      "pattern": "^[A-Z]{2}$",
-      "type": "string"
-    },
-    "ulid": {
-      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
-      "type": "string"
-    }
-  },
-  "$id": "https://vcdb.local/schemas/policy_finance_taxonomy.schema.json",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "Validates policy_finance_taxonomy.json (fund archetypes, journal flags, and sponsor pledge types).",
-  "properties": {
-    "expense_kinds": {
-      "$ref": "#/$defs/expense_kinds"
-    },
-    "fund_archetypes": {
-      "$ref": "#/$defs/fund_archetypes"
-    },
-    "journal_flags": {
-      "$ref": "#/$defs/journal_flags"
-    },
-    "meta": {
-      "$ref": "#/$defs/meta"
-    },
-    "sponsor": {
-      "$ref": "#/$defs/sponsor"
     }
   },
   "required": [
     "meta",
     "fund_archetypes",
-    "journal_flags",
-    "sponsor"
+    "journal_flags"
   ],
-  "title": "Finance Taxonomy Policy Schema",
+  "title": "Finance Taxonomy Policy",
   "type": "object"
 }

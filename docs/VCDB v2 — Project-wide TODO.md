@@ -131,8 +131,6 @@ Conventions:
 
 ---
 
-## Policy - Customer Needs Reassessment
-
 - [ ] @TODO: Governance policy for time-based Customer needs reassessment.
   
   - define policy intent:
@@ -152,11 +150,34 @@ Conventions:
 
 ---
 
+- [ ] @TODO: Governance policy for Customers slice enumerations + needs taxonomy.
+  
+  - move these constants out of `customers/services.py` into Governance JSON
+    (read-only via governance_v2 contract):
+    - veteran_statuses, homeless_statuses, veteran_methods
+    - branches, eras
+    - need_category_keys
+    - tier groupings (tier1/tier2/tier3 key lists)
+    - rating_allowed + rank map (immediate/marginal/sufficient ordering)
+  - proposed policy file:
+    - `app/slices/governance/data/policy_customer_taxonomy.json`
+  - add schema + validation:
+    - `app/slices/governance/data/schemas/policy_customer_taxonomy.schema.json`
+    - semantic checks: keys unique; tier groupings cover all categories;
+      rank entries only for 1..3-rated values; allowed includes unknown/na
+  - expose via contract:
+    - `governance_v2.get_customer_taxonomy() -> CustomerTaxonomyDTO`
+    - cache in services (TTL) so Customers doesn’t repeatedly hit loader
+  - Customers consumes taxonomy:
+    - services use taxonomy to validate inputs and compute rollups
+    - remove hard-coded `_VETERAN_STATUS`, `_TIER1`, `_RANK`, etc. from services.py
+  - exception note:
+    - keep state codes in `app/lib/geo.py` as the single exception (already canon)
+
+---
+
 next
-
-
 
 ---
 
 - [ ] 
-

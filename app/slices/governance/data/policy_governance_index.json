@@ -2,7 +2,7 @@
   "catalog_version": "2.0",
   "meta": {
     "description": "Manifest of Governance policies and schemas (Policy Catalog v2.0).",
-    "effective_on": "2026-01-01",
+    "effective_on": "2026-02-23",
     "notes": [
       "This file is the authoritative catalog of Governance policy files.",
       "Admin/CLI tooling loads policies by policy_key using this manifest.",
@@ -22,7 +22,7 @@
     "schema_version": 1,
     "status": "draft",
     "title": "Governance Policy Index",
-    "version": 1
+    "version": 2
   },
   "policies": [
     {
@@ -34,14 +34,6 @@
       "owner_role_hint": "governor",
       "policy_key": "governance_index",
       "schema_filename": "schemas/policy_governance_index.schema.json"
-    },
-    {
-      "edit_cadence_hint": "occasional",
-      "filename": "policy_customer.json",
-      "notes": [],
-      "owner_role_hint": "governor",
-      "policy_key": "customer",
-      "schema_filename": "schemas/policy_customer.schema.json"
     },
     {
       "edit_cadence_hint": "rare",
@@ -70,55 +62,12 @@
       "schema_filename": "schemas/policy_finance_taxonomy.schema.json"
     },
     {
-      "edit_cadence_hint": "rare",
-      "filename": "policy_lifecycle.json",
-      "notes": [],
-      "owner_role_hint": "governor",
-      "policy_key": "lifecycle",
-      "schema_filename": "schemas/policy_lifecycle.schema.json"
-    },
-    {
-      "edit_cadence_hint": "frequent",
-      "filename": "policy_locations.json",
-      "notes": [],
-      "owner_role_hint": "governor",
-      "policy_key": "locations",
-      "schema_filename": "schemas/policy_locations.schema.json"
-    },
-    {
       "edit_cadence_hint": "occasional",
       "filename": "policy_logistics_issuance.json",
       "notes": [],
       "owner_role_hint": "governor",
       "policy_key": "logistics_issuance",
       "schema_filename": "schemas/policy_logistics_issuance.schema.json"
-    },
-    {
-      "edit_cadence_hint": "frequent",
-      "filename": "policy_operations.json",
-      "notes": [],
-      "owner_role_hint": "governor",
-      "policy_key": "operations",
-      "schema_filename": "schemas/policy_operations.schema.json"
-    },
-    {
-      "edit_cadence_hint": "occasional",
-      "filename": "policy_poc.json",
-      "notes": [
-        "POC scope/default/rank constraints.",
-        "Used by Resources/Sponsors POC services (org-side ownership)."
-      ],
-      "owner_role_hint": "governor",
-      "policy_key": "poc",
-      "schema_filename": "schemas/policy_poc.schema.json"
-    },
-    {
-      "edit_cadence_hint": "rare",
-      "filename": "policy_service_taxonomy.json",
-      "notes": [],
-      "owner_role_hint": "governor",
-      "policy_key": "service_taxonomy",
-      "schema_filename": "schemas/policy_service_taxonomy.schema.json"
     }
   ]
 }

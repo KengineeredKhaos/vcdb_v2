@@ -69,7 +69,7 @@
   ],
   "meta": {
     "description": "Fund Archetypes & Journal Expenses Flags",
-    "effective_on": "2026-01-01",
+    "effective_on": "2026-02-23",
     "notes": [
       "Defines allowable fund archetypes, their restrictions & payment timing",
       "This policy also sets fund type flags for journal entries.",
@@ -81,19 +81,7 @@
     "policy_key": "finance_taxonomy",
     "schema_version": 1,
     "status": "draft",
-    "title": "Finance Taxonomy Policy>",
-    "version": 1
-  },
-  "sponsor": {
-    "pledge_type": [
-      {
-        "code": "cash",
-        "label": "Cash"
-      },
-      {
-        "code": "in_kind",
-        "label": "In-kind"
-      }
-    ]
+    "title": "Finance Taxonomy Policy",
+    "version": 2
   }
 }

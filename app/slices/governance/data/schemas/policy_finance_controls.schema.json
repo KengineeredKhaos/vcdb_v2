@@ -1,5 +1,7 @@
 {
-  "$defs": {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
     "budget": {
       "additionalProperties": false,
       "properties": {
@@ -7,54 +9,27 @@
           "items": {
             "additionalProperties": false,
             "properties": {
-              "lines": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "amount_cents": {
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "fund_archetype_key": {
-                      "$ref": "#/$defs/token"
-                    },
-                    "fund_code": {
-                      "$ref": "#/$defs/singleLine"
-                    },
-                    "project_code": {
-                      "$ref": "#/$defs/singleLine"
-                    },
-                    "project_type_key": {
-                      "$ref": "#/$defs/token"
-                    },
-                    "source": {
-                      "$ref": "#/$defs/singleLine"
-                    },
-                    "status": {
-                      "$ref": "#/$defs/token"
-                    }
-                  },
-                  "required": [
-                    "amount_cents",
-                    "fund_archetype_key",
-                    "fund_code",
-                    "project_code",
-                    "project_type_key",
-                    "source",
-                    "status"
-                  ],
-                  "type": "object"
-                },
-                "minItems": 1,
-                "type": "array"
+              "ends_on": {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
               },
-              "period_label": {
-                "$ref": "#/$defs/singleLine"
+              "key": {
+                "pattern": "^[a-z0-9_]+$",
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "starts_on": {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
               }
             },
             "required": [
-              "period_label",
-              "lines"
+              "key",
+              "label",
+              "starts_on",
+              "ends_on"
             ],
             "type": "object"
           },
@@ -67,85 +42,27 @@
       ],
       "type": "object"
     },
-    "cadence": {
-      "additionalProperties": false,
-      "properties": {
-        "label": {
-          "$ref": "#/$defs/singleLine"
-        },
-        "max_per_period": {
-          "minimum": 1,
-          "type": "integer"
-        },
-        "period_days": {
-          "minimum": 1,
-          "type": "integer"
-        },
-        "scope": {
-          "enum": [
-            "classification",
-            "sku"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "scope",
-        "period_days",
-        "max_per_period"
-      ],
-      "type": "object"
-    },
-    "capLeaf": {
-      "additionalProperties": false,
-      "properties": {
-        "cap_cents": {
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "cap_cents"
-      ],
-      "type": "object"
-    },
-    "capNode": {
-      "oneOf": [
-        {
-          "$ref": "#/$defs/capLeaf"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/capNode"
-          },
-          "type": "object"
-        }
-      ]
-    },
-    "dateISO": {
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-      "type": "string"
-    },
     "meta": {
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "description": {
-          "$ref": "#/$defs/singleLine"
+          "type": "string"
         },
         "effective_on": {
-          "$ref": "#/$defs/dateISO"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string"
         },
         "notes": {
-          "default": [],
           "items": {
-            "maxLength": 70,
-            "pattern": "^[^\\n\\r]*$",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "type": "array"
         },
         "policy_key": {
-          "const": "finance_controls",
+          "pattern": "^[a-z0-9_]+$",
           "type": "string"
         },
         "schema_version": {
@@ -153,10 +70,15 @@
           "type": "integer"
         },
         "status": {
-          "$ref": "#/$defs/policyStatus"
+          "enum": [
+            "draft",
+            "active",
+            "deprecated"
+          ],
+          "type": "string"
         },
         "title": {
-          "$ref": "#/$defs/singleLine"
+          "type": "string"
         },
         "version": {
           "minimum": 1,
@@ -165,45 +87,43 @@
       },
       "required": [
         "policy_key",
-        "effective_on",
-        "description",
-        "version",
-        "schema_version",
         "title",
         "status"
       ],
       "type": "object"
     },
-    "policyStatus": {
-      "enum": [
-        "draft",
-        "active",
-        "deprecated"
-      ],
-      "type": "string"
-    },
-    "singleLine": {
-      "minLength": 1,
-      "pattern": "^[^\\n\\r]+$",
-      "type": "string"
-    },
     "spending": {
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "approvers": {
-          "additionalProperties": {
-            "items": {
-              "minLength": 1,
-              "pattern": "^[^\\n\\r]+$",
-              "type": "string"
+          "additionalProperties": false,
+          "properties": {
+            "level1": {
+              "items": {
+                "pattern": "^[a-z0-9_]+$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
             },
-            "type": "array"
+            "level2": {
+              "items": {
+                "pattern": "^[a-z0-9_]+$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
           },
-          "minProperties": 1,
+          "required": [
+            "level1",
+            "level2"
+          ],
           "type": "object"
         },
         "class_caps": {
-          "$ref": "#/$defs/capNode"
+          "additionalProperties": true,
+          "type": "object"
         },
         "staff_cap_cents": {
           "minimum": 0,
@@ -212,44 +132,16 @@
       },
       "required": [
         "staff_cap_cents",
-        "class_caps",
         "approvers"
       ],
       "type": "object"
-    },
-    "token": {
-      "pattern": "^[a-z][a-z0-9_]{0,63}$",
-      "type": "string"
-    },
-    "tokenUpper2": {
-      "pattern": "^[A-Z]{2}$",
-      "type": "string"
-    },
-    "ulid": {
-      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
-      "type": "string"
-    }
-  },
-  "$id": "https://vcdb.local/schemas/policy_finance_controls.schema.json",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "Validates policy_finance_controls.json (spending caps/approvers and budget periods).",
-  "properties": {
-    "budget": {
-      "$ref": "#/$defs/budget"
-    },
-    "meta": {
-      "$ref": "#/$defs/meta"
-    },
-    "spending": {
-      "$ref": "#/$defs/spending"
     }
   },
   "required": [
     "meta",
-    "spending",
-    "budget"
+    "budget",
+    "spending"
   ],
-  "title": "Finance Controls Policy Schema",
+  "title": "Finance Controls Policy",
   "type": "object"
 }

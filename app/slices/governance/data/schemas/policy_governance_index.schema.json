@@ -1,62 +1,31 @@
 {
-  "$defs": {
-    "cadence": {
-      "additionalProperties": false,
-      "properties": {
-        "label": {
-          "$ref": "#/$defs/singleLine"
-        },
-        "max_per_period": {
-          "minimum": 1,
-          "type": "integer"
-        },
-        "period_days": {
-          "minimum": 1,
-          "type": "integer"
-        },
-        "scope": {
-          "enum": [
-            "classification",
-            "sku"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "scope",
-        "period_days",
-        "max_per_period"
-      ],
-      "type": "object"
-    },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
     "catalog_version": {
-      "pattern": "^\\d+\\.\\d+$",
-      "type": "string"
-    },
-    "dateISO": {
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
       "type": "string"
     },
     "meta": {
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "description": {
-          "$ref": "#/$defs/singleLine"
+          "type": "string"
         },
         "effective_on": {
-          "$ref": "#/$defs/dateISO"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string"
         },
         "notes": {
-          "default": [],
           "items": {
-            "maxLength": 70,
-            "pattern": "^[^\\n\\r]*$",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "type": "array"
         },
         "policy_key": {
-          "const": "governance_index",
+          "pattern": "^[a-z0-9_]+$",
           "type": "string"
         },
         "schema_version": {
@@ -64,10 +33,15 @@
           "type": "integer"
         },
         "status": {
-          "$ref": "#/$defs/policyStatus"
+          "enum": [
+            "draft",
+            "active",
+            "deprecated"
+          ],
+          "type": "string"
         },
         "title": {
-          "$ref": "#/$defs/singleLine"
+          "type": "string"
         },
         "version": {
           "minimum": 1,
@@ -76,10 +50,6 @@
       },
       "required": [
         "policy_key",
-        "effective_on",
-        "description",
-        "version",
-        "schema_version",
         "title",
         "status"
       ],
@@ -87,37 +57,31 @@
     },
     "policies": {
       "items": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "edit_cadence_hint": {
-            "enum": [
-              "rare",
-              "occasional",
-              "frequent"
-            ],
             "type": "string"
           },
           "filename": {
-            "pattern": "^policy_[a-z0-9_]+\\.json$",
             "type": "string"
           },
           "notes": {
-            "default": [],
             "items": {
-              "maxLength": 70,
-              "pattern": "^[^\\n\\r]*$",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "type": "array"
           },
           "owner_role_hint": {
-            "$ref": "#/$defs/token"
+            "type": "string"
           },
           "policy_key": {
-            "$ref": "#/$defs/token"
+            "pattern": "^[a-z0-9_]+$",
+            "type": "string"
           },
           "schema_filename": {
-            "pattern": "^schemas/policy_[a-z0-9_]+\\.schema\\.json$",
             "type": "string"
           }
         },
@@ -130,53 +94,13 @@
       },
       "minItems": 1,
       "type": "array"
-    },
-    "policyStatus": {
-      "enum": [
-        "draft",
-        "active",
-        "deprecated"
-      ],
-      "type": "string"
-    },
-    "singleLine": {
-      "minLength": 1,
-      "pattern": "^[^\\n\\r]+$",
-      "type": "string"
-    },
-    "token": {
-      "pattern": "^[a-z][a-z0-9_]{0,63}$",
-      "type": "string"
-    },
-    "tokenUpper2": {
-      "pattern": "^[A-Z]{2}$",
-      "type": "string"
-    },
-    "ulid": {
-      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
-      "type": "string"
-    }
-  },
-  "$id": "https://vcdb.local/schemas/policy_governance_index.schema.json",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "Validates policy_governance_index.json (Policy Catalog v2.0).",
-  "properties": {
-    "catalog_version": {
-      "$ref": "#/$defs/catalog_version"
-    },
-    "meta": {
-      "$ref": "#/$defs/meta"
-    },
-    "policies": {
-      "$ref": "#/$defs/policies"
     }
   },
   "required": [
-    "meta",
     "catalog_version",
+    "meta",
     "policies"
   ],
-  "title": "Governance Policy Index Schema",
+  "title": "Governance Policy Index",
   "type": "object"
 }

@@ -604,4 +604,33 @@ To keep slice-local taxonomy consistent and low-friction:
 
 ---
 
+Governance split output (2026-02-23)
+
+Generated from the existing Governance policy files and a split between:
+
+- slice taxonomy (code/config) and
+- Governance decisions (JSON + schema + Admin edit).
+
+## Kept in Governance (JSON + schema)
+
+- policy_governance_index.json
+- policy_entity_roles.json
+- policy_finance_controls.json
+- policy_finance_taxonomy.json
+- policy_logistics_issuance.json
+
+## Moved to slice-local taxonomy/config
+
+- lifecycle -> resources/sponsors/logistics taxonomy
+- locations -> logistics taxonomy + data/locations.json
+- operations -> calendar taxonomy + data/projects.json
+- poc -> common taxonomy (shared)
+- service_taxonomy -> split across slices (sku regex -> logistics;
+  capabilities -> resources/sponsors; semantic map -> customers hints)
+
+All Governance policy files under app/slices/governance/data/ are
+schema-backed under app/slices/governance/data/schemas/.
+
+---
+
 Next

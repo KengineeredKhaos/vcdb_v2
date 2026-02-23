@@ -1,27 +1,4 @@
 {
-  "meta": {
-    "policy_key": "entity_roles",
-    "schema_version": 1,
-    "status": "draft",
-    "title": "Domain Roles",
-    "version": 1,
-    "effective_on": "2026-01-01",
-    "description": "Allowed domain roles and domain↔RBAC assignment constraints.",
-    "notes": [
-      "This policy concerns Domain roles, rules & constraints.",
-      "See Auth slice for RBAC roles and rules.",
-      "See policy 'poc' for POC scope/rank constraints."
-    ]
-
-  },
-  "domain_roles": [
-    "governor",
-    "staff",
-    "customer",
-    "resource",
-    "sponsor",
-    "civilian"
-  ],
   "assignment_rules": {
     "domain_disallows_rbac": [
       "civilian"
@@ -62,5 +39,27 @@
         "civilian"
       ]
     }
+  },
+  "domain_roles": [
+    "governor",
+    "staff",
+    "customer",
+    "resource",
+    "sponsor",
+    "civilian"
+  ],
+  "meta": {
+    "description": "Allowed domain roles and domain\u2194RBAC assignment constraints.",
+    "effective_on": "2026-02-23",
+    "notes": [
+      "This policy concerns Domain roles, rules & constraints.",
+      "See Auth slice for RBAC roles and rules.",
+      "See policy 'poc' for POC scope/rank constraints."
+    ],
+    "policy_key": "entity_roles",
+    "schema_version": 1,
+    "status": "draft",
+    "title": "Domain Roles",
+    "version": 2
   }
 }

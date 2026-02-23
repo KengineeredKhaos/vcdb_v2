@@ -1,18 +1,20 @@
 {
-  "$defs": {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
     "assignment_rules": {
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "domain_disallows_rbac": {
           "items": {
-            "$ref": "#/$defs/token"
+            "type": "string"
           },
           "type": "array"
         },
         "forbidden_pairs": {
           "items": {
             "items": {
-              "$ref": "#/$defs/token"
+              "type": "string"
             },
             "maxItems": 2,
             "minItems": 2,
@@ -23,7 +25,7 @@
         "must_include_when_rbac": {
           "additionalProperties": {
             "items": {
-              "$ref": "#/$defs/token"
+              "type": "string"
             },
             "type": "array"
           },
@@ -32,83 +34,48 @@
         "rbac_can_assign": {
           "additionalProperties": {
             "items": {
-              "$ref": "#/$defs/token"
+              "type": "string"
             },
-            "minItems": 0,
             "type": "array"
           },
-          "minProperties": 1,
           "type": "object"
         }
       },
       "required": [
-        "rbac_can_assign",
-        "must_include_when_rbac",
-        "forbidden_pairs",
-        "domain_disallows_rbac"
+        "rbac_can_assign"
       ],
       "type": "object"
-    },
-    "cadence": {
-      "additionalProperties": false,
-      "properties": {
-        "label": {
-          "$ref": "#/$defs/singleLine"
-        },
-        "max_per_period": {
-          "minimum": 1,
-          "type": "integer"
-        },
-        "period_days": {
-          "minimum": 1,
-          "type": "integer"
-        },
-        "scope": {
-          "enum": [
-            "classification",
-            "sku"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "scope",
-        "period_days",
-        "max_per_period"
-      ],
-      "type": "object"
-    },
-    "dateISO": {
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-      "type": "string"
     },
     "domain_roles": {
       "items": {
-        "$ref": "#/$defs/token"
+        "pattern": "^[a-z0-9_]+$",
+        "type": "string"
       },
       "minItems": 1,
-      "type": "array"
+      "type": "array",
+      "uniqueItems": true
     },
     "meta": {
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "description": {
-          "$ref": "#/$defs/singleLine"
+          "type": "string"
         },
         "effective_on": {
-          "$ref": "#/$defs/dateISO"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string"
         },
         "notes": {
-          "default": [],
           "items": {
-            "maxLength": 70,
-            "pattern": "^[^\\n\\r]*$",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "type": "array"
         },
         "policy_key": {
-          "const": "entity_roles",
+          "pattern": "^[a-z0-9_]+$",
           "type": "string"
         },
         "schema_version": {
@@ -116,10 +83,15 @@
           "type": "integer"
         },
         "status": {
-          "$ref": "#/$defs/policyStatus"
+          "enum": [
+            "draft",
+            "active",
+            "deprecated"
+          ],
+          "type": "string"
         },
         "title": {
-          "$ref": "#/$defs/singleLine"
+          "type": "string"
         },
         "version": {
           "minimum": 1,
@@ -128,54 +100,10 @@
       },
       "required": [
         "policy_key",
-        "effective_on",
-        "description",
-        "version",
-        "schema_version",
         "title",
         "status"
       ],
       "type": "object"
-    },
-    "policyStatus": {
-      "enum": [
-        "draft",
-        "active",
-        "deprecated"
-      ],
-      "type": "string"
-    },
-    "singleLine": {
-      "minLength": 1,
-      "pattern": "^[^\\n\\r]+$",
-      "type": "string"
-    },
-    "token": {
-      "pattern": "^[a-z][a-z0-9_]{0,63}$",
-      "type": "string"
-    },
-    "tokenUpper2": {
-      "pattern": "^[A-Z]{2}$",
-      "type": "string"
-    },
-    "ulid": {
-      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
-      "type": "string"
-    }
-  },
-  "$id": "https://vcdb.local/schemas/policy_entity_roles.schema.json",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "Validates policy_entity_roles.json (domain roles and assignment rules).",
-  "properties": {
-    "assignment_rules": {
-      "$ref": "#/$defs/assignment_rules"
-    },
-    "domain_roles": {
-      "$ref": "#/$defs/domain_roles"
-    },
-    "meta": {
-      "$ref": "#/$defs/meta"
     }
   },
   "required": [
@@ -183,6 +111,6 @@
     "domain_roles",
     "assignment_rules"
   ],
-  "title": "Entity Roles Policy Schema",
+  "title": "Entity Roles Policy",
   "type": "object"
 }

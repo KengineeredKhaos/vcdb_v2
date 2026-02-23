@@ -1,0 +1,19 @@
+{
+  "locations": [
+    {
+      "code": "MAIN",
+      "kind": "warehouse",
+      "name": "Main Warehouse"
+    },
+    {
+      "code": "VAN-01",
+      "kind": "vehicle",
+      "name": "Outreach Van 1"
+    },
+    {
+      "code": "SAT-NORTH",
+      "kind": "satellite",
+      "name": "North Satellite Closet"
+    }
+  ]
+}

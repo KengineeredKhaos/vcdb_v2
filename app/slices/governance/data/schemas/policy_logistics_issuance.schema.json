@@ -1,38 +1,7 @@
 {
-  "$defs": {
-    "cadence": {
-      "additionalProperties": false,
-      "properties": {
-        "label": {
-          "$ref": "#/$defs/singleLine"
-        },
-        "max_per_period": {
-          "minimum": 1,
-          "type": "integer"
-        },
-        "period_days": {
-          "minimum": 1,
-          "type": "integer"
-        },
-        "scope": {
-          "enum": [
-            "classification",
-            "sku"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "scope",
-        "period_days",
-        "max_per_period"
-      ],
-      "type": "object"
-    },
-    "dateISO": {
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-      "type": "string"
-    },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
     "issuance": {
       "additionalProperties": false,
       "properties": {
@@ -40,7 +9,33 @@
           "additionalProperties": false,
           "properties": {
             "cadence": {
-              "$ref": "#/$defs/cadence"
+              "additionalProperties": true,
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "max_per_period": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "period_days": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "scope": {
+                  "enum": [
+                    "classification",
+                    "sku"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "max_per_period",
+                "period_days",
+                "scope"
+              ],
+              "type": "object"
             }
           },
           "required": [
@@ -50,7 +45,26 @@
         },
         "rules": {
           "items": {
-            "$ref": "#/$defs/issuanceRule"
+            "additionalProperties": false,
+            "properties": {
+              "if": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "then": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "if",
+              "then",
+              "why"
+            ],
+            "type": "object"
           },
           "type": "array"
         }
@@ -61,100 +75,27 @@
       ],
       "type": "object"
     },
-    "issuanceRule": {
-      "additionalProperties": false,
-      "properties": {
-        "if": {
-          "additionalProperties": false,
-          "minProperties": 1,
-          "properties": {
-            "category": {
-              "pattern": "^[A-Z]{2}$",
-              "type": "string"
-            },
-            "source": {
-              "$ref": "#/$defs/tokenUpper2"
-            },
-            "subcategory": {
-              "pattern": "^[A-Z]{2}$",
-              "type": "string"
-            },
-            "issuance_class": {
-              "type": "string",
-              "enum": [
-                "V",
-                "H",
-                "D",
-                "U"
-              ]
-            }
-          },
-          "type": "object"
-        },
-        "then": {
-          "additionalProperties": false,
-          "properties": {
-            "issuance_class": {
-              "enum": [
-                "V",
-                "H",
-                "D",
-                "U"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "issuance_class"
-          ],
-          "type": "object"
-        },
-        "why": {
-          "$ref": "#/$defs/singleLine"
-        }
-      },
-      "required": [
-        "if",
-        "then",
-        "why"
-      ],
-      "type": "object"
-    },
-    "match": {
-      "additionalProperties": false,
-      "minProperties": 1,
-      "properties": {
-        "classification_key": {
-          "minLength": 1,
-          "pattern": "^[^\\n\\r]+$",
-          "type": "string"
-        },
-        "sku_parts": {
-          "$ref": "#/$defs/skuPartsMatch"
-        }
-      },
-      "type": "object"
-    },
     "meta": {
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "description": {
-          "$ref": "#/$defs/singleLine"
+          "type": "string"
         },
         "effective_on": {
-          "$ref": "#/$defs/dateISO"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string"
         },
         "notes": {
-          "default": [],
           "items": {
-            "maxLength": 70,
-            "pattern": "^[^\\n\\r]*$",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "type": "array"
         },
         "policy_key": {
-          "const": "logistics_issuance",
+          "pattern": "^[a-z0-9_]+$",
           "type": "string"
         },
         "schema_version": {
@@ -162,10 +103,15 @@
           "type": "integer"
         },
         "status": {
-          "$ref": "#/$defs/policyStatus"
+          "enum": [
+            "draft",
+            "active",
+            "deprecated"
+          ],
+          "type": "string"
         },
         "title": {
-          "$ref": "#/$defs/singleLine"
+          "type": "string"
         },
         "version": {
           "minimum": 1,
@@ -174,95 +120,71 @@
       },
       "required": [
         "policy_key",
-        "effective_on",
-        "description",
-        "version",
-        "schema_version",
         "title",
         "status"
       ],
       "type": "object"
     },
-    "policyStatus": {
-      "enum": [
-        "draft",
-        "active",
-        "deprecated"
-      ],
-      "type": "string"
-    },
-    "qualifiers": {
-      "additionalProperties": false,
-      "properties": {
-        "homeless_required": {
-          "type": "boolean"
-        },
-        "veteran_required": {
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    },
-    "singleLine": {
-      "minLength": 1,
-      "pattern": "^[^\\n\\r]+$",
-      "type": "string"
-    },
-    "skuPartsMatch": {
-      "additionalProperties": false,
-      "properties": {
-        "category": {
-          "pattern": "^[A-Z]{2}$",
-          "type": "string"
-        },
-        "source": {
-          "$ref": "#/$defs/tokenUpper2"
-        },
-        "subcategory": {
-          "pattern": "^[A-Z]{2}$",
-          "type": "string"
-        },
-        "issuance_class": {
-          "enum": [
-            "V",
-            "H",
-            "D",
-            "U"
-          ],
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
     "sku_constraints": {
       "additionalProperties": false,
       "properties": {
-        "allowed_sources": {
-          "items": {
-            "$ref": "#/$defs/tokenUpper2"
-          },
-          "minItems": 1,
-          "type": "array"
-        },
-        "allowed_units": {
-          "items": {
-            "$ref": "#/$defs/token"
-          },
-          "minItems": 1,
-          "type": "array"
-        },
         "rules": {
           "items": {
             "additionalProperties": false,
             "properties": {
               "cadence": {
-                "$ref": "#/$defs/cadence"
+                "additionalProperties": true,
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "max_per_period": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "period_days": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "scope": {
+                    "enum": [
+                      "classification",
+                      "sku"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "max_per_period",
+                  "period_days",
+                  "scope"
+                ],
+                "type": "object"
               },
               "match": {
-                "$ref": "#/$defs/match"
+                "additionalProperties": false,
+                "properties": {
+                  "classification_key": {
+                    "type": "string"
+                  },
+                  "sku_parts": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  }
+                },
+                "type": "object"
               },
               "qualifiers": {
-                "$ref": "#/$defs/qualifiers"
+                "additionalProperties": false,
+                "properties": {
+                  "homeless_required": {
+                    "type": "boolean"
+                  },
+                  "veteran_required": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
               }
             },
             "required": [
@@ -270,43 +192,13 @@
             ],
             "type": "object"
           },
-          "minItems": 1,
           "type": "array"
         }
       },
       "required": [
-        "allowed_units",
-        "allowed_sources",
         "rules"
       ],
       "type": "object"
-    },
-    "token": {
-      "pattern": "^[a-z][a-z0-9_]{0,63}$",
-      "type": "string"
-    },
-    "tokenUpper2": {
-      "pattern": "^[A-Z]{2}$",
-      "type": "string"
-    },
-    "ulid": {
-      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
-      "type": "string"
-    }
-  },
-  "$id": "https://vcdb.local/schemas/policy_logistics_issuance.schema.json",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "Validates policy_logistics_issuance.json (issuance defaults/rules and SKU-derived constraints).",
-  "properties": {
-    "issuance": {
-      "$ref": "#/$defs/issuance"
-    },
-    "meta": {
-      "$ref": "#/$defs/meta"
-    },
-    "sku_constraints": {
-      "$ref": "#/$defs/sku_constraints"
     }
   },
   "required": [
@@ -314,6 +206,6 @@
     "issuance",
     "sku_constraints"
   ],
-  "title": "Logistics Issuance Policy Schema",
+  "title": "Logistics Issuance Policy",
   "type": "object"
 }

@@ -28,75 +28,24 @@
           "issuance_class": "H"
         },
         "why": "Commercial sleeping gear reserved for homeless issuance"
-      },
-      {
-        "if": {
-          "issuance_class": "V"
-        },
-        "then": {
-          "issuance_class": "V"
-        },
-        "why": "Fallback: use SKU issuance_class V"
-      },
-      {
-        "if": {
-          "issuance_class": "H"
-        },
-        "then": {
-          "issuance_class": "H"
-        },
-        "why": "Fallback: use SKU issuance_class H"
-      },
-      {
-        "if": {
-          "issuance_class": "U"
-        },
-        "then": {
-          "issuance_class": "U"
-        },
-        "why": "Fallback: use SKU issuance_class U"
-      },
-      {
-        "if": {
-          "issuance_class": "D"
-        },
-        "then": {
-          "issuance_class": "D"
-        },
-        "why": "Discretionary items: default deny until approval/override workflow exists"
       }
     ]
   },
   "meta": {
     "description": "Issuance criteria and cadence rules for inventory SKUs.",
-    "effective_on": "2026-01-01",
+    "effective_on": "2026-02-23",
     "notes": [
-      "Customer qualifications and issuance frequency limits.",
-      "See logistics/sku.py for SKU construction/breakdown.",
-      "To add new sources, update logistics/sku.py NEW_RE first.",
-      "No override provisions yet; anticipated in later revisions.",
-      "Ordering matters: overrides first, fallbacks last.",
-      "WHK is project-built PRN; NOT enforced via",
-      "logistics_issuance policy. Track via Finance/Calendar later."
+      "Governance controls cadence/qualifiers/overrides only.",
+      "SKU validation taxonomy belongs to Logistics slice.",
+      "Issuance class 'D' means Durable (staff-issued and returned); it is not a discretionary class."
     ],
     "policy_key": "logistics_issuance",
     "schema_version": 1,
     "status": "draft",
     "title": "Logistics Issuance Policy",
-    "version": 1
+    "version": 2
   },
   "sku_constraints": {
-    "allowed_sources": [
-      "DR",
-      "LC"
-    ],
-    "allowed_units": [
-      "each",
-      "lbs",
-      "kit",
-      "box",
-      "pack"
-    ],
     "rules": [
       {
         "cadence": {

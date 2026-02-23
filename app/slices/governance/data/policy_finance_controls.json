@@ -33,7 +33,7 @@
   },
   "meta": {
     "description": "Spending authority, caps, and budget periods.",
-    "effective_on": "2026-01-01",
+    "effective_on": "2026-02-23",
     "notes": [
       "Caps are authoritative; do not duplicate in other policies.",
       "All values are PII-free; identifiers are ULIDs only."
@@ -42,12 +42,14 @@
     "schema_version": 1,
     "status": "draft",
     "title": "Finance Controls Policy",
-    "version": 1
+    "version": 2
   },
   "spending": {
     "approvers": {
       "level1": [
-        "president, vice_president, treasurer"
+        "president",
+        "vice_president",
+        "treasurer"
       ],
       "level2": [
         "governor"
