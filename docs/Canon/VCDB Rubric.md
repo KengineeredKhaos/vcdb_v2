@@ -276,8 +276,6 @@ Ledger emit: (event type + changed_fields policy)
 * **Template** (columns/sections)
 * **Ledger** (if it mutates)
 
-
-
 ## Dataset catalog for Customers
 
 ### 1) Customers List

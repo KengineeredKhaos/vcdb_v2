@@ -25,12 +25,13 @@
                aria-current="{{ 'page' if bp.startswith('resources') else '' }}">Resources</a>
           {% endif %}
 
-          {# Customers nav disabled until a param-free customers index/search route exists #}
-          {# {% if has_endpoint('customers.index') %}
-            <a href="{{ url_for('customers.index') }}"
-              aria-current="{{ 'page' if bp.startswith('customers') else '' }}">Customers</a>
-          {% endif %} #}
-
+          {# Customer nav #}
+          {% if has_endpoint('customers.customers_list_get') %}
+            <a href="{{ url_for('customers.customers_list_get') }}"
+               aria-current="{{ 'page' if bp.startswith('customers') else '' }}">
+              Customers
+            </a>
+          {% endif %}
 
           {% if has_endpoint('inventory.hello') %}
             <a href="{{ url_for('inventory.hello') }}"

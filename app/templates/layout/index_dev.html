@@ -1,0 +1,146 @@
+{% extends "layout/base.html" %}
+{% block title %}VCDB · Dev Portal{% endblock %}
+
+{% block content %}
+<section class="hero" style="margin-top:18px;">
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+  <a class="btn" href="{{ url_for('web.index', probe=1) }}">Probe all</a>
+  <a class="btn" href="{{ url_for('web.index') }}">Clear</a>
+
+  {# existing “Known good” buttons stay here #}
+  </div>
+  <div class="hero-card">
+    <div class="glow"></div>
+    <h1>VCDB v2 — Dev Portal</h1>
+    <p class="muted">
+      Environment: <span class="kbd">{{ env|default('dev') }}</span>
+      · Live sitemap of param-free GET routes.
+    </p>
+
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+      {% if has_endpoint('customers.customers_list_get') %}
+        <a class="btn" href="{{ url_for('customers.customers_list_get') }}">
+          Customers
+        </a>
+      {% endif %}
+
+      {% if has_endpoint('resources.search_resources') %}
+        <a class="btn" href="{{ url_for('resources.search_resources') }}">
+          Resources
+        </a>
+      {% endif %}
+
+      {% if has_endpoint('sponsors.search_sponsor') %}
+        <a class="btn" href="{{ url_for('sponsors.search_sponsor') }}">
+          Sponsors
+        </a>
+      {% endif %}
+
+      {% if has_endpoint('governance.roles') %}
+        <a class="btn" href="{{ url_for('governance.roles') }}">
+          Governance
+        </a>
+      {% endif %}
+
+      {% if has_endpoint('inventory.hello') %}
+        <a class="btn" href="{{ url_for('inventory.hello') }}">
+          Inventory
+        </a>
+      {% endif %}
+
+      {% if has_endpoint('transactions.ledger_index') %}
+        <a class="btn" href="{{ url_for('transactions.ledger_index') }}">
+          Ledger
+        </a>
+      {% elif has_endpoint('finance.journal_index') %}
+        <a class="btn" href="{{ url_for('finance.journal_index') }}">
+          Ledger
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="features" style="margin-top:14px;">
+    <div class="card">
+      <h3 style="margin-top:0;">Known-good entry points</h3>
+      <p class="muted" style="margin-top:.35rem;">
+        Buttons above only appear when the endpoint exists.
+      </p>
+      <ul style="margin:.5rem 0 0 1rem;">
+        <li><code>/</code> (this page)</li>
+        {% if has_endpoint('customers.customers_list_get') %}
+          <li><code>/customers/</code> — Customers list</li>
+        {% endif %}
+        {% if has_endpoint('resources.search_resources') %}
+          <li>Resources search</li>
+        {% endif %}
+        {% if has_endpoint('auth.login') %}
+          <li>Login</li>
+        {% endif %}
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">Route index</h3>
+      <p class="muted" style="margin-top:.35rem;">
+        Param-free GET routes:
+        <span class="kbd">{{ routes|length }}</span>
+      </p>
+      <p class="muted" style="margin-top:.35rem;">
+        This list stays current automatically as slices come online.
+      </p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">How to use</h3>
+      <p class="muted" style="margin-top:.35rem;">
+        Treat this as a smoke-test hub: click through, confirm
+        render + navigation, then move on.
+      </p>
+    </div>
+  </div>
+
+  <h2 style="margin-top:18px;">All param-free GET routes</h2>
+  <div class="card" style="overflow:auto;">
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:.35rem .4rem;">Path</th>
+          <th style="text-align:left; padding:.35rem .4rem;">Endpoint</th>
+          <th style="text-align:left; padding:.35rem .4rem;">Blueprint</th>
+          <th style="text-align:left; padding:.35rem .4rem;">Probe</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in routes %}
+          {% set p = probes.get(r.endpoint) if probes else None %}
+          <tr>
+            <td style="padding:.25rem .4rem;">
+              <a href="{{ r.href }}"><code>{{ r.path }}</code></a>
+            </td>
+            <td style="padding:.25rem .4rem;"><code>{{ r.endpoint }}</code></td>
+            <td style="padding:.25rem .4rem;"><span class="muted">{{ r.blueprint }}</span></td>
+            <td style="padding:.25rem .4rem;">
+              {% if not probes %}
+                <span class="muted">—</span>
+              {% elif p %}
+                {% if p.ok %}
+                  ✅ <span class="kbd">{{ p.status }}</span>
+                {% elif p.status in [301,302,303,307,308] %}
+                  ↪ <span class="kbd">{{ p.status }}</span>
+                  {% if p.location %}<span class="muted">{{ p.location }}</span>{% endif %}
+                {% else %}
+                  ❌ <span class="kbd">{{ p.status }}</span>
+                  {% if p.location %}<span class="muted">{{ p.location }}</span>{% endif %}
+                {% endif %}
+              {% else %}
+                <span class="muted">n/a</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
