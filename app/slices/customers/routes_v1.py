@@ -205,15 +205,8 @@ def customers_list_get():
     _ctx_ro()
     page = _arg_int("page", 1, lo=1, hi=10_000)
     per_page = _arg_int("per_page", 25, lo=5, hi=200)
-    p, labels = svc.list_customer_summaries_with_labels(
-        page=page,
-        per_page=per_page,
-    )
-    return render_template(
-        "customers/list.html",
-        page=p,
-        labels=labels,
-    )
+    p = svc.list_customer_summaries(page=page, per_page=per_page)
+    return render_template("customers/list.html", page=p)
 
 
 # -----------------
@@ -225,15 +218,13 @@ def customers_list_get():
 @bp.get("/<entity_ulid>")
 def customer_overview_get(entity_ulid: str):
     _ctx_ro()
-    vm = svc.get_customer_overview_vm(entity_ulid)
+    dash = svc.get_customer_dashboard(entity_ulid)
+    ratings = svc.get_current_needs_ratings(entity_ulid)
     return render_template(
         "customers/overview.html",
         entity_ulid=entity_ulid,
-        display_name=vm.display_name,
-        dash=vm.dash,
-        elig=vm.elig,
-        ratings=vm.ratings,
-        reassess_due=vm.reassess_due,
+        dash=dash,
+        ratings=ratings,
     )
 
 
@@ -247,7 +238,6 @@ def customer_overview_get(entity_ulid: str):
 @bp.get("/<entity_ulid>/history")
 def customer_history_timeline_get(entity_ulid: str):
     _ctx_ro()
-    display_name = svc.get_entity_display_name(entity_ulid)
     page = _arg_int("page", 1, lo=1, hi=10_000)
     per_page = _arg_int("per_page", 25, lo=5, hi=200)
     p = svc.list_customer_history_items(
@@ -258,7 +248,6 @@ def customer_history_timeline_get(entity_ulid: str):
     return render_template(
         "customers/history_timeline.html",
         entity_ulid=entity_ulid,
-        display_name=display_name,
         page=p,
     )
 
@@ -266,7 +255,6 @@ def customer_history_timeline_get(entity_ulid: str):
 @bp.get("/<entity_ulid>/history/<history_ulid>")
 def customer_history_detail_get(entity_ulid: str, history_ulid: str):
     _ctx_ro()
-    display_name = svc.get_entity_display_name(entity_ulid)
     d = svc.get_customer_history_detail_public(
         entity_ulid=entity_ulid,
         history_ulid=history_ulid,
@@ -274,7 +262,6 @@ def customer_history_detail_get(entity_ulid: str, history_ulid: str):
     return render_template(
         "customers/history_detail.html",
         entity_ulid=entity_ulid,
-        display_name=display_name,
         detail=d,
     )
 

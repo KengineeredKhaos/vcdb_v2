@@ -133,7 +133,9 @@ def rewrap_page[T, U](page: Page[T], items: Sequence[U]) -> Page[U]:
 # ----------------------------
 
 
-def paginate_list[T](
+def paginate_list[
+    T
+](
     items: Sequence[T],
     *,
     page: int = 1,
@@ -162,7 +164,8 @@ def paginate_sa(
     page: int = 1,
     per_page: int = 10,
     max_per_page: int | None = 100,
-) -> Page[Any]: ...
+) -> Page[Any]:
+    ...
 
 
 @overload
@@ -172,7 +175,8 @@ def paginate_sa(
     page: int = 1,
     per_page: int = 10,
     max_per_page: int | None = 100,
-) -> Page[Any]: ...
+) -> Page[Any]:
+    ...
 
 
 def paginate_sa(
@@ -195,7 +199,13 @@ def paginate_sa(
     from flask import current_app
     from flask_sqlalchemy import SQLAlchemy
 
-    db: SQLAlchemy = current_app.extensions["sqlalchemy"].db  # type: ignore
+    ext = current_app.extensions.get("sqlalchemy")
+    if ext is None:
+        raise RuntimeError("Flask-SQLAlchemy extension not initialized")
+    # Flask-SQLAlchemy 3.x stores the SQLAlchemy instance directly in
+    # current_app.extensions["sqlalchemy"]. Older code sometimes wraps
+    # it and exposes the instance as .db.
+    db: SQLAlchemy = getattr(ext, "db", ext)  # type: ignore[assignment]
 
     page, per_page = _normalize(page, per_page, max_per_page)
 
@@ -225,7 +235,9 @@ def paginate_sa(
 # ----------------------------
 
 
-def paginate[T](
+def paginate[
+    T
+](
     source: Sequence[T] | Query | Select,
     *,
     page: int = 1,

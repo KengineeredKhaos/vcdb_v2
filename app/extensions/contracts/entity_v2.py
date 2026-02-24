@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.extensions.errors import ContractError
 from app.slices.entity import guards as ent_guards
 from app.slices.entity import services as ent_services
-from app.slices.entity.mapper import OrgView, PersonView
+from app.slices.entity.mapper import EntityLabelDTO, OrgView, PersonView
 
 # -----------------
 # Contract Error
@@ -50,7 +50,6 @@ def require_person_entity_ulid(
     try:
         return ent_guards.require_person_entity_ulid(
             entity_ulid,
-            kind,
             allow_archived=allow_archived,
         )
     except Exception as exc:
@@ -95,7 +94,10 @@ def get_person_view(entity_ulid: str) -> PersonView:
     try:
         # Guard: must be a person entity.
         ent_guards.require_person_entity_ulid(entity_ulid)
-        return ent_services.get_person_view(entity_ulid=entity_ulid)
+        v = ent_services.get_person_view(entity_ulid=entity_ulid)
+        if v is None:
+            raise LookupError("person not found")
+        return v
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
 
@@ -105,6 +107,34 @@ def get_org_view(entity_ulid: str) -> OrgView:
     try:
         # Guard: must be an org entity.
         ent_guards.require_org_entity_ulid(entity_ulid)
-        return ent_services.get_org_view(entity_ulid=entity_ulid)
+        v = ent_services.get_org_view(entity_ulid=entity_ulid)
+        if v is None:
+            raise LookupError("org not found")
+        return v
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+# -----------------
+# Cross-slice labels
+# -----------------
+
+
+def get_entity_labels(entity_ulids: list[str]) -> dict[str, EntityLabelDTO]:
+    where = "entity_v2.get_entity_labels"
+    try:
+        return ent_services.get_entity_labels(entity_ulids=entity_ulids)
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+def get_entity_label(entity_ulid: str) -> EntityLabelDTO:
+    where = "entity_v2.get_entity_label"
+    try:
+        d = ent_services.get_entity_labels(entity_ulids=[entity_ulid])
+        v = d.get(entity_ulid)
+        if v is None:
+            raise LookupError("entity not found")
+        return v
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc

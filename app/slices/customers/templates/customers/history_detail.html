@@ -1,0 +1,58 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Customer · History Detail{% endblock %}
+
+{% block content %}
+{% set name = display_name|default(entity_ulid) %}
+{% set env = detail.parsed.envelope %}
+
+<section class="card" style="margin-top:18px;">
+  <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div>
+      <h1 style="margin:0 0 6px;">History Detail</h1>
+      <div class="muted">{{ name }} · <code>{{ entity_ulid }}</code></div>
+    </div>
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+      <a class="btn" href="{{ url_for('customers.customer_history_timeline_get', entity_ulid=entity_ulid) }}">Back to Timeline</a>
+      <a class="btn" href="{{ url_for('customers.customer_overview_get', entity_ulid=entity_ulid) }}">Back to Overview</a>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0;">Envelope</h2>
+  <table class="table">
+    <tr><th>title</th><td>{{ env.title }}</td></tr>
+    <tr><th>summary</th><td>{{ env.summary }}</td></tr>
+    <tr><th>severity</th><td><code>{{ env.severity }}</code></td></tr>
+    <tr><th>happened_at</th><td><code>{{ env.happened_at_iso }}</code></td></tr>
+    <tr><th>schema</th><td><code>{{ env.schema_name }}</code> v{{ env.schema_version }}</td></tr>
+    <tr><th>source_slice</th><td><code>{{ env.source_slice }}</code></td></tr>
+    <tr><th>source_ref_ulid</th><td><code>{{ env.source_ref_ulid or "—" }}</code></td></tr>
+    <tr><th>created_by_actor</th><td><code>{{ env.created_by_actor_ulid or "—" }}</code></td></tr>
+    <tr>
+      <th>public_tags</th>
+      <td>
+        {% if env.public_tags %}
+          {% for t in env.public_tags %}
+            <code>{{ t }}</code>{% if not loop.last %} {% endif %}
+          {% endfor %}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+    </tr>
+  </table>
+
+  {% if env.refs %}
+    <h3>Refs</h3>
+    <pre class="code">{{ env.refs | tojson(indent=2) }}</pre>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0;">Payload</h2>
+  <p class="muted">Payload is producer-owned; this view is non-authoritative.</p>
+  <pre class="code">{{ detail.parsed.payload | tojson(indent=2) }}</pre>
+</section>
+{% endblock %}

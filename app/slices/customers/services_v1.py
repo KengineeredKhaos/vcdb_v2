@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -160,242 +159,6 @@ def get_current_needs_ratings(entity_ulid: str) -> dict[str, str]:
     )
     rows = db.session.execute(stmt).all()
     return dict(rows)
-
-
-# -----------------
-# Internal DTOs
-# -----------------
-
-
-@dataclass(frozen=True, slots=True)
-class CustomerOverviewVM:
-    entity_ulid: str
-    display_name: str
-    dash: CustomerDashboardView
-    elig: CustomerEligibilityView
-    ratings: dict[str, str]
-    reassess_due: bool
-
-
-# -----------------
-# Display Name Builder
-# -----------------
-
-
-def _uniq_entity_ulids(entity_ulids: list[str]) -> list[str]:
-    seen: set[str] = set()
-    out: list[str] = []
-    for u in entity_ulids:
-        u2 = ensure_entity_ulid(u)
-        if u2 not in seen:
-            seen.add(u2)
-            out.append(u2)
-    return out
-
-
-def get_entity_display_names(entity_ulids: list[str]) -> dict[str, str]:
-    """
-    Batch label hydration for UI (PII stays in Entity; not persisted here).
-
-    Expected entity_v2 contract:
-      get_entity_labels(list[str]) ->
-        dict[ulid, str] OR dict[ulid, LabelDTO] OR list[LabelDTO]
-    """
-    ulids = _uniq_entity_ulids(entity_ulids)
-    if not ulids:
-        return {}
-
-    try:
-        from app.extensions.contracts import entity_v2  # type: ignore
-    except Exception:
-        # Allow Customers slice to run even if Entity contract isn't wired yet.
-        return {}
-
-    res: Any = entity_v2.get_entity_labels(ulids)
-
-    # Case A: dict[ulid, str]
-    if isinstance(res, dict):
-        vals = list(res.values())
-        if not vals:
-            return {}
-        v0 = vals[0]
-        if isinstance(v0, str):
-            return {str(k): str(v) for k, v in res.items()}
-
-        # Case B: dict[ulid, LabelDTO-like]
-        out: dict[str, str] = {}
-        for k, v in res.items():
-            name = getattr(v, "display_name", None)
-            if not name and isinstance(v, dict):
-                name = v.get("display_name")
-            out[str(k)] = str(name) if name else str(k)
-        return out
-
-    # Case C: list[LabelDTO-like]
-    if isinstance(res, (list, tuple)):
-        out2: dict[str, str] = {}
-        for v in res:
-            u = getattr(v, "entity_ulid", None)
-            if not u and isinstance(v, dict):
-                u = v.get("entity_ulid")
-            if not u:
-                continue
-            name = getattr(v, "display_name", None)
-            if not name and isinstance(v, dict):
-                name = v.get("display_name")
-            out2[str(u)] = str(name) if name else str(u)
-        return out2
-
-    return {}
-
-
-def get_entity_display_name(entity_ulid: str) -> str:
-    ent = ensure_entity_ulid(entity_ulid)
-    d = get_entity_display_names([ent])
-    return d.get(ent, ent)
-
-
-def list_customer_summaries_with_labels(
-    *, page: int, per_page: int
-) -> tuple[Page[CustomerSummaryView], dict[str, str]]:
-    p = list_customer_summaries(page=page, per_page=per_page)
-    ulids = [v.entity_ulid for v in p.items]
-    labels = get_entity_display_names(ulids)
-    return p, labels
-
-
-# -----------------
-# View/List/Summary
-# -----------------
-
-
-def _summary_stmt():
-    return (
-        select(Customer, CustomerEligibility)
-        .outerjoin(
-            CustomerEligibility,
-            CustomerEligibility.entity_ulid == Customer.entity_ulid,
-        )
-        .order_by(Customer.entity_ulid.desc())
-    )
-
-
-def _tuple_to_summary_row(
-    t: tuple[Customer, CustomerEligibility | None],
-) -> CustomerSummaryRow:
-    c, e = t
-    return CustomerSummaryRow(
-        entity_ulid=c.entity_ulid,
-        status=c.status,
-        intake_step=c.intake_step,
-        intake_completed_at_iso=c.intake_completed_at_iso,
-        needs_state=c.needs_state,
-        tier1_min=c.tier1_min,
-        flag_tier1_immediate=bool(c.flag_tier1_immediate),
-        watchlist=bool(c.watchlist),
-        veteran_status=(e.veteran_status if e else "unknown"),
-    )
-
-
-def list_customer_summaries(
-    *, page: int, per_page: int
-) -> Page[CustomerSummaryView]:
-    # Page[tuple]
-    p0 = paginate(_summary_stmt(), page=page, per_page=per_page)
-
-    # Page[View]
-    return p0.map(_tuple_to_summary_row).map(map_customer_summary)
-
-
-def get_customer_summary(entity_ulid: str) -> CustomerSummaryView:
-    stmt = _summary_stmt().where(Customer.entity_ulid == entity_ulid)
-    row = db.session.execute(stmt).first()
-    if row is None:
-        raise LookupError("customer not found")
-    return map_customer_summary(_tuple_to_summary_row(row))
-
-
-def _tuple_to_dashboard_row(
-    t: tuple[Customer, CustomerEligibility | None, CustomerProfile | None],
-) -> CustomerDashboardRow:
-    c, e, p = t
-    return CustomerDashboardRow(
-        entity_ulid=c.entity_ulid,
-        status=c.status,
-        intake_step=c.intake_step,
-        intake_completed_at_iso=c.intake_completed_at_iso,
-        needs_state=c.needs_state,
-        watchlist=bool(c.watchlist),
-        veteran_status=(e.veteran_status if e else "unknown"),
-        homeless_status=(e.homeless_status if e else "unknown"),
-        assessment_version=(p.assessment_version if p else 0),
-        last_assessed_at_iso=(p.last_assessed_at_iso if p else None),
-        tier1_min=c.tier1_min,
-        tier2_min=c.tier2_min,
-        tier3_min=c.tier3_min,
-        flag_tier1_immediate=bool(c.flag_tier1_immediate),
-    )
-
-
-def get_customer_dashboard(entity_ulid: str) -> CustomerDashboardView:
-    stmt = (
-        select(Customer, CustomerEligibility, CustomerProfile)
-        .outerjoin(
-            CustomerEligibility,
-            CustomerEligibility.entity_ulid == Customer.entity_ulid,
-        )
-        .outerjoin(
-            CustomerProfile,
-            CustomerProfile.entity_ulid == Customer.entity_ulid,
-        )
-        .where(Customer.entity_ulid == entity_ulid)
-    )
-
-    row = db.session.execute(stmt).first()
-    if row is None:
-        raise LookupError("customer not found")
-
-    r = _tuple_to_dashboard_row(row)
-    return map_customer_dashboard(r)
-
-
-def get_customer_eligibility(entity_ulid: str) -> CustomerEligibilityView:
-    e = db.session.get(CustomerEligibility, entity_ulid)
-    if e is None:
-        # Either create/ensure facet earlier, or treat as unknown snapshot:
-        raise LookupError("customer eligibility missing")
-
-    r = CustomerEligibilityRow(
-        entity_ulid=e.entity_ulid,
-        veteran_status=e.veteran_status,
-        veteran_method=e.veteran_method,
-        branch=e.branch,
-        era=e.era,
-        homeless_status=e.homeless_status,
-        approved_by_ulid=e.approved_by_ulid,
-        approved_at_iso=e.approved_at_iso,
-    )
-    return map_customer_eligibility(r)
-
-
-def get_customer_overview_vm(entity_ulid: str) -> CustomerOverviewVM:
-    ent = ensure_entity_ulid(entity_ulid)
-    dash = get_customer_dashboard(ent)
-    elig = get_customer_eligibility(ent)
-    ratings = get_current_needs_ratings(ent)
-    display_name = get_entity_display_name(ent)
-
-    # Policy-driven later; for now "due" means never assessed.
-    reassess_due = dash.last_assessed_at_iso is None
-
-    return CustomerOverviewVM(
-        entity_ulid=ent,
-        display_name=display_name,
-        dash=dash,
-        elig=elig,
-        ratings=ratings,
-        reassess_due=reassess_due,
-    )
 
 
 # -----------------
@@ -979,6 +742,118 @@ def needs_complete(
         happened_at_utc=now,
     )
     return ChangeSetDTO(ent, False, False, tuple(changed), "review")
+
+
+# -----------------
+# View/List/Summary
+# -----------------
+
+
+def _summary_stmt():
+    return (
+        select(Customer, CustomerEligibility)
+        .outerjoin(
+            CustomerEligibility,
+            CustomerEligibility.entity_ulid == Customer.entity_ulid,
+        )
+        .order_by(Customer.entity_ulid.desc())
+    )
+
+
+def _tuple_to_summary_row(
+    t: tuple[Customer, CustomerEligibility | None],
+) -> CustomerSummaryRow:
+    c, e = t
+    return CustomerSummaryRow(
+        entity_ulid=c.entity_ulid,
+        status=c.status,
+        intake_step=c.intake_step,
+        intake_completed_at_iso=c.intake_completed_at_iso,
+        needs_state=c.needs_state,
+        tier1_min=c.tier1_min,
+        flag_tier1_immediate=bool(c.flag_tier1_immediate),
+        watchlist=bool(c.watchlist),
+        veteran_status=(e.veteran_status if e else "unknown"),
+    )
+
+
+def list_customer_summaries(
+    *, page: int, per_page: int
+) -> Page[CustomerSummaryView]:
+    # Page[tuple]
+    p0 = paginate(_summary_stmt(), page=page, per_page=per_page)
+
+    # Page[View]
+    return p0.map(_tuple_to_summary_row).map(map_customer_summary)
+
+
+def get_customer_summary(entity_ulid: str) -> CustomerSummaryView:
+    stmt = _summary_stmt().where(Customer.entity_ulid == entity_ulid)
+    row = db.session.execute(stmt).first()
+    if row is None:
+        raise LookupError("customer not found")
+    return map_customer_summary(_tuple_to_summary_row(row))
+
+
+def _tuple_to_dashboard_row(
+    t: tuple[Customer, CustomerEligibility | None, CustomerProfile | None],
+) -> CustomerDashboardRow:
+    c, e, p = t
+    return CustomerDashboardRow(
+        entity_ulid=c.entity_ulid,
+        status=c.status,
+        intake_step=c.intake_step,
+        intake_completed_at_iso=c.intake_completed_at_iso,
+        needs_state=c.needs_state,
+        watchlist=bool(c.watchlist),
+        veteran_status=(e.veteran_status if e else "unknown"),
+        homeless_status=(e.homeless_status if e else "unknown"),
+        assessment_version=(p.assessment_version if p else 0),
+        last_assessed_at_iso=(p.last_assessed_at_iso if p else None),
+        tier1_min=c.tier1_min,
+        tier2_min=c.tier2_min,
+        tier3_min=c.tier3_min,
+        flag_tier1_immediate=bool(c.flag_tier1_immediate),
+    )
+
+
+def get_customer_dashboard(entity_ulid: str) -> CustomerDashboardView:
+    stmt = (
+        select(Customer, CustomerEligibility, CustomerProfile)
+        .outerjoin(
+            CustomerEligibility,
+            CustomerEligibility.entity_ulid == Customer.entity_ulid,
+        )
+        .outerjoin(
+            CustomerProfile,
+            CustomerProfile.entity_ulid == Customer.entity_ulid,
+        )
+        .where(Customer.entity_ulid == entity_ulid)
+    )
+
+    row = db.session.execute(stmt).first()
+    if row is None:
+        raise LookupError("customer not found")
+
+    r = _tuple_to_dashboard_row(row)
+    return map_customer_dashboard(r)
+
+
+def get_customer_eligibility(entity_ulid: str) -> CustomerEligibilityView:
+    e = db.session.get(CustomerEligibility, entity_ulid)
+    if e is None:
+        # Either create/ensure facet earlier, or treat as unknown snapshot:
+        raise LookupError("customer eligibility missing")
+
+    r = CustomerEligibilityRow(
+        entity_ulid=e.entity_ulid,
+        veteran_status=e.veteran_status,
+        veteran_method=e.veteran_method,
+        homeless_status=e.homeless_status,
+        approved_by_ulid=e.approved_by_ulid,
+        approved_at_iso=e.approved_at_iso,
+    )
+    return map_customer_eligibility(r)
 
 
 # -----------------

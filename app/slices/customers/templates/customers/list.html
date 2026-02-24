@@ -2,61 +2,74 @@
 {% from "_macros.html" import paginate %}
 {% block title %}Customers · List{% endblock %}
 {% block content %}
-<h1>Customers</h1>
+{% set p = page if page is defined else p %}
+{% set labels = labels|default({}) %}
+{% set per_page = request.args.get('per_page', 25) %}
 
-<form method="post" action="{{ url_for('customers.create') }}" style="display:flex; gap:.5rem; flex-wrap:wrap; align-items:end; margin:.5rem 0 1rem;">
-  <div>
-    <div style="font-size:.85rem;opacity:.8;">First name</div>
-    <input name="first_name" required>
-  </div>
-  <div>
-    <div style="font-size:.85rem;opacity:.8;">Last name</div>
-    <input name="last_name" required>
-  </div>
-  <div>
-    <div style="font-size:.85rem;opacity:.8;">Email</div>
-    <input name="email" type="email" placeholder="name@example.org">
-  </div>
-  <div>
-    <div style="font-size:.85rem;opacity:.8;">Phone</div>
-    <input name="phone" placeholder="+1 555 123 4567">
-  </div>
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <button type="submit">Create</button>
-</form>
+{% macro page_url(n) -%}
+  {{ url_for('customers.customers_list_get', page=n, per_page=per_page) }}
+{%- endmacro %}
 
-<table>
-  <tr>
-    <th>name</th><th>email</th><th>phone</th><th>status</th><th>updated</th><th>actions</th>
-  </tr>
-  {% for r in rows %}
-  <tr>
-    <td>{{ r.first_name }} {{ r.last_name }}</td>
-    <td>{{ r.email or "—" }}</td>
-    <td>{{ r.phone or "—" }}</td>
-    <td>{{ 'customer' if r.is_customer else '—' }}</td>
-    <td>{{ r.updated_at_utc }}</td>
-    <td>
-      <form method="post" action="{{ url_for('customers.update_contact') }}" style="display:flex; gap:.25rem; align-items:center;">
-        <input type="hidden" name="person_id" value="{{ r.id }}">
-        <input name="email" type="email" placeholder="new email">
-        <input name="phone" placeholder="new phone">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit">Update</button>
-      </form>
-    </td>
-  </tr>
-  {% else %}
-  <tr><td colspan="6"><em>No customers yet.</em></td></tr>
-  {% endfor %}
-</table>
+<section class="card" style="margin-top:18px;">
+  <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div>
+      <h1 style="margin:0 0 6px;">Customers</h1>
+      <div class="muted">Dataset #1 — customer summaries (non‑PII)</div>
+    </div>
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+      <a class="btn" href="{{ url_for('customers.admin_inbox_get') }}">Admin Inbox</a>
+    </div>
+  </div>
+  <p class="muted" style="margin:10px 0 0;">
+    Customer creation happens in the Entity wizard; this list is an operator view.
+  </p>
+</section>
 
-{{ paginate(p, page_url) }}
+<section class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Customer</th>
+        <th>ULID</th>
+        <th>Status</th>
+        <th>Resume step</th>
+        <th>Needs</th>
+        <th>T1</th>
+        <th>Watch</th>
+        <th>Veteran</th>
+        <th style="width:1%; white-space:nowrap;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in p.items %}
+        {% set name = labels.get(r.entity_ulid) or r.entity_ulid %}
+        <tr>
+          <td>
+            <a href="{{ url_for('customers.customer_overview_get', entity_ulid=r.entity_ulid) }}">
+              {{ name }}
+            </a>
+            {% if r.flag_tier1_immediate %}
+              <span class="muted" title="Tier 1 immediate">⚑</span>
+            {% endif %}
+          </td>
+          <td><code>{{ r.entity_ulid }}</code></td>
+          <td><code>{{ r.status }}</code></td>
+          <td><code>{{ r.intake_step }}</code></td>
+          <td><code>{{ r.needs_state }}</code></td>
+          <td>{{ r.tier1_min if r.tier1_min is not none else "—" }}</td>
+          <td>{{ "yes" if r.watchlist else "—" }}</td>
+          <td><code>{{ r.veteran_status }}</code></td>
+          <td style="white-space:nowrap;">
+            <a class="btn" href="{{ url_for('customers.customer_overview_get', entity_ulid=r.entity_ulid) }}">Open</a>
+            <a class="btn" href="{{ url_for('customers.intake_start', entity_ulid=r.entity_ulid) }}">Resume</a>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9"><em>No customers yet.</em></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
 
-<style>
-  table { width:100%; border-collapse:collapse; margin-top:.75rem; }
-  th, td { padding:.4rem .5rem; border-bottom:1px solid #eee; text-align:left; }
-  .btn { display:inline-block; padding:.35rem .6rem; border:1px solid #ddd; border-radius:6px; text-decoration:none; }
-  .btn:hover { background:#f6f6f6; }
-</style>
+  {{ paginate(p, page_url) }}
+</section>
 {% endblock %}

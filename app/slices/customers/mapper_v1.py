@@ -119,8 +119,6 @@ class CustomerEligibilityView:
     entity_ulid: str  # CustomerEligibility table
     veteran_status: str  # CustomerEligibility table
     veteran_method: str | None  # CustomerEligibility table
-    branch: str | None  # CustomerEligibility table
-    era: str | None  # CustomerEligibility table
     homeless_status: str  # CustomerEligibility table
     approved_by_ulid: str | None  # CustomerEligibility table
     approved_at_iso: str | None  # CustomerEligibility table
@@ -135,8 +133,6 @@ class CustomerEligibilityRow:
     entity_ulid: str
     veteran_status: str
     veteran_method: str | None
-    branch: str | None
-    era: str | None
     homeless_status: str
     approved_by_ulid: str | None
     approved_at_iso: str | None

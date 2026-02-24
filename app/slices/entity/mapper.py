@@ -59,6 +59,25 @@ Mapped JSON payload: (for reference only)
 # -----------------
 
 
+@dataclass(frozen=True, slots=True)
+class EntityLabelDTO:
+    """
+    Minimal, UI-oriented label for cross-slice display.
+    PII is intentionally limited to names (no email/phone/address).
+    """
+
+    entity_ulid: str
+    kind: str  # "person" | "org" | "unknown"
+    display_name: str
+    # People (optional)
+    first_name: str | None
+    last_name: str | None
+    preferred_name: str | None
+    # Orgs (optional)
+    legal_name: str | None
+    dba_name: str | None
+
+
 # -----------------
 # services_wizard
 # DTO's
@@ -191,6 +210,8 @@ def map_org_view(o: EntityOrg) -> OrgView:
 
 
 __all__ = [
+    # Entity_v2 DTOs
+    "EntityLabelDTO",
     # Wizard DTOs (dataclasses)
     "WizardEntityCreatedDTO",
     "WizardStepDTO",

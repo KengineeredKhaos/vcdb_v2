@@ -20,6 +20,8 @@
   </table>
 
   <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:12px;">
+    <a class="btn" href="{{ url_for('customers.customer_overview_get', entity_ulid=entity_ulid) }}">Open Overview</a>
+    <a class="btn" href="{{ url_for('customers.customers_list_get') }}">Back to List</a>
     <a class="btn" href="{{ url_for('customers.intake_review_get', entity_ulid=entity_ulid) }}">Back to Review</a>
     <a class="btn" href="{{ url_for('customers.intake_start', entity_ulid=entity_ulid) }}">Resume Wizard</a>
   </div>

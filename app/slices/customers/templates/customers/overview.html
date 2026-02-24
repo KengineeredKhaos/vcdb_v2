@@ -1,0 +1,118 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Customer · {{ display_name|default(entity_ulid) }}{% endblock %}
+
+{% block content %}
+{% set name = display_name|default(entity_ulid) %}
+
+<section class="card" style="margin-top:18px;">
+  <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div>
+      <h1 style="margin:0 0 6px;">{{ name }}</h1>
+      <div class="muted">Customer <code>{{ entity_ulid }}</code></div>
+    </div>
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+      <a class="btn" href="{{ url_for('customers.customers_list_get') }}">Back to List</a>
+      <a class="btn" href="{{ url_for('customers.customer_history_timeline_get', entity_ulid=entity_ulid) }}">History</a>
+      <a class="btn" href="{{ url_for('customers.intake_start', entity_ulid=entity_ulid) }}">Resume Wizard</a>
+    </div>
+  </div>
+
+  {% if reassess_due|default(false) %}
+    <div class="muted" style="margin-top:10px;">
+      <strong>Reassessment due.</strong>
+      Last assessed: <code>{{ dash.last_assessed_at_iso or "(never)" }}</code>
+    </div>
+  {% endif %}
+</section>
+
+<div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(320px,1fr)); gap:12px;">
+
+  <section class="card">
+    <h2 style="margin-top:0;">At a glance</h2>
+    <table class="table">
+      <tr><th>Status</th><td><code>{{ dash.status }}</code></td></tr>
+      <tr><th>Needs state</th><td><code>{{ dash.needs_state }}</code></td></tr>
+      <tr><th>Watchlist</th><td>{{ "yes" if dash.watchlist else "no" }}</td></tr>
+      <tr><th>Resume step</th><td><code>{{ dash.intake_step }}</code></td></tr>
+      <tr><th>Completed</th><td>{{ dash.intake_completed_at_iso or "—" }}</td></tr>
+      <tr><th>Veteran</th><td><code>{{ dash.veteran_status }}</code></td></tr>
+      <tr><th>Homeless</th><td><code>{{ dash.homeless_status }}</code></td></tr>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2 style="margin-top:0;">Eligibility</h2>
+
+    {% set e = elig|default(None) %}
+    {% if e %}
+      {% set branch = e.branch|default(None) %}
+      {% set era = e.era|default(None) %}
+      <table class="table">
+        <tr><th>Veteran status</th><td><code>{{ e.veteran_status }}</code></td></tr>
+        <tr><th>Verification method</th><td><code>{{ e.veteran_method or "—" }}</code></td></tr>
+        <tr><th>Branch</th><td><code>{{ branch or "—" }}</code></td></tr>
+        <tr><th>Era</th><td><code>{{ era or "—" }}</code></td></tr>
+        <tr><th>Homeless status</th><td><code>{{ e.homeless_status }}</code></td></tr>
+        <tr>
+          <th>Approval</th>
+          <td>
+            <code>{{ e.approved_by_ulid or "—" }}</code>
+            @ <code>{{ e.approved_at_iso or "—" }}</code>
+          </td>
+        </tr>
+      </table>
+    {% else %}
+      <p class="muted">Eligibility snapshot not loaded for this view yet.</p>
+    {% endif %}
+
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:10px;">
+      <a class="btn" href="{{ url_for('customers.intake_eligibility_get', entity_ulid=entity_ulid) }}">Edit Eligibility</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 style="margin-top:0;">Needs</h2>
+
+    <table class="table">
+      <tr><th>Assessment version</th><td>{{ dash.assessment_version }}</td></tr>
+      <tr><th>Last assessed</th><td>{{ dash.last_assessed_at_iso or "(never)" }}</td></tr>
+      <tr><th>Tier 1 min</th><td>{{ dash.tier1_min if dash.tier1_min is not none else "unknown" }}</td></tr>
+      <tr><th>Tier 2 min</th><td>{{ dash.tier2_min if dash.tier2_min is not none else "unknown" }}</td></tr>
+      <tr><th>Tier 3 min</th><td>{{ dash.tier3_min if dash.tier3_min is not none else "unknown" }}</td></tr>
+      <tr><th>Tier 1 immediate</th><td>{{ "yes" if dash.flag_tier1_immediate else "no" }}</td></tr>
+    </table>
+
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:10px;">
+      <a class="btn" href="{{ url_for('customers.intake_needs_tier1_get', entity_ulid=entity_ulid) }}">
+        {% if reassess_due|default(false) %}Begin reassessment{% else %}Reassess{% endif %}
+      </a>
+      <a class="btn" href="{{ url_for('customers.intake_needs_tier1_get', entity_ulid=entity_ulid) }}">Edit Needs</a>
+    </div>
+
+    <p class="muted" style="margin:10px 0 0;">
+      Reassessment starts when you submit Tier 1.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2 style="margin-top:0;">Current factor values</h2>
+
+    {% set r = ratings|default({}) %}
+    {% if r %}
+      <table class="table">
+        {% for k in [
+          "food","hygiene","health","housing","clothing",
+          "income","employment","transportation","education",
+          "family","peergroup","tech"
+        ] %}
+          <tr><th>{{ k }}</th><td><code>{{ r.get(k, "na") }}</code></td></tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p class="muted">No ratings loaded.</p>
+    {% endif %}
+  </section>
+
+</div>
+{% endblock %}

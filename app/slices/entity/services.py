@@ -1,6 +1,8 @@
 # app/slices/entity/services.py
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from sqlalchemy import asc
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -16,7 +18,13 @@ from app.lib.utils import (
     validate_phone,
 )
 
-from .mapper import OrgView, PersonView, map_org_view, map_person_view
+from .mapper import (
+    EntityLabelDTO,
+    OrgView,
+    PersonView,
+    map_org_view,
+    map_person_view,
+)
 from .models import (
     Entity,
     EntityAddress,
@@ -521,6 +529,101 @@ def list_orgs_by_roles(
     org_page = paginate_sa(q, page=page, per_page=per_page)
     views = [map_org_view(o) for o in org_page.items]
     return rewrap_page(org_page, views)
+
+
+# -----------------
+# Cross-slice labels
+# -----------------
+
+
+def get_entity_labels(
+    *, entity_ulids: list[str]
+) -> dict[str, EntityLabelDTO]:
+    raw = [str(u).strip() for u in (entity_ulids or []) if str(u).strip()]
+    if not raw:
+        return {}
+
+    seen: set[str] = set()
+    ulids: list[str] = []
+    for u in raw:
+        if u not in seen:
+            seen.add(u)
+            ulids.append(u)
+
+    if len(ulids) > 500:
+        raise ValueError("too many entity_ulids (max 500)")
+
+    q = (
+        db.session.query(Entity)
+        .filter(Entity.ulid.in_(ulids))
+        .options(
+            joinedload(Entity.person),
+            joinedload(Entity.org),
+        )
+    )
+    ents = q.all()
+    by_ulid = {e.ulid: e for e in ents}
+
+    out: dict[str, EntityLabelDTO] = {}
+    for u in ulids:
+        e = by_ulid.get(u)
+        if e is None:
+            out[u] = EntityLabelDTO(
+                entity_ulid=u,
+                kind="unknown",
+                display_name=u,
+                first_name=None,
+                last_name=None,
+                preferred_name=None,
+                legal_name=None,
+                dba_name=None,
+            )
+            continue
+
+        if e.kind == "person" and e.person is not None:
+            p = e.person
+            pref = (p.preferred_name or "").strip() or None
+            full = " ".join(x for x in [p.first_name, p.last_name] if x)
+            disp = (pref or full).strip() or e.ulid
+            out[u] = EntityLabelDTO(
+                entity_ulid=e.ulid,
+                kind="person",
+                display_name=disp,
+                first_name=p.first_name,
+                last_name=p.last_name,
+                preferred_name=p.preferred_name,
+                legal_name=None,
+                dba_name=None,
+            )
+            continue
+
+        if e.kind == "org" and e.org is not None:
+            o = e.org
+            disp = (o.dba_name or o.legal_name or "").strip() or e.ulid
+            out[u] = EntityLabelDTO(
+                entity_ulid=e.ulid,
+                kind="org",
+                display_name=disp,
+                first_name=None,
+                last_name=None,
+                preferred_name=None,
+                legal_name=o.legal_name,
+                dba_name=o.dba_name,
+            )
+            continue
+
+        out[u] = EntityLabelDTO(
+            entity_ulid=e.ulid,
+            kind="unknown",
+            display_name=e.ulid,
+            first_name=None,
+            last_name=None,
+            preferred_name=None,
+            legal_name=None,
+            dba_name=None,
+        )
+
+    return out
 
 
 # -----------------

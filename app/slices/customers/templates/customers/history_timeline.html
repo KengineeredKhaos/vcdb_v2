@@ -1,0 +1,70 @@
+{% extends "layout/base.html" %}
+{% from "_macros.html" import paginate %}
+
+{% block title %}Customer · History{% endblock %}
+
+{% block content %}
+{% set p = page if page is defined else p %}
+{% set name = display_name|default(entity_ulid) %}
+{% set per_page = request.args.get('per_page', 25) %}
+
+{% macro page_url(n) -%}
+  {{ url_for('customers.customer_history_timeline_get', entity_ulid=entity_ulid, page=n, per_page=per_page) }}
+{%- endmacro %}
+
+<section class="card" style="margin-top:18px;">
+  <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div>
+      <h1 style="margin:0 0 6px;">History</h1>
+      <div class="muted">{{ name }} · <code>{{ entity_ulid }}</code></div>
+    </div>
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+      <a class="btn" href="{{ url_for('customers.customer_overview_get', entity_ulid=entity_ulid) }}">Back to Overview</a>
+      <a class="btn" href="{{ url_for('customers.customers_list_get') }}">Back to List</a>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Severity</th>
+        <th>Title</th>
+        <th>Summary</th>
+        <th>Source</th>
+        <th>Tags</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for h in p.items %}
+        <tr>
+          <td style="white-space:nowrap;"><code>{{ h.happened_at_iso }}</code></td>
+          <td><code>{{ h.severity }}</code></td>
+          <td>
+            <a href="{{ url_for('customers.customer_history_detail_get', entity_ulid=entity_ulid, history_ulid=h.ulid) }}">
+              {{ h.title or h.kind }}
+            </a>
+          </td>
+          <td>{{ h.summary or "—" }}</td>
+          <td><code>{{ h.source_slice }}</code></td>
+          <td>
+            {% if h.public_tags %}
+              {% for t in h.public_tags %}
+                <code>{{ t }}</code>{% if not loop.last %} {% endif %}
+              {% endfor %}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6"><em>No history yet.</em></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {{ paginate(p, page_url) }}
+</section>
+{% endblock %}
