@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from sqlalchemy import asc
+from sqlalchemy import asc, desc
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.extensions import db, event_bus
@@ -19,11 +19,16 @@ from app.lib.utils import (
 )
 
 from .mapper import (
+    EntityAddressSummaryDTO,
+    EntityCardDTO,
+    EntityContactSummaryDTO,
     EntityLabelDTO,
     OrgView,
     PersonView,
     map_org_view,
     map_person_view,
+    to_address_summary,
+    to_contact_summary,
 )
 from .models import (
     Entity,
@@ -532,7 +537,10 @@ def list_orgs_by_roles(
 
 
 # -----------------
-# Cross-slice labels
+# Cross-slice
+# Entity Rolodex
+# labels, contacts,
+# addresses access
 # -----------------
 
 
@@ -623,6 +631,115 @@ def get_entity_labels(
             dba_name=None,
         )
 
+    return out
+
+
+def get_entity_contact_summary(
+    *, entity_ulids: list[str]
+) -> dict[str, EntityContactSummaryDTO]:
+    raw = [str(u).strip() for u in (entity_ulids or []) if str(u).strip()]
+    if not raw:
+        return {}
+
+    seen: set[str] = set()
+    ulids: list[str] = []
+    for u in raw:
+        if u not in seen:
+            seen.add(u)
+            ulids.append(u)
+
+    if len(ulids) > 500:
+        raise ValueError("too many entity_ulids (max 500)")
+
+    rows = (
+        db.session.query(EntityContact)
+        .filter(EntityContact.entity_ulid.in_(ulids))
+        .filter(EntityContact.archived_at.is_(None))
+        .order_by(
+            EntityContact.entity_ulid.asc(),
+            desc(EntityContact.is_primary),
+            desc(EntityContact.updated_at_utc),
+            desc(EntityContact.created_at_utc),
+        )
+        .all()
+    )
+
+    by_ulid: dict[str, list[EntityContact]] = {u: [] for u in ulids}
+    for c in rows:
+        by_ulid.setdefault(c.entity_ulid, []).append(c)
+
+    out: dict[str, EntityContactSummaryDTO] = {}
+    for u in ulids:
+        out[u] = to_contact_summary(u, by_ulid.get(u, []))
+    return out
+
+
+def get_entity_address_summary(
+    *, entity_ulids: list[str]
+) -> dict[str, EntityAddressSummaryDTO]:
+    raw = [str(u).strip() for u in (entity_ulids or []) if str(u).strip()]
+    if not raw:
+        return {}
+
+    seen: set[str] = set()
+    ulids: list[str] = []
+    for u in raw:
+        if u not in seen:
+            seen.add(u)
+            ulids.append(u)
+
+    if len(ulids) > 500:
+        raise ValueError("too many entity_ulids (max 500)")
+
+    rows = (
+        db.session.query(EntityAddress)
+        .filter(EntityAddress.entity_ulid.in_(ulids))
+        .filter(EntityAddress.archived_at.is_(None))
+        .order_by(
+            EntityAddress.entity_ulid.asc(),
+            desc(EntityAddress.updated_at_utc),
+            desc(EntityAddress.created_at_utc),
+        )
+        .all()
+    )
+
+    by_ulid: dict[str, list[EntityAddress]] = {u: [] for u in ulids}
+    for a in rows:
+        by_ulid.setdefault(a.entity_ulid, []).append(a)
+
+    out: dict[str, EntityAddressSummaryDTO] = {}
+    for u in ulids:
+        out[u] = to_address_summary(u, by_ulid.get(u, []))
+    return out
+
+
+def get_entity_cards(
+    *,
+    entity_ulids: list[str],
+    include_contacts: bool = False,
+    include_addresses: bool = False,
+) -> dict[str, EntityCardDTO]:
+    labels = get_entity_labels(entity_ulids=entity_ulids)
+
+    contacts = (
+        get_entity_contact_summary(entity_ulids=entity_ulids)
+        if include_contacts
+        else {}
+    )
+    addresses = (
+        get_entity_address_summary(entity_ulids=entity_ulids)
+        if include_addresses
+        else {}
+    )
+
+    out: dict[str, EntityCardDTO] = {}
+    for u, lab in labels.items():
+        out[u] = EntityCardDTO(
+            entity_ulid=u,
+            label=lab,
+            contacts=contacts.get(u) if include_contacts else None,
+            addresses=addresses.get(u) if include_addresses else None,
+        )
     return out
 
 

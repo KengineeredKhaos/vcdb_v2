@@ -5,7 +5,9 @@ from typing import Final
 # Logistics taxonomy (slice-local; not Governance).
 # Keep SKU parsing/validation constants here to avoid JSON churn.
 
-SKU_CODE_REGEX: Final[str] = r"^[A-Z]{2}-[A-Z]{2}-[A-Z]{2}-[A-Z*]-[A-Z*]-[A-Z]-\d{3}$"
+SKU_CODE_REGEX: Final[
+    str
+] = r"^[A-Z]{2}-[A-Z]{2}-[A-Z]{2}-[A-Z*]-[A-Z*]-[A-Z]-\d{3}$"
 
 # SKU part vocabulary used by parse_sku()/validate_sku().
 # Pattern: CC-SS-RR-X-Y-Z-NNN
@@ -59,8 +61,10 @@ ITEM_LIFECYCLE_STATES: Final[tuple[str, ...]] = (
     "returned",
 )
 
-ITEM_LIFECYCLE_TRANSITIONS: Final[dict[str, tuple[str, ...]]] = {'available': ('issued',),
- 'inspected': ('available',),
- 'issued': ('returned',),
- 'received': ('inspected',),
- 'returned': ('inspected',)}
+ITEM_LIFECYCLE_TRANSITIONS: Final[dict[str, tuple[str, ...]]] = {
+    "available": ("issued",),
+    "inspected": ("available",),
+    "issued": ("returned",),
+    "received": ("inspected",),
+    "returned": ("inspected",),
+}

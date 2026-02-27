@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 from app.lib.chrono import now_iso8601_ms
@@ -30,7 +28,7 @@ blob = build_customer_history_blob(
 )
 
 customers_v1.append_history_entry(
-    target_entity_ulid=customer_entity_ulid,
+    target_entity_ulid=entity_ulid,
     kind="issuance_summary",
     blob_json=blob,
     actor_ulid=actor_ulid,

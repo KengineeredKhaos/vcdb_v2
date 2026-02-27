@@ -57,6 +57,9 @@ def _probe_routes(
     Probe each param-free GET route using Flask's test client.
     Returns: endpoint -> {ok, status, location}
     """
+    PROBE_EXCLUDE_BLUEPRINTS = {"admin"}
+    PROBE_EXCLUDE_ENDPOINT_PREFIXES = {"auth.dev_"}
+
     client = current_app.test_client()
 
     # Make probing resilient: don't let route exceptions blow up the portal.
@@ -68,10 +71,23 @@ def _probe_routes(
         out: dict[str, dict[str, str | int | bool]] = {}
         for r in routes:
             endpoint = r["endpoint"]
+            bpname = r.get("blueprint") or endpoint.split(".", 1)[0]
             href = _as_path(r["href"])
 
             # Avoid probing the portal itself and spiraling.
             if endpoint == "web.index" or href == "/":
+                continue
+            if bpname in PROBE_EXCLUDE_BLUEPRINTS:
+                out[endpoint] = {
+                    "ok": False,
+                    "status": -1,
+                    "location": "skipped",
+                }
+                continue
+            if any(
+                endpoint.startswith(p)
+                for p in PROBE_EXCLUDE_ENDPOINT_PREFIXES
+            ):
                 continue
 
             try:

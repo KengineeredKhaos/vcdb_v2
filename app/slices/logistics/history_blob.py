@@ -30,7 +30,7 @@ blob = build_customer_history_blob(
 )
 
 customers_v1.append_history_entry(
-    target_entity_ulid=customer_entity_ulid,
+    target_entity_ulid=entity_ulid,
     kind="issuance_summary",
     blob_json=blob,
     actor_ulid=actor_ulid,

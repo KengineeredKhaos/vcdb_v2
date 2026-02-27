@@ -13,6 +13,7 @@ from app.lib.chrono import now_iso8601_ms
 from app.lib.jsonutil import stable_dumps
 
 from . import services_poc as poc
+from . import taxonomy as tax
 from .mapper import (
     SponsorPOCView,
     SponsorView,
@@ -33,32 +34,47 @@ from .models import (
 
 CAPS_SECTION = "sponsor:capability:v1"
 PLEDGE_SECTION = "sponsor:pledge:v1"
-POC_RELATION = "poc"  # table-level convention, not board policy
 PROSPECT_REAL_SECTION = "sponsor:prospect_realization:v1"
-_SPONSOR_POC_SPEC = poc.POCSpec(owner_col="sponsor_entity_ulid")
 
+POC_RELATION = "poc"  # table-level convention, not board policy
+_SPONSOR_POC_SPEC = poc.POCSpec(
+    owner_col="sponsor_entity_ulid",
+    allowed_scopes=tuple(tax.POC_SCOPES),
+    default_scope=str(tax.DEFAULT_POC_SCOPE),
+    max_rank=int(tax.POC_MAX_RANK),
+)
+
+_ALLOWED_CAPS = frozenset(tax.all_capability_codes())
+_NOTE_MAX = int(tax.SPONSOR_CAPABILITY_NOTE_MAX)
 
 # -----------------
-# Policy access (lazy imports)
+# Taxonomy-backed
+# helpers
 # -----------------
 
 
-def _caps_policy():
-    from app.extensions.contracts import governance_v2
-
-    return governance_v2.get_sponsor_capability_policy()
+def note_max() -> int:
+    return int(tax.SPONSOR_CAPABILITY_NOTE_MAX)
 
 
-def _lifecycle_policy():
-    from app.extensions.contracts import governance_v2
-
-    return governance_v2.get_sponsor_lifecycle_policy()
+def allowed_capability_codes() -> list[str]:
+    return tax.all_capability_codes()
 
 
-def _pledge_policy() -> dict:
-    from app.extensions.contracts import governance_v2
+def readiness_allowed() -> set[str]:
+    return set(tax.SPONSOR_READINESS_CODES)
 
-    return governance_v2.get_sponsor_pledge_policy()
+
+def mou_allowed() -> set[str]:
+    return set(tax.SPONSOR_MOU_CODES)
+
+
+def _default_readiness() -> str:
+    return str(tax.SPONSOR_READINESS_DEFAULT).strip().lower()
+
+
+def _default_mou() -> str:
+    return str(tax.SPONSOR_MOU_DEFAULT).strip().lower()
 
 
 # -----------------
@@ -301,7 +317,7 @@ def _flatten_caps_payload(
                 if note_raw is not None:
                     note = str(note_raw).strip()
                     if note:
-                        out["note"] = note[:note_max]
+                        out["note"] = note[:_NOTE_MAX]
                 flat[flat_key] = out
             else:
                 raise ValueError("invalid capability payload value")
@@ -333,15 +349,11 @@ def _latest_snapshot(
 
 
 def _validate_caps(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    # NOTE: keep copy-shaped with sponsors/resources _validate_caps()
     flat = _flatten_caps_payload(payload)
     if not flat:
         return flat
 
-    caps = _caps_policy()
-    allowed_flat = set(caps.all_codes)
-
-    unknown = sorted(k for k in flat if k not in allowed_flat)
+    unknown = sorted(k for k in flat if k not in _ALLOWED_CAPS)
     if unknown:
         raise ValueError(f"invalid capability keys: {', '.join(unknown)}")
 
@@ -359,41 +371,6 @@ def _next_version(sponsor_entity_ulid: str, section: str) -> int:
         .scalar()
     )
     return int(cur or 0) + 1
-
-
-# -----------------
-# Policy-backed helpers (Board policy via Governance)
-# -----------------
-
-
-def allowed_capability_codes() -> list[str]:
-    caps = _caps_policy()
-    return sorted(caps.all_codes)
-
-
-def readiness_allowed() -> set[str]:
-    pol = _lifecycle_policy()
-    return set(pol["readiness_allowed"])
-
-
-def mou_allowed() -> set[str]:
-    pol = _lifecycle_policy()
-    return set(pol["mou_allowed"])
-
-
-def note_max() -> int:
-    caps = _caps_policy()
-    return int(caps.note_max)
-
-
-def _default_readiness() -> str:
-    pol = _lifecycle_policy()
-    return str(pol["readiness_allowed"][0])
-
-
-def _default_mou() -> str:
-    pol = _lifecycle_policy()
-    return str(pol["mou_allowed"][0])
 
 
 # -----------------
@@ -418,8 +395,8 @@ def ensure_sponsor(
             entity_ulid=sponsor_entity_ulid,
             first_seen_utc=now,
             last_touch_utc=now,
-            readiness_status="draft",
-            mou_status="none",
+            readiness_status=_default_readiness(),
+            mou_status=_default_mou(),
         )
         db.session.add(s)
         db.session.flush()
@@ -567,7 +544,7 @@ def patch_capabilities(
             if note is None or str(note).strip() == "":
                 merged[flat].pop("note", None)
             else:
-                merged[flat]["note"] = str(note)[:note_max]
+                merged[flat]["note"] = str(note)[:_NOTE_MAX]
     if stable_dumps(merged) == stable_dumps(last):
         s.last_touch_utc = now
         db.session.flush()
@@ -728,15 +705,11 @@ def set_mou_status(
 
 
 def _allowed_pledge_types() -> set[str]:
-    policy = _pledge_policy()
-    # JSON shape: "types": [{ "code": "...", "label": "..." }, ...]
-    return {t["code"] for t in policy.get("types", [])}
+    return set(tax.SPONSOR_PLEDGE_TYPE_CODES)
 
 
 def _allowed_pledge_statuses() -> set[str]:
-    policy = _pledge_policy()
-    # JSON shape: "statuses": [{ "code": "...", "label": "..." }, ...]
-    return {s["code"] for s in policy.get("statuses", [])}
+    return set(tax.SPONSOR_PLEDGE_STATUS_CODES)
 
 
 def _latest_pledges(sponsor_entity_ulid: str) -> dict[str, dict]:

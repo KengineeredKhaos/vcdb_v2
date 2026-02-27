@@ -1,5 +1,4 @@
-# app/slices/sponsors/services_poc.py
-
+# app/slices/resources/services_poc.py
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -9,9 +8,9 @@ from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.extensions import event_bus
-from app.extensions.contracts.governance_v2 import get_poc_policy
 from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms
+from app.lib.guards import ensure_actor_ulid, ensure_request_id
 
 POC_RELATION = "poc"
 
@@ -19,6 +18,10 @@ POC_RELATION = "poc"
 @dataclass(frozen=True)
 class POCSpec:
     owner_col: str
+    allowed_scopes: tuple[str, ...]
+    default_scope: str
+    max_rank: int
+
     person_col: str = "person_entity_ulid"
     relation_col: str = "relation"
     scope_col: str = "scope"
@@ -35,27 +38,32 @@ def _c(POCModel: type, name: str):
     return getattr(POCModel, name)
 
 
-def _normalize_scope_rank(*, scope: str | None, rank: int | None):
-    policy = get_poc_policy()
-    scopes = policy["poc_scopes"]
-    default_scope = policy["default_scope"]
-    max_rank = int(policy["max_rank"])
+def _normalize_scope_rank(
+    *,
+    spec: POCSpec,
+    scope: str | None,
+    rank: int | None,
+) -> tuple[str, int]:
+    sc = (scope or spec.default_scope or "").strip().lower()
+    if not sc:
+        sc = str(spec.default_scope).strip().lower()
 
-    sc = scope or default_scope
-    if sc not in scopes:
+    allowed = {str(s).strip().lower() for s in (spec.allowed_scopes or ())}
+    if sc not in allowed:
         raise ContractError(
-            code="policy_invalid",
-            where="poc._normalize_scope_rank",
+            code="bad_argument",
+            where="resources.services_poc._normalize_scope_rank",
             message=f"invalid scope '{sc}'",
             http_status=400,
-            data={"allowed_scopes": scopes},
+            data={"allowed_scopes": sorted(allowed)},
         )
 
     rk = 0 if rank is None else int(rank)
-    if not (0 <= rk <= max_rank):
+    max_rank = int(spec.max_rank)
+    if rk < 0 or rk > max_rank:
         raise ContractError(
-            code="policy_invalid",
-            where="poc._normalize_scope_rank",
+            code="bad_argument",
+            where="resources.services_poc._normalize_scope_rank",
             message=f"rank must be within 0..{max_rank}",
             http_status=400,
             data={"max_rank": max_rank},
@@ -82,9 +90,7 @@ def _flip_existing_primary(
                 _c(POCModel, spec.primary_col) == True,  # noqa: E712
             )
         )
-        .update(
-            {_c(POCModel, spec.primary_col): False}, synchronize_session=False
-        )
+        .update({_c(POCModel, spec.primary_col): False})
     )
 
 
@@ -104,19 +110,14 @@ def link_poc(
     actor_ulid: str | None = None,
     request_id: str,
 ):
-    if not request_id or not str(request_id).strip():
-        raise ContractError(
-            code="bad_request",
-            where="poc.link_poc",
-            message="request_id required",
-            http_status=400,
-        )
+    rid = ensure_request_id(request_id)
+    act = ensure_actor_ulid(actor_ulid)
+    now = now_iso8601_ms()
 
-    sc, rk = _normalize_scope_rank(scope=scope, rank=rank)
+    sc, rk = _normalize_scope_rank(spec=spec, scope=scope, rank=rank)
     if is_primary:
         _flip_existing_primary(session, POCModel, spec, owner_ulid, sc)
 
-    now = now_iso8601_ms()
     row = POCModel(
         **{
             spec.owner_col: owner_ulid,
@@ -137,11 +138,11 @@ def link_poc(
     session.flush()
 
     event_bus.emit(
-        domain="sponsors",
+        domain=domain,
         operation="poc_linked",
         target_ulid=owner_ulid,
-        actor_ulid=actor_ulid,
-        request_id=request_id,
+        actor_ulid=act,
+        request_id=rid,
         happened_at_utc=now,
         meta={
             "person_entity_ulid": person_entity_ulid,
@@ -173,13 +174,8 @@ def update_poc(
     actor_ulid: str | None = None,
     request_id: str,
 ):
-    if not request_id or not str(request_id).strip():
-        raise ContractError(
-            code="bad_request",
-            where="poc.update_poc",
-            message="request_id required",
-            http_status=400,
-        )
+    rid = ensure_request_id(request_id)
+    act = ensure_actor_ulid(actor_ulid)
 
     q = session.query(POCModel).filter(
         and_(
@@ -196,7 +192,7 @@ def update_poc(
     if not rows:
         raise ContractError(
             code="not_found",
-            where="poc.update_poc",
+            where="resources.services_poc.update_poc",
             message="POC link not found",
             http_status=404,
         )
@@ -204,7 +200,7 @@ def update_poc(
         scopes = sorted({getattr(r, spec.scope_col) for r in rows})
         raise ContractError(
             code="conflict",
-            where="poc.update_poc",
+            where="resources.services_poc.update_poc",
             message="multiple POC links exist; specify scope",
             http_status=409,
             data={"available_scopes": scopes},
@@ -214,7 +210,7 @@ def update_poc(
 
     new_scope = getattr(row, spec.scope_col) if scope is None else scope
     new_rank = getattr(row, spec.rank_col) if rank is None else rank
-    sc, rk = _normalize_scope_rank(scope=new_scope, rank=new_rank)
+    sc, rk = _normalize_scope_rank(spec=spec, scope=new_scope, rank=new_rank)
 
     if is_primary is not None:
         if bool(is_primary):
@@ -233,13 +229,14 @@ def update_poc(
 
     now = now_iso8601_ms()
     row.updated_at_utc = now
+    session.flush()
 
     event_bus.emit(
-        domain="sponsors",
+        domain=domain,
         operation="poc_updated",
         target_ulid=owner_ulid,
-        actor_ulid=actor_ulid,
-        request_id=request_id,
+        actor_ulid=act,
+        request_id=rid,
         happened_at_utc=now,
         meta={
             "person_entity_ulid": person_entity_ulid,
@@ -267,13 +264,8 @@ def unlink_poc(
     actor_ulid: str | None = None,
     request_id: str,
 ):
-    if not request_id or not str(request_id).strip():
-        raise ContractError(
-            code="bad_request",
-            where="poc.unlink_poc",
-            message="request_id required",
-            http_status=400,
-        )
+    rid = ensure_request_id(request_id)
+    act = ensure_actor_ulid(actor_ulid)
 
     q = session.query(POCModel).filter(
         and_(
@@ -288,13 +280,13 @@ def unlink_poc(
 
     rows = q.all()
     if not rows:
-        return
+        return None
 
     if len(rows) > 1 and not scope:
         scopes = sorted({getattr(r, spec.scope_col) for r in rows})
         raise ContractError(
             code="conflict",
-            where="poc.unlink_poc",
+            where="resources.services_poc.unlink_poc",
             message="multiple POC links exist; specify scope",
             http_status=409,
             data={"available_scopes": scopes},
@@ -305,13 +297,14 @@ def unlink_poc(
 
     now = now_iso8601_ms()
     row.updated_at_utc = now
+    session.flush()
 
     event_bus.emit(
-        domain="sponsors",
+        domain=domain,
         operation="poc_unlinked",
         target_ulid=owner_ulid,
-        actor_ulid=actor_ulid,
-        request_id=request_id,
+        actor_ulid=act,
+        request_id=rid,
         happened_at_utc=now,
         meta={
             "person_entity_ulid": person_entity_ulid,

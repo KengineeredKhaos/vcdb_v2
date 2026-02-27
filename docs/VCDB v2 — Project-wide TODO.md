@@ -122,6 +122,29 @@ Conventions:
 
 ---
 
+### Future Dev Documentation
+
+- [ ] @TODO: Document Dev Portal (dev/test landing) utility in Future Dev Toolkit:
+
+- Purpose: safe “cold-call GET” sitemap + smoke-test hub; not workflow-driving.
+
+- Where: web.index renders layout/index_dev.html in dev/test only.
+
+- Features:
+  
+  - auto सूची of param-free GET routes from current_app.url_map
+  - “Known-good entry points” buttons gated by has_endpoint()
+  - Probe-all (server-side test_client GET) with status codes + redirects
+  - Explicit exclusions: skip admin blueprint; skip auth.dev_* (or mark SKIP)
+  - Status legend: ✅ 2xx, ↪ 3xx, ❌ 4xx/5xx, SKIP
+
+- Guardrails:
+  
+  - Dev/test only; never enabled in prod
+  - Probe must not call routes with side effects; keep exclude lists updated
+
+---
+
 ## Done (locked / canonized)
 
 ### Customers slice canonization

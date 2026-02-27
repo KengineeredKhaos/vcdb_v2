@@ -1,10 +1,16 @@
 # app/slices/entity/mapper.py
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TypedDict
+from dataclasses import asdict, dataclass
+from typing import Any, TypedDict
 
-from .models import Entity, EntityContact, EntityOrg, EntityPerson
+from .models import (
+    Entity,
+    EntityAddress,
+    EntityContact,
+    EntityOrg,
+    EntityPerson,
+)
 
 """
 Slice-local projection layer.
@@ -166,6 +172,126 @@ def to_wizard_summary(ent: Entity) -> WizardSummaryDTO:
 
 
 # -----------------
+# Entity_v2 DTO's (Rolodex)
+# -----------------
+
+
+@dataclass(frozen=True, slots=True)
+class EntityContactSummaryDTO:
+    entity_ulid: str
+    primary_email: str | None
+    primary_phone: str | None
+    secondary_email: str | None
+    secondary_phone: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class EntityAddressDTO:
+    address1: str
+    address2: str | None
+    city: str
+    state: str
+    postal_code: str
+
+
+@dataclass(frozen=True, slots=True)
+class EntityAddressSummaryDTO:
+    entity_ulid: str
+    physical: EntityAddressDTO | None
+    postal: EntityAddressDTO | None
+
+
+@dataclass(frozen=True, slots=True)
+class EntityCardDTO:
+    """
+    Rolodex "card": label always; contacts/addresses are opt-in.
+    """
+
+    entity_ulid: str
+    label: EntityLabelDTO
+    contacts: EntityContactSummaryDTO | None
+    addresses: EntityAddressSummaryDTO | None
+
+
+# -----------------
+# Rolodex View-builder
+# functions
+# -----------------
+
+
+def entity_label_to_dict(label: EntityLabelDTO) -> dict[str, Any]:
+    # asdict() recursively converts nested dataclasses to dicts/lists
+    return asdict(label)
+
+
+def entity_card_to_dict(card: EntityCardDTO) -> dict[str, Any]:
+    # asdict() recursively converts nested dataclasses to dicts/lists
+    return asdict(card)
+
+
+def to_contact_summary(
+    entity_ulid: str,
+    rows: list[EntityContact],
+) -> EntityContactSummaryDTO:
+    # rows are expected to be pre-sorted best-first
+    emails: list[str] = []
+    phones: list[str] = []
+
+    for c in rows:
+        if c.email:
+            e = c.email.strip()
+            if e:
+                emails.append(e)
+        if c.phone:
+            p = c.phone.strip()
+            if p:
+                phones.append(p)
+        if len(emails) >= 2 and len(phones) >= 2:
+            break
+
+    return EntityContactSummaryDTO(
+        entity_ulid=entity_ulid,
+        primary_email=emails[0] if len(emails) > 0 else None,
+        secondary_email=emails[1] if len(emails) > 1 else None,
+        primary_phone=phones[0] if len(phones) > 0 else None,
+        secondary_phone=phones[1] if len(phones) > 1 else None,
+    )
+
+
+def _to_addr(a: EntityAddress) -> EntityAddressDTO:
+    return EntityAddressDTO(
+        address1=a.address1,
+        address2=a.address2,
+        city=a.city,
+        state=a.state,
+        postal_code=a.postal_code,
+    )
+
+
+def to_address_summary(
+    entity_ulid: str,
+    rows: list[EntityAddress],
+) -> EntityAddressSummaryDTO:
+    # rows are expected to be pre-sorted newest-first
+    physical: EntityAddressDTO | None = None
+    postal: EntityAddressDTO | None = None
+
+    for a in rows:
+        if physical is None and bool(a.is_physical):
+            physical = _to_addr(a)
+        if postal is None and bool(a.is_postal):
+            postal = _to_addr(a)
+        if physical is not None and postal is not None:
+            break
+
+    return EntityAddressSummaryDTO(
+        entity_ulid=entity_ulid,
+        physical=physical,
+        postal=postal,
+    )
+
+
+# -----------------
 # other functions
 # -----------------
 
@@ -216,6 +342,15 @@ __all__ = [
     "WizardEntityCreatedDTO",
     "WizardStepDTO",
     "WizardSummaryDTO",
+    # Rolodex (TypedDict)
+    "EntityCardDTO",
+    "EntityAddressDTO",
+    "EntityAddressSummaryDTO",
+    "EntityContactSummaryDTO",
+    # Rolodex Builders
+    "to_contact_summary",
+    "_to_addr",
+    "to_address_summary",
     # Views (TypedDict)
     "PersonView",
     "OrgView",

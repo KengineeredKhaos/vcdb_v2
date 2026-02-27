@@ -1,3 +1,5 @@
+# app/slices/resources/mapper.py
+
 """
 Slice-local projection layer.
 
@@ -12,6 +14,17 @@ from dataclasses import dataclass
 from typing import Any
 
 
+def resource_facts_to_contract_dto(view: ResourceView) -> dict[str, Any]:
+    return {
+        "entity_ulid": view.entity_ulid,
+        "admin_review_required": view.admin_review_required,
+        "readiness_status": view.readiness_status,
+        "mou_status": view.mou_status,
+        "active_capability_keys": sorted(view.active_capabilities),
+        "capability_last_update_utc": view.capability_last_update_utc,
+    }
+
+
 @dataclass(frozen=True)
 class ResourceCapabilityView:
     domain: str
@@ -20,17 +33,13 @@ class ResourceCapabilityView:
 
 @dataclass(frozen=True)
 class ResourceView:
-    resource_ulid: str
     entity_ulid: str
     admin_review_required: bool
     readiness_status: str
     mou_status: str
-    active_capabilities: list[ResourceCapabilityView]
+    active_capabilities_keys: list[ResourceCapabilityView]
+
     capability_last_update_utc: str | None
-    first_seen_utc: str | None
-    last_touch_utc: str | None
-    created_at_utc: str | None
-    updated_at_utc: str | None
 
 
 @dataclass(frozen=True)

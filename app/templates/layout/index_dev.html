@@ -30,8 +30,8 @@
         </a>
       {% endif %}
 
-      {% if has_endpoint('sponsors.search_sponsor') %}
-        <a class="btn" href="{{ url_for('sponsors.search_sponsor') }}">
+      {% if has_endpoint('sponsors.search_sponsors') %}
+        <a class="btn" href="{{ url_for('sponsors.search_sponsors') }}">
           Sponsors
         </a>
       {% endif %}
@@ -113,7 +113,7 @@
       </thead>
       <tbody>
         {% for r in routes %}
-          {% set p = probes.get(r.endpoint) if probes else None %}
+          {% set p = probes.get(r.endpoint) if probes is not none else none %}
           <tr>
             <td style="padding:.25rem .4rem;">
               <a href="{{ r.href }}"><code>{{ r.path }}</code></a>
@@ -121,20 +121,20 @@
             <td style="padding:.25rem .4rem;"><code>{{ r.endpoint }}</code></td>
             <td style="padding:.25rem .4rem;"><span class="muted">{{ r.blueprint }}</span></td>
             <td style="padding:.25rem .4rem;">
-              {% if not probes %}
+              {% if probes is none %}
                 <span class="muted">—</span>
-              {% elif p %}
-                {% if p.ok %}
-                  ✅ <span class="kbd">{{ p.status }}</span>
-                {% elif p.status in [301,302,303,307,308] %}
-                  ↪ <span class="kbd">{{ p.status }}</span>
-                  {% if p.location %}<span class="muted">{{ p.location }}</span>{% endif %}
-                {% else %}
-                  ❌ <span class="kbd">{{ p.status }}</span>
-                  {% if p.location %}<span class="muted">{{ p.location }}</span>{% endif %}
-                {% endif %}
-              {% else %}
+              {% elif p is none %}
                 <span class="muted">n/a</span>
+              {% elif p.status == -1 %}
+                <span class="muted">SKIP</span>
+              {% elif p.ok %}
+                ✅ <span class="kbd">{{ p.status }}</span>
+              {% elif p.status in [301,302,303,307,308] %}
+                ↪ <span class="kbd">{{ p.status }}</span>
+                {% if p.location %}<span class="muted">{{ p.location }}</span>{% endif %}
+              {% else %}
+                ❌ <span class="kbd">{{ p.status }}</span>
+                {% if p.location %}<span class="muted">{{ p.location }}</span>{% endif %}
               {% endif %}
             </td>
           </tr>

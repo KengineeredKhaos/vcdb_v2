@@ -17,33 +17,52 @@ from app.slices.resources import mapper as res_mapper
 from app.slices.resources import services as svc
 
 
-class ResourceViewDTO(TypedDict, total=False):
-    resource_ulid: str
+class ResourceFactsDTO(TypedDict, total=False):
     entity_ulid: str
     admin_review_required: bool
     readiness_status: str
     mou_status: str
-    active_capabilities: list[dict]
+    active_capability_keys: list[str]
     capability_last_update_utc: str | None
-    first_seen_utc: str | None
-    last_touch_utc: str | None
-    created_at_utc: str | None
-    updated_at_utc: str | None
+
+
+class ResourceProfileHintsDTO(TypedDict, total=False):
+    entity_ulid: str
+    service_area_note: str | None
+    sla_note: str | None
 
 
 __schema__ = {
-    "get_resource_view": {
-        "requires": ["resource_ulid"],
+    "get_resource_facts": {
+        "requires": ["entity_ulid"],
         "returns_keys": [
-            "resource_ulid",
             "entity_ulid",
             "admin_review_required",
             "readiness_status",
             "mou_status",
-            "active_capabilities",
+            "active_capability_keys",
+            "capability_last_update_utc",
         ],
-    }
+    },
+    "get_resource_profile_hints": {
+        "requires": ["entity_ulid]"],
+        "returns_keys": [
+            "entity_ulid",
+            "service_area_notes",
+            "sla_notes",
+        ],
+    },
+    "find_resources": {
+        "requires": [],
+        "returns_keys": ["items", "total", "page", "per"],
+    },
 }
+
+
+# -----------------
+# Contract Error
+# Handling
+# -----------------
 
 
 def _as_contract_error(where: str, exc: Exception) -> ContractError:
@@ -80,25 +99,34 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
     )
 
 
-def get_resource_view(*, entity_ulid: str) -> dict[str, Any] | None:
-    where = "resources_v2.get_resource_view"
+# -----------------
+# Read-Only Contracts
+# -----------------
+
+
+def get_resource_facts(*, entity_ulid: str) -> ResourceFactsDTO | None:
+    where = "resources_v2.get_resource_facts"
     try:
         view = svc.resource_view(entity_ulid)
-        return None if view is None else res_mapper.resource_view_to_dto(view)
+        if view is None:
+            return None
+        # You should implement this mapper to return flat keys and no notes.
+        return res_mapper.resource_facts_to_contract_dto(view)
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
 
 
-def ensure_resource(
-    *, entity_ulid: str, request_id: str, actor_ulid: str | None
-) -> str:
-    where = "resources_v2.ensure_resource"
+def get_resource_profile_hints(
+    *, entity_ulid: str
+) -> ResourceProfileHintsDTO | None:
+    where = "resources_v2.get_resource_profile_hints"
     try:
-        return svc.ensure_resource(
-            resource_entity_ulid=entity_ulid,
-            request_id=request_id,
-            actor_ulid=actor_ulid,
-        )
+        hints = svc.get_profile_hints(entity_ulid)
+        return {
+            "entity_ulid": entity_ulid,
+            "service_area_note": hints.get("service_area_note"),
+            "sla_note": hints.get("sla_note"),
+        }
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
 
@@ -123,7 +151,9 @@ def find_resources(
             per=per,
         )
         return {
-            "items": [res_mapper.resource_view_to_dto(v) for v in rows],
+            "items": [
+                res_mapper.resource_facts_to_contract_dto(v) for v in rows
+            ],
             "total": total,
             "page": page,
             "per": per,
@@ -132,35 +162,29 @@ def find_resources(
         raise _as_contract_error(where, exc) from exc
 
 
-def upsert_capabilities(
-    *,
-    entity_ulid: str,
-    payload: dict[str, Any],
-    request_id: str,
-    actor_ulid: str | None,
-) -> dict[str, Any]:
-    where = "resources_v2.upsert_capabilities"
+# -----------------
+# Mutation Services
+# & Confirmations
+# -----------------
+
+
+def ensure_resource(
+    *, entity_ulid: str, request_id: str, actor_ulid: str | None
+) -> str:
+    where = "resources_v2.ensure_resource"
     try:
-        hist_ulid = svc.upsert_capabilities(
+        return svc.ensure_resource(
             resource_entity_ulid=entity_ulid,
-            payload=payload,
             request_id=request_id,
             actor_ulid=actor_ulid,
         )
-        view = svc.resource_view(entity_ulid)
-        return {
-            "changed": hist_ulid is not None,
-            "history_ulid": hist_ulid,
-            "view": None
-            if view is None
-            else res_mapper.resource_view_to_dto(view),
-        }
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
 
 
 __all__ = [
-    "get_resource_view",
+    "get_resource_facts",
+    "get_resource_profile_hints",
     "ensure_resource",
-    "upsert_capabilities",
+    "find_resources",
 ]

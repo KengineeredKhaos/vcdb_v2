@@ -5,7 +5,14 @@ from __future__ import annotations
 from app.extensions.errors import ContractError
 from app.slices.entity import guards as ent_guards
 from app.slices.entity import services as ent_services
-from app.slices.entity.mapper import EntityLabelDTO, OrgView, PersonView
+from app.slices.entity.mapper import (
+    EntityAddressSummaryDTO,
+    EntityCardDTO,
+    EntityContactSummaryDTO,
+    EntityLabelDTO,
+    OrgView,
+    PersonView,
+)
 
 # -----------------
 # Contract Error
@@ -45,30 +52,32 @@ def require_person_entity_ulid(
     entity_ulid: str | None,
     *,
     allow_archived: bool = False,
+    where: str | None = None,
 ) -> str:
-    where = "entity_v2.require_person_entity_ulid"
+    err_where = where or "entity_v2.require_person_entity_ulid"
     try:
         return ent_guards.require_person_entity_ulid(
             entity_ulid,
             allow_archived=allow_archived,
         )
     except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
+        raise _as_contract_error(err_where, exc) from exc
 
 
 def require_org_entity_ulid(
     entity_ulid: str | None,
     *,
     allow_archived: bool = False,
+    where: str | None = None,
 ) -> str:
-    where = "entity_v2.require_org_entity_ulid"
+    err_where = where or "entity_v2.require_org_entity_ulid"
     try:
         return ent_guards.require_org_entity_ulid(
             entity_ulid,
             allow_archived=allow_archived,
         )
     except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
+        raise _as_contract_error(err_where, exc) from exc
 
 
 # -----------------
@@ -138,3 +147,57 @@ def get_entity_label(entity_ulid: str) -> EntityLabelDTO:
         return v
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
+
+
+def get_entity_contact_summary(
+    *, entity_ulids: list[str]
+) -> dict[str, EntityContactSummaryDTO]:
+    where = "entity_v2.get_entity_contact_summary"
+    try:
+        return ent_services.get_entity_contact_summary(
+            entity_ulids=entity_ulids
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+def get_entity_address_summary(
+    *, entity_ulids: list[str]
+) -> dict[str, EntityAddressSummaryDTO]:
+    where = "entity_v2.get_entity_address_summary"
+    try:
+        return ent_services.get_entity_address_summary(
+            entity_ulids=entity_ulids
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+def get_entity_cards(
+    *,
+    entity_ulids: list[str],
+    include_contacts: bool = False,
+    include_addresses: bool = False,
+) -> dict[str, EntityCardDTO]:
+    where = "entity_v2.get_entity_cards"
+    try:
+        return ent_services.get_entity_cards(
+            entity_ulids=entity_ulids,
+            include_contacts=include_contacts,
+            include_addresses=include_addresses,
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+__all__ = [
+    "require_person_entity_ulid",
+    "require_org_entity_ulid",
+    "get_person_view",
+    "get_org_view",
+    "get_entity_labels",
+    "get_entity_label",
+    "get_entity_contact_summary",
+    "get_entity_address_summary",
+    "get_entity_cards",
+]

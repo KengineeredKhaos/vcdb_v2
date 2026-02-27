@@ -26,13 +26,15 @@ def hello():
     return render_template("finance/hello.html", title="Finance • Hello")
 
 
-@bp.get("/ledger", endpoint="journal_index")  # name used in Option A fallback
-def ledger_index():
+@bp.get(
+    "/journal", endpoint="journal_index"
+)  # name used in Option A fallback
+def journal_index():
     # Replace with a real listing later
     return render_template(
         "layout/placeholder.html",
-        title="Ledger",
-        message="Ledger UI coming soon",
+        title="Journal",
+        message="Journal UI coming soon",
     )
 
 

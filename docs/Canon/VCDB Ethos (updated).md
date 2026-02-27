@@ -633,4 +633,88 @@ schema-backed under app/slices/governance/data/schemas/.
 
 ---
 
-Next
+## Governance ↔ Taxonomy boundary rule (canon)
+
+### Taxonomy is the dictionary
+
+Taxonomy defines:
+
+- **Enumerations / allowed value sets**
+  
+  - e.g. `readiness_status`, `mou_status`, capability `domains`, capability `keys`, `eligibility_tag` keys
+
+- **Canonical semantic keys** (stable identifiers)
+  
+  - e.g. `emergency_response.community_relief_supplies`
+
+- **Human labels** are fine, but keys are canonical.
+
+Taxonomy must **not** define:
+
+- conditional rules (“when X then Y”)
+
+- transition constraints
+
+- policy thresholds / caps / eligibility logic
+
+- references to slice DB fields/tables
+
+### Governance is the rulebook
+
+Governance defines:
+
+- **Rules about semantic keys**, not schema
+  
+  - “A Resource cannot be `active` unless MOU is `active` (unless override).”
+  
+  - “If any capability key is `unclassified`, require admin review.”
+
+- **Allowed transitions / conditions / overrides**
+
+- **Policy parameters** (caps, cadences, SLAs-as-rules when you want them strict later)
+
+Governance must **not** contain:
+
+- table names, column names, ORM model names
+
+- assumptions about where data lives
+
+- joins or query logic
+
+### Slices are the referees and scorekeepers
+
+A slice service must:
+
+1. Validate incoming values exist (**taxonomy**)
+
+2. Enforce any rules that apply (**governance**, optional per stream)
+
+3. Write state + write a new snapshot (history)
+
+4. Emit ledger events (no PII; ULIDs + semantic keys only)
+
+
+
+---
+
+## Canon rule
+
+**All DTOs live in `<slice>.mapper`.**
+
+- Internal projections / view models / anything reused across routes/services
+
+- Includes dataclasses (your default) and TypedDicts when they’re general-purpose
+
+## Narrow exception
+
+**A `TypedDict` may live next to a contract/route function only when it is tightly coupled to a local parsing/validation schema for a JSON blob** (like a History snapshot), and moving it would *increase* cognitive load:
+
+- function + schema + typed shape stay co-located
+
+- the shape is **not** reused elsewhere
+
+- it exists to safely expose a *subset* of a stored blob
+
+
+
+---

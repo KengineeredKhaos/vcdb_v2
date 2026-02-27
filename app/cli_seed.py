@@ -94,7 +94,7 @@ def seed_bootstrap_impl(
 
     # Always migrate to latest
     alembic_upgrade()
-
+    seed_actor_ulid = new_ulid()
     faker = seed_core.make_faker(faker_seed)
 
     # Role codes (no commit yet)
@@ -128,7 +128,7 @@ def seed_bootstrap_impl(
                 is_primary=(j == 0),
                 window={"from": ts, "to": None},
                 org_role="primary" if j == 0 else "backup",
-                actor_ulid="seed",
+                actor_ulid=seed_actor_ulid,
                 request_id=new_ulid(),
             )
 
@@ -156,7 +156,7 @@ def seed_bootstrap_impl(
                 is_primary=(j == 0),
                 window={"from": ts, "to": None},
                 org_role="primary" if j == 0 else "backup",
-                actor_ulid="seed",
+                actor_ulid=seed_actor_ulid,
                 request_id=new_ulid(),
             )
 

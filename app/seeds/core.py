@@ -571,53 +571,70 @@ def seed_minimal_customer(
 
     elig = (
         sess.query(CustomerEligibility)
-        .filter(CustomerEligibility.customer_entity_ulid == c.entity_ulid)
+        .filter(CustomerEligibility.entity_ulid == c.entity_ulid)
         .one_or_none()
     )
     if elig is None:
-        elig = CustomerEligibility(customer_entity_ulid=c.entity_ulid)
+        elig = CustomerEligibility(entity_ulid=c.entity_ulid)
         # --- Veteran verification (must satisfy CHECKs) ---
         verified = bool(random.getrandbits(1))
-        if hasattr(elig, "is_veteran_verified"):
-            elig.is_veteran_verified = verified
+
+        # Model uses veteran_status string (default='unknown'),
+        # not is_veteran_verified
+        if hasattr(elig, "veteran_status"):
+            elig.veteran_status = "verified" if verified else "unverified"
 
         if verified:
-            # ck_ce_verified_requires_method
             if hasattr(elig, "veteran_method"):
                 method = random.choice(
                     ["dd214", "va_id", "state_dl_veteran", "other"]
                 )
                 elig.veteran_method = method
 
-                # ck_ce_other_requires_approval + ck_ce_approval_requires_timestamp
+                # Optional: branch/era only when verified
+                # (keeps data semantically tidy)
+                if hasattr(elig, "branch"):
+                    elig.branch = random.choice(
+                        ["USA", "USMC", "USN", "USAF", "USSF", "USCG"]
+                    )
+                if hasattr(elig, "era"):
+                    elig.era = random.choice(
+                        [
+                            "WWI",
+                            "WWII",
+                            "Korea",
+                            "Vietnam",
+                            "ColdWar",
+                            "GW-IF-EF",
+                            "PsyWar",
+                        ]
+                    )
+
                 if method == "other":
                     if hasattr(elig, "approved_by_ulid"):
                         elig.approved_by_ulid = new_ulid()
-                    if hasattr(elig, "approved_at_utc"):
-                        elig.approved_at_utc = ts
+                    if hasattr(
+                        elig, "approved_at_iso"
+                    ):  # <-- correct column name
+                        elig.approved_at_iso = ts
         else:
-            # ck_ce_unverified_requires_nulls
+            # ck_cel_unverified_requires_nulls
             if hasattr(elig, "veteran_method"):
                 elig.veteran_method = None
             if hasattr(elig, "approved_by_ulid"):
                 elig.approved_by_ulid = None
-            if hasattr(elig, "approved_at_utc"):
-                elig.approved_at_utc = None
+            if hasattr(elig, "approved_at_iso"):
+                elig.approved_at_iso = None
+            if hasattr(elig, "branch"):
+                elig.branch = None
+            if hasattr(elig, "era"):
+                elig.era = None
 
-        # --- Needs tiers (fine as-is) ---
-        if hasattr(elig, "tier1_min"):
-            elig.tier1_min = int(random.choice([1, 2, 3]))
-        if hasattr(elig, "tier2_min"):
-            elig.tier2_min = int(random.choice([1, 2, 3]))
-        if hasattr(elig, "tier3_min"):
-            elig.tier3_min = int(random.choice([1, 2, 3]))
-
-        if hasattr(elig, "created_at_utc"):
-            elig.created_at_utc = ts
-        if hasattr(elig, "updated_at_utc"):
-            elig.updated_at_utc = ts
-
-        sess.add(elig)
+        # Homeless status is its own enum; safe default is "unknown" or randomize
+        if hasattr(elig, "homeless_status"):
+            elig.homeless_status = random.choice(
+                ["unknown", "unverified", "verified"]
+            )
 
     sess.flush()
     return SeedCustomerResult(
