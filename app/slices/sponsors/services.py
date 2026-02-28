@@ -35,6 +35,12 @@ from .models import (
 CAPS_SECTION = "sponsor:capability:v1"
 PLEDGE_SECTION = "sponsor:pledge:v1"
 PROSPECT_REAL_SECTION = "sponsor:prospect_realization:v1"
+PROFILE_SECTION = "sponsor:profile:v1"
+RESTR_SECTION = "sponsor:donation_restriction:v1"
+
+_ALLOWED_RESTR = frozenset(tax.all_donation_restriction_codes())
+_ALLOWED_CAPS = frozenset(tax.all_capability_codes())
+_NOTE_MAX = int(tax.SPONSOR_CAPABILITY_NOTE_MAX)
 
 POC_RELATION = "poc"  # table-level convention, not board policy
 _SPONSOR_POC_SPEC = poc.POCSpec(
@@ -44,8 +50,6 @@ _SPONSOR_POC_SPEC = poc.POCSpec(
     max_rank=int(tax.POC_MAX_RANK),
 )
 
-_ALLOWED_CAPS = frozenset(tax.all_capability_codes())
-_NOTE_MAX = int(tax.SPONSOR_CAPABILITY_NOTE_MAX)
 
 # -----------------
 # Taxonomy-backed
@@ -62,11 +66,11 @@ def allowed_capability_codes() -> list[str]:
 
 
 def readiness_allowed() -> set[str]:
-    return set(tax.SPONSOR_READINESS_CODES)
+    return set(tax.SPONSOR_READINESS_STATUSES)
 
 
 def mou_allowed() -> set[str]:
-    return set(tax.SPONSOR_MOU_CODES)
+    return set(tax.SPONSOR_MOU_STATUSES)
 
 
 def _default_readiness() -> str:
@@ -490,8 +494,6 @@ def upsert_capabilities(
     s.capability_last_update_utc = now
     s.last_touch_utc = now
     s.admin_review_required = "meta.unclassified" in after
-    if not s.admin_review_required and s.readiness_status == "draft":
-        s.readiness_status = "review"
     db.session.flush()
 
     for flat in added:
@@ -618,6 +620,171 @@ def patch_capabilities(
             happened_at_utc=now,
             refs={"domain": d, "key": k, "version_ptr": hist.ulid},
         )
+    return hist.ulid
+
+
+# -----------------
+# Profile Hints
+# Helpers
+# -----------------
+
+
+def get_profile_hints(sponsor_entity_ulid: str) -> dict[str, Any]:
+    return _latest_snapshot(sponsor_entity_ulid, PROFILE_SECTION)
+
+
+def set_profile_hints(
+    *,
+    sponsor_entity_ulid: str,
+    payload: dict[str, Any],
+    request_id: str,
+    actor_ulid: str | None,
+) -> str | None:
+    _ensure_reqid(request_id)
+    now = now_iso8601_ms()
+    s = db.session.get(Sponsor, sponsor_entity_ulid)
+    if not s:
+        raise ValueError("sponsor not found")
+
+    norm = {
+        "relationship_note": str(
+            payload.get("relationship_note") or ""
+        ).strip(),
+        "recognition_note": str(
+            payload.get("recognition_note") or ""
+        ).strip(),
+    }
+
+    last = _latest_snapshot(sponsor_entity_ulid, PROFILE_SECTION)
+    if stable_dumps(last) == stable_dumps(norm):
+        s.last_touch_utc = now
+        db.session.flush()
+        return None
+
+    ver = _next_version(sponsor_entity_ulid, PROFILE_SECTION)
+    hist = SponsorHistory(
+        sponsor_entity_ulid=sponsor_entity_ulid,
+        section=PROFILE_SECTION,
+        version=ver,
+        data_json=stable_dumps(norm),
+        created_by_actor=actor_ulid,
+    )
+    db.session.add(hist)
+    s.last_touch_utc = now
+    db.session.flush()
+
+    event_bus.emit(
+        domain="sponsors",
+        operation="profile_update",
+        actor_ulid=actor_ulid,
+        target_ulid=sponsor_entity_ulid,
+        request_id=request_id,
+        happened_at_utc=now,
+        refs={"version_ptr": hist.ulid},
+        changed={"fields": ["relationship_note", "recognition_note"]},
+        meta={"origin": "onboard"},
+    )
+    return hist.ulid
+
+
+def get_donation_restrictions(sponsor_entity_ulid: str) -> dict[str, Any]:
+    return _latest_snapshot(sponsor_entity_ulid, RESTR_SECTION)
+
+
+def _flatten_restr_payload(
+    payload: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    """
+    Accepts:
+      1) Flat: {"restrictions.local": true, ...}
+      2) Nested: {"restrictions": {"local": true, ...}}
+    Normalizes to: {"restrictions.local": {"has": bool}, ...}
+    """
+    flat: dict[str, dict[str, Any]] = {}
+    if not payload:
+        return flat
+
+    # Nested
+    if all(isinstance(v, dict) for v in payload.values()):
+        for dom, inner in payload.items():
+            d = str(dom or "").strip()
+            if not d:
+                continue
+            for k, v in (inner or {}).items():
+                kk = str(k or "").strip()
+                if not kk:
+                    continue
+                has = bool(v["has"]) if isinstance(v, dict) else bool(v)
+                flat[f"{d}.{kk}"] = {"has": has}
+        return flat
+
+    # Flat
+    for k, v in payload.items():
+        key = str(k or "").strip()
+        if not key:
+            continue
+        has = bool(v["has"]) if isinstance(v, dict) else bool(v)
+        flat[key] = {"has": has}
+    return flat
+
+
+def _validate_restr(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    flat = _flatten_restr_payload(payload)
+    if not flat:
+        return flat
+    unknown = sorted(k for k in flat if k not in _ALLOWED_RESTR)
+    if unknown:
+        raise ValueError(f"invalid restriction keys: {', '.join(unknown)}")
+    return flat
+
+
+def upsert_donation_restrictions(
+    *,
+    sponsor_entity_ulid: str,
+    payload: dict[str, Any],
+    request_id: str,
+    actor_ulid: str | None,
+) -> str | None:
+    _ensure_reqid(request_id)
+    now = now_iso8601_ms()
+    s = db.session.get(Sponsor, sponsor_entity_ulid)
+    if not s:
+        raise ValueError("sponsor not found")
+
+    norm = _validate_restr(payload)
+    last = _latest_snapshot(sponsor_entity_ulid, RESTR_SECTION)
+    if stable_dumps(last) == stable_dumps(norm):
+        s.last_touch_utc = now
+        db.session.flush()
+        return None
+
+    before = {k for k, v in last.items() if v.get("has")}
+    after = {k for k, v in norm.items() if v.get("has")}
+    added, removed = sorted(after - before), sorted(before - after)
+
+    ver = _next_version(sponsor_entity_ulid, RESTR_SECTION)
+    hist = SponsorHistory(
+        sponsor_entity_ulid=sponsor_entity_ulid,
+        section=RESTR_SECTION,
+        version=ver,
+        data_json=stable_dumps(norm),
+        created_by_actor=actor_ulid,
+    )
+    db.session.add(hist)
+    s.last_touch_utc = now
+    db.session.flush()
+
+    event_bus.emit(
+        domain="sponsors",
+        operation="donation_restriction_replace",
+        actor_ulid=actor_ulid,
+        target_ulid=sponsor_entity_ulid,
+        request_id=request_id,
+        happened_at_utc=now,
+        refs={"version_ptr": hist.ulid},
+        changed={"added": added, "removed": removed},
+        meta={"origin": "onboard"},
+    )
     return hist.ulid
 
 
@@ -1090,6 +1257,7 @@ def find_sponsors(
     readiness_in: list[str] | None = None,
     has_active_pledges: bool | None = None,
     admin_review_required: bool | None = None,
+    onboard_step: str | None = None,
     page: int = 1,
     per: int = 50,
 ) -> tuple[list[SponsorView], int]:
@@ -1100,6 +1268,10 @@ def find_sponsors(
         q = q.filter(
             Sponsor.admin_review_required.is_(bool(admin_review_required))
         )
+    if onboard_step:
+        step = str(onboard_step).strip().lower()
+        q = q.filter(Sponsor.onboard_step == step)
+
     # any_of capabilities (OR)
     if any_of:
         ors = []

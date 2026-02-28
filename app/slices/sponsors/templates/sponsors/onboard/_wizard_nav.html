@@ -1,0 +1,18 @@
+<nav class="card" style="padding:.75rem;">
+  <div class="help">Onboarding steps</div>
+  <div class="row" style="flex-wrap:wrap; gap:.5rem;">
+    {% for it in nav %}
+      {% set style = '' %}
+      {% if it.current %}
+        {% set style = 'font-weight:700; text-decoration:underline;' %}
+      {% elif it.done %}
+        {% set style = 'opacity:1.0;' %}
+      {% else %}
+        {% set style = 'opacity:0.6;' %}
+      {% endif %}
+      <a class="btn btn-sm" style="{{ style }}" href="{{ it.url }}">
+        {{ loop.index }}. {{ it.label }}
+      </a>
+    {% endfor %}
+  </div>
+</nav>

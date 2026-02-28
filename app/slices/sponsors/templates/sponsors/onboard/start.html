@@ -1,0 +1,40 @@
+{% extends "layout/base.html" %}
+{% import "_forms.html" as forms %}
+
+{% block title %}Sponsor Onboarding{% endblock %}
+
+{% block content %}
+  <h1>Sponsor Onboarding</h1>
+
+  {% if error is defined and error %}
+    <div class="banner banner--danger">{{ error }}</div>
+  {% endif %}
+
+  {% if active_entity_ulid %}
+    <div class="banner banner--warning">
+      Resume available: <span class="mono">{{ active_entity_ulid }}</span>
+      · <a href="{{ url_for('sponsors.onboard_start', entity_ulid=active_entity_ulid) }}">
+          Resume
+        </a>
+      · <a href="{{ url_for('sponsors.onboard_start', reset=1) }}">Reset</a>
+    </div>
+  {% endif %}
+
+  <section class="card">
+    <h2>Start (or resume) onboarding</h2>
+    <form method="post" action="{{ url_for('sponsors.onboard_start') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row">
+        {{ forms.text(
+          'entity_ulid',
+          'Org Entity ULID',
+          value=entity_ulid,
+          placeholder='01...',
+          inputmode='text',
+          required=true
+        ) }}
+        <button class="btn" type="submit">Continue</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}

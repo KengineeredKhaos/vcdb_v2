@@ -10,11 +10,9 @@ __all__ = [
     "all_capability_codes",
     "SPONSOR_CAPABILITY_NOTE_MAX",
     "SPONSOR_READINESS_STATUSES",
-    "SPONSOR_READINESS_CODES",
     "SPONSOR_READINESS_DEFAULT",
     "SPONSOR_MOU_STATUSES",
-    "SPONSOR_MOU_CODES",
-    "SPONSOR_READINESS_DEFAULT",
+    "SPONSOR_MOU_DEFAULT",
     "SPONSOR_PLEDGE_STATUSES",
     "SPONSOR_PLEDGE_STATUS_CODES",
     "SPONSOR_TRANSITIONS",
@@ -22,6 +20,8 @@ __all__ = [
     "SPONSOR_PLEDGE_TYPE_CODES",
     "SPONSOR_CAPABILITY_META",
     "SPONSOR_CAPABILITY_DOMAINS",
+    "SPONSOR_DONATION_RESTRICTIONS",
+    "all_donation_restriction_codes",
     # POC constraints
     "POC_SCOPES",
     "DEFAULT_POC_SCOPE",
@@ -54,39 +54,44 @@ def all_capability_codes() -> list[str]:
     return sorted(out)
 
 
+def all_donation_restriction_codes() -> list[str]:
+    out: list[str] = []
+    for dom in SPONSOR_DONATION_RESTRICTIONS:
+        dcode = str(dom.get("code") or "").strip()
+        for k in dom.get("keys") or []:
+            kcode = str(k.get("code") or "").strip()
+            if dcode and kcode:
+                out.append(f"{dcode}.{kcode}")
+    return sorted(out)
+
+
 def is_valid_readiness_status(v: str) -> bool:
     vv = (v or "").strip().lower()
-    return vv in SPONSOR_READINESS_CODES
+    return vv in SPONSOR_READINESS_STATUSES
 
 
 def is_valid_mou_status(v: str) -> bool:
     vv = (v or "").strip().lower()
-    return vv in SPONSOR_MOU_CODES
+    return vv in SPONSOR_MOU_STATUSES
 
 
 # Sponsors taxonomy (slice-local; not Governance).
 
 SPONSOR_READINESS_DEFAULT: Final[str] = "draft"
-SPONSOR_READINESS_STATUSES: Final[tuple[dict, ...]] = (
-    {"can_issue": False, "code": "draft", "label": "Draft"},
-    {"can_issue": False, "code": "review", "label": "Under review"},
-    {"can_issue": True, "code": "active", "label": "Active"},
-    {"can_issue": False, "code": "suspended", "label": "Suspended"},
-)
-SPONSOR_READINESS_CODES: Final[tuple[str, ...]] = tuple(
-    str(x["code"]).strip().lower() for x in SPONSOR_READINESS_STATUSES
+SPONSOR_READINESS_STATUSES: Final[str] = (
+    "draft",
+    "review",
+    "active",
+    "suspended",
 )
 
 SPONSOR_MOU_DEFAULT: Final[str] = "none"
-SPONSOR_MOU_STATUSES: Final[tuple[dict, ...]] = (
-    {"can_issue": False, "code": "none", "label": "No MOU"},
-    {"can_issue": False, "code": "pending", "label": "MOU pending"},
-    {"can_issue": True, "code": "active", "label": "Active MOU"},
-    {"can_issue": False, "code": "expired", "label": "Expired MOU"},
-    {"can_issue": False, "code": "terminated", "label": "Terminated"},
-)
-SPONSOR_MOU_CODES: Final[tuple[str, ...]] = tuple(
-    str(x["code"]).strip().lower() for x in SPONSOR_MOU_STATUSES
+SPONSOR_MOU_STATUSES: Final[str] = (
+    "none",
+    "pending",
+    "active",
+    "expired",
+    "terminated",
 )
 
 SPONSOR_PLEDGE_STATUSES: Final[tuple[dict, ...]] = (
@@ -180,7 +185,18 @@ SPONSOR_CAPABILITY_DOMAINS: Final[tuple[dict, ...]] = (
         "label": "Meta / flags",
     },
 )
-
+SPONSOR_DONATION_RESTRICTIONS: Final[tuple[dict[str, object], ...]] = (
+    {
+        "code": "restrictions",
+        "label": "Funding Restrictions",
+        "keys": (
+            {"code": "unrestricted", "label": "Unrestricted"},
+            {"code": "local", "label": "Local only"},
+            {"code": "veteran", "label": "Veteran only"},
+            # ...
+        ),
+    },
+)
 
 # -----------------
 # POC taxonomy

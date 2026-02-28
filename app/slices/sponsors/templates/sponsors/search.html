@@ -1,0 +1,59 @@
+{% extends "layout/base.html" %}
+{% import "_forms.html" as forms %}
+
+{% block title %}Sponsors{% endblock %}
+
+{% block content %}
+  <h1>Sponsors</h1>
+
+  <section class="card">
+    <form method="get" action="{{ url_for('sponsors.search_sponsors_html') }}">
+      <div class="row" style="flex-wrap:wrap; gap:.75rem;">
+        {{ forms.text('readiness','Readiness in',value=form.get('readiness',''),
+          placeholder='draft,review,active') }}
+        {{ forms.text('onboard_step','Onboard step',value=form.get('onboard_step',''),
+          placeholder='complete') }}
+        {{ forms.text('review','Admin review required',value=form.get('review',''),
+          placeholder='true/false') }}
+        <button class="btn" type="submit">Search</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="help">Total: {{ total }}</div>
+    {% if rows %}
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Entity ULID</th>
+            <th>Readiness</th>
+            <th>MOU</th>
+            <th>Admin review?</th>
+            <th>Onboard step</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in rows %}
+            <tr>
+              <td class="mono">{{ s.entity_ulid }}</td>
+              <td>{{ s.readiness_status }}</td>
+              <td>{{ s.mou_status }}</td>
+              <td>{{ 'yes' if s.admin_review_required else 'no' }}</td>
+              <td>{{ s.onboard_step or '' }}</td>
+              <td>
+                <a class="btn btn-sm"
+                   href="{{ url_for('sponsors.onboard_start', entity_ulid=s.entity_ulid) }}">
+                  Open
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="help">No matches.</div>
+    {% endif %}
+  </section>
+{% endblock %}

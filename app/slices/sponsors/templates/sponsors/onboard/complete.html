@@ -1,0 +1,30 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Sponsor Onboarding · Complete{% endblock %}
+
+{% block content %}
+  <h1>Sponsor Onboarding</h1>
+  <div class="help mono">{{ entity_ulid }}</div>
+
+  {% include "sponsors/onboard/_wizard_nav.html" %}
+
+  {% if error is defined and error %}
+    <div class="banner banner--danger">{{ error }}</div>
+  {% endif %}
+
+  <section class="card">
+    <h2>Submit for Admin review</h2>
+    <div class="help">
+      This marks onboarding complete (<span class="mono">onboard_step=complete</span>)
+      and leaves readiness as <span class="mono">draft</span>.
+      Admin will review, adjust drafts, and activate later.
+    </div>
+
+    <form method="post"
+          action="{{ url_for('sponsors.onboard_complete', entity_ulid=entity_ulid) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
+      <button class="btn" type="submit">Submit</button>
+    </form>
+  </section>
+{% endblock %}

@@ -51,10 +51,12 @@ def _err(exc: Exception, code: int = 400):
 # -----------------
 
 
-@bp.get("/onboard/start/<entity_ulid>")
-def onboard_start(entity_ulid: str):
-    sponsors_v2.ensure_sponsor_facet(entity_ulid=entity_ulid)
-    return redirect(url_for("sponsors.onboard_step", entity_ulid=entity_ulid))
+@bp.get("/onboard/start/<entity_ulid>", endpoint="onboard_start_legacy")
+def onboard_start_legacy(entity_ulid: str):
+    # Legacy helper: bounce to the new onboarding entrypoint.
+    return redirect(
+        url_for("sponsors.onboard_start", entity_ulid=entity_ulid)
+    )
 
 
 # -----------------

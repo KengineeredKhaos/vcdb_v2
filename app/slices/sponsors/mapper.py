@@ -33,6 +33,7 @@ class SponsorPledgeView:
 class SponsorView:
     sponsor_ulid: str
     entity_ulid: str
+    onboard_step: str | None
     admin_review_required: bool
     readiness_status: str
     mou_status: str
@@ -93,6 +94,7 @@ def map_sponsor_view(
     return SponsorView(
         sponsor_ulid=entity_ulid,
         entity_ulid=entity_ulid,
+        onboard_step=getattr(s, "onboard_step", None),
         admin_review_required=bool(
             getattr(s, "admin_review_required", False)
         ),
@@ -140,6 +142,7 @@ def sponsor_view_to_dto(view: SponsorView) -> dict[str, Any]:
     return {
         "sponsor_ulid": view.sponsor_ulid,
         "entity_ulid": view.entity_ulid,
+        "onboard_step": view.onboard_step,
         "admin_review_required": view.admin_review_required,
         "readiness_status": view.readiness_status,
         "mou_status": view.mou_status,

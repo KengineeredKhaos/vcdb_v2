@@ -1,0 +1,60 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Sponsor Onboarding · Funding rules{% endblock %}
+
+{% block content %}
+  <h1>Sponsor Onboarding</h1>
+  <div class="help mono">{{ entity_ulid }}</div>
+
+  {% include "sponsors/onboard/_wizard_nav.html" %}
+
+  {% if error is defined and error %}
+    <div class="banner banner--danger">{{ error }}</div>
+  {% endif %}
+
+  <section class="card">
+    <h2>Monetary + In-kind support (draft)</h2>
+
+    <form method="post"
+          action="{{ url_for('sponsors.onboard_funding_rules', entity_ulid=entity_ulid) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
+
+      {% for dom in cap_tree %}
+        {% set dcode = dom.get('code') %}
+        <fieldset class="card" style="padding:.75rem;">
+          <legend class="lbl" style="padding:0 .25rem;">{{ dom.get('label') }}</legend>
+          <div class="row" style="flex-wrap:wrap; gap:.75rem;">
+            {% for k in dom.get('keys') %}
+              {% set code = dcode ~ '.' ~ k.get('code') %}
+              <label style="display:flex; align-items:center; gap:.35rem;">
+                <input type="checkbox" name="caps" value="{{ code }}"
+                  {{ 'checked' if code in selected_caps else '' }}>
+                <span class="mono">{{ k.get('label') }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+      {% endfor %}
+
+      <fieldset class="card" style="padding:.75rem;">
+        <legend class="lbl" style="padding:0 .25rem;">Funding Restrictions</legend>
+        {% for dom in restr_tree %}
+          {% set dcode = dom.get('code') %}
+          <div class="row" style="flex-wrap:wrap; gap:.75rem;">
+            {% for k in dom.get('keys') %}
+              {% set code = dcode ~ '.' ~ k.get('code') %}
+              <label style="display:flex; align-items:center; gap:.35rem;">
+                <input type="checkbox" name="restr" value="{{ code }}"
+                  {{ 'checked' if code in selected_restr else '' }}>
+                <span class="mono">{{ k.get('label') }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        {% endfor %}
+      </fieldset>
+
+      <button class="btn" type="submit">Save &amp; Continue</button>
+    </form>
+  </section>
+{% endblock %}
