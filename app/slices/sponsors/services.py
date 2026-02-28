@@ -647,7 +647,6 @@ def set_readiness_status(
     if s.readiness_status == status:
         return
 
-    prev = s.readiness_status
     s.readiness_status = status
     s.last_touch_utc = now
     db.session.flush()
@@ -659,7 +658,7 @@ def set_readiness_status(
         target_ulid=sponsor_entity_ulid,
         request_id=request_id,
         happened_at_utc=now,
-        changed={"readiness_status": status, "prev": prev},
+        changed={"fields": ["readiness_status", "prev"]},
     )
 
 
@@ -683,7 +682,6 @@ def set_mou_status(
     if s.mou_status == status:
         return
 
-    prev = s.mou_status
     s.mou_status = status
     s.last_touch_utc = now
     db.session.flush()
@@ -695,7 +693,7 @@ def set_mou_status(
         target_ulid=sponsor_entity_ulid,
         request_id=request_id,
         happened_at_utc=now,
-        changed={"mou_status": status, "prev": prev},
+        changed={"fields": ["mou_status", "prev"]},
     )
 
 
@@ -841,10 +839,7 @@ def record_prospect_realization(
             "history_ulid": hist.ulid,
             "journal_ulid": journal_ulid,
         },
-        changed={
-            "amount_cents": int(amount_cents),
-            "realized_total_cents": total,
-        },
+        changed={"fields": ["amount_cents", "realized_total_cents"]},
     )
 
     return {
@@ -1052,7 +1047,6 @@ def set_pledge_status(
     if row.status == status:
         return
 
-    prev = row.status
     row.status = status
     row.updated_at_utc = now
     db.session.flush()
@@ -1064,7 +1058,7 @@ def set_pledge_status(
         target_ulid=row.sponsor_entity_ulid,
         request_id=request_id,
         happened_at_utc=now,
-        changed={"pledge_ulid": pledge_ulid, "status": status, "prev": prev},
+        changed={"fields": ["pledge_ulid", "status", "prev"]},
     )
 
 

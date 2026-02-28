@@ -325,14 +325,18 @@ def resource_list_pocs_expanded(
     request_id: str,
     actor_ulid: str | None = None,
 ) -> dict[str, Any]:
-    _ensure_reqid(request_id)
+    rid = ensure_request_id(request_id)
+    if not rid:
+        raise ValueError("request_id missing")
 
+    if not db.session.get(Resource, resource_entity_ulid):
+        raise LookupError("resource not found")
     pocs_view = resource_list_pocs(resource_ulid=resource_entity_ulid)
 
     person_ulids: list[str] = []
     seen: set[str] = set()
     for p in pocs_view:
-        u = str(p.person_entity_ulid).strip()
+        u = str(p.link.person_entity_ulid).strip()
         if u and u not in seen:
             seen.add(u)
             person_ulids.append(u)
@@ -351,15 +355,15 @@ def resource_list_pocs_expanded(
     for p in pocs_view:
         out.append(
             {
-                "person_entity_ulid": p.person_entity_ulid,
-                "org_role": p.org_role,
-                "scope": p.scope,
-                "rank": p.rank,
-                "is_primary": p.is_primary,
-                "active": p.active,
-                "valid_from_utc": p.valid_from_utc,
-                "valid_to_utc": p.valid_to_utc,
-                "card": cards.get(p.person_entity_ulid),
+                "person_entity_ulid": p.link.person_entity_ulid,
+                "org_role": p.link.org_role,
+                "scope": p.link.scope,
+                "rank": p.link.rank,
+                "is_primary": p.link.is_primary,
+                "active": p.link.active,
+                "valid_from_utc": p.link.valid_from_utc,
+                "valid_to_utc": p.link.valid_to_utc,
+                "card": cards.get(p.link.person_entity_ulid),
             }
         )
 
@@ -393,8 +397,8 @@ def ensure_resource(
             entity_ulid=resource_entity_ulid,
             first_seen_utc=now,
             last_touch_utc=now,
-            readiness_status="draft",
-            mou_status="none",
+            readiness_status=tax.RESOURCE_READINESS_STATES[0],
+            mou_status=tax.RESOURCE_MOU_STATUSES[0],
         )
         db.session.add(r)
         db.session.flush()
@@ -491,8 +495,6 @@ def upsert_capabilities(
     res.last_touch_utc = now
 
     res.admin_review_required = "meta.unclassified" in after_active
-    if not res.admin_review_required and res.readiness_status == "draft":
-        res.readiness_status = "review"
 
     db.session.flush()
 
@@ -568,7 +570,7 @@ def set_profile_hints(
         request_id=rid,
         happened_at_utc=now,
         refs={"version_ptr": hist.ulid},
-        changed_fields=["service_area_note", "sla_note"],
+        changed={"fields": ["service_area_note", "sla_note"]},
     )
 
     return hist.ulid
@@ -606,6 +608,7 @@ def find_resources(
     all_of: list[tuple[str, str]] | None = None,
     admin_review_required: bool | None = None,
     readiness_in: list[str] | None = None,
+    onboard_step: str | None = None,
     page: int = 1,
     per: int = 50,
 ) -> tuple[list[ResourceView], int]:
@@ -648,6 +651,10 @@ def find_resources(
     if readiness_in:
         norm = sorted({str(s).strip().lower() for s in readiness_in if s})
         q = q.filter(Resource.readiness_status.in_(norm))
+
+    if onboard_step:
+        step = str(onboard_step).strip().lower()
+        q = q.filter(Resource.onboard_step == step)
 
     page = max(1, int(page))
     per = min(200, max(1, int(per)))
@@ -697,7 +704,7 @@ def set_readiness_status(
         target_ulid=resource_entity_ulid,
         request_id=rid,
         happened_at_utc=now,
-        changed={"readiness_status": status_key},
+        changed={"fields": ["readiness_status"]},
     )
 
 
@@ -737,7 +744,7 @@ def set_mou_status(
         target_ulid=resource_entity_ulid,
         request_id=rid,
         happened_at_utc=now,
-        changed={"mou_status": status_key, "prev": prev},
+        changed={"fields": ["mou_status", "prev"]},
     )
 
 

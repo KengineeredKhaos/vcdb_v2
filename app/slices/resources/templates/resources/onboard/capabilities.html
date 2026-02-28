@@ -1,0 +1,49 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Resource Onboarding · Capabilities{% endblock %}
+
+{% block content %}
+  <h1>Resource Onboarding</h1>
+  <div class="help mono">{{ entity_ulid }}</div>
+
+  {% include "resources/onboard/_wizard_nav.html" %}
+
+  {% if error %}
+    <div class="banner banner--danger">{{ error }}</div>
+  {% endif %}
+
+  <section class="card">
+    <h2>Capabilities (draft)</h2>
+    <div class="help">
+      Check what this organization can provide. This writes a capability
+      snapshot and rebuilds the searchable index.
+      <br>
+      Selecting <span class="mono">meta.unclassified</span> triggers
+      <b>admin_review_required</b>.
+    </div>
+
+    <form method="post"
+          action="{{ url_for('resources.onboard_capabilities', entity_ulid=entity_ulid) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
+
+      {% for domain, keys in cap_tree.items() %}
+        <fieldset class="card" style="padding:.75rem;">
+          <legend class="lbl" style="padding:0 .25rem;">{{ domain }}</legend>
+          <div class="row" style="flex-wrap:wrap; gap:.75rem;">
+            {% for key in keys %}
+              {% set code = domain ~ '.' ~ key %}
+              <label style="display:flex; align-items:center; gap:.35rem;">
+                <input type="checkbox" name="caps" value="{{ code }}"
+                  {{ 'checked' if code in selected else '' }}>
+                <span class="mono">{{ key }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+      {% endfor %}
+
+      <button class="btn" type="submit">Save &amp; Continue</button>
+    </form>
+  </section>
+{% endblock %}

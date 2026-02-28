@@ -1,0 +1,77 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Resource Onboarding · Review{% endblock %}
+
+{% block content %}
+  <h1>Resource Onboarding</h1>
+  <div class="help mono">{{ entity_ulid }}</div>
+
+  {% include "resources/onboard/_wizard_nav.html" %}
+
+  {% if error %}
+    <div class="banner banner--danger">{{ error }}</div>
+  {% endif %}
+
+  {% set v = snap.get('view') %}
+  {% set hints = snap.get('profile_hints') or {} %}
+  {% set pocs = snap.get('pocs') or [] %}
+
+  <section class="card">
+    <h2>Summary</h2>
+    {% if v %}
+      <table class="tbl">
+        <tbody>
+          <tr><th>Readiness</th><td>{{ v.readiness_status }}</td></tr>
+          <tr><th>MOU</th><td>{{ v.mou_status }}</td></tr>
+          <tr><th>Admin review required</th>
+            <td>{{ 'yes' if v.admin_review_required else 'no' }}</td>
+          </tr>
+          <tr><th>Onboard step</th><td>{{ v.onboard_step or '' }}</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Profile hints</h3>
+      <div class="help"><b>Service area:</b> {{ hints.get('service_area_note') or '' }}</div>
+      <div class="help"><b>SLA note:</b> {{ hints.get('sla_note') or '' }}</div>
+
+      <h3>Active capabilities</h3>
+      {% set caps = v.active_capabilities or [] %}
+      {% if caps %}
+        <ul>
+          {% for c in caps %}
+            <li class="mono">{{ c.domain }}.{{ c.key }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="help">No capabilities selected yet.</div>
+      {% endif %}
+
+      <h3>POCs</h3>
+      {% if pocs %}
+        <ul>
+          {% for p in pocs %}
+            <li class="mono">
+              {{ p.link.person_entity_ulid }} ·
+              {{ p.link.scope or '' }} ·
+              {{ p.link.org_role or '' }}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="help">No POCs linked yet.</div>
+      {% endif %}
+    {% else %}
+      <div class="help">Resource not found.</div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Continue</h2>
+    <form method="post"
+          action="{{ url_for('resources.onboard_review', entity_ulid=entity_ulid) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
+      <button class="btn" type="submit">Continue to Complete</button>
+    </form>
+  </section>
+{% endblock %}

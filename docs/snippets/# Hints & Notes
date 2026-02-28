@@ -23,6 +23,8 @@ ruff check app (or your ruff config)
 
 ruff format app / black (your chosen formatter)
 
+
+
 Policy sanity
 
 flask dev policy-health
@@ -50,13 +52,58 @@ curl -s http://127.0.0.1:5000/end/point/routing/symbol | jq .
 
 
 
+URL_FOR Notes:
+
+In Flask, url_for() builds the URL from:
+
+endpoint name (route)
+path params (must match <...> in the route)
+
+anything left over becomes query string (?key=value&...)
+So you “stack ’em up,” but there’s one rule:
+
+# Rule
+
+If the route is /foo/<entity_ulid>/bar,
+then entity_ulid=... is required and goes into the path.
+
+If the route is /foo/bar,
+then entity_ulid=... becomes ?entity_ulid=....
+
+Examples
+# Path param route: /resources/onboard/<entity_ulid>/profile
+url_for("resources.onboard_profile", entity_ulid=entity_ulid)
+
+# Query string route: /resources/onboard/start?entity_ulid=...
+url_for("resources.onboard_start", entity_ulid=entity_ulid)
+
+# Multiple query args:
+url_for(
+    "resources.onboard_start",
+    entity_ulid=entity_ulid,
+    reset=1,
+    from_wizard="entity",
+)
+
+“Make sure they have a place to land”
+On the other side, grab them from the right spot:
+
+Path params:
+Flask passes into your view function args
+(def onboard_profile(entity_ulid): ...)
+
+Query params:
+request.args.get("from_wizard")
+
+POST fields:
+request.form.get(...)
+
+
 
 # -----------------
 # Ethos-driven
 # Architecture Checklist
 # -----------------
-
-
 
 ### Architecture Uniformity — Enforcement Checklist
 

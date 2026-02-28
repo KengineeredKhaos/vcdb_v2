@@ -28,7 +28,7 @@ class ResourceFactsDTO(TypedDict, total=False):
 
 class ResourceProfileHintsDTO(TypedDict, total=False):
     entity_ulid: str
-    service_area_note: str | None
+    service_area_notes: str | None
     sla_note: str | None
 
 
@@ -45,7 +45,7 @@ __schema__ = {
         ],
     },
     "get_resource_profile_hints": {
-        "requires": ["entity_ulid]"],
+        "requires": ["entity_ulid"],
         "returns_keys": [
             "entity_ulid",
             "service_area_notes",
@@ -124,8 +124,8 @@ def get_resource_profile_hints(
         hints = svc.get_profile_hints(entity_ulid)
         return {
             "entity_ulid": entity_ulid,
-            "service_area_note": hints.get("service_area_note"),
-            "sla_note": hints.get("sla_note"),
+            "service_area_notes": hints.get("service_area_notes"),
+            "sla_notes": hints.get("sla_notes"),
         }
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc

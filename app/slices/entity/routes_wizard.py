@@ -15,7 +15,7 @@ from sqlalchemy import select
 
 from app.extensions import db
 from app.extensions.auth_ctx import current_actor_ulid
-from app.extensions.contracts import governance_v2
+from app.extensions.contracts import governance_v2, resources_v2, sponsors_v2
 from app.lib.ids import new_ulid
 from app.lib.request_ctx import ensure_request_id
 
@@ -97,6 +97,28 @@ def _wiz_active_entity_ulid() -> str | None:
 
 
 # -----------------
+# Wizard Helpers
+# -----------------
+
+
+def _wiz_clear_active() -> None:
+    """
+    Clear wizard "active entity" and any related nonce keys.
+    Safe to call repeatedly.
+    """
+    active = session.pop(_WIZ_ACTIVE_ENTITY_KEY, None)
+    # Clear entity-scoped nonce keys
+    if active:
+        suffix = f":{active}"
+        for k in list(session.keys()):
+            if k.startswith("wiz:") and k.endswith(suffix):
+                session.pop(k, None)
+    # Clear unscoped core-step nonces too
+    for k in ("wiz:person_core", "wiz:org_core"):
+        session.pop(k, None)
+
+
+# -----------------
 # Wizard Routes
 # -----------------
 
@@ -104,7 +126,7 @@ def _wiz_active_entity_ulid() -> str | None:
 @bp.get("/wizard/start")
 def wizard_start():
     if (request.args.get("reset") or "").strip() in ("1", "true", "yes"):
-        session.pop(_WIZ_ACTIVE_ENTITY_KEY, None)
+        _wiz_clear_active()
         flash("Wizard reset. Start a new entity.", "warning")
     return render_template("entity/wizard_start.html")
 
@@ -113,9 +135,17 @@ def wizard_start():
 def wizard_start_post():
     active = session.get(_WIZ_ACTIVE_ENTITY_KEY)
     if active:
-        flash("Wizard already in progress — resuming.", "warning")
-        next_ep = wiz.wizard_next_step(entity_ulid=active)
-        return redirect(url_for(next_ep, entity_ulid=active))
+        try:
+            flash("Wizard already in progress — resuming.", "warning")
+            next_ep = wiz.wizard_next_step(entity_ulid=active)
+            return redirect(url_for(next_ep, entity_ulid=active))
+        except Exception:
+            # Common after reseed / DB reset: session points at a dead ULID.
+            _wiz_clear_active()
+            flash(
+                "Previous wizard session was stale. Starting new.", "warning"
+            )
+
     kind = (request.form.get("kind") or "").strip().lower()
     if kind == "person":
         return redirect(url_for("entity.wizard_person_core"))
@@ -136,9 +166,16 @@ def wizard_person_core():
         # If a wizard is already active, resume instead of starting new one.
         active = session.get(_WIZ_ACTIVE_ENTITY_KEY)
         if active:
-            flash("Wizard already in progress — resuming.", "warning")
-            next_ep = wiz.wizard_next_step(entity_ulid=active)
-            return redirect(url_for(next_ep, entity_ulid=active))
+            try:
+                flash("Wizard already in progress — resuming.", "warning")
+                next_ep = wiz.wizard_next_step(entity_ulid=active)
+                return redirect(url_for(next_ep, entity_ulid=active))
+            except Exception:
+                _wiz_clear_active()
+                flash(
+                    "Previous wizard session was stale. Start again.",
+                    "warning",
+                )
 
         wiz_nonce = _wiz_issue_nonce(step, None)
         return render_template(
@@ -226,13 +263,20 @@ def wizard_org_core():
         # If a wizard is already active, resume instead of starting new one.
         active = session.get(_WIZ_ACTIVE_ENTITY_KEY)
         if active:
-            flash("Wizard already in progress — resuming.", "warning")
-            next_ep = wiz.wizard_next_step(entity_ulid=active)
-            return redirect(url_for(next_ep, entity_ulid=active))
+            try:
+                flash("Wizard already in progress — resuming.", "warning")
+                next_ep = wiz.wizard_next_step(entity_ulid=active)
+                return redirect(url_for(next_ep, entity_ulid=active))
+            except Exception:
+                _wiz_clear_active()
+                flash(
+                    "Previous wizard session was stale. Start again.",
+                    "warning",
+                )
 
         wiz_nonce = _wiz_issue_nonce(step, None)
         return render_template(
-            "entity/wizard_person_core.html",
+            "entity/wizard_org_core.html",
             form=form,
             wiz_nonce=wiz_nonce,
         )
@@ -591,6 +635,10 @@ def wizard_role_post(entity_ulid: str):
 
 @bp.get("/wizard/<entity_ulid>/next", endpoint="wizard_next")
 def wizard_next(entity_ulid: str):
+    # Wizard is complete once we're at handoff; release the session latch.
+    if session.get(_WIZ_ACTIVE_ENTITY_KEY) == entity_ulid:
+        _wiz_clear_active()
+    rid = ensure_request_id()
     role = db.session.execute(
         select(EntityRole)
         .where(
@@ -602,22 +650,62 @@ def wizard_next(entity_ulid: str):
 
     role_code = (role.role if role else "").strip().lower()
 
+    actions = []
+    # Primary action (role-driven)
     if role_code == "customer":
-        next_url = url_for("customers.intake_start", entity_ulid=entity_ulid)
-        label = "Continue to Customer Intake"
+        actions.append(
+            {
+                "label": "Continue to Customer Intake",
+                "url": url_for(
+                    "customers.intake_start", entity_ulid=entity_ulid
+                ),
+            }
+        )
     elif role_code == "resource":
-        next_url = url_for("resources.onboard_start", entity_ulid=entity_ulid)
-        label = "Continue to Resource Onboarding"
+        actions.append(
+            {
+                "label": "Continue to Resource Onboarding",
+                "url": url_for(
+                    "resources.onboard_start",
+                    entity_ulid=entity_ulid,
+                    request_id=rid,
+                ),
+            }
+        )
     elif role_code == "sponsor":
-        next_url = url_for("sponsors.onboard_start", entity_ulid=entity_ulid)
-        label = "Continue to Sponsor Onboarding"
-    else:
-        next_url = url_for("entity.list_people", entity_ulid=entity_ulid)
-        label = "Finish (Entity Record)"
+        actions.append(
+            {
+                "label": "Continue to Sponsor Onboarding",
+                "url": url_for(
+                    "sponsors.onboard_start",
+                    entity_ulid=entity_ulid,
+                    request_id=rid,
+                ),
+            }
+        )
+
+    # Dev convenience: always show Resource/Sponsor onboarding links too
+    actions.extend(
+        [
+            {
+                "label": "Resource Onboarding (dev link)",
+                "url": url_for(
+                    "resources.onboard_start",
+                    entity_ulid=entity_ulid,
+                    request_id=rid,
+                ),
+            },
+            {
+                "label": "Sponsor Onboarding (dev link)",
+                "url": url_for(
+                    "sponsors.onboard_start",
+                    entity_ulid=entity_ulid,
+                    request_id=rid,
+                ),
+            },
+        ]
+    )
 
     return render_template(
-        "entity/wizard_next.html",
-        entity_ulid=entity_ulid,
-        next_url=next_url,
-        label=label,
+        "entity/wizard_next.html", entity_ulid=entity_ulid, actions=actions
     )

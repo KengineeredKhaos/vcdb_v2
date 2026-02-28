@@ -20,7 +20,9 @@ def resource_facts_to_contract_dto(view: ResourceView) -> dict[str, Any]:
         "admin_review_required": view.admin_review_required,
         "readiness_status": view.readiness_status,
         "mou_status": view.mou_status,
-        "active_capability_keys": sorted(view.active_capabilities),
+        "active_capability_keys": sorted(
+            f"{c.domain}.{c.key}" for c in view.active_capabilities
+        ),
         "capability_last_update_utc": view.capability_last_update_utc,
     }
 
@@ -34,12 +36,16 @@ class ResourceCapabilityView:
 @dataclass(frozen=True)
 class ResourceView:
     entity_ulid: str
+    onboard_step: str | None
     admin_review_required: bool
     readiness_status: str
     mou_status: str
-    active_capabilities_keys: list[ResourceCapabilityView]
-
+    active_capabilities: list[ResourceCapabilityView]
     capability_last_update_utc: str | None
+    first_seen_utc: str | None
+    last_touch_utc: str | None
+    created_at_utc: str | None
+    updated_at_utc: str | None
 
 
 @dataclass(frozen=True)
@@ -69,10 +75,9 @@ def map_resource_capability(c) -> ResourceCapabilityView:
 
 
 def map_resource_view(r, active_caps: Sequence[object]) -> ResourceView:
-    entity_ulid = getattr(r, "entity_ulid", "")
     return ResourceView(
-        resource_ulid=entity_ulid,
-        entity_ulid=entity_ulid,
+        entity_ulid=getattr(r, "entity_ulid", ""),
+        onboard_step=getattr(r, "onboard_step", None),
         admin_review_required=bool(
             getattr(r, "admin_review_required", False)
         ),
@@ -87,6 +92,27 @@ def map_resource_view(r, active_caps: Sequence[object]) -> ResourceView:
         created_at_utc=getattr(r, "created_at_utc", None),
         updated_at_utc=getattr(r, "updated_at_utc", None),
     )
+
+
+def resource_view_to_dto(view: ResourceView) -> dict[str, Any]:
+    return {
+        "entity_ulid": view.entity_ulid,
+        "onboard_step": view.onboard_step,
+        # optional compatibility alias:
+        "resource_ulid": view.entity_ulid,
+        "admin_review_required": view.admin_review_required,
+        "readiness_status": view.readiness_status,
+        "mou_status": view.mou_status,
+        "active_capabilities": [
+            {"domain": c.domain, "key": c.key}
+            for c in view.active_capabilities
+        ],
+        "capability_last_update_utc": view.capability_last_update_utc,
+        "first_seen_utc": view.first_seen_utc,
+        "last_touch_utc": view.last_touch_utc,
+        "created_at_utc": view.created_at_utc,
+        "updated_at_utc": view.updated_at_utc,
+    }
 
 
 def map_resource_poc_view(d: Mapping[str, Any]) -> ResourcePOCView:
@@ -112,25 +138,6 @@ def map_resource_poc_list(
     rows: Sequence[Mapping[str, Any]],
 ) -> list[ResourcePOCView]:
     return [map_resource_poc_view(r) for r in rows]
-
-
-def resource_view_to_dto(view: ResourceView) -> dict[str, Any]:
-    return {
-        "resource_ulid": view.resource_ulid,
-        "entity_ulid": view.entity_ulid,
-        "admin_review_required": view.admin_review_required,
-        "readiness_status": view.readiness_status,
-        "mou_status": view.mou_status,
-        "active_capabilities": [
-            {"domain": c.domain, "key": c.key}
-            for c in view.active_capabilities
-        ],
-        "capability_last_update_utc": view.capability_last_update_utc,
-        "first_seen_utc": view.first_seen_utc,
-        "last_touch_utc": view.last_touch_utc,
-        "created_at_utc": view.created_at_utc,
-        "updated_at_utc": view.updated_at_utc,
-    }
 
 
 def resource_poc_view_to_dto(view: ResourcePOCView) -> dict[str, Any]:

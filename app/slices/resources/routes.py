@@ -17,7 +17,14 @@ Endpoints (minimal, test-facing surface):
 
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, render_template, request, url_for
+from flask import (
+    Blueprint,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 
 from app.extensions import db
 from app.lib.request_ctx import get_actor_ulid, get_request_id
@@ -34,6 +41,10 @@ bp = Blueprint(
     static_folder=None,
     url_prefix="/resources",
 )
+
+# -----------------
+# Helpers
+# -----------------
 
 
 def _ok(*, request_id: str, data: object = None, meta: dict | None = None):
@@ -75,6 +86,65 @@ def _err(*, request_id: str, exc: Exception, status: int | None = None):
     )
 
 
+def _wants_json() -> bool:
+    fmt = (request.args.get("format") or "").strip().lower()
+    if fmt == "json":
+        return True
+    if fmt == "html":
+        return False
+    # Default: browsers get HTML
+    if request.accept_mimetypes.accept_html:
+        return False
+    return True
+
+
+def _split_codes(raw_items: list[str]) -> list[str]:
+    out: list[str] = []
+    for item in raw_items or []:
+        if not item:
+            continue
+        for part in str(item).split(","):
+            s = part.strip()
+            if s:
+                out.append(s)
+    return out
+
+
+def _parse_domain_keys(raw_items: list[str]) -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    for s in _split_codes(raw_items):
+        if "." not in s:
+            continue
+        dom, key = s.split(".", 1)
+        dom = dom.strip()
+        key = key.strip()
+        if dom and key:
+            out.append((dom, key))
+    return out
+
+
+def _as_bool(v: str | None) -> bool | None:
+    if v is None:
+        return None
+    s = str(v).strip().lower()
+    if s in ("true", "1", "yes", "y", "t"):
+        return True
+    if s in ("false", "0", "no", "n", "f"):
+        return False
+    return None
+
+
+# -----------------
+# Landing Page
+# -----------------
+
+
+@bp.get("/")
+# @require_permission("resources:read")
+def resources_index():
+    return redirect(url_for("resources.search_resources"))
+
+
 # -----------------
 # search/view
 # get-only routes
@@ -85,29 +155,74 @@ def _err(*, request_id: str, exc: Exception, status: int | None = None):
 # @require_permission("resources:read")
 def search_resources():
     req = get_request_id()
-    if (
-        request.accept_mimetypes.accept_html
-        and request.args.get("format") != "json"
-    ):
-        return render_template(
-            "resources/search.html",
-            api_search_url=url_for("resources.search_resources"),
-            api_ensure_url=url_for("resources.ensure_resource"),
-        )
     try:
         page = int(request.args.get("page", "1") or "1")
         per = int(request.args.get("per", "50") or "50")
 
-        # (Optional) policy-driven filters can be added later.
-        rows, total = res_svc.find_resources(page=page, per=per)
+        any_of = _parse_domain_keys(request.args.getlist("any"))
+        all_of = _parse_domain_keys(request.args.getlist("all"))
+        readiness_in = _split_codes(request.args.getlist("readiness"))
+        admin_review_required = _as_bool(
+            request.args.get("admin_review_required")
+        )
+        onboard_step = (request.args.get("onboard_step") or "").strip()
+        onboard_step = onboard_step.lower() if onboard_step else None
 
-        return _ok(
+        rows, total = res_svc.find_resources(
+            any_of=any_of or None,
+            all_of=all_of or None,
+            admin_review_required=admin_review_required,
+            readiness_in=readiness_in or None,
+            onboard_step=onboard_step,
+            page=page,
+            per=per,
+        )
+
+        dtos = [res_mapper.resource_view_to_dto(v) for v in rows]
+        meta = {"total": total, "page": page, "per": per}
+
+        if _wants_json():
+            return _ok(request_id=req, data=dtos, meta=meta)
+
+        # HTML
+        from . import taxonomy as tax
+
+        return render_template(
+            "resources/search.html",
             request_id=req,
-            data=[res_mapper.resource_view_to_dto(v) for v in rows],
-            meta={"total": total, "page": page, "per": per},
+            items=dtos,
+            meta=meta,
+            form={
+                "any": ",".join(f"{d}.{k}" for d, k in any_of),
+                "all": ",".join(f"{d}.{k}" for d, k in all_of),
+                "readiness": ",".join(readiness_in),
+                "onboard_step": onboard_step or "",
+                "admin_review_required": request.args.get(
+                    "admin_review_required"
+                )
+                or "",
+                "page": page,
+                "per": per,
+            },
+            capability_codes=tax.all_capability_codes(),
+            readiness_states=list(tax.RESOURCE_READINESS_STATES),
         )
     except Exception as exc:
-        return _err(request_id=req, exc=exc)
+        if _wants_json():
+            return _err(request_id=req, exc=exc)
+        return (
+            render_template(
+                "resources/search.html",
+                request_id=req,
+                items=[],
+                meta={"total": 0, "page": 1, "per": 50},
+                form={},
+                capability_codes=[],
+                readiness_states=[],
+                error=str(exc),
+            ),
+            400,
+        )
 
 
 @bp.get("/<entity_ulid>")
@@ -117,10 +232,40 @@ def get_resource(entity_ulid: str):
     try:
         view = res_svc.resource_view(entity_ulid)
         if view is None:
-            return _err(
-                request_id=req, exc=ValueError("not found"), status=404
+            if _wants_json():
+                return _err(
+                    request_id=req, exc=ValueError("not found"), status=404
+                )
+            return (
+                render_template(
+                    "resources/resource.html",
+                    request_id=req,
+                    entity_ulid=entity_ulid,
+                    view=None,
+                    error="not found",
+                    readiness_states=[],
+                    mou_statuses=[],
+                    capability_codes=[],
+                ),
+                404,
             )
-        return _ok(request_id=req, data=res_mapper.resource_view_to_dto(view))
+
+        dto = res_mapper.resource_view_to_dto(view)
+
+        if _wants_json():
+            return _ok(request_id=req, data=dto)
+
+        from . import taxonomy as tax
+
+        return render_template(
+            "resources/resource.html",
+            request_id=req,
+            entity_ulid=entity_ulid,
+            view=dto,
+            readiness_states=list(tax.RESOURCE_READINESS_STATES),
+            mou_statuses=list(tax.RESOURCE_MOU_STATUSES),
+            capability_codes=tax.all_capability_codes(),
+        )
     except Exception as exc:
         return _err(request_id=req, exc=exc)
 

@@ -1,16 +1,29 @@
 {% extends "layout/base.html" %}
 {% import "_forms.html" as forms %}
-{% import "_macros.html" as macros %}
 
 {% block title %}Resources{% endblock %}
 
 {% block content %}
   <h1>Resources</h1>
 
+  {% if error is defined and error %}
+    <div class="banner banner--danger">{{ error }}</div>
+  {% endif %}
+
   <section class="card">
-    <h2>Ensure Resource Facet</h2>
+    <h2>Open a resource</h2>
     <div class="row">
-      {{ forms.text("ensure_entity_ulid", "Entity ULID", placeholder="01...") }}
+      {{ forms.text("open_ulid", "Resource Entity ULID",
+        placeholder="01...", inputmode="text") }}
+      <button class="btn" type="button" id="btn-open">Open</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Ensure facet (create if missing)</h2>
+    <div class="row">
+      {{ forms.text("ensure_ulid", "Org Entity ULID",
+        placeholder="01...", inputmode="text") }}
       <button class="btn" type="button" id="btn-ensure">Ensure</button>
     </div>
     <pre class="mono" id="ensure-out"></pre>
@@ -18,207 +31,179 @@
 
   <section class="card">
     <h2>Search</h2>
-    <div class="row">
-      {{ forms.text("any_keys", "ANY-of capability keys",
-        placeholder="basic_needs.food_pantry, emergency_response.community_relief_supplies") }}
-      {{ forms.text("all_keys", "ALL-of capability keys",
-        placeholder="veterans_affairs.federal, partnering.offers_partner_discounts") }}
+
+    <form method="get" action="{{ url_for('resources.search_resources') }}">
+      <div class="row">
+        {{ forms.text("any", "ANY-of capability keys",
+          value=form.get('any',''),
+          placeholder="basic_needs.food_pantry, emergency_response.community_relief_supplies") }}
+        {{ forms.text("all", "ALL-of capability keys",
+          value=form.get('all',''),
+          placeholder="veterans_affairs.federal, partnering.offers_partner_discounts") }}
+      </div>
+
+      <div class="row">
+        {{ forms.text("readiness", "Readiness in",
+          value=form.get('readiness',''),
+          placeholder="active,review") }}
+        {{ forms.text("onboard_step", "Onboard step",
+          value=form.get('onboard_step',''),
+          placeholder="complete") }}
+        {{ forms.select("admin_review_required", "Admin review?",
+          [["","(either)"],["true","true"],["false","false"]],
+          value=form.get('admin_review_required','')) }}
+        {{ forms.text("page", "Page", value=form.get('page',1), inputmode="numeric") }}
+        {{ forms.text("per", "Per", value=form.get('per',50), inputmode="numeric") }}
+      </div>
+
+      <button class="btn" type="submit">Search</button>
+    </form>
+
+    <div class="help">
+      total={{ meta.total }} page={{ meta.page }} per={{ meta.per }}
     </div>
 
-    <div class="row">
-      {{ forms.select("admin_review_required", "Admin review?",
-        [["","—"],["true","true"],["false","false"]]) }}
-      {{ forms.text("readiness_in", "Readiness in",
-        placeholder="active,review") }}
-      {{ forms.text("page", "Page", value="1", inputmode="numeric") }}
-      {{ forms.text("per", "Per", value="25", inputmode="numeric") }}
-      <button class="btn" type="button" id="btn-search">Search</button>
-    </div>
-
-    <div id="search-meta" class="help"></div>
-    <div id="search-out"></div>
+    {% if items %}
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Entity</th>
+            <th>Readiness</th>
+            <th>MOU</th>
+            <th>Admin?</th>
+            <th>Capabilities</th>
+            <th>More</th>
+          </tr>
+        </thead>
+        <tbody id="results">
+          {% for r in items %}
+            {% set ulid = r.get('entity_ulid') or r.get('resource_ulid') %}
+            <tr data-ulid="{{ ulid }}">
+              <td class="mono">
+                <a href="{{ url_for('resources.get_resource', entity_ulid=ulid) }}">
+                  {{ ulid }}
+                </a>
+              </td>
+              <td>{{ r.get('readiness_status','') }}</td>
+              <td>{{ r.get('mou_status','') }}</td>
+              <td>{{ 'yes' if r.get('admin_review_required') else 'no' }}</td>
+              <td class="mono">
+                {% set caps = r.get('active_capabilities') or [] %}
+                {% for c in caps %}
+                  {{ c.get('domain') }}.{{ c.get('key') }}{% if not loop.last %}, {% endif %}
+                {% endfor %}
+              </td>
+              <td>
+                <button class="btn btn-sm" type="button" data-hints>Hints</button>
+                <button class="btn btn-sm" type="button" data-pocs>POCs</button>
+              </td>
+            </tr>
+            <tr class="subrow">
+              <td colspan="6">
+                <div class="subpanel" data-hints-panel style="display:none"></div>
+                <div class="subpanel" data-pocs-panel style="display:none"></div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="help">No results.</div>
+    {% endif %}
   </section>
-
 {% endblock %}
 
 {% block scripts %}
   {{ super() }}
   <script>
-  const CSRF = {{ (csrf_token() if csrf_token is defined else "")|tojson }};
-  const API_SEARCH = {{ api_search_url|tojson }};
-  const API_ENSURE  = {{ api_ensure_url|tojson }};
+    const CSRF = {{ (csrf_token() if csrf_token is defined else "")|tojson }};
 
-  function hdrs() {
-    const h = {"Content-Type": "application/json"};
-    if (CSRF) h["X-CSRFToken"] = CSRF;
-    return h;
-  }
+    function hdrs() {
+      const h = {"Content-Type": "application/json"};
+      if (CSRF) h["X-CSRFToken"] = CSRF;
+      return h;
+    }
 
-  function parseKeys(s) {
-    const raw = (s || "").split(",").map(x => x.trim()).filter(Boolean);
-    return raw;
-  }
+    async function apiGet(url) {
+      const r = await fetch(url, {headers: {"Accept":"application/json"}});
+      return await r.json();
+    }
 
-  function buildSearchUrl() {
-    const anyKeys = parseKeys(
-      document.getElementById("id_any_keys").value
-    );
-    const allKeys = parseKeys(
-      document.getElementById("id_all_keys").value
-    );
-    const admin = document.getElementById("id_admin_review_required").value;
-    const readiness = parseKeys(
-      document.getElementById("id_readiness_in").value
-    );
+    async function apiPost(url, payload) {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: hdrs(),
+        body: JSON.stringify(payload || {})
+      });
+      return await r.json();
+    }
 
-    const page = document.getElementById("id_page").value || "1";
-    const per  = document.getElementById("id_per").value || "25";
-
-    const u = new URL(API_SEARCH, window.location.origin);
-    u.searchParams.set("format", "json");
-    u.searchParams.set("page", page);
-    u.searchParams.set("per", per);
-
-    anyKeys.forEach(k => u.searchParams.append("any", k));
-    allKeys.forEach(k => u.searchParams.append("all", k));
-    readiness.forEach(k => u.searchParams.append("readiness", k));
-    if (admin) u.searchParams.set("admin_review_required", admin);
-
-    return u.toString();
-  }
-
-  async function apiGet(url) {
-    const r = await fetch(url, {headers: {"Accept": "application/json"}});
-    return await r.json();
-  }
-
-  async function apiPost(url, payload) {
-    const r = await fetch(url, {
-      method: "POST",
-      headers: hdrs(),
-      body: JSON.stringify(payload || {})
+    document.getElementById("btn-open").addEventListener("click", () => {
+      const ulid = document.getElementById("id_open_ulid").value.trim();
+      if (ulid) window.location.href = "/resources/" + ulid;
     });
-    return await r.json();
-  }
 
-  function esc(s) {
-    return (s ?? "").toString()
-      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
-  }
-
-  function renderRows(rows) {
-    if (!rows || !rows.length) {
-      return "<div class='help'>No results.</div>";
-    }
-
-    let html = "<table class='tbl'><thead><tr>";
-    html += "<th>Entity</th><th>Status</th><th>MOU</th>";
-    html += "<th>Admin?</th><th>Capabilities</th><th>Actions</th>";
-    html += "</tr></thead><tbody>";
-
-    for (const r of rows) {
-      const ulid = r.entity_ulid || r.resource_ulid || "";
-      const caps = r.active_capabilities || [];
-      const capTxt = caps.map(c => `${c.domain}.${c.key}`).join(", ");
-
-      html += `<tr data-ulid="${esc(ulid)}">`;
-      html += `<td><a href="/resources/${esc(ulid)}">${esc(ulid)}</a></td>`;
-      html += `<td>${esc(r.readiness_status || "")}</td>`;
-      html += `<td>${esc(r.mou_status || "")}</td>`;
-      html += `<td>${r.admin_review_required ? "yes" : "no"}</td>`;
-      html += `<td class="mono">${esc(capTxt)}</td>`;
-      html += "<td>";
-      html += `<button class="btn btn-sm" data-hints>Hints</button> `;
-      html += `<button class="btn btn-sm" data-pocs>POCs</button>`;
-      html += "</td></tr>";
-
-      html += `<tr class="subrow"><td colspan="6">`;
-      html += `<div class="subpanel" data-hints-panel style="display:none"></div>`;
-      html += `<div class="subpanel" data-pocs-panel style="display:none"></div>`;
-      html += `</td></tr>`;
-    }
-
-    html += "</tbody></table>";
-    return html;
-  }
-
-  async function doSearch() {
-    const url = buildSearchUrl();
-    const out = await apiGet(url);
-
-    const meta = out.meta || {};
-    document.getElementById("search-meta").textContent =
-      `total=${meta.total ?? "?"} page=${meta.page ?? "?"} per=${meta.per ?? "?"}`;
-
-    const rows = out.data || [];
-    const holder = document.getElementById("search-out");
-    holder.innerHTML = renderRows(rows);
-  }
-
-  async function doEnsure() {
-    const ulid = document.getElementById("id_ensure_entity_ulid").value.trim();
-    const out = await apiPost(API_ENSURE, {entity_ulid: ulid});
-    document.getElementById("ensure-out").textContent =
-      JSON.stringify(out, null, 2);
-  }
-
-  document.getElementById("btn-search").addEventListener("click", doSearch);
-  document.getElementById("btn-ensure").addEventListener("click", doEnsure);
-
-  document.getElementById("search-out").addEventListener("click", async (ev) => {
-    const btn = ev.target;
-    const tr = btn.closest("tr[data-ulid]");
-    if (!tr) return;
-
-    const ulid = tr.getAttribute("data-ulid");
-    const sub = tr.nextElementSibling;
-    const hintsPanel = sub.querySelector("[data-hints-panel]");
-    const pocsPanel  = sub.querySelector("[data-pocs-panel]");
-
-    if (btn.hasAttribute("data-hints")) {
-      if (hintsPanel.dataset.loaded !== "1") {
-        const out = await apiGet(`/resources/${ulid}/profile-hints?format=json`);
-        const d = out.data || {};
-        hintsPanel.innerHTML =
-          `<div><b>Service area:</b> ${esc(d.service_area_note || "")}</div>` +
-          `<div><b>SLA note:</b> ${esc(d.sla_note || "")}</div>`;
-        hintsPanel.dataset.loaded = "1";
+    document.getElementById("btn-ensure").addEventListener("click", async () => {
+      const ulid = document.getElementById("id_ensure_ulid").value.trim();
+      const out = await apiPost("/resources/ensure", {entity_ulid: ulid});
+      document.getElementById("ensure-out").textContent =
+        JSON.stringify(out, null, 2);
+      if (out.ok && out.data && out.data.resource_entity_ulid) {
+        window.location.href =
+          "/resources/onboard/start?entity_ulid=" + out.data.resource_entity_ulid;
       }
-      hintsPanel.style.display =
-        (hintsPanel.style.display === "none") ? "block" : "none";
-    }
+    });
 
-    if (btn.hasAttribute("data-pocs")) {
-      if (pocsPanel.dataset.loaded !== "1") {
-        const out = await apiGet(`/resources/${ulid}/pocs-expanded?format=json`);
-        const items = (out.data && out.data.pocs) || [];
-        let html = "<table class='tbl'><thead><tr>";
-        html += "<th>Role</th><th>Name</th><th>Phone</th><th>Email</th>";
-        html += "<th>Primary?</th><th>Scope</th></tr></thead><tbody>";
+    document.getElementById("results")?.addEventListener("click", async (ev) => {
+      const btn = ev.target;
+      const tr = btn.closest("tr[data-ulid]");
+      if (!tr) return;
 
-        for (const it of items) {
-          const card = it.card || {};
-          const label = card.label || {};
-          const c = (card.contacts || {});
-          html += "<tr>";
-          html += `<td>${esc(it.org_role || "")}</td>`;
-          html += `<td>${esc(label.display_name || it.person_entity_ulid || "")}</td>`;
-          html += `<td class="mono">${esc(c.primary_phone || "")}</td>`;
-          html += `<td class="mono">${esc(c.primary_email || "")}</td>`;
-          html += `<td>${it.is_primary ? "yes" : "no"}</td>`;
-          html += `<td>${esc(it.scope || "")}</td>`;
-          html += "</tr>";
+      const ulid = tr.getAttribute("data-ulid");
+      const sub = tr.nextElementSibling;
+      const hintsPanel = sub.querySelector("[data-hints-panel]");
+      const pocsPanel  = sub.querySelector("[data-pocs-panel]");
+
+      if (btn.hasAttribute("data-hints")) {
+        if (hintsPanel.dataset.loaded !== "1") {
+          const out = await apiGet(`/resources/${ulid}/profile-hints?format=json`);
+          const d = out.data || {};
+          hintsPanel.innerHTML =
+            `<div><b>Service area:</b> ${d.service_area_note || ""}</div>` +
+            `<div><b>SLA note:</b> ${d.sla_note || ""}</div>`;
+          hintsPanel.dataset.loaded = "1";
         }
-        html += "</tbody></table>";
-        pocsPanel.innerHTML = html;
-        pocsPanel.dataset.loaded = "1";
+        hintsPanel.style.display =
+          (hintsPanel.style.display === "none") ? "block" : "none";
       }
-      pocsPanel.style.display =
-        (pocsPanel.style.display === "none") ? "block" : "none";
-    }
-  });
 
-  // initial load
-  doSearch();
+      if (btn.hasAttribute("data-pocs")) {
+        if (pocsPanel.dataset.loaded !== "1") {
+          const out = await apiGet(`/resources/${ulid}/pocs-expanded?format=json`);
+          const items = (out.data && out.data.pocs) || [];
+          let html = "<table class='tbl'><thead><tr>";
+          html += "<th>Role</th><th>Name</th><th>Phone</th><th>Email</th>";
+          html += "<th>Primary?</th><th>Scope</th></tr></thead><tbody>";
+          for (const it of items) {
+            const card = it.card || {};
+            const label = card.label || {};
+            const c = card.contacts || {};
+            html += "<tr>";
+            html += `<td>${it.org_role || ""}</td>`;
+            html += `<td>${label.display_name || it.person_entity_ulid || ""}</td>`;
+            html += `<td class="mono">${c.primary_phone || ""}</td>`;
+            html += `<td class="mono">${c.primary_email || ""}</td>`;
+            html += `<td>${it.is_primary ? "yes" : "no"}</td>`;
+            html += `<td>${it.scope || ""}</td>`;
+            html += "</tr>";
+          }
+          html += "</tbody></table>";
+          pocsPanel.innerHTML = html;
+          pocsPanel.dataset.loaded = "1";
+        }
+        pocsPanel.style.display =
+          (pocsPanel.style.display === "none") ? "block" : "none";
+      }
+    });
   </script>
 {% endblock %}

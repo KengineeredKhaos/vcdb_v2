@@ -1,0 +1,25 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Resource Onboarding · Capacity{% endblock %}
+
+{% block content %}
+  <h1>Resource Onboarding</h1>
+  <div class="help mono">{{ entity_ulid }}</div>
+
+  {% include "resources/onboard/_wizard_nav.html" %}
+
+  <section class="card">
+    <h2>Capacity (stub)</h2>
+    <div class="help">
+      Capacity/availability modeling will be wired later.
+      For now, continue to POCs.
+    </div>
+
+    <form method="post"
+          action="{{ url_for('resources.onboard_capacity', entity_ulid=entity_ulid) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
+      <button class="btn" type="submit">Continue</button>
+    </form>
+  </section>
+{% endblock %}
