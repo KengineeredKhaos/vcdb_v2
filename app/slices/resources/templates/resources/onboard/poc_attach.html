@@ -1,0 +1,36 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Link POC to Resource{% endblock %}
+
+{% block content %}
+  <h1>Link Person as Resource POC</h1>
+
+  {% if person_card %}
+    <div class="card" style="margin:.75rem 0;">
+      <div class="help">Person · <span class="mono">{{ person_ulid }}</span></div>
+      <div style="font-size:1.25rem;font-weight:650;">{{ person_card.display_name }}</div>
+      {% if person_card.short_label %}<div class="help">{{ person_card.short_label }}</div>{% endif %}
+    </div>
+  {% endif %}
+
+  <form method="post">
+    {# include your CSRF snippet here if you have one #}
+
+    <label>Resource Org Entity ULID</label>
+    <input name="org_entity_ulid" class="mono" required>
+
+    <label>Scope</label>
+    <select name="scope">
+      {% for s in scopes %}
+        <option value="{{ s }}" {% if s == default_scope %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+
+    <label>Org role (optional)</label>
+    <input name="org_role">
+
+    <label><input type="checkbox" name="is_primary" value="1"> Primary for this scope</label>
+
+    <button type="submit">Link</button>
+  </form>
+{% endblock %}

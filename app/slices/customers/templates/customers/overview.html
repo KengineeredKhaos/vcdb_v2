@@ -1,15 +1,19 @@
 {% extends "layout/base.html" %}
 
-{% block title %}Customer · {{ display_name|default(entity_ulid) }}{% endblock %}
+{% block title %}Customer · {{ (entity_card.display_name if entity_card else (display_name|default(entity_ulid))) }}{% endblock %}
 
 {% block content %}
-{% set name = display_name|default(entity_ulid) %}
+{% set c = entity_card|default(None) %}
+{% set name = (c.display_name if c else (display_name|default(entity_ulid))) %}
 
 <section class="card" style="margin-top:18px;">
   <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap;">
     <div>
       <h1 style="margin:0 0 6px;">{{ name }}</h1>
-      <div class="muted">Customer <code>{{ entity_ulid }}</code></div>
+      <div class="muted">
+        Customer · <code>{{ entity_ulid }}</code>
+        {% if c and c.short_label %} · {{ c.short_label }}{% endif %}
+      </div>
     </div>
     <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
       <a class="btn" href="{{ url_for('customers.customers_list_get') }}">Back to List</a>

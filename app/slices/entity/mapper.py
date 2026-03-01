@@ -1,8 +1,9 @@
 # app/slices/entity/mapper.py
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 from .models import (
     Entity,
@@ -211,6 +212,34 @@ class EntityCardDTO:
     label: EntityLabelDTO
     contacts: EntityContactSummaryDTO | None
     addresses: EntityAddressSummaryDTO | None
+
+
+# -----------------
+# Name Cards
+# (slice-agnostic)
+# -----------------
+
+"""
+Semantics:
+
+display_name: “safe UI name” (no DOB/last4/address/phone/email).
+person: e.g. "Shaw, Mike" or "Mike Shaw"
+org: trade/doing-business-as if present, else legal name
+short_label (optional): compact label for tight UIs
+person: "Shaw, M."
+org: "ACME" / truncated trade name
+No other fields. No “reason”, “notes”, “identifiers”, etc.
+"""
+
+EntityKind = Literal["person", "org"]
+
+
+@dataclass(frozen=True, slots=True)
+class EntityNameCardDTO:
+    entity_ulid: str
+    kind: EntityKind
+    display_name: str
+    short_label: str | None = None
 
 
 # -----------------

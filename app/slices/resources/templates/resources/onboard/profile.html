@@ -1,10 +1,10 @@
 {% extends "layout/base.html" %}
 
-{% block title %}Resource Onboarding · Profile{% endblock %}
+{% block title %}Resource Onboarding · Profile{% endblock title %}
 
 {% block content %}
   <h1>Resource Onboarding</h1>
-  <div class="help mono">{{ entity_ulid }}</div>
+  {% include "resources/onboard/_entity_card.html" %}
 
   {% include "resources/onboard/_wizard_nav.html" %}
 
@@ -33,4 +33,4 @@
       <button class="btn" type="submit">Save &amp; Continue</button>
     </form>
   </section>
-{% endblock %}
+{% endblock content %}

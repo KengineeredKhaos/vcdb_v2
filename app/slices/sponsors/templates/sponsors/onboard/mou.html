@@ -5,7 +5,7 @@
 
 {% block content %}
   <h1>Sponsor Onboarding</h1>
-  <div class="help mono">{{ entity_ulid }}</div>
+  {% include "sponsors/onboard/_entity_card.html" %}
 
   {% include "sponsors/onboard/_wizard_nav.html" %}
 

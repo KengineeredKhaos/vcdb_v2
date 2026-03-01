@@ -1,0 +1,14 @@
+{# customers/_entity_card.html #}
+{% set c = entity_card|default(None) %}
+
+{% if c %}
+  <div class="muted">
+    <strong>{{ c.display_name }}</strong>
+    · <code>{{ c.entity_ulid }}</code>
+    {% if c.short_label %}
+      · {{ c.short_label }}
+    {% endif %}
+  </div>
+{% else %}
+  <div class="muted">Entity: <code>{{ entity_ulid }}</code></div>
+{% endif %}

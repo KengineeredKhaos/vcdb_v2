@@ -48,13 +48,20 @@ TODO: Create:
 
 
 def allowed_role_codes(session=None) -> set[str]:
-    """
-    Return the canonical set of domain role codes allowed by Governance policy.
-    This is a read-only call through the v2 contract (no DB writes here).
-    """
     cats = get_role_catalogs()
     roles = cats.get("roles") or []
-    return set(str(r) for r in roles)
+    out = {str(r).strip().lower() for r in roles if str(r).strip()}
+    if out:
+        return out
+
+    # fallback: DB-derived active roles (dev-friendly; avoids “empty catalog”)
+    rows = (
+        db.session.query(EntityRole.role)
+        .filter(EntityRole.archived_at.is_(None))
+        .distinct()
+        .all()
+    )
+    return {str(r[0]).strip().lower() for r in rows if r and r[0]}
 
 
 # -----------------
@@ -501,6 +508,33 @@ def list_people(*, page: int, per_page: int) -> Page[PersonView]:
         )
     )
 
+    return paginate_sa(q, page=page, per_page=per_page).map(map_person_view)
+
+
+def list_people_by_role(
+    *,
+    role: str,
+    page: int,
+    per_page: int,
+) -> Page[PersonView]:
+    q = (
+        db.session.query(EntityPerson)
+        .join(Entity, EntityPerson.entity_ulid == Entity.ulid)
+        .join(EntityRole, EntityRole.entity_ulid == Entity.ulid)
+        .filter(EntityRole.role == role)
+        .options(
+            joinedload(EntityPerson.entity).options(
+                selectinload(Entity.contacts),
+                selectinload(Entity.roles),
+            )
+        )
+        .order_by(
+            asc(EntityPerson.last_name),
+            asc(EntityPerson.first_name),
+            asc(Entity.ulid),
+        )
+        .distinct(EntityPerson.entity_ulid)
+    )
     return paginate_sa(q, page=page, per_page=per_page).map(map_person_view)
 
 

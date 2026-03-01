@@ -1,0 +1,17 @@
+{# sponsors/onboard/_entity_card.html #}
+{% if entity_card %}
+  <section class="card" style="margin: .75rem 0;">
+    <div class="help">
+      {{ 'Organization' if entity_card.kind == 'org' else 'Person' }}
+      · <span class="mono">{{ entity_card.entity_ulid }}</span>
+    </div>
+    <div style="font-size: 1.25rem; font-weight: 650;">
+      {{ entity_card.display_name }}
+    </div>
+    {% if entity_card.short_label %}
+      <div class="help">{{ entity_card.short_label }}</div>
+    {% endif %}
+  </section>
+{% else %}
+  <div class="help mono">{{ entity_ulid }}</div>
+{% endif %}

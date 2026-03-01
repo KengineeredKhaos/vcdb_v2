@@ -152,6 +152,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import UTC
 from pathlib import Path
 
@@ -192,6 +193,116 @@ except Exception:  # still useful even if semantics module not present yet
 @click.group("dev")
 def dev_group():
     """Developer / Ops helpers (policy health, wiring checks, seed shims)."""
+
+
+# -----------------
+# CSRF Audit
+# template POST
+# -----------------
+
+
+@dev_group.command("template-csrf-audit")
+@with_appcontext
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Strict mode: require a csrf_field(...) call inside each POST form.",
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=200,
+    show_default=True,
+    help="Max offenders to print.",
+)
+def dev_template_csrf_audit(strict: bool, limit: int) -> None:
+    """
+    Scan templates for <form method="post"> blocks that appear to be missing CSRF.
+
+    Heuristics:
+      - Finds each <form ... method='post' ...> ... </form> block.
+      - Flags it if the block lacks:
+          * a csrf_field(...) call, OR
+          * a hidden input named csrf_token, OR
+          * a direct csrf_token() call, OR
+          * form.hidden_tag() (FlaskForm)
+
+    Exit codes:
+      0 = OK
+      1 = Missing CSRF detected
+
+    flask --app manage_vcdb.py dev template-csrf-audit
+    # optional:
+    flask --app manage_vcdb.py dev template-csrf-audit --strict
+    """
+    echo_db_banner("template-csrf-audit")
+
+    app_root = Path(current_app.root_path)  # .../app
+    roots = [
+        app_root / "templates",
+        app_root / "slices",
+    ]
+
+    form_open = re.compile(
+        r"<form\b[^>]*\bmethod\s*=\s*['\"]?post['\"]?[^>]*>",
+        re.IGNORECASE,
+    )
+    form_close = re.compile(r"</form\s*>", re.IGNORECASE)
+
+    if strict:
+        # Enforce macro usage (macros.csrf_field(), forms.csrf_field(), etc.)
+        csrf_ok = re.compile(r"\bcsrf_field\s*\(", re.IGNORECASE)
+    else:
+        # Accept either macro call or explicit token patterns.
+        csrf_ok = re.compile(
+            r"""
+            \bcsrf_field\s*\(          |  # macros.csrf_field()
+            name\s*=\s*["']csrf_token["'] |  # <input name="csrf_token" ...>
+            \bcsrf_token\s*\(          |  # csrf_token()
+            \bhidden_tag\s*\(             # form.hidden_tag()
+            """,
+            re.IGNORECASE | re.VERBOSE,
+        )
+
+    offenders: list[tuple[str, int]] = []
+    scanned_files = 0
+    scanned_forms = 0
+
+    for root in roots:
+        if not root.exists():
+            continue
+
+        for path in root.rglob("*.html"):
+            scanned_files += 1
+            text = path.read_text(encoding="utf-8", errors="ignore")
+
+            for m in form_open.finditer(text):
+                scanned_forms += 1
+                close = form_close.search(text, m.end())
+                if not close:
+                    # malformed template; skip
+                    continue
+
+                block = text[m.start() : close.end()]
+                if not csrf_ok.search(block):
+                    # record 1-based line number for human-friendly grepping
+                    line_no = text.count("\n", 0, m.start()) + 1
+                    offenders.append((str(path), line_no))
+
+    click.echo(f"Scanned templates: {scanned_files}")
+    click.echo(f"Scanned POST forms: {scanned_forms}")
+
+    if not offenders:
+        click.secho("OK — no missing CSRF markers detected.", fg="green")
+        return
+
+    click.secho("FAIL — POST forms missing CSRF markers:", fg="red")
+    for f, ln in offenders[:limit]:
+        click.echo(f"  - {f}:{ln}")
+    if len(offenders) > limit:
+        click.echo(f"  ... and {len(offenders) - limit} more")
+
+    raise SystemExit(1)
 
 
 # -----------------

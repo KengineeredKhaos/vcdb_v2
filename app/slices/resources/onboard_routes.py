@@ -25,8 +25,10 @@ from flask import (
     url_for,
 )
 
-from app.extensions import db
+from app.extensions import db, event_bus
 from app.extensions.auth_ctx import current_actor_ulid
+from app.extensions.contracts import entity_v2
+from app.extensions.errors import ContractError
 from app.lib.ids import new_ulid
 from app.lib.request_ctx import ensure_request_id
 from app.lib.security import require_permission  # noqa: F401
@@ -38,6 +40,20 @@ from .models import Resource
 from .routes import bp
 
 _ACTIVE_KEY = "wiz_active_resource_entity_ulid"
+
+
+def _try_entity_name_card(entity_ulid: str | None):
+    if not entity_ulid:
+        return None
+    try:
+        return entity_v2.get_entity_name_card(entity_ulid)
+    except ContractError as exc:
+        current_app.logger.warning(
+            "entity name card lookup failed: code=%s ulid=%s",
+            exc.code,
+            entity_ulid,
+        )
+        return None
 
 
 def _active_entity_ulid() -> str | None:
@@ -90,6 +106,117 @@ def _nav(entity_ulid: str, current_step: str) -> list[dict[str, object]]:
 
 
 @bp.route(
+    "/poc/attach/<person_ulid>",
+    methods=["GET", "POST"],
+    endpoint="poc_attach",
+)
+def poc_attach(person_ulid: str):
+    req = ensure_request_id()
+    actor = current_actor_ulid()
+
+    from app.extensions.contracts import entity_v2
+    from app.extensions.errors import ContractError
+
+    def _card(u: str):
+        try:
+            return entity_v2.get_entity_name_card(u)
+        except ContractError:
+            return None
+
+    person_card = _card(person_ulid)
+
+    if request.method == "GET":
+        return render_template(
+            "resources/onboard/poc_attach.html",
+            person_ulid=person_ulid,
+            person_card=person_card,
+            scopes=list(tax.POC_SCOPES),
+            default_scope=str(tax.DEFAULT_POC_SCOPE),
+        )
+
+    org_ulid = (request.form.get("org_entity_ulid") or "").strip()
+    scope = (request.form.get("scope") or "").strip() or None
+    org_role = (request.form.get("org_role") or "").strip() or None
+    is_primary = (request.form.get("is_primary") or "") in ("1", "true", "on")
+
+    org_card = _card(org_ulid)
+    if not org_card:
+        flash("Org ULID not found.", "error")
+        return redirect(
+            url_for("resources.poc_attach", person_ulid=person_ulid)
+        )
+    if org_card.kind != "org":
+        flash("That ULID is not an organization.", "error")
+        return redirect(
+            url_for("resources.poc_attach", person_ulid=person_ulid)
+        )
+
+    return render_template(
+        "resources/onboard/poc_attach_confirm.html",
+        person_ulid=person_ulid,
+        person_card=person_card,
+        org_ulid=org_ulid,
+        org_card=org_card,
+        scope=scope,
+        org_role=org_role,
+        is_primary=is_primary,
+        request_id=req,
+    )
+
+
+@bp.post("/poc/attach/confirm", endpoint="poc_attach_confirm")
+def poc_attach_confirm():
+    req = ensure_request_id()
+    actor = current_actor_ulid()
+
+    person_ulid = (request.form.get("person_ulid") or "").strip()
+    org_ulid = (request.form.get("org_ulid") or "").strip()
+    scope = (request.form.get("scope") or "").strip() or None
+    org_role = (request.form.get("org_role") or "").strip() or None
+    is_primary = (request.form.get("is_primary") or "") in ("1", "true", "on")
+
+    try:
+        # Ensure resource facet exists (if that’s your desired behavior)
+        res_svc.ensure_resource(
+            resource_entity_ulid=org_ulid,
+            actor_ulid=actor,
+            request_id=req,
+        )
+
+        res_svc.resource_link_poc(
+            resource_entity_ulid=org_ulid,
+            person_entity_ulid=person_ulid,
+            scope=scope,
+            is_primary=is_primary,
+            org_role=org_role,
+            actor_ulid=actor,
+            request_id=req,
+        )
+        # service flushes; route emits + commits
+        event_bus.emit(
+            domain="resources",
+            operation="contact_upserted",
+            request_id=req,
+            actor_ulid=actor,
+            target_ulid=org_ulid,
+            ref=person_ulid,
+            changed={"fields": [person_ulid, org_ulid]},
+        )
+        db.session.commit()
+        flash("POC linked to Resource.", "success")
+        return redirect(
+            url_for("resources.onboard_pocs", entity_ulid=org_ulid)
+        )
+
+    except Exception as exc:
+        db.session.rollback()
+        flash(str(exc) or "Unable to link POC.", "error")
+        return redirect(
+            url_for("resources.poc_attach", person_ulid=person_ulid)
+        )
+
+
+@bp.route(
     "/onboard/start",
     methods=["GET", "POST"],
     endpoint="onboard_start",
@@ -121,9 +248,11 @@ def onboard_start():
         entity_ulid = _active_entity_ulid() or ""
 
     if not entity_ulid:
+        active_ulid = _active_entity_ulid()
         return render_template(
             "resources/onboard/start.html",
-            active_entity_ulid=_active_entity_ulid(),
+            active_entity_ulid=active_ulid,
+            active_entity_card=_try_entity_name_card(active_ulid),
             entity_ulid="",
             error=None,
         )
@@ -150,9 +279,11 @@ def onboard_start():
             extra={"request_id": req, "entity_ulid": entity_ulid},
         )
         flash(str(exc) or "Unable to start onboarding.", "error")
+        active_ulid = _active_entity_ulid()
         return render_template(
             "resources/onboard/start.html",
-            active_entity_ulid=_active_entity_ulid(),
+            active_entity_ulid=active_ulid,
+            active_entity_card=_try_entity_name_card(active_ulid),
             entity_ulid=entity_ulid,
             error=str(exc),
         )
@@ -182,6 +313,7 @@ def onboard_profile(entity_ulid: str):
         return render_template(
             "resources/onboard/profile.html",
             entity_ulid=entity_ulid,
+            entity_card=_try_entity_name_card(entity_ulid),
             nav=_nav(entity_ulid, step),
             wiz_nonce=_issue_nonce(step, entity_ulid),
             hints=hints,
@@ -234,6 +366,7 @@ def onboard_profile(entity_ulid: str):
         return render_template(
             "resources/onboard/profile.html",
             entity_ulid=entity_ulid,
+            entity_card=_try_entity_name_card(entity_ulid),
             nav=_nav(entity_ulid, step),
             wiz_nonce=expected,
             hints=payload,
@@ -270,6 +403,7 @@ def onboard_capabilities(entity_ulid: str):
         return render_template(
             "resources/onboard/capabilities.html",
             entity_ulid=entity_ulid,
+            entity_card=_try_entity_name_card(entity_ulid),
             nav=_nav(entity_ulid, step),
             wiz_nonce=_issue_nonce(step, entity_ulid),
             cap_tree=getattr(tax, "RESOURCE_CAPABILITY_KEYS_BY_DOMAIN", {}),
@@ -287,7 +421,7 @@ def onboard_capabilities(entity_ulid: str):
 
     raw = request.form.getlist("caps")
     selected = {str(s).strip() for s in raw if str(s).strip()}
-    payload = {k: True for k in sorted(selected)}
+    payload = dict.fromkeys(sorted(selected), True)
 
     try:
         res_svc.upsert_capabilities(
@@ -320,6 +454,7 @@ def onboard_capabilities(entity_ulid: str):
         return render_template(
             "resources/onboard/capabilities.html",
             entity_ulid=entity_ulid,
+            entity_card=_try_entity_name_card(entity_ulid),
             nav=_nav(entity_ulid, step),
             wiz_nonce=expected,
             cap_tree=getattr(tax, "RESOURCE_CAPABILITY_KEYS_BY_DOMAIN", {}),
@@ -345,6 +480,7 @@ def onboard_capacity(entity_ulid: str):
         return render_template(
             "resources/onboard/capacity.html",
             entity_ulid=entity_ulid,
+            entity_card=_try_entity_name_card(entity_ulid),
             nav=_nav(entity_ulid, step),
             wiz_nonce=_issue_nonce(step, entity_ulid),
             error=None,
@@ -396,16 +532,35 @@ def onboard_pocs(entity_ulid: str):
         pocs = []
         error = None
         try:
-            pocs = res_svc.resource_list_pocs(resource_ulid=entity_ulid)
+            pocs = res_svc.resource_list_pocs(
+                resource_entity_ulid=entity_ulid
+            )
         except Exception as exc:
             error = str(exc)
+
+        poc_cards = {}
+        try:
+            person_ulids = []
+            seen = set()
+            for p in pocs or []:
+                u = str(p.link.person_entity_ulid).strip()
+                if u and u not in seen:
+                    seen.add(u)
+                    person_ulids.append(u)
+            if person_ulids:
+                cards = entity_v2.get_entity_name_cards(person_ulids)
+                poc_cards = {c.entity_ulid: c for c in cards}
+        except ContractError:
+            poc_cards = {}
 
         return render_template(
             "resources/onboard/pocs.html",
             entity_ulid=entity_ulid,
+            entity_card=_try_entity_name_card(entity_ulid),
             nav=_nav(entity_ulid, step),
             wiz_nonce=_issue_nonce(step, entity_ulid),
             pocs=pocs,
+            poc_cards=poc_cards,
             scopes=list(tax.POC_SCOPES),
             default_scope=str(tax.DEFAULT_POC_SCOPE),
             error=error,
@@ -504,6 +659,7 @@ def onboard_mou(entity_ulid: str):
         return render_template(
             "resources/onboard/mou.html",
             entity_ulid=entity_ulid,
+            entity_card=_try_entity_name_card(entity_ulid),
             nav=_nav(entity_ulid, step),
             wiz_nonce=_issue_nonce(step, entity_ulid),
             mou_statuses=list(tax.RESOURCE_MOU_STATUSES),
@@ -575,6 +731,7 @@ def onboard_review(entity_ulid: str):
         return render_template(
             "resources/onboard/review.html",
             entity_ulid=entity_ulid,
+            entity_card=_try_entity_name_card(entity_ulid),
             nav=_nav(entity_ulid, step),
             wiz_nonce=_issue_nonce(step, entity_ulid),
             snap=snap,
@@ -627,6 +784,7 @@ def onboard_complete(entity_ulid: str):
         return render_template(
             "resources/onboard/complete.html",
             entity_ulid=entity_ulid,
+            entity_card=_try_entity_name_card(entity_ulid),
             nav=_nav(entity_ulid, step),
             wiz_nonce=_issue_nonce(step, entity_ulid),
             error=None,

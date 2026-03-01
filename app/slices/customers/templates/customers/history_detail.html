@@ -3,14 +3,18 @@
 {% block title %}Customer · History Detail{% endblock %}
 
 {% block content %}
-{% set name = display_name|default(entity_ulid) %}
+{% set c = entity_card|default(None) %}
+{% set name = (c.display_name if c else (display_name|default(entity_ulid))) %}
 {% set env = detail.parsed.envelope %}
 
 <section class="card" style="margin-top:18px;">
   <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap;">
     <div>
       <h1 style="margin:0 0 6px;">History Detail</h1>
-      <div class="muted">{{ name }} · <code>{{ entity_ulid }}</code></div>
+      <div class="muted">
+        {{ name }} · <code>{{ entity_ulid }}</code>
+        {% if c and c.short_label %} · {{ c.short_label }}{% endif %}
+      </div>
     </div>
     <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
       <a class="btn" href="{{ url_for('customers.customer_history_timeline_get', entity_ulid=entity_ulid) }}">Back to Timeline</a>

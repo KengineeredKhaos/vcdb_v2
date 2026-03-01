@@ -197,9 +197,8 @@ def get_entity_display_names(entity_ulids: list[str]) -> dict[str, str]:
     """
     Batch label hydration for UI (PII stays in Entity; not persisted here).
 
-    Expected entity_v2 contract:
-      get_entity_labels(list[str]) ->
-        dict[ulid, str] OR dict[ulid, LabelDTO] OR list[LabelDTO]
+    Uses entity_v2 name-cards contract:
+      get_entity_name_cards(list[str]) -> list[EntityNameCardDTO]
     """
     ulids = _uniq_entity_ulids(entity_ulids)
     if not ulids:
@@ -211,42 +210,19 @@ def get_entity_display_names(entity_ulids: list[str]) -> dict[str, str]:
         # Allow Customers slice to run even if Entity contract isn't wired yet.
         return {}
 
-    res: Any = entity_v2.get_entity_labels(ulids)
+    try:
+        cards: Any = entity_v2.get_entity_name_cards(ulids)
+    except Exception:
+        return {}
 
-    # Case A: dict[ulid, str]
-    if isinstance(res, dict):
-        vals = list(res.values())
-        if not vals:
-            return {}
-        v0 = vals[0]
-        if isinstance(v0, str):
-            return {str(k): str(v) for k, v in res.items()}
-
-        # Case B: dict[ulid, LabelDTO-like]
-        out: dict[str, str] = {}
-        for k, v in res.items():
-            name = getattr(v, "display_name", None)
-            if not name and isinstance(v, dict):
-                name = v.get("display_name")
-            out[str(k)] = str(name) if name else str(k)
-        return out
-
-    # Case C: list[LabelDTO-like]
-    if isinstance(res, (list, tuple)):
-        out2: dict[str, str] = {}
-        for v in res:
-            u = getattr(v, "entity_ulid", None)
-            if not u and isinstance(v, dict):
-                u = v.get("entity_ulid")
-            if not u:
-                continue
-            name = getattr(v, "display_name", None)
-            if not name and isinstance(v, dict):
-                name = v.get("display_name")
-            out2[str(u)] = str(name) if name else str(u)
-        return out2
-
-    return {}
+    out: dict[str, str] = {}
+    for c in cards or []:
+        u = getattr(c, "entity_ulid", None)
+        name = getattr(c, "display_name", None)
+        if not u:
+            continue
+        out[str(u)] = str(name) if name else str(u)
+    return out
 
 
 def get_entity_display_name(entity_ulid: str) -> str:

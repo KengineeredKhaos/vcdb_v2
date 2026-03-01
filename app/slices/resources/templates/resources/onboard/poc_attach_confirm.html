@@ -1,0 +1,29 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Link POC to Resource{% endblock title %}
+
+{% block content %}
+  {# include your CSRF snippet below if you have one #}
+
+  <h1>Confirm POC Link</h1>
+
+  <div class="card">
+    <div class="help">Link person</div>
+    <div>{{ person_card.display_name if person_card else person_ulid }}</div>
+    <div class="help">to resource org</div>
+    <div>{{ org_card.display_name }} ({{ org_ulid }})</div>
+  </div>
+
+  <form method="post" action="{{ url_for('resources.poc_attach_confirm') }}">
+    {# include your CSRF snippet here if you have one #}
+    {{ csrf_token() if csrf_token is defined }}
+    <input type="hidden" name="person_ulid" value="{{ person_ulid }}">
+    <input type="hidden" name="org_ulid" value="{{ org_ulid }}">
+    <input type="hidden" name="scope" value="{{ scope }}">
+    <input type="hidden" name="org_role" value="{{ org_role or '' }}">
+    <input type="hidden" name="is_primary" value="{{ 1 if is_primary else 0 }}">
+    <button type="submit">Confirm + Link</button>
+    <a href="{{ url_for('resources.poc_attach', person_ulid=person_ulid) }}">Cancel</a>
+  </form>
+
+{% endblock content %}

@@ -28,7 +28,7 @@ from .forms import (
     PersonCoreForm,
     RoleForm,
 )
-from .models import EntityRole
+from .models import Entity, EntityRole
 from .routes import bp
 
 # -----------------
@@ -635,24 +635,37 @@ def wizard_role_post(entity_ulid: str):
 
 @bp.get("/wizard/<entity_ulid>/next", endpoint="wizard_next")
 def wizard_next(entity_ulid: str):
-    # Wizard is complete once we're at handoff; release the session latch.
     if session.get(_WIZ_ACTIVE_ENTITY_KEY) == entity_ulid:
         _wiz_clear_active()
+
     rid = ensure_request_id()
-    role = db.session.execute(
-        select(EntityRole)
-        .where(
-            EntityRole.entity_ulid == entity_ulid,
-            EntityRole.archived_at.is_(None),
+
+    ent = db.session.get(Entity, entity_ulid)
+    if not ent:
+        # If this happens, something upstream is wrong; but give a graceful exit
+        flash("Entity not found.", "error")
+        return redirect(url_for("entity.wizard_start"))  # or your index
+
+    # collect ALL active roles
+    roles = (
+        db.session.execute(
+            select(EntityRole.role).where(
+                EntityRole.entity_ulid == entity_ulid,
+                EntityRole.archived_at.is_(None),
+            )
         )
-        .limit(1)
-    ).scalar_one_or_none()
+        .scalars()
+        .all()
+    )
 
-    role_code = (role.role if role else "").strip().lower()
+    role_codes = {str(r or "").strip().lower() for r in roles if r}
 
-    actions = []
-    # Primary action (role-driven)
-    if role_code == "customer":
+    kind = (ent.kind or "").strip().lower()
+
+    actions: list[dict[str, str]] = []
+
+    # Primary role-driven handoffs
+    if "customer" in role_codes:
         actions.append(
             {
                 "label": "Continue to Customer Intake",
@@ -661,7 +674,7 @@ def wizard_next(entity_ulid: str):
                 ),
             }
         )
-    elif role_code == "resource":
+    if "resource" in role_codes:
         actions.append(
             {
                 "label": "Continue to Resource Onboarding",
@@ -672,7 +685,7 @@ def wizard_next(entity_ulid: str):
                 ),
             }
         )
-    elif role_code == "sponsor":
+    if "sponsor" in role_codes:
         actions.append(
             {
                 "label": "Continue to Sponsor Onboarding",
@@ -684,28 +697,42 @@ def wizard_next(entity_ulid: str):
             }
         )
 
-    # Dev convenience: always show Resource/Sponsor onboarding links too
-    actions.extend(
-        [
+    # POC “happy ending” for civilian persons:
+    is_streamless_person = kind == "person" and not (
+        {"customer", "resource", "sponsor"} & role_codes
+    )
+    if is_streamless_person:
+        actions.append(
             {
-                "label": "Resource Onboarding (dev link)",
+                "label": "Link as Resource POC",
                 "url": url_for(
-                    "resources.onboard_start",
-                    entity_ulid=entity_ulid,
+                    "resources.poc_attach",
+                    person_ulid=entity_ulid,
                     request_id=rid,
                 ),
-            },
+            }
+        )
+        actions.append(
             {
-                "label": "Sponsor Onboarding (dev link)",
+                "label": "Link as Sponsor POC",
                 "url": url_for(
-                    "sponsors.onboard_start",
-                    entity_ulid=entity_ulid,
+                    "sponsors.poc_attach",
+                    person_ulid=entity_ulid,
                     request_id=rid,
                 ),
-            },
-        ]
+            }
+        )
+
+    # Always provide a graceful exit
+    actions.append(
+        {
+            "label": "Done (return to Entity)",
+            "url": url_for("entity.search"),  # pick your real “home”
+        }
     )
 
     return render_template(
-        "entity/wizard_next.html", entity_ulid=entity_ulid, actions=actions
+        "entity/wizard_next.html",
+        entity_ulid=entity_ulid,
+        actions=actions,
     )

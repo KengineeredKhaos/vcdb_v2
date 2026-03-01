@@ -28,7 +28,6 @@ from flask import (
 
 from app.extensions import db
 from app.lib.request_ctx import get_actor_ulid, get_request_id
-from app.lib.security import require_permission
 
 from . import mapper as res_mapper
 from . import services as res_svc

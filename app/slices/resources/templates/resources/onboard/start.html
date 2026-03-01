@@ -13,6 +13,9 @@
   {% if active_entity_ulid %}
     <div class="banner banner--warning">
       Resume available: <span class="mono">{{ active_entity_ulid }}</span>
+      {% if active_entity_card %}
+        · <strong>{{ active_entity_card.display_name }}</strong>
+      {% endif %}
       · <a href="{{ url_for('resources.onboard_start', entity_ulid=active_entity_ulid) }}">
           Resume
         </a>

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from app.extensions.errors import ContractError
+from app.lib.ids import is_ulid  # or your canonical ULID validator
 from app.slices.entity import guards as ent_guards
 from app.slices.entity import services as ent_services
 from app.slices.entity.mapper import (
@@ -10,8 +13,15 @@ from app.slices.entity.mapper import (
     EntityCardDTO,
     EntityContactSummaryDTO,
     EntityLabelDTO,
+    EntityNameCardDTO,
     OrgView,
     PersonView,
+)
+from app.slices.entity.services_name_cards import (
+    get_entity_name_card as _get_entity_name_card,
+)
+from app.slices.entity.services_name_cards import (
+    get_entity_name_cards as _get_entity_name_cards,
 )
 
 # -----------------
@@ -85,6 +95,113 @@ def require_org_entity_ulid(
 # -----------------
 
 # See Entity Mapper for DTO's
+
+# -----------------
+# Name Cards
+# (slice-agnostic)
+# -----------------
+
+"""
+Semantics:
+
+display_name: “safe UI name” (no DOB/last4/address/phone/email).
+person: e.g. "Shaw, Mike" or "Mike Shaw"
+org: trade/doing-business-as if present, else legal name
+short_label (optional): compact label for tight UIs
+person: "Shaw, M."
+org: "ACME" / truncated trade name
+No other fields. No “reason”, “notes”, “identifiers”, etc.
+
+How other slices should use it:
+
+For one-off places (headers, detail pages): get_entity_name_card()
+For lists/reports: get_entity_name_cards([...])
+Slices store only entity_ulid in their tables; they fetch display
+cards at render/export time via the contract.
+"""
+
+
+def get_entity_name_card(entity_ulid: str) -> EntityNameCardDTO:
+    """
+    Return a minimal, PII-minimal display card for the given entity ULID.
+
+    Failure behavior:
+      - bad_argument (400): invalid ULID
+      - not_found (404): ULID not present
+      - unavailable (503): DB/session unavailable
+      - internal_error (500): unexpected
+    """
+    where = "entity_v2.get_entity_name_card"
+    if not is_ulid(entity_ulid):
+        raise ContractError(
+            code="bad_argument",
+            where=where,
+            message="invalid entity_ulid",
+            http_status=400,
+        )
+
+    try:
+        return _get_entity_name_card(entity_ulid)
+    except LookupError as err:
+        raise ContractError(
+            code="not_found",
+            where=where,
+            message=str(err) or "entity not found",
+            http_status=404,
+        ) from err
+    except ConnectionError as err:
+        raise ContractError(
+            code="unavailable",
+            where=where,
+            message="entity data unavailable",
+            http_status=503,
+        ) from err
+    except Exception as err:
+        raise ContractError(
+            code="internal_error",
+            where=where,
+            message="unexpected error",
+            http_status=500,
+        ) from err
+
+
+def get_entity_name_cards(
+    entity_ulids: Sequence[str],
+) -> list[EntityNameCardDTO]:
+    """
+    Batch variant to avoid N+1 loops in lists/reports.
+
+    Notes:
+      - Invalid ULIDs => bad_argument (400)
+      - Missing ULIDs are omitted (or choose to return placeholders)
+        to keep callers simple; if you prefer strictness, flip to 404.
+    """
+    where = "entity_v2.get_entity_name_cards"
+    bad = [u for u in entity_ulids if not is_ulid(u)]
+    if bad:
+        raise ContractError(
+            code="bad_argument",
+            where=where,
+            message="one or more invalid entity_ulids",
+            http_status=400,
+        )
+
+    try:
+        return _get_entity_name_cards(entity_ulids)
+    except ConnectionError as err:
+        raise ContractError(
+            code="unavailable",
+            where=where,
+            message="entity data unavailable",
+            http_status=503,
+        ) from err
+    except Exception as err:
+        raise ContractError(
+            code="internal_error",
+            where=where,
+            message="unexpected error",
+            http_status=500,
+        ) from err
 
 
 # -----------------

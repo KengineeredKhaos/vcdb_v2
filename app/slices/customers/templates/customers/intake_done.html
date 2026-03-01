@@ -5,7 +5,7 @@
 {% block content %}
 <section class="card" style="margin-top:18px;">
   <h1 style="margin:0 0 8px;">Customer Intake — Done</h1>
-  <div class="muted">Entity: <code>{{ entity_ulid }}</code></div>
+  {% include "customers/_entity_card.html" %}
 </section>
 
 <section class="card">

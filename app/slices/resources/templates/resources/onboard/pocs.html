@@ -5,7 +5,7 @@
 
 {% block content %}
   <h1>Resource Onboarding</h1>
-  <div class="help mono">{{ entity_ulid }}</div>
+  {% include "resources/onboard/_entity_card.html" %}
 
   {% include "resources/onboard/_wizard_nav.html" %}
 
@@ -20,7 +20,7 @@
       <table class="tbl">
         <thead>
           <tr>
-            <th>Person ULID</th>
+            <th>Person</th>
             <th>Role</th>
             <th>Scope</th>
             <th>Rank</th>
@@ -31,7 +31,15 @@
         <tbody>
           {% for p in pocs %}
             <tr>
-              <td class="mono">{{ p.link.person_entity_ulid }}</td>
+              <td>
+                {% set c = (poc_cards or {}).get(p.link.person_entity_ulid) %}
+                {% if c %}
+                  <div>{{ c.display_name }}</div>
+                  <div class="help mono">{{ p.link.person_entity_ulid }}</div>
+                {% else %}
+                  <div class="mono">{{ p.link.person_entity_ulid }}</div>
+                {% endif %}
+              </td>
               <td>{{ p.link.org_role or '' }}</td>
               <td>{{ p.link.scope or '' }}</td>
               <td class="mono">{{ p.link.rank }}</td>

@@ -4,7 +4,6 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, redirect, request, url_for
 
 from app.extensions import db
-from app.extensions.contracts import sponsors_v2
 from app.extensions.errors import ContractError
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
 

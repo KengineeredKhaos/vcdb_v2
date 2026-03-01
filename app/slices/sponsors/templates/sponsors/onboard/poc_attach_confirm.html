@@ -1,0 +1,28 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Link POC to Sponsor{% endblock title %}
+
+{% block content %}
+  {% import "_macros.html" as macros %}
+
+  <h1>Confirm POC Link</h1>
+
+  <div class="card">
+    <div class="help">Link person</div>
+    <div>{{ person_card.display_name if person_card else person_ulid }}</div>
+    <div class="help">to sponsor org</div>
+    <div>{{ org_card.display_name }} ({{ org_ulid }})</div>
+  </div>
+
+  <form method="post" action="{{ url_for('sponsors.poc_attach_confirm') }}">
+    {{ macros.csrf_field() }}
+    <input type="hidden" name="person_ulid" value="{{ person_ulid }}">
+    <input type="hidden" name="sponsor_ulid" value="{{ org_ulid }}">
+    <input type="hidden" name="scope" value="{{ scope }}">
+    <input type="hidden" name="org_role" value="{{ org_role or '' }}">
+    <input type="hidden" name="is_primary" value="{{ 1 if is_primary else 0 }}">
+    <button type="submit">Confirm + Link</button>
+    <a href="{{ url_for('sponsors.poc_attach', person_ulid=person_ulid) }}">Cancel</a>
+  </form>
+
+{% endblock content %}

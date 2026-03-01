@@ -22,6 +22,19 @@ from app.lib import request_ctx
 from . import services as svc
 from .models import Customer, CustomerEligibility
 
+
+def _try_entity_card(entity_ulid: str | None):
+    """Best-effort entity name card for UI chrome (PII-minimal)."""
+    if not entity_ulid:
+        return None
+    try:
+        from app.extensions.contracts import entity_v2
+
+        return entity_v2.get_entity_name_card(entity_ulid)
+    except Exception:
+        return None
+
+
 bp = Blueprint(
     "customers",
     __name__,
@@ -229,6 +242,7 @@ def customer_overview_get(entity_ulid: str):
     return render_template(
         "customers/overview.html",
         entity_ulid=entity_ulid,
+        entity_card=_try_entity_card(entity_ulid),
         display_name=vm.display_name,
         dash=vm.dash,
         elig=vm.elig,
@@ -258,6 +272,7 @@ def customer_history_timeline_get(entity_ulid: str):
     return render_template(
         "customers/history_timeline.html",
         entity_ulid=entity_ulid,
+        entity_card=_try_entity_card(entity_ulid),
         display_name=display_name,
         page=p,
     )
@@ -274,6 +289,7 @@ def customer_history_detail_get(entity_ulid: str, history_ulid: str):
     return render_template(
         "customers/history_detail.html",
         entity_ulid=entity_ulid,
+        entity_card=_try_entity_card(entity_ulid),
         display_name=display_name,
         detail=d,
     )
@@ -308,6 +324,7 @@ def intake_eligibility_get(entity_ulid: str):
     return render_template(
         "customers/intake_eligibility.html",
         entity_ulid=entity_ulid,
+        entity_card=_try_entity_card(entity_ulid),
         snap=snap,
         wiz_nonce=wiz_nonce,
     )
@@ -365,6 +382,7 @@ def _needs_get(entity_ulid: str, step: str, template: str):
     return render_template(
         template,
         entity_ulid=entity_ulid,
+        entity_card=_try_entity_card(entity_ulid),
         dash=dash,
         wiz_nonce=wiz_nonce,
         ratings=ratings,
@@ -515,6 +533,7 @@ def intake_review_get(entity_ulid: str):
     return render_template(
         "customers/intake_review.html",
         entity_ulid=entity_ulid,
+        entity_card=_try_entity_card(entity_ulid),
         dash=dash,
         wiz_nonce=wiz_nonce,
         ratings=ratings,
@@ -553,6 +572,7 @@ def intake_done_get(entity_ulid: str):
     return render_template(
         "customers/intake_done.html",
         entity_ulid=entity_ulid,
+        entity_card=_try_entity_card(entity_ulid),
         dash=dash,
     )
 
