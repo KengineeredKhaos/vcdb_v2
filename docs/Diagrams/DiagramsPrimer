@@ -15,6 +15,29 @@ What to notice:
 
 a --> b is “transition”
 
+() = trouble
+Parentheses in Mermaid diagrams are primarily used to define node shapes
+and enclose special text to avoid parsing errors.
+
+Node Shape: Single parentheses () around node text create a rounded rectangle
+(often called a "stadium" shape).
+For example: A((Start)) renders as a rounded rectangle labeled "Start".
+
+Text Escaping: When node labels contain parentheses, brackets,
+or other special characters that might interfere with Mermaid's parser,
+the entire label should be wrapped in double quotes.
+
+For example: A["Label with (parentheses)"] ensures the parentheses are
+treated as literal text.
+
+Special Keywords: The word end is a reserved keyword in sequence diagrams.
+If you need to use "end" as text, enclose it in parentheses, brackets, or
+quotes: (end), [end], or {end}.
+
+Avoid Conflicts: Using unquoted parentheses directly in labels (e.g., A(End))
+can cause parsing errors. Always use double quotes for labels containing
+special characters.
+
 
 Totally fair. The good news: Mermaid is *tiny* compared to “learning a new language.” It’s basically “ASCII diagrams with a couple keywords.” If you can read Python indentation, you can read Mermaid.
 

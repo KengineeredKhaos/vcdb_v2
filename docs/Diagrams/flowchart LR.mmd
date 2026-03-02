@@ -10,7 +10,7 @@ flowchart LR
     ADM_R[admin routes]
   end
 
-  subgraph EXT[Extensions Contracts (versioned)]
+  subgraph EXT[Extensions Contracts versioned]
     GOV_C[governance_v2]
     ENT_C[entity_v2]
     CUS_C[customers_v2]
@@ -19,13 +19,13 @@ flowchart LR
     LED_C[ledger_v2]
   end
 
-  subgraph SLICES[Slices (data ownership)]
-    ENT_S[Entity slice\n(PII vault)]
-    GOV_S[Governance slice\n(policies JSON)]
-    CUS_S[Customers slice\n(facet table)]
-    RES_S[Resources slice\n(facet table)]
-    SPO_S[Sponsors slice\n(facet table)]
-    LED_S[Ledger slice\n(immutable events)]
+  subgraph SLICES[Slices data ownership]
+    ENT_S[Entity slice\n PII vault]
+    GOV_S[Governance slice\npolicies JSON]
+    CUS_S[Customers slice\nfacet table]
+    RES_S[Resources slice\nfacet table]
+    SPO_S[Sponsors slice\nfacet table]
+    LED_S[Ledger slice\nimmutable events]
   end
 
   %% UI -> Contracts
