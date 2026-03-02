@@ -16,6 +16,7 @@ Conventions:
 - [ ] @TODO: Add a pagination smoke test (regression tripwire).
   
   - exercise `app/lib/pagination.py::paginate()` in app context
+  - Evaluate pagination macro (existing) vs `app/lib/pagination.py` for as unified method.
   - run against a trivial `select()` (SQLite) to catch extension wiring drift
 
 - [ ] @TODO: Generate a “strip map” of the Entity Wizard flow.
@@ -30,6 +31,15 @@ Conventions:
   - confirmation UX (created/updated views) and resume behavior
   - include a sequence diagram + per-step checklist
 
+- [ ] @TODO: Template audit for CSRF macro on POST.
+  
+  - run: `flask dev template-csrf-audit --strict`
+  - for every `<form method="post">`, require:
+    - `{% import "_macros.html" as macros %}`
+    - `{{ macros.csrf_field() }}`
+  - apply “Boy Scout rule”: fix templates you touch; run audit at end of each
+    evolution
+
 ### Customers: contracts first
 
 - [ ] @TODO: Clean up `customers_v2` contract (keep it small and stable).
@@ -39,34 +49,7 @@ Conventions:
     - controlled history append write
   - standardize ContractError wrapping + error codes
 
-### Governance: policy-driven taxonomy + reassessment
-
-- [ ] @TODO: Governance policy for Customers slice enumerations + needs taxonomy.
-  
-  - move constants out of `customers/services.py` into Governance JSON
-    (read-only via governance_v2 contract):
-    - veteran_statuses, homeless_statuses, veteran_methods
-    - branches, eras
-    - need_category_keys
-    - tier groupings (tier1/tier2/tier3 key lists)
-    - rating_allowed + rank map (immediate/marginal/sufficient ordering)
-  - proposed policy file:
-    - `app/slices/governance/data/policy_customer_taxonomy.json`
-  - add schema + validation:
-    - `app/slices/governance/data/schemas/policy_customer_taxonomy.schema.json`
-    - semantic checks:
-      - keys unique
-      - tier groupings cover all categories
-      - rank entries only for 1..3-rated values
-      - allowed includes unknown/na
-  - expose via contract:
-    - `governance_v2.get_customer_taxonomy() -> CustomerTaxonomyDTO`
-    - cache in services (TTL) so Customers doesn’t repeatedly hit loader
-  - Customers consumes taxonomy:
-    - validate inputs + compute rollups from policy
-    - remove hard-coded `_VETERAN_STATUS`, `_TIER1`, `_RANK`, etc.
-  - exception note:
-    - keep state codes in `app/lib/geo.py` as the single exception (canon)
+### Governance: policy-driven issues + reassessment
 
 - [ ] @TODO: Governance policy for time-based Customer needs reassessment.
   
@@ -105,6 +88,13 @@ Conventions:
   - Dataset #7 “Admin Inbox” is v0 (directly reads CustomerHistory flags)
   - v1: Admin Inbox becomes a view over `admin_alert` (produced by sweep)
 
+- [ ] @TODO: Consolidate slice-specific Admin inboxes into the Admin slice.
+  
+  - replace per-slice admin inbox pages with a unified Admin inbox/queue surface
+  - wire via versioned Extensions contracts (read-only providers per slice)
+  - keep queue rows PII-free (ULIDs + reason codes only; names via Entity name
+    cards at render)
+
 ---
 
 ## Later
@@ -119,6 +109,27 @@ Conventions:
     - require `request_id` and `actor_ulid` as keyword-only params
   - apply forward-first; defer refactors of stable/working slices
   - later: deliberate alignment sweep across older slices (Entity, etc.)
+
+### Logistics: physical inventory reconciliation
+
+- [ ] @TODO: Add admin-only ledger event `logistics.inventory.reconciled`.
+  
+  - fields:
+    - project_ulid (Calendar project)
+    - as_of_date
+    - input_file_hash (sha256 of “After” CSV)
+    - before_snapshot_hash (sha256 of “Before” CSV)
+    - summary_counts (SKUs changed, total delta units)
+    - actor_ulid, request_id
+    - optional: vendor ULID (or store vendor name outside the Ledger)
+  - keep item-level counts out of Ledger; store details in Logistics tables
+    and/or Calendar project artifacts
+
+- [ ] @TODO: Add `logi_inventory_snapshot` table (CSV snapshots for counts).
+  
+  - fields: snapshot_ulid, created_at, kind (before|after|diff), sha256,
+    source (export|upload), project_ulid
+  - store CSV files on disk; DB stores only hashes + metadata
 
 ---
 
@@ -213,3 +224,5 @@ Conventions:
   - watchlist remains manual escape hatch; compute “effective cues” in DTOs
   - reassessment: archive prior version snapshot JSON into `customer_history`
     (kind=`needs_reassessment`, schema_name=`customers.needs_snapshot`)
+
+# 

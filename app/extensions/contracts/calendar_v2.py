@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import importlib
+from dataclasses import dataclass
 from typing import Any, TypedDict
 
 from app.extensions.errors import ContractError
@@ -79,6 +81,24 @@ def _require_int_ge(name: str, value: Any, minval: int = 0) -> int:
 
 # -----------------
 # DTO's & Helpers
+# (new paradigm)
+# -----------------
+
+
+@dataclass(frozen=True)
+class FundingDemandDTO:
+    funding_demand_ulid: str
+    project_ulid: str
+    title: str
+    status: str
+    goal_cents: int
+    deadline_date: str | None
+    eligible_fund_keys: tuple[str, ...]
+
+
+# -----------------
+# Old Paradigm
+# DTO's
 # -----------------
 
 
@@ -126,6 +146,64 @@ __schema__ = {
         "returns_keys": ["ok", "label", "reason"],
     }
 }
+
+
+# -----------------
+# Funding Demand
+# New Paradigm
+# -----------------
+
+
+def _load_provider(where: str):
+    """
+    Calendar slice must provide a read-only function with this signature:
+
+        get_funding_demand(funding_demand_ulid: str) -> dict[str, Any]
+
+    Expected keys:
+      funding_demand_ulid, project_ulid, title, status, goal_cents,
+      deadline_date, eligible_fund_keys
+    """
+    try:
+        mod = importlib.import_module("app.slices.calendar.services_funding")
+        fn = getattr(mod, "get_funding_demand")
+        return fn
+    except Exception as exc:  # noqa: BLE001
+        raise ContractError(
+            code="provider_missing",
+            where=where,
+            message=(
+                "Calendar provider missing: "
+                "app.slices.calendar.services_funding.get_funding_demand"
+            ),
+            http_status=500,
+        ) from exc
+
+
+def get_funding_demand(funding_demand_ulid: str) -> FundingDemandDTO:
+    where = "calendar_v2.get_funding_demand"
+    try:
+        provider = _load_provider(where)
+        raw = provider(funding_demand_ulid)
+
+        eligible = tuple(raw.get("eligible_fund_keys") or ())
+        return FundingDemandDTO(
+            funding_demand_ulid=str(raw["funding_demand_ulid"]),
+            project_ulid=str(raw["project_ulid"]),
+            title=str(raw.get("title") or ""),
+            status=str(raw.get("status") or "unknown"),
+            goal_cents=int(raw.get("goal_cents") or 0),
+            deadline_date=raw.get("deadline_date"),
+            eligible_fund_keys=eligible,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+# -----------------
+# Old Paradigm
+# below this line
+# -----------------
 
 
 # -----------------
@@ -253,11 +331,6 @@ def create_project(
         )
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
-
-
-# -----------------
-#
-# -----------------
 
 
 def create_project_funding_plan(

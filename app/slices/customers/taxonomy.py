@@ -10,6 +10,16 @@ Slice-local semantics for Customers:
 - tier groupings and rank rules for rollups
 """
 
+INTAKE_STEPS = (
+    "ensure",
+    "eligibility",
+    "needs_tier1",
+    "needs_tier2",
+    "needs_tier3",
+    "review",
+    "complete",
+)
+
 VETERAN_STATUS = ("unknown", "verified", "unverified", "not_veteran")
 HOMELESS_STATUS = ("unknown", "verified", "unverified")
 VETERAN_METHOD = ("dd214", "va_id", "state_dl_veteran", "other")
@@ -17,15 +27,18 @@ BRANCH = ("USA", "USMC", "USN", "USAF", "USSF", "USCG")
 ERA = ("WWI", "WWII", "Korea", "Vietnam", "ColdWar", "GW-IF-EF", "PsyWar")
 
 NEEDS_CATEGORY_KEY = (
+    # Tier 1 (physiological)
     "food",
     "hygiene",
     "health",
     "housing",
     "clothing",
+    # Tier 2 (security)
     "income",
     "employment",
     "transportation",
     "education",
+    # Tier 3 (social)
     "family",
     "peergroup",
     "tech",

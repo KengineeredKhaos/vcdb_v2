@@ -1,0 +1,26 @@
+flowchart TB
+  DEM[(funding_demand_ulid)]
+
+  %% Sponsors side
+  PLEDGE[pledge_ulid]
+  DON[donation_ulid]
+
+  %% Finance side
+  JINC[income_journal_ulid]
+  RSV[reserve_ulid]
+  ENC[encumbrance_ulid]
+  JEXP[expense_journal_ulid]
+
+  %% Links (the food chain)
+  DEM --> PLEDGE
+  DEM --> DON
+  DON --> JINC
+  JINC --> RSV
+  DEM --> ENC
+  ENC --> JEXP
+  DEM --> JEXP
+
+  %% Optional: reconciliation / bank import later
+  BANK[bank_txn_ulid (import)]
+  BANK -.match.-> JINC
+  BANK -.match.-> JEXP

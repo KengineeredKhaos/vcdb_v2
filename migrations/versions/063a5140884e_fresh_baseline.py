@@ -1,8 +1,8 @@
-"""Clean_n_Fresh
+"""fresh baseline
 
-Revision ID: bba1702ba665
+Revision ID: 063a5140884e
 Revises: 
-Create Date: 2026-02-22 17:43:06.913053
+Create Date: 2026-03-01 13:10:16.887246
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'bba1702ba665'
+revision = '063a5140884e'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -430,11 +430,6 @@ def upgrade():
     sa.CheckConstraint("NOT (veteran_status != 'verified' AND (veteran_method IS NOT NULL OR approved_by_ulid IS NOT NULL OR approved_at_iso IS NOT NULL))", name='ck_cel_unverified_requires_nulls'),
     sa.CheckConstraint("NOT (veteran_status = 'verified' AND veteran_method = 'other' AND approved_by_ulid IS NULL)", name='ck_cel_other_requires_approval'),
     sa.CheckConstraint("NOT (veteran_status = 'verified' AND veteran_method IS NULL)", name='ck_cel_verified_requires_method'),
-    sa.CheckConstraint("branch IS NULL OR branch IN ('USA','USMC','USN','USAF','USSF','USCG')", name='ck_cel_branch_enum'),
-    sa.CheckConstraint("era IS NULL OR era IN ('WWI','WWII','Korea','Vietnam','ColdWar','GW-IF-EF','PsyWar')", name='ck_cel_era_enum'),
-    sa.CheckConstraint("homeless_status IN ('unknown','verified','unverified')", name='ck_cel_homeless_status_enum'),
-    sa.CheckConstraint("veteran_method IS NULL OR veteran_method IN ('dd214','va_id','state_dl_veteran','other')", name='ck_cel_veteran_method_enum'),
-    sa.CheckConstraint("veteran_status IN ('unknown','verified','unverified','not_veteran')", name='ck_cel_veteran_status_enum'),
     sa.CheckConstraint('NOT (approved_at_iso IS NOT NULL AND approved_by_ulid IS NULL)', name='ck_cel_timestamp_requires_approver'),
     sa.CheckConstraint('NOT (approved_by_ulid IS NOT NULL AND approved_at_iso IS NULL)', name='ck_cel_approval_requires_timestamp'),
     sa.ForeignKeyConstraint(['entity_ulid'], ['customer_customer.entity_ulid'], ondelete='CASCADE'),
@@ -692,7 +687,6 @@ def upgrade():
     sa.Column('rating_value', sa.String(length=16), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.CheckConstraint("category_key IN ('food','hygiene','health','housing','clothing','income','employment','transportation','education','family','peergroup','tech')", name='ck_cpr_category_key_enum'),
     sa.CheckConstraint("rating_value IN ('immediate','marginal','sufficient','unknown','na')", name='ck_cpr_rating_value_enum'),
     sa.CheckConstraint('assessment_version >= 1', name='ck_cpr_assessment_version_pos'),
     sa.ForeignKeyConstraint(['entity_ulid'], ['customer_profile.entity_ulid'], ondelete='CASCADE'),

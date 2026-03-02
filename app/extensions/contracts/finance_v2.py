@@ -1,9 +1,14 @@
 # app/extensions/contracts/finance_v2.py
+
 from __future__ import annotations
 
+import importlib
+from dataclasses import dataclass
 from typing import Any, NotRequired, TypedDict
 
 from app.extensions.errors import ContractError
+
+from ._funding_dto import MoneyByKeyDTO, MoneyLinksDTO
 
 """
 Config / setup
@@ -32,22 +37,13 @@ log_donation / log_expense in services_journal, exactly on the line you wanted.
 def _as_contract_error(where: str, exc: Exception) -> ContractError:
     if isinstance(exc, ContractError):
         return exc
-
     msg = str(exc) or exc.__class__.__name__
-
     if isinstance(exc, ValueError):
         return ContractError(
             code="bad_argument",
             where=where,
             message=msg,
             http_status=400,
-        )
-    if isinstance(exc, PermissionError):
-        return ContractError(
-            code="permission_denied",
-            where=where,
-            message=msg,
-            http_status=403,
         )
     if isinstance(exc, LookupError):
         return ContractError(
@@ -56,14 +52,151 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
             message=msg,
             http_status=404,
         )
-
+    if isinstance(exc, PermissionError):
+        return ContractError(
+            code="permission_denied",
+            where=where,
+            message=msg,
+            http_status=403,
+        )
     return ContractError(
-        code="internal_error",
+        code="internal",
         where=where,
-        message="unexpected error in contract; see logs",
+        message=msg,
         http_status=500,
-        data={"exc_type": exc.__class__.__name__},
     )
+
+
+# -----------------
+# DTO's
+# (new paradigm)
+# -----------------
+
+
+@dataclass(frozen=True)
+class FundingDemandMoneyViewDTO:
+    funding_demand_ulid: str
+
+    # Totals (presentation cents; positive)
+    received_cents: int
+    reserved_cents: int
+    encumbered_cents: int
+    spent_cents: int
+
+    # Drilldowns
+    received_by_fund: tuple[MoneyByKeyDTO, ...]
+    reserved_by_fund: tuple[MoneyByKeyDTO, ...]
+    encumbered_by_fund: tuple[MoneyByKeyDTO, ...]
+    spent_by_expense_kind: tuple[MoneyByKeyDTO, ...]
+    income_by_income_kind: tuple[MoneyByKeyDTO, ...]
+
+    # ULID trace links
+    links: MoneyLinksDTO
+
+
+# -----------------
+# New Paradigm
+# -----------------
+
+
+def _load_provider(where: str):
+    """
+    Finance slice must provide a read-only function with this signature:
+
+        get_funding_demand_money_view(
+            funding_demand_ulid: str,
+            *,
+            as_of_iso: str | None = None,
+        ) -> dict[str, Any]
+
+    Expected keys:
+      funding_demand_ulid
+      received_cents, reserved_cents, encumbered_cents, spent_cents
+      received_by_fund, reserved_by_fund, encumbered_by_fund:
+          list[{"key": fund_key, "amount_cents": int}, ...]
+      spent_by_expense_kind:
+          list[{"key": expense_kind, "amount_cents": int}, ...]
+      income_by_income_kind:
+          list[{"key": income_kind, "amount_cents": int}, ...]
+
+      income_journal_ulids, expense_journal_ulids, reserve_ulids,
+      encumbrance_ulids
+    """
+    try:
+        mod = importlib.import_module("app.slices.finance.services_dashboard")
+        fn = getattr(mod, "get_funding_demand_money_view")
+        return fn
+    except Exception as exc:  # noqa: BLE001
+        raise ContractError(
+            code="provider_missing",
+            where=where,
+            message=(
+                "Finance provider missing: "
+                "app.slices.finance.services_dashboard.get_funding_demand_money_view"
+            ),
+            http_status=500,
+        ) from exc
+
+
+def _to_money_by_key(rows: object) -> tuple[MoneyByKeyDTO, ...]:
+    out: list[MoneyByKeyDTO] = []
+    for r in rows or []:
+        out.append(
+            MoneyByKeyDTO(
+                key=str(r["key"]),
+                amount_cents=int(r["amount_cents"]),
+            )
+        )
+    out.sort(key=lambda x: x.key)
+    return tuple(out)
+
+
+def get_funding_demand_money_view(
+    funding_demand_ulid: str,
+    *,
+    as_of_iso: str | None = None,
+) -> FundingDemandMoneyViewDTO:
+    where = "finance_v2.get_funding_demand_money_view"
+    try:
+        provider = _load_provider(where)
+        raw = provider(funding_demand_ulid, as_of_iso=as_of_iso)
+
+        links = MoneyLinksDTO(
+            income_journal_ulids=tuple(raw.get("income_journal_ulids") or ()),
+            expense_journal_ulids=tuple(
+                raw.get("expense_journal_ulids") or ()
+            ),
+            reserve_ulids=tuple(raw.get("reserve_ulids") or ()),
+            encumbrance_ulids=tuple(raw.get("encumbrance_ulids") or ()),
+        )
+
+        return FundingDemandMoneyViewDTO(
+            funding_demand_ulid=str(raw["funding_demand_ulid"]),
+            received_cents=int(raw.get("received_cents") or 0),
+            reserved_cents=int(raw.get("reserved_cents") or 0),
+            encumbered_cents=int(raw.get("encumbered_cents") or 0),
+            spent_cents=int(raw.get("spent_cents") or 0),
+            received_by_fund=_to_money_by_key(raw.get("received_by_fund")),
+            reserved_by_fund=_to_money_by_key(raw.get("reserved_by_fund")),
+            encumbered_by_fund=_to_money_by_key(
+                raw.get("encumbered_by_fund")
+            ),
+            spent_by_expense_kind=_to_money_by_key(
+                raw.get("spent_by_expense_kind")
+            ),
+            income_by_income_kind=_to_money_by_key(
+                raw.get("income_by_income_kind")
+            ),
+            links=links,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+# -----------------
+# Old Paradigm
+# below this line
+# -----------------
 
 
 def _require_str(name: str, value: str | None) -> str:

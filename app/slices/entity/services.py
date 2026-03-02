@@ -47,14 +47,7 @@ TODO: Create:
 """
 
 
-def allowed_role_codes(session=None) -> set[str]:
-    cats = get_role_catalogs()
-    roles = cats.get("roles") or []
-    out = {str(r).strip().lower() for r in roles if str(r).strip()}
-    if out:
-        return out
-
-    # fallback: DB-derived active roles (dev-friendly; avoids “empty catalog”)
+def allowed_role_codes() -> set[str]:
     rows = (
         db.session.query(EntityRole.role)
         .filter(EntityRole.archived_at.is_(None))

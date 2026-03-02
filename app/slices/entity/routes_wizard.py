@@ -727,7 +727,7 @@ def wizard_next(entity_ulid: str):
     actions.append(
         {
             "label": "Done (return to Entity)",
-            "url": url_for("entity.search"),  # pick your real “home”
+            "url": url_for("entity.wizard_start", reset=1),
         }
     )
 

@@ -55,6 +55,7 @@ from .taxonomy import (
     BRANCH,
     ERA,
     HOMELESS_STATUS,
+    INTAKE_STEPS,
     NEEDS_CATEGORY_KEY,
     RANK,
     RATING_ALLOWED,
@@ -83,15 +84,8 @@ That keeps the feature sturdy and boring.
 
 
 # Intake step order (canonical)
-STEP_INTAKE = (
-    "ensure",
-    "eligibility",
-    "needs_tier1",
-    "needs_tier2",
-    "needs_tier3",
-    "review",
-    "complete",
-)
+
+STEP_INTAKE = INTAKE_STEPS
 STEP_ASSESSMENT = (
     "needs_begin",
     "needs_tier1",
@@ -107,6 +101,28 @@ STEP_COMPLETE = "complete"
 # Helper Functions
 # & Validators
 # -----------------
+
+
+def _require_one_of(
+    field: str, value: str | None, allowed: tuple[str, ...]
+) -> str:
+    v = (value or "").strip()
+    if not v or v not in allowed:
+        raise ValueError(f"invalid {field}: {value!r}")
+    return v
+
+
+def _require_nullable_one_of(
+    field: str,
+    value: str | None,
+    allowed: tuple[str, ...],
+) -> str | None:
+    v = (value or "").strip()
+    if not v:
+        return None
+    if v not in allowed:
+        raise ValueError(f"invalid {field}: {value!r}")
+    return v
 
 
 def _norm(s: str | None) -> str | None:
@@ -137,8 +153,13 @@ def _min_numeric(d: dict[str, Any] | None) -> int | None:
 
 
 def _set_intake_step(c: Customer, step: str, changed: list[str]) -> None:
-    if c.intake_step != step:
-        c.intake_step = step
+    step_key = str(step or "").strip().lower()
+    if step_key not in INTAKE_STEPS:
+        raise ValueError(f"invalid intake_step: {step!r}")
+
+    prev = (c.intake_step or "").strip().lower()
+    if prev != step_key:
+        c.intake_step = step_key
         changed.append("customer.intake_step")
 
 
@@ -749,12 +770,16 @@ def needs_set_block(
     act = ensure_actor_ulid(actor_ulid)
     now = now_iso8601_ms()
 
-    # Validate input keys/values
-    for k, v in ratings.items():
-        if k not in NEEDS_CATEGORY_KEY:
+    # Validate + normalize input keys/values once (pre-flush).
+    norm_ratings: dict[str, str] = {}
+    for k, v in (ratings or {}).items():
+        kk = str(k or "").strip().lower()
+        vv = str(v or "").strip().lower()
+        if kk not in NEEDS_CATEGORY_KEY:
             raise ValueError(f"invalid category_key: {k!r}")
-        if v not in RATING_ALLOWED:
-            raise ValueError(f"invalid rating_value for {k!r}: {v!r}")
+        if vv not in RATING_ALLOWED:
+            raise ValueError(f"invalid rating_value for {kk!r}: {v!r}")
+        norm_ratings[kk] = vv
 
     c = db.session.get(Customer, ent)
     if c is None:
@@ -789,7 +814,8 @@ def needs_set_block(
         raise RuntimeError("needs rows missing; expected 12 rating rows")
 
     # Apply updates
-    for k, new_val in ratings.items():
+
+    for k, new_val in norm_ratings.items():
         r = by_key[k]
         if r.rating_value != new_val:
             r.rating_value = new_val

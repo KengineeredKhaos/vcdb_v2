@@ -45,9 +45,10 @@ from app.extensions import db
 from app.lib.models import ULIDPK, IsoTimestamps
 
 # ---------------------------------------------------------------------------
-# Stored-as-string enums (validated via CHECK constraints)
+# Stored-as-string enums (CHECK constraints values for reference only)
 # ---------------------------------------------------------------------------
 
+"""
 _CUSTOMER_STATUS = ("intake", "active", "suspended", "archived")
 
 _CUSTOMER_INTAKE_STEP = (
@@ -62,38 +63,9 @@ _CUSTOMER_INTAKE_STEP = (
 
 _NEEDS_STATE = ("not_started", "in_progress", "complete", "skipped")
 
-_VETERAN_STATUS = ("unknown", "verified", "unverified", "not_veteran")
-
-_HOMELESS_STATUS = ("unknown", "verified", "unverified")
-
-_VETERAN_METHOD = ("dd214", "va_id", "state_dl_veteran", "other")
-
-_BRANCH = ("USA", "USMC", "USN", "USAF", "USSF", "USCG")
-
-_ERA = ("WWI", "WWII", "Korea", "Vietnam", "ColdWar", "GW-IF-EF", "PsyWar")
-
-_NEEDS_CATEGORY_KEY = (
-    # Tier 1 (physiological)
-    "food",
-    "hygiene",
-    "health",
-    "housing",
-    "clothing",
-    # Tier 2 (security)
-    "income",
-    "employment",
-    "transportation",
-    "education",
-    # Tier 3 (social)
-    "family",
-    "peergroup",
-    "tech",
-)
-
-_NEEDS_RATING_VALUE = ("immediate", "marginal", "sufficient", "unknown", "na")
 
 _HISTORY_SEVERITY = ("info", "warn")
-
+"""
 
 # ---------------------------------------------------------------------------
 # Customer card (facet table: PK=FK)
@@ -301,31 +273,6 @@ class CustomerEligibility(db.Model, IsoTimestamps):
     )
 
     __table_args__ = (
-        CheckConstraint(
-            "veteran_status IN "
-            "('unknown','verified','unverified','not_veteran')",
-            name="ck_cel_veteran_status_enum",
-        ),
-        CheckConstraint(
-            "homeless_status IN ('unknown','verified','unverified')",
-            name="ck_cel_homeless_status_enum",
-        ),
-        CheckConstraint(
-            "veteran_method IS NULL OR veteran_method IN ("
-            "'dd214','va_id','state_dl_veteran','other'"
-            ")",
-            name="ck_cel_veteran_method_enum",
-        ),
-        CheckConstraint(
-            "branch IS NULL OR branch IN "
-            "('USA','USMC','USN','USAF','USSF','USCG')",
-            name="ck_cel_branch_enum",
-        ),
-        CheckConstraint(
-            "era IS NULL OR era IN "
-            "('WWI','WWII','Korea','Vietnam','ColdWar','GW-IF-EF','PsyWar')",
-            name="ck_cel_era_enum",
-        ),
         # If veteran_status != verified → method/approval fields must be NULL.
         CheckConstraint(
             "NOT (veteran_status != 'verified' AND "
@@ -456,17 +403,7 @@ class CustomerProfileRating(db.Model, IsoTimestamps):
             name="ck_cpr_assessment_version_pos",
         ),
         CheckConstraint(
-            "category_key IN ("
-            "'food','hygiene','health','housing','clothing',"
-            "'income','employment','transportation','education',"
-            "'family','peergroup','tech'"
-            ")",
-            name="ck_cpr_category_key_enum",
-        ),
-        CheckConstraint(
-            "rating_value IN ("
-            "'immediate','marginal','sufficient','unknown','na'"
-            ")",
+            "rating_value IN ('immediate','marginal','sufficient','unknown','na')",
             name="ck_cpr_rating_value_enum",
         ),
     )
