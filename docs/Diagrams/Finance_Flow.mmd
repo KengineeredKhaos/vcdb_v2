@@ -3,7 +3,7 @@ flowchart LR
   GOV[Governance Slice<br/>Rules + Taxonomy]
   CAL[Calendar Slice<br/>Projects + Funding Demands + Execution]
   SPN[Sponsors Slice<br/>Prospects + Pledges + Donation Records]
-  FIN[Finance Slice<br/>Book of Record (GL) + Reserves + Encumbrances]
+  FIN[Finance Slice<br/>Book of Record GL + Reserves + Encumbrances]
   LGR[Ledger Slice<br/>Append-only Events (no PII)]
 
   %% Key objects (cheap labels)
@@ -16,12 +16,12 @@ flowchart LR
 
   %% Demand generation + publish
   CAL -->|create/update| DEM
-  GOV -->|taxonomy + controls (read-only)| CAL
-  CAL -->|publish demand (read-only query)| SPN
+  GOV -->|taxonomy + controls read-only| CAL
+  CAL -->|publish demand read-only query| SPN
 
   %% Intent + receipt of funds
   SPN -->|record pledge/prospect| INT
-  SPN -->|donation received → post_income(...)| FIN
+  SPN -->|donation received → post_income ...| FIN
   INC --> FIN
   SPN -->|links to demand| DEM
 
@@ -30,12 +30,12 @@ flowchart LR
   RSV -->|references| DEM
 
   %% Execution: approvals → encumber → spend
-  CAL -->|preview/approve rules (read-only)| GOV
-  CAL -->|encumber_funds(..., decision_ref)| FIN
+  CAL -->|preview/approve rules read-only| GOV
+  CAL -->|encumber_funds ..., decision_ref| FIN
   FIN --> ENC
   ENC -->|references| DEM
 
-  CAL -->|post_expense(..., encumbrance_ulid)| FIN
+  CAL -->|post_expense ..., encumbrance_ulid| FIN
   FIN --> EXP
   EXP -->|references| DEM
 

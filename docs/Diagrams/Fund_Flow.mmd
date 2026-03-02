@@ -1,5 +1,5 @@
 flowchart TB
-  DEM[(funding_demand_ulid)]
+  DEM[funding_demand_ulid]
 
   %% Sponsors side
   PLEDGE[pledge_ulid]
@@ -21,6 +21,6 @@ flowchart TB
   DEM --> JEXP
 
   %% Optional: reconciliation / bank import later
-  BANK[bank_txn_ulid (import)]
+  BANK[bank_txn_ulid recon import]
   BANK -.match.-> JINC
   BANK -.match.-> JEXP
