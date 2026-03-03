@@ -179,14 +179,14 @@ def create_app(config_object="config.DevConfig"):
             with suppress(Exception):
                 login_user(user, remember=False, force=True, fresh=True)
 
-            g.current_user = user  # allow code that prefers g.current_user
+    #
 
     # -------------
     # Register
     # <slice> blueprints
-    # after  CSRF/Jinja
-    # are set & loaded
     # -------------
+
+    # after  CSRF/Jinja are set & loaded
 
     # --- register blueprints ---
     from app.slices.admin import bp as admin_bp

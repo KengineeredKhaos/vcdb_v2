@@ -75,7 +75,6 @@ def _tune_sqlite_connection(dbapi_conn: sqlite3.Connection) -> None:
 def _install_sqlite_listeners_once(app: Flask) -> None:
     """
     Install connect-listener on the current engine only once.
-
     This guards against test reboots / factory re-use and dev auto-reload.
     """
     eng = db.engine  # requires an app context
@@ -120,10 +119,15 @@ def init_extensions(flask_app: Flask) -> None:
 
     # --- Finalize DB engine hooks & ensure models are loaded ---
     with flask_app.app_context():
-        # Ensure all models are imported exactly once so db.metadata is complete.
-        # This module can be a simple registry that imports each slice's models.
-        import app.extensions.models_registry  # noqa: F401
+        """
+        Ensure all models are imported exactly once so db.metadata is complete.
+        This module is a simple registry that imports each slice's models.
+        """
+        from app.extensions.models_registry import import_models  # noqa: F401
 
+        import_models()
+
+        # guard against test reboots / factory re-use and dev auto-reload.
         _install_sqlite_listeners_once(flask_app)
 
     # --- Idempotent teardown wiring (dev reload / tests safe) ---
