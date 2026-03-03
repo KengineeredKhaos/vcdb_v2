@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vcdb/policy_finance_selectors.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "rules"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/selector_rule" }
+    }
+  },
+
+  "$defs": {
+    "semantic_key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+
+    "op": {
+      "type": "string",
+      "enum": ["reserve", "encumber", "spend", "receive"]
+    },
+
+    "rule_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+
+    "selector_match": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/op" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "spending_class": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        },
+        "income_kind": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        },
+        "expense_kind": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        },
+        "restriction_keys_any": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        },
+        "restriction_keys_all": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        },
+        "tag_any": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "amount_cents_gte": { "type": "integer", "minimum": 0 },
+        "amount_cents_lte": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "selector_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule_id", "priority", "match", "allow_fund_keys"],
+      "properties": {
+        "rule_id": { "$ref": "#/$defs/rule_id" },
+        "priority": { "type": "integer" },
+        "match": { "$ref": "#/$defs/selector_match" },
+        "allow_fund_keys": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "prefer_fund_keys": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

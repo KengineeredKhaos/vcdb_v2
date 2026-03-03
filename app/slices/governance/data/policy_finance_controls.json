@@ -1,86 +1,35 @@
 {
-  "budget": {
-    "periods": [
-      {
-        "lines": [
-          {
-            "amount_cents": 200000,
-            "fund_archetype_key": "grant_advance",
-            "fund_code": "ELKS-FREEDOM-2025",
-            "project_code": "Stand-Down-2025",
-            "project_type_key": "stand_down",
-            "source": "grant:ELKS_FREEDOM",
-            "status": "adopted"
-          }
-        ],
-        "period_label": "FY2025"
+  "version": 1,
+  "staff_cap_cents": 20000,
+  "approval_rules": [
+    {
+      "rule_id": "appr-100-staff-cap",
+      "priority": 100,
+      "match": {
+        "op": ["encumber", "spend"],
+        "amount_cents_gt": 20000
       },
-      {
-        "lines": [
-          {
-            "amount_cents": 100000,
-            "fund_archetype_key": "local_only",
-            "fund_code": "cash",
-            "project_code": "office_supplies",
-            "project_type_key": "operations",
-            "source": "unfunded",
-            "status": "unfunded"
-          }
-        ],
-        "period_label": "FY2026"
-      }
-    ]
-  },
-  "meta": {
-    "description": "Spending authority, caps, and budget periods.",
-    "effective_on": "2026-02-23",
-    "notes": [
-      "Caps are authoritative; do not duplicate in other policies.",
-      "All values are PII-free; identifiers are ULIDs only."
-    ],
-    "policy_key": "finance_controls",
-    "schema_version": 1,
-    "status": "draft",
-    "title": "Finance Controls Policy",
-    "version": 2
-  },
-  "spending": {
-    "approvers": {
-      "level1": [
-        "president",
-        "vice_president",
-        "treasurer"
-      ],
-      "level2": [
-        "governor"
-      ]
+      "required_approvals": ["treasurer"],
+      "reason_code": "over_staff_cap"
     },
-    "class_caps": {
-      "basic_needs": {
-        "camping_gear": {
-          "lamp": {
-            "cap_cents": 2500
-          },
-          "tarp": {
-            "cap_cents": 1000
-          },
-          "tent": {
-            "cap_cents": 7500
-          }
-        },
-        "clothing": {
-          "jacket": {
-            "cap_cents": 5000
-          },
-          "pants": {
-            "cap_cents": 5000
-          },
-          "top": {
-            "cap_cents": 5000
-          }
-        }
-      }
-    },
-    "staff_cap_cents": 20000
-  }
+    {
+      "rule_id": "appr-120-restricted-funds-need-approver",
+      "priority": 120,
+      "match": {
+        "op": ["encumber", "spend"],
+        "fund_archetype_any": ["temporarily_restricted", "permanently_restricted"]
+      },
+      "required_approvals": ["treasurer"],
+      "reason_code": "restricted_fund_requires_approval"
+    }
+  ],
+  "budget_periods": [
+    {
+      "period_key": "annual",
+      "label": "Annual",
+      "start_month": 1,
+      "start_day": 1
+    }
+  ],
+  "budget_caps": []
 }

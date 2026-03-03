@@ -1,21 +1,29 @@
+# app/extensions/models_registry.py
+
 # Single place to import all slice models so Alembic sees them.
 # DO NOT add any runtime logic here — imports only.
 # Keep list alphabetized to avoid churn in diffs.
 
-"""
-# flake8: noqa
-from app.slices.admin import models as _admin_models
-from app.slices.attachments import models as _attachments_models
-from app.slices.auth import models as _auth_models
-from app.slices.calendar import models as _calendar_models
-from app.slices.customers import models as _customers_models
-from app.slices.entity import models as _entity_models
-from app.slices.finance import models as _finance_models
-from app.slices.governance import models as _governance_models
-from app.slices.ledger import models as _ledger_models
-from app.slices.logistics import models as _logistics_models
-from app.slices.resources import models as _resources_models
-from app.slices.sponsors import models as _sponsors_models
+from __future__ import annotations
 
-# ...add other slices as they come online
-"""
+import importlib
+
+_MODEL_MODULES: tuple[str, ...] = (
+    "app.slices.admin.models",
+    "app.slices.attachments.models",
+    "app.slices.auth.models",
+    "app.slices.calendar.models",
+    "app.slices.customers.models",
+    "app.slices.entity.models",
+    "app.slices.finance.models",
+    "app.slices.governance.models",
+    "app.slices.ledger.models",
+    "app.slices.logistics.models",
+    "app.slices.resources.models",
+    "app.slices.sponsors.models",
+)
+
+
+def import_models() -> None:
+    for mod in _MODEL_MODULES:
+        importlib.import_module(mod)

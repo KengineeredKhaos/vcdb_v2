@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "rule_id": "sel-900-unrestricted-default",
+      "priority": 10,
+      "match": {
+        "op": ["reserve", "encumber", "spend", "receive"],
+        "restriction_keys_any": []
+      },
+      "allow_fund_keys": ["general_unrestricted"],
+      "prefer_fund_keys": ["general_unrestricted"]
+    },
+    {
+      "rule_id": "sel-200-reimbursement-welcome-home",
+      "priority": 200,
+      "match": {
+        "op": ["reserve", "encumber", "spend"],
+        "spending_class": ["basic_needs"],
+        "tag_any": ["welcome_home_kit"]
+      },
+      "allow_fund_keys": [
+        "welcome_home_reimbursement",
+        "general_unrestricted"
+      ],
+      "prefer_fund_keys": ["welcome_home_reimbursement"]
+    },
+    {
+      "rule_id": "sel-210-restricted-when-grant-reporting",
+      "priority": 210,
+      "match": {
+        "op": ["reserve", "encumber", "spend"],
+        "restriction_keys_any": ["grant_reporting"]
+      },
+      "allow_fund_keys": ["welcome_home_reimbursement", "general_restricted"],
+      "prefer_fund_keys": ["welcome_home_reimbursement"]
+    }
+  ]
+}

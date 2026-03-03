@@ -1,87 +1,50 @@
 {
-  "fund_archetypes": [
-    {
-      "key": "general_unrestricted",
+  "version": 1,
+  "fund_keys": {
+    "general_unrestricted": {
       "label": "General Unrestricted",
-      "payment_timing": "upfront",
-      "restriction_type": "unrestricted"
+      "archetype": "unrestricted",
+      "default_restriction_keys": []
     },
-    {
-      "key": "grant_advance",
-      "label": "Grant (advance funds)",
-      "payment_timing": "upfront",
-      "restriction_type": "temporarily_restricted"
+    "general_restricted": {
+      "label": "General Restricted",
+      "archetype": "temporarily_restricted",
+      "default_restriction_keys": []
     },
-    {
-      "key": "grant_reimbursement",
-      "label": "Grant (reimbursement)",
-      "payment_timing": "reimbursement",
-      "restriction_type": "temporarily_restricted"
-    },
-    {
-      "key": "vet_only",
-      "label": "Veteran-only",
-      "payment_timing": "upfront",
-      "restriction_type": "temporarily_restricted"
-    },
-    {
-      "key": "local_only",
-      "label": "Local-only",
-      "payment_timing": "upfront",
-      "restriction_type": "temporarily_restricted"
-    },
-    {
-      "key": "local_vet_only",
-      "label": "Local veteran-only",
-      "payment_timing": "upfront",
-      "restriction_type": "temporarily_restricted"
-    },
-    {
-      "key": "match_funds",
-      "label": "Match funds",
-      "payment_timing": "reimbursement",
-      "restriction_type": "temporarily_restricted"
-    },
-    {
-      "key": "inkind_tracking",
-      "label": "In-kind tracking only",
-      "payment_timing": "upfront",
-      "restriction_type": "unrestricted"
+    "welcome_home_reimbursement": {
+      "label": "Welcome Home Kit Reimbursement",
+      "archetype": "temporarily_restricted",
+      "default_restriction_keys": ["grant_reporting"]
     }
-  ],
-  "journal_flags": [
-    {
-      "key": "cash",
-      "label": "unrestricted cash donation"
-    },
-    {
-      "key": "inkind",
-      "label": "Non-cash in-kind donation"
-    },
-    {
-      "key": "grant_reimbursable",
-      "label": "Eligible for sponsor reimbursement"
-    },
-    {
-      "key": "grant_elks_freedom",
-      "label": "Elks Freedom Grant tracking"
-    }
-  ],
-  "meta": {
-    "description": "Fund Archetypes & Journal Expenses Flags",
-    "effective_on": "2026-02-23",
-    "notes": [
-      "Defines allowable fund archetypes, their restrictions & payment timing",
-      "This policy also sets fund type flags for journal entries.",
-      "THIS IS REVENUE ONLY POLICY. See policy_operations for expense flags.",
-      "Do not use CoA codes in Journal flags, semantic <type> hints only.",
-      "Create new flags only for unique tracking requirements.",
-      "In-kind is recognized as revenue/expense at fair value when recorded."
-    ],
-    "policy_key": "finance_taxonomy",
-    "schema_version": 1,
-    "status": "draft",
-    "title": "Finance Taxonomy Policy",
-    "version": 2
+  },
+  "restriction_keys": {
+    "local_only": {"label": "Local only"},
+    "vet_only": {"label": "Veterans only"},
+    "homeless_only": {"label": "Homeless only"},
+    "grant_reporting": {"label": "Grant reporting required"}
+  },
+  "income_kinds": {
+    "donation": {"label": "Donation"},
+    "grant_disbursement": {"label": "Grant disbursement"},
+    "reimbursement": {"label": "Reimbursement"},
+    "inkind": {"label": "In-kind contribution"},
+    "other": {"label": "Other income"}
+  },
+  "expense_kinds": {
+    "food": {"label": "Food"},
+    "fuel": {"label": "Fuel"},
+    "supplies": {"label": "Supplies"},
+    "lodging": {"label": "Lodging"},
+    "printing": {"label": "Printing"},
+    "software": {"label": "Software and IT"},
+    "fees": {"label": "Bank and merchant fees"},
+    "other": {"label": "Other expense"}
+  },
+  "spending_classes": {
+    "basic_needs": {"label": "Basic needs"},
+    "events": {"label": "Events"},
+    "logistics": {"label": "Logistics"},
+    "housing": {"label": "Housing"},
+    "admin": {"label": "Administration"}
   }
 }

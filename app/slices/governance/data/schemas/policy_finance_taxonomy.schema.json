@@ -1,122 +1,87 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vcdb/policy_finance_taxonomy.schema.json",
+  "type": "object",
   "additionalProperties": false,
+  "required": [
+    "version",
+    "fund_keys",
+    "restriction_keys",
+    "income_kinds",
+    "expense_kinds",
+    "spending_classes"
+  ],
   "properties": {
-    "fund_archetypes": {
-      "items": {
-        "additionalProperties": false,
-        "properties": {
-          "key": {
-            "pattern": "^[a-z0-9_]+$",
-            "type": "string"
-          },
-          "label": {
-            "type": "string"
-          },
-          "payment_timing": {
-            "enum": [
-              "upfront",
-              "reimbursement"
-            ],
-            "type": "string"
-          },
-          "restriction_type": {
-            "enum": [
-              "unrestricted",
-              "temporarily_restricted",
-              "permanently_restricted"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "key",
-          "label",
-          "payment_timing",
-          "restriction_type"
-        ],
-        "type": "object"
-      },
-      "minItems": 1,
-      "type": "array"
+    "version": { "type": "integer", "minimum": 1 },
+
+    "fund_keys": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/semantic_key" },
+      "additionalProperties": { "$ref": "#/$defs/fund_def" }
     },
-    "journal_flags": {
-      "items": {
-        "additionalProperties": false,
-        "properties": {
-          "key": {
-            "pattern": "^[a-z0-9_]+$",
-            "type": "string"
-          },
-          "label": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "key",
-          "label"
-        ],
-        "type": "object"
-      },
-      "minItems": 1,
-      "type": "array"
+
+    "restriction_keys": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/semantic_key" },
+      "additionalProperties": { "$ref": "#/$defs/labeled_def" }
     },
-    "meta": {
-      "additionalProperties": true,
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "effective_on": {
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-          "type": "string"
-        },
-        "notes": {
-          "items": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "type": "array"
-        },
-        "policy_key": {
-          "pattern": "^[a-z0-9_]+$",
-          "type": "string"
-        },
-        "schema_version": {
-          "minimum": 1,
-          "type": "integer"
-        },
-        "status": {
-          "enum": [
-            "draft",
-            "active",
-            "deprecated"
-          ],
-          "type": "string"
-        },
-        "title": {
-          "type": "string"
-        },
-        "version": {
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "policy_key",
-        "title",
-        "status"
-      ],
-      "type": "object"
+
+    "income_kinds": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/semantic_key" },
+      "additionalProperties": { "$ref": "#/$defs/labeled_def" }
+    },
+
+    "expense_kinds": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/semantic_key" },
+      "additionalProperties": { "$ref": "#/$defs/labeled_def" }
+    },
+
+    "spending_classes": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/semantic_key" },
+      "additionalProperties": { "$ref": "#/$defs/labeled_def" }
     }
   },
-  "required": [
-    "meta",
-    "fund_archetypes",
-    "journal_flags"
-  ],
-  "title": "Finance Taxonomy Policy",
-  "type": "object"
+
+  "$defs": {
+    "semantic_key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+
+    "labeled_def": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "fund_archetype": {
+      "type": "string",
+      "enum": [
+        "unrestricted",
+        "temporarily_restricted",
+        "permanently_restricted"
+      ]
+    },
+
+    "fund_def": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "archetype", "default_restriction_keys"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "archetype": { "$ref": "#/$defs/fund_archetype" },
+        "default_restriction_keys": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
 }

@@ -31,6 +31,29 @@ from app.slices.governance.services_admin import (
     list_policies_impl,
     preview_update_impl,
 )
+from app.slices.governance.services_finance_taxonomy import (
+    apply_fund_defaults as _apply_fund_defaults,
+)
+from app.slices.governance.services_finance_taxonomy import (
+    get_finance_taxonomy as _get_finance_taxonomy,
+)
+from app.slices.governance.services_finance_taxonomy import (
+    get_fund_key as _get_fund_key,
+)
+from app.slices.governance.services_finance_taxonomy import (
+    get_taxonomy_label as _get_taxonomy_label,
+)
+from app.slices.governance.services_finance_taxonomy import (
+    normalize_restriction_keys as _normalize_restriction_keys,
+)
+from app.slices.governance.services_finance_taxonomy import (
+    validate_semantic_keys as _validate_semantic_keys,
+)
+
+# Governance slice service (pure evaluator; no DB)
+from app.slices.governance.services_funding_decisions import (
+    preview_funding_decision as _preview_funding_decision,
+)
 
 # bind/expose to live module
 
@@ -86,6 +109,15 @@ DEFAULT_CAP_NOTE_MAX = 120  # belt & suspenders
 
 def _as_contract_error(where: str, exc: Exception) -> ContractError:
     # If we’re already looking at a ContractError, just bubble it up unchanged
+    """
+    ContractError mapping for governance_v2.
+
+    - ValueError => 400 bad_argument
+    - LookupError => 404 not_found
+    - PermissionError => 403 permission_denied
+    - ContractError passes through
+    - everything else => 500 internal
+    """
     if isinstance(exc, ContractError):
         return exc
 
@@ -155,6 +187,94 @@ def _require_int_ge(name: str, value: Any, minval: int = 0) -> int:
 
 # -----------------
 # DTO's
+# new paradigm
+# -----------------
+
+
+@dataclass(frozen=True)
+class FundingDecisionDTO:
+    allowed: bool
+
+    # Ordered, preferred-to-least list of eligible fund keys
+    eligible_fund_keys: tuple[str, ...] = ()
+
+    # If caller already picked a fund_key, Governance can confirm it
+    selected_fund_key: str | None = None
+
+    # Approval requirements (role names, e.g. treasurer)
+    required_approvals: tuple[str, ...] = ()
+
+    # Stable, machine-friendly reasons for UI/tests/debug
+    reason_codes: tuple[str, ...] = ()
+
+    # Debug trace (rule ids that matched)
+    matched_rule_ids: tuple[str, ...] = ()
+
+    # Deterministic fingerprint (stable hash of request + matches)
+    decision_fingerprint: str = ""
+
+
+@dataclass(frozen=True)
+class FundingDecisionRequestDTO:
+    # reserve|encumber|spend|receive
+    op: str
+    amount_cents: int
+
+    # Context (traceability)
+    funding_demand_ulid: str | None = None
+    project_ulid: str | None = None
+
+    # Semantic keys (Governance taxonomy)
+    spending_class: str | None = None
+    income_kind: str | None = None
+    expense_kind: str | None = None
+    restriction_keys: tuple[str, ...] = ()
+
+    # Optional constraints/hints from callers
+    demand_eligible_fund_keys: tuple[str, ...] = ()
+    tag_any: tuple[str, ...] = ()
+
+    # Optional: caller picks one; Governance confirms eligibility + approvals
+    selected_fund_key: str | None = None
+
+    # Actor roles for authority checks
+    actor_rbac_roles: tuple[str, ...] = ()
+    actor_domain_roles: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class KeyLabelDTO:
+    key: str
+    label: str
+
+
+@dataclass(frozen=True)
+class FundKeyDTO:
+    key: str
+    label: str
+    archetype: str
+    default_restriction_keys: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class FinanceTaxonomyDTO:
+    version: int
+    fund_keys: tuple[FundKeyDTO, ...]
+    restriction_keys: tuple[KeyLabelDTO, ...]
+    income_kinds: tuple[KeyLabelDTO, ...]
+    expense_kinds: tuple[KeyLabelDTO, ...]
+    spending_classes: tuple[KeyLabelDTO, ...]
+
+
+@dataclass(frozen=True)
+class SemanticValidationResultDTO:
+    ok: bool
+    errors: tuple[str, ...]
+    unknown_keys: tuple[str, ...]
+
+
+# -----------------
+# Older DTO's
 # -----------------
 
 
@@ -312,6 +432,188 @@ class SponsorCapsDTO(TypedDict):
     note_max: int
     all_codes: list[str]
     by_domain: dict[str, list[str]]
+
+
+# -----------------
+# Finance Functions
+# (new paradigm)
+# -----------------
+"""
+How you’ll actually use these “bones” right away
+Calendar: build a Funding Demand form
+
+Populate dropdowns:
+
+gov.get_finance_taxonomy().fund_keys
+
+gov.get_finance_taxonomy().spending_classes
+
+Validate:
+
+gov.validate_semantic_keys(...)
+
+When selecting a fund:
+
+show defaults: gov.apply_fund_defaults(fund_key=..., restriction_keys=...)
+
+Sponsors: donation intake form
+
+Income kind dropdown: income_kinds
+
+Restrictions checklist: restriction_keys
+
+Validate on submit.
+
+Finance: posting
+
+Finance consumes the semantic keys (kinds/fund_key/restrictions)
+
+Finance does not call Governance at post time except perhaps to validate keys
+(optional).
+"""
+
+
+def preview_funding_decision(
+    req: FundingDecisionRequestDTO,
+) -> FundingDecisionDTO:
+    """
+    Read-only governance decision preview.
+
+    Intended usage pattern:
+      1) Call WITHOUT selected_fund_key to get eligible_fund_keys.
+      2) Caller chooses selected_fund_key.
+      3) Call WITH selected_fund_key to get approvals/deny + fingerprint.
+
+    Governance emits no Ledger events here. Caller can store decision_fingerprint
+    as a "decision ref" for later encumber/spend calls into Finance.
+    """
+    where = "governance_v2.preview_funding_decision"
+    try:
+        raw_req = {
+            "op": req.op,
+            "amount_cents": req.amount_cents,
+            "funding_demand_ulid": req.funding_demand_ulid,
+            "project_ulid": req.project_ulid,
+            "spending_class": req.spending_class,
+            "income_kind": req.income_kind,
+            "expense_kind": req.expense_kind,
+            "restriction_keys": req.restriction_keys,
+            "demand_eligible_fund_keys": req.demand_eligible_fund_keys,
+            "tag_any": req.tag_any,
+            "selected_fund_key": req.selected_fund_key,
+            "actor_rbac_roles": req.actor_rbac_roles,
+            "actor_domain_roles": req.actor_domain_roles,
+        }
+
+        raw_out = _preview_funding_decision(raw_req)
+
+        return FundingDecisionDTO(
+            allowed=bool(raw_out.get("allowed")),
+            eligible_fund_keys=tuple(raw_out.get("eligible_fund_keys") or ()),
+            selected_fund_key=raw_out.get("selected_fund_key"),
+            required_approvals=tuple(raw_out.get("required_approvals") or ()),
+            reason_codes=tuple(raw_out.get("reason_codes") or ()),
+            matched_rule_ids=tuple(raw_out.get("matched_rule_ids") or ()),
+            decision_fingerprint=str(
+                raw_out.get("decision_fingerprint") or ""
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def get_finance_taxonomy() -> FinanceTaxonomyDTO:
+    """
+    Read-only Governance taxonomy for Finance-related keys.
+    Safe for UI dropdowns in any slice.
+    """
+    where = "governance_v2.get_finance_taxonomy"
+    try:
+        t = _get_finance_taxonomy()
+        return FinanceTaxonomyDTO(
+            version=t.version,
+            fund_keys=t.fund_keys,
+            restriction_keys=t.restriction_keys,
+            income_kinds=t.income_kinds,
+            expense_kinds=t.expense_kinds,
+            spending_classes=t.spending_classes,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def get_fund_key(fund_key: str) -> FundKeyDTO:
+    where = "governance_v2.get_fund_key"
+    try:
+        x = _get_fund_key(fund_key)
+        return FundKeyDTO(
+            key=x.key,
+            label=x.label,
+            archetype=x.archetype,
+            default_restriction_keys=x.default_restriction_keys,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def get_taxonomy_label(group: str, key: str) -> KeyLabelDTO:
+    where = "governance_v2.get_taxonomy_label"
+    try:
+        x = _get_taxonomy_label(group, key)
+        return KeyLabelDTO(key=x.key, label=x.label)
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def validate_semantic_keys(
+    *,
+    fund_key: str | None = None,
+    restriction_keys: tuple[str, ...] = (),
+    income_kind: str | None = None,
+    expense_kind: str | None = None,
+    spending_class: str | None = None,
+    demand_eligible_fund_keys: tuple[str, ...] = (),
+) -> SemanticValidationResultDTO:
+    where = "governance_v2.validate_semantic_keys"
+    try:
+        r = _validate_semantic_keys(
+            fund_key=fund_key,
+            restriction_keys=restriction_keys,
+            income_kind=income_kind,
+            expense_kind=expense_kind,
+            spending_class=spending_class,
+            demand_eligible_fund_keys=demand_eligible_fund_keys,
+        )
+        return SemanticValidationResultDTO(
+            ok=r.ok, errors=r.errors, unknown_keys=r.unknown_keys
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def normalize_restriction_keys(
+    restriction_keys: tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    where = "governance_v2.normalize_restriction_keys"
+    try:
+        return _normalize_restriction_keys(restriction_keys)
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def apply_fund_defaults(
+    *,
+    fund_key: str,
+    restriction_keys: tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    where = "governance_v2.apply_fund_defaults"
+    try:
+        return _apply_fund_defaults(
+            fund_key=fund_key,
+            restriction_keys=restriction_keys,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
 
 
 # -----------------

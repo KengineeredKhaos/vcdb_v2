@@ -1,147 +1,165 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vcdb/policy_finance_controls.schema.json",
+  "type": "object",
   "additionalProperties": false,
+  "required": [
+    "version",
+    "staff_cap_cents",
+    "approval_rules",
+    "budget_periods",
+    "budget_caps"
+  ],
   "properties": {
-    "budget": {
-      "additionalProperties": false,
-      "properties": {
-        "periods": {
-          "items": {
-            "additionalProperties": false,
-            "properties": {
-              "ends_on": {
-                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                "type": "string"
-              },
-              "key": {
-                "pattern": "^[a-z0-9_]+$",
-                "type": "string"
-              },
-              "label": {
-                "type": "string"
-              },
-              "starts_on": {
-                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                "type": "string"
-              }
-            },
-            "required": [
-              "key",
-              "label",
-              "starts_on",
-              "ends_on"
-            ],
-            "type": "object"
-          },
-          "minItems": 1,
-          "type": "array"
-        }
-      },
-      "required": [
-        "periods"
-      ],
-      "type": "object"
+    "version": { "type": "integer", "minimum": 1 },
+    "staff_cap_cents": { "type": "integer", "minimum": 0 },
+
+    "approval_rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/approval_rule" }
     },
-    "meta": {
-      "additionalProperties": true,
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "effective_on": {
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-          "type": "string"
-        },
-        "notes": {
-          "items": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "type": "array"
-        },
-        "policy_key": {
-          "pattern": "^[a-z0-9_]+$",
-          "type": "string"
-        },
-        "schema_version": {
-          "minimum": 1,
-          "type": "integer"
-        },
-        "status": {
-          "enum": [
-            "draft",
-            "active",
-            "deprecated"
-          ],
-          "type": "string"
-        },
-        "title": {
-          "type": "string"
-        },
-        "version": {
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "policy_key",
-        "title",
-        "status"
-      ],
-      "type": "object"
+
+    "budget_periods": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/budget_period" }
     },
-    "spending": {
-      "additionalProperties": true,
-      "properties": {
-        "approvers": {
-          "additionalProperties": false,
-          "properties": {
-            "level1": {
-              "items": {
-                "pattern": "^[a-z0-9_]+$",
-                "type": "string"
-              },
-              "minItems": 1,
-              "type": "array"
-            },
-            "level2": {
-              "items": {
-                "pattern": "^[a-z0-9_]+$",
-                "type": "string"
-              },
-              "minItems": 1,
-              "type": "array"
-            }
-          },
-          "required": [
-            "level1",
-            "level2"
-          ],
-          "type": "object"
-        },
-        "class_caps": {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        "staff_cap_cents": {
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "staff_cap_cents",
-        "approvers"
-      ],
-      "type": "object"
+
+    "budget_caps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/budget_cap" }
     }
   },
-  "required": [
-    "meta",
-    "budget",
-    "spending"
-  ],
-  "title": "Finance Controls Policy",
-  "type": "object"
+
+  "$defs": {
+    "semantic_key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+
+    "op": {
+      "type": "string",
+      "enum": ["reserve", "encumber", "spend", "receive"]
+    },
+
+    "fund_archetype": {
+      "type": "string",
+      "enum": [
+        "unrestricted",
+        "temporarily_restricted",
+        "permanently_restricted"
+      ]
+    },
+
+    "rule_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+
+    "approval_match": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/op" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+
+        "amount_cents_gt": { "type": "integer", "minimum": 0 },
+        "amount_cents_gte": { "type": "integer", "minimum": 0 },
+        "amount_cents_lte": { "type": "integer", "minimum": 0 },
+
+        "spending_class": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        },
+
+        "income_kind": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        },
+
+        "expense_kind": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        },
+
+        "fund_key_any": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        },
+
+        "fund_archetype_any": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fund_archetype" },
+          "uniqueItems": true
+        },
+
+        "restriction_keys_any": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        },
+
+        "restriction_keys_all": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        }
+      }
+    },
+
+    "approval_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule_id", "priority", "match"],
+      "properties": {
+        "rule_id": { "$ref": "#/$defs/rule_id" },
+        "priority": { "type": "integer" },
+        "match": { "$ref": "#/$defs/approval_match" },
+
+        "required_approvals": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+
+        "deny": { "type": "boolean" },
+
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        }
+      }
+    },
+
+    "budget_period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["period_key", "label", "start_month", "start_day"],
+      "properties": {
+        "period_key": { "$ref": "#/$defs/semantic_key" },
+        "label": { "type": "string", "minLength": 1 },
+        "start_month": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "start_day": { "type": "integer", "minimum": 1, "maximum": 31 }
+      }
+    },
+
+    "budget_cap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["period_key", "fund_key", "spending_class", "cap_cents"],
+      "properties": {
+        "period_key": { "$ref": "#/$defs/semantic_key" },
+        "fund_key": { "$ref": "#/$defs/semantic_key" },
+        "spending_class": { "$ref": "#/$defs/semantic_key" },
+        "cap_cents": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
 }

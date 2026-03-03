@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vcdb/finance/posting_map_v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "receipt_method_debit_account",
+    "payment_method_credit_account",
+    "income_kind_credit_account",
+    "expense_kind_debit_account"
+  ],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+
+    "receipt_method_debit_account": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/semantic_key" },
+      "additionalProperties": { "$ref": "#/$defs/coa_key" }
+    },
+
+    "payment_method_credit_account": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/semantic_key" },
+      "additionalProperties": { "$ref": "#/$defs/coa_key" }
+    },
+
+    "income_kind_credit_account": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/semantic_key" },
+      "additionalProperties": { "$ref": "#/$defs/coa_key" }
+    },
+
+    "expense_kind_debit_account": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/semantic_key" },
+      "additionalProperties": { "$ref": "#/$defs/coa_key" }
+    }
+  },
+
+  "$defs": {
+    "semantic_key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "coa_key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    }
+  }
+}

@@ -7,6 +7,18 @@ from dataclasses import dataclass
 from typing import Any, NotRequired, TypedDict
 
 from app.extensions.errors import ContractError
+from app.slices.finance.services_commitments import (
+    encumber_funds as _encumber_funds,
+)
+from app.slices.finance.services_commitments import (
+    reserve_funds as _reserve_funds,
+)
+from app.slices.finance.services_semantic_posting import (
+    post_expense as _post_expense,
+)
+from app.slices.finance.services_semantic_posting import (
+    post_income as _post_income,
+)
 
 from ._funding_dto import MoneyByKeyDTO, MoneyLinksDTO
 
@@ -92,6 +104,95 @@ class FundingDemandMoneyViewDTO:
 
     # ULID trace links
     links: MoneyLinksDTO
+
+
+@dataclass(frozen=True)
+class IncomePostRequestDTO:
+    amount_cents: int
+    happened_at_utc: str
+
+    fund_key: str
+    fund_label: str
+    fund_restriction_type: str  # unrestricted|temporarily_restricted|...
+
+    income_kind: str
+    receipt_method: str  # bank|undeposited
+
+    source: str
+    source_ref_ulid: str | None = None
+
+    funding_demand_ulid: str | None = None
+    project_ulid: str | None = None
+
+    payer_entity_ulid: str | None = None
+    memo: str | None = None
+    created_by_actor: str | None = None
+
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class ExpensePostRequestDTO:
+    amount_cents: int
+    happened_at_utc: str
+
+    fund_key: str
+    fund_label: str
+    fund_restriction_type: str
+
+    expense_kind: str
+    payment_method: str  # bank|petty_cash|ap
+
+    source: str
+    source_ref_ulid: str | None = None
+
+    funding_demand_ulid: str | None = None
+    project_ulid: str | None = None
+
+    payee_entity_ulid: str | None = None
+    encumbrance_ulid: str | None = None
+    memo: str | None = None
+    created_by_actor: str | None = None
+
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class PostedDTO:
+    id: str
+    amount_cents: int
+    flags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ReserveRequestDTO:
+    funding_demand_ulid: str
+    fund_key: str
+    amount_cents: int
+    source: str
+
+    fund_label: str | None = None
+    fund_restriction_type: str | None = None
+    project_ulid: str | None = None
+    source_ref_ulid: str | None = None
+    memo: str | None = None
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class EncumbranceRequestDTO:
+    funding_demand_ulid: str
+    fund_key: str
+    amount_cents: int
+    source: str
+
+    fund_label: str | None = None
+    fund_restriction_type: str | None = None
+    project_ulid: str | None = None
+    source_ref_ulid: str | None = None
+    memo: str | None = None
+    decision_fingerprint: str | None = None
+    dry_run: bool = False
 
 
 # -----------------
@@ -188,6 +289,122 @@ def get_funding_demand_money_view(
                 raw.get("income_by_income_kind")
             ),
             links=links,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def post_income(req: IncomePostRequestDTO) -> PostedDTO:
+    where = "finance_v2.post_income"
+    try:
+        out = _post_income(
+            {
+                "amount_cents": req.amount_cents,
+                "happened_at_utc": req.happened_at_utc,
+                "fund_key": req.fund_key,
+                "fund_label": req.fund_label,
+                "fund_restriction_type": req.fund_restriction_type,
+                "income_kind": req.income_kind,
+                "receipt_method": req.receipt_method,
+                "source": req.source,
+                "source_ref_ulid": req.source_ref_ulid,
+                "funding_demand_ulid": req.funding_demand_ulid,
+                "project_ulid": req.project_ulid,
+                "payer_entity_ulid": req.payer_entity_ulid,
+                "memo": req.memo,
+                "created_by_actor": req.created_by_actor,
+            },
+            dry_run=req.dry_run,
+        )
+        return PostedDTO(
+            id=str(out["id"]),
+            amount_cents=int(out.get("amount_cents") or 0),
+            flags=tuple(out.get("flags") or ()),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def post_expense(req: ExpensePostRequestDTO) -> PostedDTO:
+    where = "finance_v2.post_expense"
+    try:
+        out = _post_expense(
+            {
+                "amount_cents": req.amount_cents,
+                "happened_at_utc": req.happened_at_utc,
+                "fund_key": req.fund_key,
+                "fund_label": req.fund_label,
+                "fund_restriction_type": req.fund_restriction_type,
+                "expense_kind": req.expense_kind,
+                "payment_method": req.payment_method,
+                "source": req.source,
+                "source_ref_ulid": req.source_ref_ulid,
+                "funding_demand_ulid": req.funding_demand_ulid,
+                "project_ulid": req.project_ulid,
+                "payee_entity_ulid": req.payee_entity_ulid,
+                "encumbrance_ulid": req.encumbrance_ulid,
+                "memo": req.memo,
+                "created_by_actor": req.created_by_actor,
+            },
+            dry_run=req.dry_run,
+        )
+        return PostedDTO(
+            id=str(out["id"]),
+            amount_cents=int(out.get("amount_cents") or 0),
+            flags=tuple(out.get("flags") or ()),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def reserve_funds(req: ReserveRequestDTO) -> PostedDTO:
+    where = "finance_v2.reserve_funds"
+    try:
+        out = _reserve_funds(
+            {
+                "funding_demand_ulid": req.funding_demand_ulid,
+                "fund_key": req.fund_key,
+                "amount_cents": req.amount_cents,
+                "source": req.source,
+                "fund_label": req.fund_label,
+                "fund_restriction_type": req.fund_restriction_type,
+                "project_ulid": req.project_ulid,
+                "source_ref_ulid": req.source_ref_ulid,
+                "memo": req.memo,
+            },
+            dry_run=req.dry_run,
+        )
+        return PostedDTO(
+            id=str(out["id"]),
+            amount_cents=int(out.get("amount_cents") or 0),
+            flags=("reserved",) if not req.dry_run else ("dry_run",),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def encumber_funds(req: EncumbranceRequestDTO) -> PostedDTO:
+    where = "finance_v2.encumber_funds"
+    try:
+        out = _encumber_funds(
+            {
+                "funding_demand_ulid": req.funding_demand_ulid,
+                "fund_key": req.fund_key,
+                "amount_cents": req.amount_cents,
+                "source": req.source,
+                "fund_label": req.fund_label,
+                "fund_restriction_type": req.fund_restriction_type,
+                "project_ulid": req.project_ulid,
+                "source_ref_ulid": req.source_ref_ulid,
+                "memo": req.memo,
+                "decision_fingerprint": req.decision_fingerprint,
+            },
+            dry_run=req.dry_run,
+        )
+        return PostedDTO(
+            id=str(out["id"]),
+            amount_cents=int(out.get("amount_cents") or 0),
+            flags=("encumbered",) if not req.dry_run else ("dry_run",),
         )
     except Exception as exc:  # noqa: BLE001
         raise _as_contract_error(where, exc) from exc
