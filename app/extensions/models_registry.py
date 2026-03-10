@@ -49,7 +49,6 @@ def import_models():
         {
             "event": "models_registry.loaded",
             "pid": os.getpid(),
-            "db_uri": db_uri,
             "modules": len(_MODEL_MODULES),
         }
     )

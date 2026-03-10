@@ -51,16 +51,29 @@ def statement_of_activities(period: str):
     # Aggregate by fund (join via ULID)
     q_fund = text(
         """
-        SELECT f.ulid AS fund_id,
-               COALESCE(f.name, '(unassigned)') AS fund_name,
-               COALESCE(f.restriction, 'unrestricted') AS restriction_type,
-               SUM(CASE WHEN jl.account_code LIKE '4%' THEN jl.amount_cents ELSE 0 END) AS revenue_cents,
-               SUM(CASE WHEN jl.account_code LIKE '5%' THEN jl.amount_cents ELSE 0 END) AS expense_cents
-        FROM finance_journal j
-        JOIN finance_journal_line jl ON jl.journal_ulid = j.ulid
-        LEFT JOIN finance_fund f ON f.ulid = jl.fund_ulid
-        WHERE j.period_key = :period
-        GROUP BY f.ulid, f.name, f.restriction
+    SELECT
+        f.ulid AS fund_id,
+        COALESCE(f.name, '(unassigned)') AS fund_name,
+        COALESCE(f.restriction, 'unrestricted') AS restriction_type,
+
+        -- Revenue accounts are credits (negative) in the signed-cents scheme,
+        -- so negate to present positive revenue.
+        -SUM(CASE WHEN jl.account_code LIKE '4%' THEN jl.amount_cents ELSE 0 END)
+            AS revenue_cents,
+
+        -- Expenses are debits (positive). Include 5xxx and 6xxx.
+        SUM(CASE
+              WHEN jl.account_code LIKE '5%' OR jl.account_code LIKE '6%'
+              THEN jl.amount_cents
+              ELSE 0
+            END) AS expense_cents
+
+    FROM finance_journal j
+    JOIN finance_journal_line jl ON jl.journal_ulid = j.ulid
+    LEFT JOIN finance_fund f ON f.code = jl.fund_code
+    WHERE j.period_key = :period
+    GROUP BY f.code, f.name, f.restriction
+    ORDER BY fund_name
     """
     )
     fund_rows = (

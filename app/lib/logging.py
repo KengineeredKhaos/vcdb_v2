@@ -18,11 +18,13 @@ If you add new loggers, configure them via configure_logging rather than
 hand-rolling your own handlers.
 """
 
+
 from __future__ import annotations
 
 import gzip
 import json
 import logging
+import os
 import shutil
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
@@ -30,7 +32,7 @@ from pathlib import Path
 
 from app.lib.chrono import now_iso8601_ms
 
-# ----- JSON line formatter ----------------------------------------------------
+# ----- JSON line formatter --------------------------------------------------
 
 
 class JSONLineFormatter(logging.Formatter):
@@ -40,21 +42,28 @@ class JSONLineFormatter(logging.Formatter):
             "lvl": record.levelname,
             "logger": record.name,
         }
-        # If message is already a dict-like JSON string, try to keep it
-        try:
-            msg_obj = json.loads(record.getMessage())
-            if isinstance(msg_obj, dict):
-                payload.update(msg_obj)
-            else:
+
+        # If caller logged a dict, merge it directly.
+        if isinstance(record.msg, dict):
+            payload.update(record.msg)
+        else:
+            # If message is already a dict-like JSON string, try to keep it
+            try:
+                msg_obj = json.loads(record.getMessage())
+                if isinstance(msg_obj, dict):
+                    payload.update(msg_obj)
+                else:
+                    payload["msg"] = record.getMessage()
+            except Exception:
                 payload["msg"] = record.getMessage()
-        except Exception:
-            payload["msg"] = record.getMessage()
+
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
+
         return json.dumps(payload, ensure_ascii=False, default=str)
 
 
-# ----- helpers ----------------------------------------------------------------
+# ----- helpers --------------------------------------------------------------
 
 
 def _reset_logger(lg: logging.Logger) -> None:
@@ -69,7 +78,8 @@ def _archiving_rotating_handler(
 ) -> logging.Handler:
     """
     Live log at base_dir/filename.
-    On rollover: move rotated file to base_dir/archive/<stem>-YYYYMMDD-HHMMSS.log.gz
+    On rollover: move rotated file to:
+    base_dir/archive/<stem>-YYYYMMDD-HHMMSS.log.gz
     """
     base_dir.mkdir(parents=True, exist_ok=True)
     archive_dir = base_dir / "archive"
@@ -106,15 +116,46 @@ def _archiving_rotating_handler(
     return h
 
 
-# ----- main entry -------------------------------------------------------------
+# ----- debugger class definition --------------------------------------------
+
+
+class DebugLogFilter(logging.Filter):
+    """
+    Allow:
+      - all INFO/WARNING/ERROR/CRITICAL from anywhere
+      - DEBUG only from logger name "debug" (or "vcdb.debug")
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.INFO:
+            return True
+
+        if record.levelno == logging.DEBUG and record.name in {
+            "debug",
+            "vcdb.debug",
+        }:
+            return True
+
+        return False
+
+
+# ----- main entry -----------------------------------------------------------
 
 
 def configure_logging(flask_app) -> None:
     # Be robust even if someone accidentally passes the 'app' *module*.
     cfg = getattr(flask_app, "config", {}) or {}
+
+    debug_log_on = str(
+        os.environ.get("VCDB_DEBUG_LOG", "")
+    ).strip().lower() in {"1", "true", "yes", "on"} or bool(
+        cfg.get("LOG_DEBUG_LOG", False)
+    )
+
     is_testing = bool(
         getattr(flask_app, "testing", cfg.get("TESTING", False))
     )
+
     is_dev = (not is_testing) and (
         bool(getattr(flask_app, "debug", False))
         or cfg.get("ENV") in {"dev", "development"}
@@ -128,10 +169,11 @@ def configure_logging(flask_app) -> None:
         "werkzeug",
         "jinja2",
         "app",
-        "vcdb.app",
+        "debug" "vcdb.app",
         "vcdb.audit",
         "vcdb.jobs",
         "vcdb.export",
+        "vcdb.debug",
     ):
         _reset_logger(logging.getLogger(name))
 
@@ -174,6 +216,40 @@ def configure_logging(flask_app) -> None:
             h.setLevel(logging.INFO)
             lg.addHandler(h)
             lg.propagate = False
+
+        # 4) Dedicated debug file (no app.log pollution)
+        if debug_log_on:
+            dbg_h = _archiving_rotating_handler(
+                log_dir, "debug.log", backups, max_bytes
+            )
+            dbg_h.setFormatter(JSONLineFormatter())
+            dbg_h.setLevel(logging.DEBUG)
+            dbg_h.addFilter(DebugLogFilter())
+
+            # Attach to the same set you already manage so propagate settings
+            # don't prevent mirroring.
+            root = logging.getLogger()
+            root.addHandler(dbg_h)
+
+            for name in (
+                "flask.app",
+                "werkzeug",
+                "jinja2",
+                "app",
+                "vcdb.app",
+                "vcdb.audit",
+                "vcdb.jobs",
+                "vcdb.export",
+            ):
+                lg = logging.getLogger(name)
+                lg.addHandler(dbg_h)
+
+            # Dedicated debug logger (does NOT propagate to avoid app.log clutter)
+            for name in ("debug", "vcdb.debug"):
+                lg = logging.getLogger(name)
+                lg.setLevel(logging.DEBUG)
+                lg.addHandler(dbg_h)
+                lg.propagate = False
 
     else:
         sh = logging.StreamHandler()
