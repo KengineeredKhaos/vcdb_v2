@@ -88,6 +88,12 @@ class Sponsor(db.Model, IsoTimestamps):
         back_populates="sponsor",
         cascade="all, delete-orphan",
     )
+    funding_intents: Mapped[list[SponsorFundingIntent]] = relationship(
+        "SponsorFundingIntent",
+        back_populates="sponsor",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     __table_args__ = (
         # PK already implies uniqueness; this index helps some query planners.
@@ -285,6 +291,82 @@ class SponsorPledgeIndex(db.Model, ULIDPK, IsoTimestamps):
 
     sponsor: Mapped[Sponsor] = relationship(
         "Sponsor", back_populates="pledges"
+    )
+
+
+class SponsorFundingIntent(db.Model, ULIDPK, IsoTimestamps):
+    """
+    Sponsor-local intent tied to a published Calendar funding demand.
+
+    No cross-slice foreign key to Calendar; linkage is by funding_demand_ulid.
+    Used for pledge/donation/pass-through intent capture and totals.
+    """
+
+    __tablename__ = "sponsor_funding_intent"
+
+    sponsor_entity_ulid: Mapped[str] = mapped_column(
+        String(26),
+        db.ForeignKey("sponsor_sponsor.entity_ulid", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    funding_demand_ulid: Mapped[str] = mapped_column(
+        String(26),
+        nullable=False,
+        index=True,
+    )
+
+    intent_kind: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        default="pledge",
+        index=True,
+    )
+
+    amount_cents: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="draft",
+        index=True,
+    )
+
+    note: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    sponsor: Mapped[Sponsor] = relationship(
+        "Sponsor",
+        back_populates="funding_intents",
+    )
+
+    __table_args__ = (
+        CheckConstraint("amount_cents >= 0", name="ck_sfi_amount_nonneg"),
+        CheckConstraint(
+            "status IN ('draft','committed','withdrawn','fulfilled')",
+            name="ck_sfi_status",
+        ),
+        CheckConstraint(
+            "intent_kind IN ('pledge','donation','pass_through')",
+            name="ck_sfi_intent_kind",
+        ),
+        Index(
+            "ix_sfi_demand_status",
+            "funding_demand_ulid",
+            "status",
+        ),
+        Index(
+            "ix_sfi_sponsor_demand",
+            "sponsor_entity_ulid",
+            "funding_demand_ulid",
+        ),
     )
 
 

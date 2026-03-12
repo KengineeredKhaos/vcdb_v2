@@ -5,5 +5,6 @@ from __future__ import annotations
 # Import side-effect only.
 from . import onboard_routes  # noqa: F401
 from .routes import bp
+from .routes_funding import bp_funding
 
-__all__ = ["bp"]
+__all__ = ["bp", "bp_funding"]

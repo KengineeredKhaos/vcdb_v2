@@ -10,7 +10,7 @@ from app.extensions.errors import ContractError
 from app.slices.sponsors import mapper as sp_mapper
 from app.slices.sponsors import services as sp_svc
 
-from ._funding_dto import MoneyByKeyDTO, MoneyLinksDTO
+from ._funding_dto import FundingIntentTotalsDTO, MoneyByKeyDTO, MoneyLinksDTO
 
 _SCHEMA: Final[str] = "contract:sponsors_v2"
 
@@ -57,14 +57,6 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
 # DTO's
 # (new paradigm)
 # -----------------
-
-
-@dataclass(frozen=True)
-class FundingIntentTotalsDTO:
-    funding_demand_ulid: str
-    pledged_cents: int
-    pledged_by_sponsor: tuple[MoneyByKeyDTO, ...]
-    links: MoneyLinksDTO
 
 
 # -----------------
@@ -119,23 +111,16 @@ def get_funding_intent_totals(
 ) -> FundingIntentTotalsDTO:
     where = "sponsors_v2.get_funding_intent_totals"
     try:
-        provider = _load_provider(where)
-        raw = provider(funding_demand_ulid)
+        mod = importlib.import_module("app.slices.sponsors.services_funding")
+        fn = getattr(mod, "get_funding_intent_totals")
+        raw = fn(funding_demand_ulid)
 
-        pledge_ulids = tuple(raw.get("pledge_ulids") or ())
-        donation_ulids = tuple(raw.get("donation_ulids") or ())
-
-        links = MoneyLinksDTO(
-            pledge_ulids=pledge_ulids,
-            donation_ulids=donation_ulids,
-        )
         return FundingIntentTotalsDTO(
             funding_demand_ulid=str(raw["funding_demand_ulid"]),
             pledged_cents=int(raw.get("pledged_cents") or 0),
-            pledged_by_sponsor=_to_money_by_key(
-                raw.get("pledged_by_sponsor")
-            ),
-            links=links,
+            pledged_by_sponsor=int(raw.get("pledged_by_sponsor") or 0),
+            pledge_ulids=tuple(raw.get("pledge_ulids") or ()),
+            donation_ulids=tuple(raw.get("donation_ulids") or ()),
         )
     except Exception as exc:  # noqa: BLE001
         raise _as_contract_error(where, exc) from exc

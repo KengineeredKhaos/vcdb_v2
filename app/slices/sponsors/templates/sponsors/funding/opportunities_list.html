@@ -1,0 +1,39 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>Funding Opportunities</h1>
+
+{% if rows %}
+  <table>
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Demand ULID</th>
+        <th>Goal</th>
+        <th>Deadline</th>
+        <th>Eligible funds</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>
+          <td>{{ row.title }}</td>
+          <td>{{ row.funding_demand_ulid }}</td>
+          <td>{{ row.goal_cents }}</td>
+          <td>{{ row.deadline_date or "" }}</td>
+          <td>{{ row.eligible_fund_keys | join(", ") }}</td>
+          <td>
+            <a href="{{ url_for('sponsors_funding.funding_opportunity_detail', funding_demand_ulid=row.funding_demand_ulid) }}">
+              View
+            </a>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p>No published funding opportunities found.</p>
+{% endif %}
+{% endblock %}

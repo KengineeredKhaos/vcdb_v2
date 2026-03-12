@@ -1,0 +1,18 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>New Funding Intent</h1>
+
+{% if demand %}
+  <p>
+    For demand: <strong>{{ demand.title }}</strong>
+    ({{ demand.funding_demand_ulid }})
+  </p>
+{% endif %}
+
+<form method="post">
+  {% include "sponsors/funding/_intent_form.html" %}
+  <button type="submit">Create funding intent</button>
+</form>
+{% endblock %}

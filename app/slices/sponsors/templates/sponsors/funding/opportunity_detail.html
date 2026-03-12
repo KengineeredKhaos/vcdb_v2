@@ -1,0 +1,80 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>{{ demand.title }}</h1>
+
+<table>
+  <tr>
+    <th>Funding Demand ULID</th>
+    <td>{{ demand.funding_demand_ulid }}</td>
+  </tr>
+  <tr>
+    <th>Project ULID</th>
+    <td>{{ demand.project_ulid or "" }}</td>
+  </tr>
+  <tr>
+    <th>Status</th>
+    <td>{{ demand.status }}</td>
+  </tr>
+  <tr>
+    <th>Goal (cents)</th>
+    <td>{{ demand.goal_cents }}</td>
+  </tr>
+  <tr>
+    <th>Deadline</th>
+    <td>{{ demand.deadline_date or "" }}</td>
+  </tr>
+  <tr>
+    <th>Eligible funds</th>
+    <td>{{ demand.eligible_fund_keys | join(", ") }}</td>
+  </tr>
+</table>
+
+<p>
+  <a href="{{ url_for('sponsors_funding.funding_intent_new', funding_demand_ulid=demand.funding_demand_ulid) }}">
+    Create funding intent
+  </a>
+</p>
+
+<h2>Existing Funding Intents</h2>
+
+{% if intents %}
+  <table>
+    <thead>
+      <tr>
+        <th>Intent ULID</th>
+        <th>Sponsor</th>
+        <th>Kind</th>
+        <th>Amount</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in intents %}
+        <tr>
+          <td>{{ row.intent_ulid }}</td>
+          <td>{{ row.sponsor_entity_ulid }}</td>
+          <td>{{ row.intent_kind }}</td>
+          <td>{{ row.amount_cents }}</td>
+          <td>{{ row.status }}</td>
+          <td>
+            <a href="{{ url_for('sponsors_funding.funding_intent_edit', intent_ulid=row.intent_ulid) }}">
+              Edit
+            </a>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p>No funding intents recorded yet.</p>
+{% endif %}
+
+<p>
+  <a href="{{ url_for('sponsors_funding.funding_opportunity_list') }}">
+    Back to funding opportunities
+  </a>
+</p>
+{% endblock %}

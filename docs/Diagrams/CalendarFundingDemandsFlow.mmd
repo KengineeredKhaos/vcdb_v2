@@ -1,0 +1,15 @@
+flowchart TD
+    CAL["Calendar published funding demands"]
+    SPO["Sponsors funding intent records"]
+    GOV["Governance preview rules"]
+    FIN["Finance reserve and encumber"]
+    LED["Ledger"]
+
+    CAL -->|"published demand list"| SPO
+    SPO -->|"references funding_demand_ulid"| CAL
+    CAL -->|"eligible fund keys already previewed"| GOV
+    SPO -->|"pledge and donation intent context"| FIN
+    CAL -->|"demand context"| FIN
+    CAL -->|"calendar events"| LED
+    SPO -->|"sponsor events"| LED
+    FIN -->|"finance events"| LED

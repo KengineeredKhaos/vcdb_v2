@@ -208,6 +208,7 @@ def create_app(config_object="config.DevConfig"):
     from app.slices.logistics import bp as logistics_bp
     from app.slices.resources import bp as resources_bp
     from app.slices.sponsors import bp as sponsors_bp
+    from app.slices.sponsors import bp_funding as sponsors_funding_bp
     from app.web import bp as web_bp
 
     # ---- Registration ----
@@ -224,6 +225,7 @@ def create_app(config_object="config.DevConfig"):
     flask_app.register_blueprint(logistics_bp)
     flask_app.register_blueprint(resources_bp)
     flask_app.register_blueprint(sponsors_bp)
+    flask_app.register_blueprint(sponsors_funding_bp)
 
     # -------------
     # Globals Injection

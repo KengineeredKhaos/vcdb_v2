@@ -28,6 +28,14 @@ IMPORT DIRECTION:
 
 
 @dataclass(frozen=True)
+class FundingIntentTotalsDTO:
+    funding_demand_ulid: str
+    pledged_cents: int
+    pledged_by_sponsor: tuple[MoneyByKeyDTO, ...]
+    links: MoneyLinksDTO
+
+
+@dataclass(frozen=True)
 class MoneyByKeyDTO:
     key: str
     amount_cents: int

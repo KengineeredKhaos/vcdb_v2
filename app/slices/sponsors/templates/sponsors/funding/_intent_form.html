@@ -1,0 +1,53 @@
+{{ form.hidden_tag() }}
+
+<div>
+  <label for="{{ form.sponsor_entity_ulid.id }}">
+    {{ form.sponsor_entity_ulid.label }}
+  </label>
+  {{ form.sponsor_entity_ulid() }}
+  {% if form.sponsor_entity_ulid.errors %}
+    <div class="text-danger">{{ form.sponsor_entity_ulid.errors[0] }}</div>
+  {% endif %}
+</div>
+
+<div>
+  <label for="{{ form.funding_demand_ulid.id }}">
+    {{ form.funding_demand_ulid.label }}
+  </label>
+  {{ form.funding_demand_ulid() }}
+  {% if form.funding_demand_ulid.errors %}
+    <div class="text-danger">{{ form.funding_demand_ulid.errors[0] }}</div>
+  {% endif %}
+</div>
+
+<div>
+  <label for="{{ form.intent_kind.id }}">{{ form.intent_kind.label }}</label>
+  {{ form.intent_kind() }}
+  {% if form.intent_kind.errors %}
+    <div class="text-danger">{{ form.intent_kind.errors[0] }}</div>
+  {% endif %}
+</div>
+
+<div>
+  <label for="{{ form.amount_cents.id }}">{{ form.amount_cents.label }}</label>
+  {{ form.amount_cents() }}
+  {% if form.amount_cents.errors %}
+    <div class="text-danger">{{ form.amount_cents.errors[0] }}</div>
+  {% endif %}
+</div>
+
+<div>
+  <label for="{{ form.status.id }}">{{ form.status.label }}</label>
+  {{ form.status() }}
+  {% if form.status.errors %}
+    <div class="text-danger">{{ form.status.errors[0] }}</div>
+  {% endif %}
+</div>
+
+<div>
+  <label for="{{ form.note.id }}">{{ form.note.label }}</label>
+  {{ form.note(rows=4) }}
+  {% if form.note.errors %}
+    <div class="text-danger">{{ form.note.errors[0] }}</div>
+  {% endif %}
+</div>

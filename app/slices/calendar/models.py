@@ -24,7 +24,7 @@ class Calendar(db.Model, ULIDPK, IsoTimestamps):
     )
 
     status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="planned"
+        String(32), nullable=False, default="draft"
     )
 
     event_title: Mapped[str] = mapped_column(

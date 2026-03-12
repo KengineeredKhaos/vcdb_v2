@@ -13,6 +13,65 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class FundingOpportunityView:
+    funding_demand_ulid: str
+    project_ulid: str | None
+    title: str
+    status: str
+    goal_cents: int
+    deadline_date: str | None
+    eligible_fund_keys: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SponsorFundingIntentView:
+    intent_ulid: str
+    sponsor_entity_ulid: str
+    funding_demand_ulid: str
+    intent_kind: str
+    amount_cents: int
+    status: str
+    note: str | None
+    created_at_utc: str
+    updated_at_utc: str
+
+
+@dataclass(frozen=True)
+class FundingIntentTotalsView:
+    funding_demand_ulid: str
+    pledged_cents: int
+    pledged_by_sponsor: int
+    pledge_ulids: tuple[str, ...]
+    donation_ulids: tuple[str, ...]
+
+
+def calendar_demand_to_opportunity_view(dto) -> FundingOpportunityView:
+    return FundingOpportunityView(
+        funding_demand_ulid=dto.funding_demand_ulid,
+        project_ulid=dto.project_ulid,
+        title=dto.title,
+        status=dto.status,
+        goal_cents=int(dto.goal_cents or 0),
+        deadline_date=dto.deadline_date,
+        eligible_fund_keys=tuple(dto.eligible_fund_keys or ()),
+    )
+
+
+def sponsor_funding_intent_to_view(row) -> SponsorFundingIntentView:
+    return SponsorFundingIntentView(
+        intent_ulid=row.ulid,
+        sponsor_entity_ulid=row.sponsor_entity_ulid,
+        funding_demand_ulid=row.funding_demand_ulid,
+        intent_kind=row.intent_kind,
+        amount_cents=int(row.amount_cents or 0),
+        status=row.status,
+        note=row.note,
+        created_at_utc=row.created_at_utc,
+        updated_at_utc=row.updated_at_utc,
+    )
+
+
+@dataclass(frozen=True)
 class SponsorCapabilityView:
     domain: str
     key: str
