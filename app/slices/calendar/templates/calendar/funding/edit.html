@@ -1,0 +1,17 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>Edit Funding Demand</h1>
+
+<form method="post">
+  {% include "calendar/funding/_form.html" %}
+  <button type="submit">Save changes</button>
+</form>
+
+<p>
+  <a href="{{ url_for('calendar.funding_demand_detail', ulid=demand.funding_demand_ulid) }}">
+    Back to detail
+  </a>
+</p>
+{% endblock %}

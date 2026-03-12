@@ -1,0 +1,17 @@
+flowchart LR
+    CAL["Calendar slice"]
+    DEM["FundingDemand aggregate"]
+    GOV["Governance contract"]
+    SPO["Sponsors slice"]
+    FIN["Finance contract"]
+    LED["Ledger events"]
+
+    CAL -->|"create or update demand"| DEM
+    CAL -->|"publish demand preview"| GOV
+    GOV -->|"eligible fund keys and approvals"| CAL
+    CAL -->|"published demand query"| SPO
+    SPO -->|"pledges and donations by funding_demand_ulid"| DEM
+    CAL -->|"reserve or encumber request"| FIN
+    FIN -->|"book of record facts"| LED
+    CAL -->|"demand lifecycle events"| LED
+    SPO -->|"funding intent events"| LED

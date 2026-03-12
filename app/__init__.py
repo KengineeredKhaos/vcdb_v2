@@ -118,8 +118,15 @@ def create_app(config_object="config.DevConfig"):
                 400,
             )
 
-    # jinja strict mode (keep)
+    # jinja strict mode (keep) & Currency filter
+
     flask_app.jinja_env.undefined = StrictUndefined
+
+    def currency(cents: int | None) -> str:
+        v = int(cents or 0)
+        return f"${v/100:,.2f}"
+
+    flask_app.jinja_env.filters["currency"] = currency
 
     # -------------
     # Stub auth

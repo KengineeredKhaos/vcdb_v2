@@ -1,0 +1,82 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>{{ demand.title }}</h1>
+<p>
+  <a href="{{ url_for('calendar.funding_demand_list') }}">
+    Back to funding demands
+  </a>
+</p>
+<table>
+  <tr>
+    <th>Funding Demand ULID</th>
+    <td>{{ demand.funding_demand_ulid }}</td>
+  </tr>
+  <tr>
+    <th>Project</th>
+    <td>
+      {{ demand.project_title or "" }}
+      {% if demand.project_ulid %}
+        ({{ demand.project_ulid }})
+      {% endif %}
+    </td>
+  </tr>
+  <tr>
+    <th>Status</th>
+    <td>{{ demand.status }}</td>
+  </tr>
+  <tr>
+    <th>Goal (cents)</th>
+    <td>{{ demand.goal_cents }}</td>
+  </tr>
+  <tr>
+    <th>Deadline</th>
+    <td>{{ demand.deadline_date or "" }}</td>
+  </tr>
+  <tr>
+    <th>Spending class</th>
+    <td>{{ demand.spending_class or "" }}</td>
+  </tr>
+  <tr>
+    <th>Eligible fund keys</th>
+    <td>{{ demand.eligible_fund_keys | join(", ") }}</td>
+  </tr>
+  <tr>
+    <th>Tags</th>
+    <td>{{ demand.tag_any | join(", ") }}</td>
+  </tr>
+  <tr>
+    <th>Published at</th>
+    <td>{{ demand.published_at_utc or "" }}</td>
+  </tr>
+  <tr>
+    <th>Closed at</th>
+    <td>{{ demand.closed_at_utc or "" }}</td>
+  </tr>
+</table>
+
+<p>
+  <a href="{{ url_for('calendar.funding_demand_edit', ulid=demand.funding_demand_ulid) }}">
+    Edit
+  </a>
+</p>
+
+{% if demand.status == "draft" %}
+  <form
+    method="post"
+    action="{{ url_for('calendar.funding_demand_publish', ulid=demand.funding_demand_ulid) }}"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">Publish</button>
+  </form>
+{% elif demand.status == "published" %}
+  <form
+    method="post"
+    action="{{ url_for('calendar.funding_demand_unpublish', ulid=demand.funding_demand_ulid) }}"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">Revert to draft</button>
+  </form>
+{% endif %}
+{% endblock %}

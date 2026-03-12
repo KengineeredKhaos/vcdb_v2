@@ -1,0 +1,10 @@
+flowchart LR
+    CAL["Calendar published demand"]
+    SPO["Sponsors funding intent"]
+    FIN["Finance record of money"]
+    LED["Ledger"]
+
+    CAL -->|"list and select funding_demand_ulid"| SPO
+    SPO -->|"pledge or donation intent"| FIN
+    SPO -->|"sponsor events"| LED
+    FIN -->|"financial facts"| LED

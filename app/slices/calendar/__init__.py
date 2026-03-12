@@ -1,4 +1,5 @@
-# Generated scaffolding — VCDB v2 — 2025-09-22 00:11:24 UTC
+# app/slices/calendar/__init__.py
+
 from __future__ import annotations
 
 from .routes import bp

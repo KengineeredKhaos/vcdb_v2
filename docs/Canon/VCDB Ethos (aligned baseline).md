@@ -19,13 +19,13 @@ Relationship to the rubric:
 ## 0) Vocabulary and Intent
 
 - **Wizard** = creation-only golden path.
-
+  
   - Linear, guarded against resubmits/back-button.
   - Emits `wizard_*` events.
   - Ends at **Review/Confirm + handoff**.
 
 - **Edit Surface** = mutation-only paths.
-
+  
   - Non-linear; can be visited anytime.
   - Emits `entity_*` “facts changed” events.
   - May grow richer over time (diffs/history/etc.).
@@ -42,12 +42,12 @@ Relationship to the rubric:
 Transaction rules:
 
 - **Routes/CLI own the transaction boundary.**
-
+  
   - Routes/CLI do `commit/rollback` and handle error boundaries.
   - Services may `flush()` but never `commit()` or `rollback()`.
 
 - **One boundary invocation = one transaction.**
-
+  
   - A single UI action / HTTP request / CLI command generates one invocation.
   - That invocation is a single unit of work at the route/CLI boundary.
 
@@ -68,12 +68,12 @@ not `None`.
 ### Slice ownership is non-negotiable
 
 - **Vertical slices own their tables.**
-
+  
   - A slice may read/write only its own tables.
   - No cross-slice DB reach-arounds.
 
 - **No cross-slice imports.**
-
+  
   - Slices do not import other slices directly or indirectly.
 
 ### Extensions is the only bridge
@@ -94,22 +94,22 @@ not `None`.
 ## 2) Correlation and Observability (`request_id`)
 
 - **Correlation is mandatory (`request_id`).**
-
+  
   - `request_id` is a correlation ID, not a transaction/session handle.
   - DB scope is controlled by `db.session`, not by `request_id`.
 
 - **One boundary invocation = one `request_id`.**
-
+  
   - Generated at the boundary (route/CLI).
   - Passed downward to any services/emitters involved.
 
 - **Propagate everywhere.**
-
+  
   - Any Ledger/event/log record created because of that invocation MUST
     carry the same `request_id`.
 
 - **Never generate `request_id` inside services.**
-
+  
   - Missing `request_id` is a boundary bug.
   - Services may assert it exists, but must not mint a new one.
 
@@ -163,7 +163,7 @@ Narrow exception:
 - A `TypedDict` may live next to a contract/route function only when it is
   tightly coupled to a local parsing/validation schema for a JSON blob (like a
   History snapshot), and moving it would *increase* cognitive load:
-
+  
   - function + schema + typed shape stay co-located
   - the shape is not reused elsewhere
   - it exists to safely expose a subset of a stored blob
@@ -222,10 +222,12 @@ Import discipline:
 
 - **ULID everywhere.** One ULID from creation to archive; joins/refs/events
   use ULIDs.
+
 - **Entity is the identity spine.** `entity_entity.ulid` is the canonical
   identity key for every person/org.
-- **Facets are PK=FK by `entity_ulid`.**
 
+- **Facets are PK=FK by `entity_ulid`.**
+  
   - `EntityPerson.entity_ulid`
   - `EntityOrg.entity_ulid`
   - `Customer.entity_ulid`
@@ -233,7 +235,7 @@ Import discipline:
   - `Sponsor.entity_ulid`
 
 - **Cross-slice references anchor on `entity_ulid` only.**
-
+  
   - No slice invents or depends on a secondary “slice ULID” as the identity
     anchor.
 
@@ -242,21 +244,22 @@ Import discipline:
 ## 7) Ledger, Auditing, and “Nothing Happens in the Dark”
 
 - **Ledger is the audit spine (not the money book).**
-
+  
   - Records semantic events (no PII), links by ULID.
   - Finance remains authoritative for monetary facts.
 
 - **Append-only.** Content-hashed chain; nothing deleted—only archived.
-- **Every mutation is ledgered.**
 
+- **Every mutation is ledgered.**
+  
   - Committed state changes emit a Ledger event with stable semantics.
 
 - **No PII in Ledger or logs.**
-
+  
   - Only ULIDs + semantic field names; never values.
 
 - **Correlation is mandatory.**
-
+  
   - All emits/logs/ledger entries carry the boundary `request_id`.
 
 ---
@@ -264,14 +267,17 @@ Import discipline:
 ## 8) Financial Matters
 
 - **Finance is the single source of truth for money facts (actuals).**
-- **No shadow ledgers outside Finance.**
-- Other slices may track **intent** only:
 
+- **No shadow ledgers outside Finance.**
+
+- Other slices may track **intent** only:
+  
   - budgets, caps, estimates, approvals, reservations, planned spend
   - must be explicitly labeled as non-authoritative intent
 
 - Other slices reference Finance truth by ULID; they do not duplicate amounts as
   “truth”.
+
 - **Finance records money; Calendar orchestrates spending.**
 
 ---
@@ -332,25 +338,27 @@ Rule of thumb:
 Taxonomy conventions (canon):
 
 - Location: `app/slices/<slice_name>/taxonomy.py`
-- Scope: keys/enums/groupings only (no DB calls, no service logic, no contracts)
-- Naming:
 
+- Scope: keys/enums/groupings only (no DB calls, no service logic, no contracts)
+
+- Naming:
+  
   - public constants: `UPPER_SNAKE_CASE`
   - persisted keys: `lower_snake_case` strings
 
 - Types:
-
+  
   - prefer tuples for deterministic iteration (templates/tests)
   - use dict maps for rankings/labels
   - keep values JSON-safe (str/int/bool)
 
 - Stability:
-
+  
   - taxonomy keys are the slice’s public API; changing a key is breaking
   - if a key must change, introduce an alias/migration layer (rare)
 
 - No duplication across slices:
-
+  
   - other slices do not redefine another slice’s taxonomy
   - Governance may reference taxonomy keys (strings), but does not own lists
 
@@ -469,8 +477,9 @@ Operational slices (Logistics / Resources / Customers)
 ### A2) PRG and Back/Refresh Defense are mandatory
 
 - Every step is GET form → POST mutate → redirect (PRG).
-- Every step POST is guarded by a per-step nonce stored in session:
 
+- Every step POST is guarded by a per-step nonce stored in session:
+  
   - nonce issued on GET
   - nonce verified on POST
   - nonce consumed on successful mutation
@@ -488,8 +497,9 @@ Operational slices (Logistics / Resources / Customers)
 ### A4) Wizard Ledger rules
 
 - Wizard services emit events with field names only (no PII values).
-- Emit only on mutation:
 
+- Emit only on mutation:
+  
   - created or `changed_fields` non-empty → flush + emit
   - no-op → no flush + no emit
 
@@ -506,8 +516,9 @@ Operational slices (Logistics / Resources / Customers)
 
 - Org↔POC relationship tables live and mutate inside the owning org slice
   (Resources/Sponsors).
-- Entity supplies only:
 
+- Entity supplies only:
+  
   - `person_entity_ulid`
   - minimal read-only “contact card” when needed
 
@@ -586,3 +597,23 @@ Moved to slice-local taxonomy/config:
 
 All Governance policy files under app/slices/governance/data/ are schema-backed
 under app/slices/governance/data/schemas/.
+
+
+
+---
+
+
+
+Calendar Slice Mechanics:
+
+Projects describe operational intent and execution.  
+FundingDemands describe monetary need derived from that intent.  
+The relationship is linked, not merged.
+
+Calendar may originate and orchestrate funding demands, but Finance remains the sole book of record for reserves, encumbrances, and spend.
+
+Governance rules operate on semantic keys and project/demand context, never on another slice’s schema.
+
+
+
+---

@@ -1,0 +1,17 @@
+flowchart TD
+    P["Project planning"]
+    D["FundingDemand"]
+    G["Governance preview"]
+    S["Sponsors funding intent"]
+    F["Finance reserve encumber spend"]
+    L["Ledger"]
+
+    P -->|"project_ulid link"| D
+    D -->|"semantic request"| G
+    G -->|"decision fingerprint"| D
+    D -->|"published demand list"| S
+    S -->|"funding_demand_ulid references"| F
+    D -->|"funding_demand_ulid references"| F
+    D -->|"calendar events"| L
+    S -->|"sponsor events"| L
+    F -->|"finance events"| L

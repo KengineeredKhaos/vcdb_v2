@@ -22,21 +22,27 @@ class Calendar(db.Model, ULIDPK, IsoTimestamps):
     kind: Mapped[str] = mapped_column(
         String(24), nullable=False, default="one_off"
     )
+
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="planned"
     )
+
     event_title: Mapped[str] = mapped_column(
         String(100), nullable=False, default="untitled"
     )
+
     location_txt: Mapped[str | None] = mapped_column(
         String(100), nullable=True
     )
+
     notes_txt: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     color_label: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     starts_at_utc: Mapped[str | None] = mapped_column(
         String(30), nullable=True
     )
+
     ends_at_utc: Mapped[str | None] = mapped_column(String(30), nullable=True)
     all_day: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
@@ -46,6 +52,7 @@ class Calendar(db.Model, ULIDPK, IsoTimestamps):
     recurrence_rrule: Mapped[str | None] = mapped_column(
         String(200), nullable=True
     )
+
     recurrence_exdates_json: Mapped[dict | list | None] = mapped_column(
         JSON, nullable=True
     )
@@ -54,6 +61,7 @@ class Calendar(db.Model, ULIDPK, IsoTimestamps):
     project_ulid: Mapped[str | None] = ULIDFK(
         "project_project", nullable=True, ondelete="SET NULL"
     )
+
     task_ulid: Mapped[str | None] = ULIDFK(
         "project_task", nullable=True, ondelete="SET NULL"
     )
@@ -149,6 +157,12 @@ class Project(db.Model, ULIDPK, IsoTimestamps):
     )
     tasks: Mapped[list[Task]] = relationship(
         "Task",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    funding_demands: Mapped[list["FundingDemand"]] = relationship(
+        "FundingDemand",
         back_populates="project",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -296,4 +310,115 @@ class ProjectFundingPlan(db.Model, ULIDPK, IsoTimestamps):
             "expected_amount_cents IS NULL OR expected_amount_cents >= 0",
             name="ck_funding_plan_expected_nonneg",
         ),
+    )
+
+
+class FundingDemand(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "funding_demand"
+
+    """
+    DTO Example:
+
+    FundingDemandDTO(
+        funding_demand_ulid=row.ulid,
+        project_ulid=row.project_ulid,
+        title=row.title,
+        status=row.status,
+        goal_cents=row.goal_cents,
+    )
+    """
+    project: Mapped[Project | None] = relationship(
+        "Project",
+        back_populates="funding_demands",
+        passive_deletes=True,
+    )
+
+    project_ulid: Mapped[str | None] = ULIDFK(
+        "project_project",
+        nullable=True,
+        ondelete="SET NULL",
+    )
+
+    # Title of the funding demand (NOT the project title)
+    title: Mapped[str] = mapped_column(
+        String(120),
+        nullable=False,
+        default="unnamed funding demand",
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="draft",
+        index=True,
+    )
+
+    goal_cents: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    deadline_date: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    spending_class: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+    )
+
+    eligible_fund_keys_json: Mapped[list[str] | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    tag_any_json: Mapped[list[str] | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    published_at_utc: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    closed_at_utc: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    project = relationship(
+        "Project",
+        back_populates="funding_demands",
+        foreign_keys=[project_ulid],
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "goal_cents >= 0", name="ck_funding_demand_goal_nonneg"
+        ),
+        Index("ix_funding_demand_project_status", "project_ulid", "status"),
+        CheckConstraint(
+            "status IN ('draft','published','funding_in_progress','funded','executing','closed')",
+            name="ck_funding_demand_status",
+        ),
+    )
+
+
+class ProjectTag(db.Model, ULIDPK):
+    __tablename__ = "project_tag"
+
+    project_ulid: Mapped[str] = ULIDFK(
+        "project_project",
+        nullable=False,
+        ondelete="CASCADE",
+        index=True,
+    )
+
+    tag_key: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        index=True,
     )

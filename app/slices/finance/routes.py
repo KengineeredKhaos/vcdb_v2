@@ -49,5 +49,7 @@ def activities_report():
 
     report = _soa(period)
     return render_template(
-        "finance/activities.html", report=report, period=period
+        "finance/activities.html",
+        report=report,
+        period=report["period"]["key"],
     )

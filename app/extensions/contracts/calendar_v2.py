@@ -200,6 +200,37 @@ def get_funding_demand(funding_demand_ulid: str) -> FundingDemandDTO:
         raise _as_contract_error(where, exc) from exc
 
 
+def list_published_funding_demands(
+    *,
+    project_ulid: str | None = None,
+    status: str = "published",
+) -> tuple[FundingDemandDTO, ...]:
+    where = "calendar_v2.list_published_funding_demands"
+    try:
+        mod = importlib.import_module("app.slices.calendar.services_funding")
+        fn = getattr(mod, "list_published_funding_demands")
+
+        raw_rows = fn(project_ulid=project_ulid, status=status)
+        out: list[FundingDemandDTO] = []
+
+        for raw in raw_rows:
+            eligible = tuple(raw.get("eligible_fund_keys") or ())
+            out.append(
+                FundingDemandDTO(
+                    funding_demand_ulid=str(raw["funding_demand_ulid"]),
+                    project_ulid=str(raw["project_ulid"]),
+                    title=str(raw.get("title") or ""),
+                    status=str(raw.get("status") or "unknown"),
+                    goal_cents=int(raw.get("goal_cents") or 0),
+                    deadline_date=raw.get("deadline_date"),
+                    eligible_fund_keys=eligible,
+                )
+            )
+        return tuple(out)
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
 # -----------------
 # Old Paradigm
 # below this line
@@ -461,6 +492,9 @@ def list_projects_for_period(*, period_label: str) -> list[ProjectDTO]:
 
 
 __all__ = [
+    "FundingDemandDTO",
+    "get_funding_demand",
+    "list_published_funding_demands",
     "blackout_ok",
     "create_project",
     "create_project_funding_plan",

@@ -1,6 +1,8 @@
 # app/slices/finance/services_report.py
 from __future__ import annotations
 
+from calendar import monthrange
+
 from sqlalchemy import text
 
 from app.extensions import db
@@ -47,57 +49,114 @@ def _sum_rows(rows) -> int:
     return int(sum(r["amount_cents"] or 0 for r in rows))
 
 
+def _period_meta(period: object) -> dict[str, object]:
+    """
+    Support both:
+      - period as "YYYY-MM" string (current)
+      - period as an object with .key/.label/.starts_on/.ends_on (future)
+    """
+    if hasattr(period, "key"):
+        return {
+            "key": getattr(period, "key", None),
+            "label": getattr(period, "label", None),
+            "starts_on": getattr(period, "starts_on", None),
+            "ends_on": getattr(period, "ends_on", None),
+        }
+
+    key = str(period)
+    label = key
+    starts_on = None
+    ends_on = None
+    try:
+        year_s, month_s = key.split("-", 1)
+        year = int(year_s)
+        month = int(month_s)
+        last_day = monthrange(year, month)[1]
+        starts_on = f"{year:04d}-{month:02d}-01"
+        ends_on = f"{year:04d}-{month:02d}-{last_day:02d}"
+    except Exception:
+        # leave starts_on/ends_on as None if key isn't YYYY-MM
+        pass
+
+    return {
+        "key": key,
+        "label": label,
+        "starts_on": starts_on,
+        "ends_on": ends_on,
+    }
+
+
 def statement_of_activities(period: str):
-    # Aggregate by fund (join via ULID)
+    meta = _period_meta(period)
+
+    # Aggregate by fund (join via fund_code)
     q_fund = text(
         """
-    SELECT
-        f.ulid AS fund_id,
-        COALESCE(f.name, '(unassigned)') AS fund_name,
-        COALESCE(f.restriction, 'unrestricted') AS restriction_type,
+        SELECT
+            f.ulid AS fund_id,
+            COALESCE(f.name, '(unassigned)') AS fund_name,
+            COALESCE(f.restriction, 'unrestricted') AS restriction_type,
 
-        -- Revenue accounts are credits (negative) in the signed-cents scheme,
-        -- so negate to present positive revenue.
-        -SUM(CASE WHEN jl.account_code LIKE '4%' THEN jl.amount_cents ELSE 0 END)
-            AS revenue_cents,
+            -- Revenue accounts are credits (negative) -> present positive.
+            -SUM(CASE
+                  WHEN jl.account_code LIKE '4%'
+                  THEN jl.amount_cents
+                  ELSE 0
+                END) AS revenue_cents,
 
-        -- Expenses are debits (positive). Include 5xxx and 6xxx.
-        SUM(CASE
-              WHEN jl.account_code LIKE '5%' OR jl.account_code LIKE '6%'
-              THEN jl.amount_cents
-              ELSE 0
-            END) AS expense_cents
+            -- Expenses are debits (positive). Include 5xxx and 6xxx.
+            SUM(CASE
+                  WHEN jl.account_code LIKE '5%'
+                    OR jl.account_code LIKE '6%'
+                  THEN jl.amount_cents
+                  ELSE 0
+                END) AS expense_cents
 
-    FROM finance_journal j
-    JOIN finance_journal_line jl ON jl.journal_ulid = j.ulid
-    LEFT JOIN finance_fund f ON f.code = jl.fund_code
-    WHERE j.period_key = :period
-    GROUP BY f.code, f.name, f.restriction
-    ORDER BY fund_name
-    """
+        FROM finance_journal j
+        JOIN finance_journal_line jl ON jl.journal_ulid = j.ulid
+        LEFT JOIN finance_fund f ON f.code = jl.fund_code
+        WHERE j.period_key = :period
+        GROUP BY f.code, f.name, f.restriction
+        ORDER BY fund_name
+        """
     )
     fund_rows = (
-        db.session.execute(q_fund, {"period": period}).mappings().all()
+        db.session.execute(q_fund, {"period": meta["key"]}).mappings().all()
     )
 
-    # Aggregate by project (join via ULID)
+    # Aggregate by project (join via project_ulid)
     q_proj = text(
         """
-        SELECT p.ulid AS project_id,
-               COALESCE(p.name, '(unassigned)') AS project_name,
-               SUM(CASE WHEN jl.account_code LIKE '4%' THEN jl.amount_cents ELSE 0 END) AS revenue_cents,
-               SUM(CASE WHEN jl.account_code LIKE '5%' THEN jl.amount_cents ELSE 0 END) AS expense_cents
+        SELECT
+            p.ulid AS project_id,
+            COALESCE(p.name, '(unassigned)') AS project_name,
+
+            -SUM(CASE
+                  WHEN jl.account_code LIKE '4%'
+                  THEN jl.amount_cents
+                  ELSE 0
+                END) AS revenue_cents,
+
+            SUM(CASE
+                  WHEN jl.account_code LIKE '5%'
+                    OR jl.account_code LIKE '6%'
+                  THEN jl.amount_cents
+                  ELSE 0
+                END) AS expense_cents
+
         FROM finance_journal j
         JOIN finance_journal_line jl ON jl.journal_ulid = j.ulid
         LEFT JOIN finance_project p ON p.ulid = jl.project_ulid
         WHERE j.period_key = :period
         GROUP BY p.ulid, p.name
-    """
+        ORDER BY project_name
+        """
     )
     proj_rows = (
-        db.session.execute(q_proj, {"period": period}).mappings().all()
+        db.session.execute(q_proj, {"period": meta["key"]}).mappings().all()
     )
 
+    # Roll up by restriction type
     by_restriction: dict[str, dict[str, int]] = {}
     for r in fund_rows:
         key = r["restriction_type"]
@@ -111,6 +170,7 @@ def statement_of_activities(period: str):
         )
         bucket["revenue_cents"] += int(r["revenue_cents"] or 0)
         bucket["expense_cents"] += int(r["expense_cents"] or 0)
+
     for _restriction, bucket in by_restriction.items():
         bucket["change_net_assets_cents"] = (
             bucket["revenue_cents"] - bucket["expense_cents"]
@@ -125,6 +185,7 @@ def statement_of_activities(period: str):
         }
         for r in fund_rows
     }
+
     by_project = {
         (r["project_id"] or "-"): {
             "name": r["project_name"],
@@ -133,16 +194,12 @@ def statement_of_activities(period: str):
         }
         for r in proj_rows
     }
+
     revenue_total = sum(int(r["revenue_cents"] or 0) for r in fund_rows)
     expense_total = sum(int(r["expense_cents"] or 0) for r in fund_rows)
 
     return {
-        "period": {
-            "key": period.key,
-            "label": period.label,
-            "starts_on": period.starts_on,
-            "ends_on": period.ends_on,
-        },
+        "period": meta,
         "summary": {
             "revenue_cents": revenue_total,
             "expense_cents": expense_total,
