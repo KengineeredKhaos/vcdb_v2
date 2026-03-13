@@ -604,7 +604,7 @@ under app/slices/governance/data/schemas/.
 
 
 
-Calendar Slice Mechanics:
+### Calendar Slice Mechanics:
 
 Projects describe operational intent and execution.  
 FundingDemands describe monetary need derived from that intent.  
@@ -615,5 +615,38 @@ Calendar may originate and orchestrate funding demands, but Finance remains the 
 Governance rules operate on semantic keys and project/demand context, never on another slice’s schema.
 
 
+
+---
+
+### Governance Policy Mechanics:
+
+Governance policy should be consumed through direct decision services, not through hints.  
+
+Semantic validation should exist only to enforce cross-policy integrity, not to reshape policy for callers.
+
+No governance policy change is “done” until `flask dev policy-health` passes cleanly.
+
+
+
+---
+
+### ### Canon metadata block
+
+Use this in every governance policy JSON:
+
+```json
+"meta": {  
+ "description": "Human-readable summary.",  
+ "effective_on": "2026-03-13",  
+ "notes": [],  
+ "policy_key": "policy_key_here",  
+ "schema_version": 1,  
+ "status": "draft",  
+ "title": "Policy Title",  
+ "version": 1  
+}
+```
+
+And require that same shape in every schema.
 
 ---

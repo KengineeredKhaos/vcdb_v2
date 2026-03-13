@@ -1,0 +1,14 @@
+flowchart LR
+    CAL["Calendar FundingDemand"]
+    GOV["Governance funding decision preview"]
+    SPO["Sponsors funding intents"]
+    FIN["Finance reserve encumber spend"]
+    DASH["funding_v2 dashboard"]
+
+    CAL -->|"spending_class tags restrictions"| GOV
+    GOV -->|"eligible_fund_keys required_approvals fingerprint"| CAL
+    CAL -->|"published demand"| SPO
+    SPO -->|"intent totals by funding_demand_ulid"| DASH
+    CAL -->|"meta by funding_demand_ulid"| DASH
+    FIN -->|"money totals by funding_demand_ulid"| DASH
+    GOV -->|"decision_fingerprint"| FIN

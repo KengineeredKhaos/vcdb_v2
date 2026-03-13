@@ -1,5 +1,16 @@
 {
-  "version": 1,
+  "meta": {
+    "description": "Finance fund selction",
+    "effective_on": "2026-02-23",
+    "notes": [
+      "This policy concerns Finance fund classifications.",
+    ],
+    "policy_key": "finance_selectors",
+    "schema_version": 1,
+    "status": "draft",
+    "title": "Finance Fund Selectors",
+    "version": 1
+  },
   "rules": [
     {
       "rule_id": "sel-900-unrestricted-default",

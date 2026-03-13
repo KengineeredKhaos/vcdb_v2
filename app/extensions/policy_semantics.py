@@ -222,24 +222,44 @@ def check_finance_taxonomy_policy() -> list[str]:
     pol = load_policy_finance_taxonomy()
     msgs: list[str] = []
 
-    fa = pol.get("fund_archetypes") or []
-    if not isinstance(fa, list) or not fa:
+    fund_keys = pol.get("fund_keys") or {}
+    restriction_keys = pol.get("restriction_keys") or {}
+    income_kinds = pol.get("income_kinds") or {}
+    expense_kinds = pol.get("expense_kinds") or {}
+    spending_classes = pol.get("spending_classes") or {}
+
+    if not isinstance(fund_keys, dict) or not fund_keys:
         raise PolicyError(
-            "finance_taxonomy.fund_archetypes must be a non-empty list"
+            "finance_taxonomy.fund_keys must be a non-empty object"
         )
 
-    jf = pol.get("journal_flags") or []
-    if not isinstance(jf, list):
-        raise PolicyError("finance_taxonomy.journal_flags must be a list")
-
-    ek = pol.get("expense_kinds") or []
-    if ek and not isinstance(ek, list):
+    if not isinstance(restriction_keys, dict) or not restriction_keys:
         raise PolicyError(
-            "finance_taxonomy.expense_kinds must be a list when present"
+            "finance_taxonomy.restriction_keys must be a non-empty object"
+        )
+
+    if not isinstance(income_kinds, dict) or not income_kinds:
+        raise PolicyError(
+            "finance_taxonomy.income_kinds must be a non-empty object"
+        )
+
+    if not isinstance(expense_kinds, dict) or not expense_kinds:
+        raise PolicyError(
+            "finance_taxonomy.expense_kinds must be a non-empty object"
+        )
+
+    if not isinstance(spending_classes, dict) or not spending_classes:
+        raise PolicyError(
+            "finance_taxonomy.spending_classes must be a non-empty object"
         )
 
     msgs.append(
-        f"finance taxonomy: fund_archetypes={len(fa)} journal_flags={len(jf)} expense_kinds={len(ek)}"
+        "finance taxonomy: "
+        f"fund_keys={len(fund_keys)} "
+        f"restriction_keys={len(restriction_keys)} "
+        f"income_kinds={len(income_kinds)} "
+        f"expense_kinds={len(expense_kinds)} "
+        f"spending_classes={len(spending_classes)}"
     )
     return msgs
 
@@ -278,14 +298,12 @@ def check_finance_controls_policy() -> list[str]:
 
 def _expense_kind_keys() -> set[str]:
     pol = load_policy_finance_taxonomy()
-    ek = pol.get("expense_kinds") or []
-    out: set[str] = set()
-    for item in ek:
-        if isinstance(item, str):
-            out.add(item)
-        elif isinstance(item, dict) and isinstance(item.get("key"), str):
-            out.add(item["key"])
-    return out
+    ek = pol.get("expense_kinds") or {}
+
+    if not isinstance(ek, dict):
+        return set()
+
+    return {str(k) for k in ek.keys() if str(k).strip()}
 
 
 def check_operations_policy() -> list[str]:
@@ -494,20 +512,47 @@ def resolve_cadence(policy: dict, rule: dict) -> dict:
 
 
 def list_fund_archetypes() -> list[dict]:
+    """
+    Legacy alias.
+
+    The old finance taxonomy exposed fund_archetypes as a list.
+    The new taxonomy exposes fund_keys as an object keyed by fund key.
+
+    Return a normalized list of dicts so older callers can survive
+    during migration.
+    """
     pol = load_policy_finance_taxonomy()
-    return list(pol.get("fund_archetypes") or [])
+    fund_keys = pol.get("fund_keys") or {}
+
+    if not isinstance(fund_keys, dict):
+        return []
+
+    out: list[dict] = []
+    for key, spec in fund_keys.items():
+        spec = spec or {}
+        out.append(
+            {
+                "key": str(key),
+                "label": str(spec.get("label") or key),
+                "archetype": spec.get("archetype"),
+                "default_restriction_keys": list(
+                    spec.get("default_restriction_keys") or []
+                ),
+            }
+        )
+    out.sort(key=lambda x: str(x["key"]))
+    return out
 
 
 def list_journal_flag_keys() -> list[str]:
-    pol = load_policy_finance_taxonomy()
-    flags = pol.get("journal_flags") or []
-    out: list[str] = []
-    for f in flags:
-        if isinstance(f, str):
-            out.append(f)
-        elif isinstance(f, dict) and isinstance(f.get("key"), str):
-            out.append(f["key"])
-    return _uniq(out)
+    """
+    Legacy helper.
+
+    journal_flags are not part of the new finance taxonomy model.
+    Return an empty list until/unless they are reintroduced under a
+    dedicated policy surface.
+    """
+    return []
 
 
 def assert_journal_flags_ok(flags: list[str] | None) -> None:

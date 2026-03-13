@@ -165,6 +165,7 @@ from sqlalchemy import select
 
 from app.cli import echo_db_banner
 from app.extensions.errors import ContractError
+from app.extensions.policy_health import PolicyError, policy_health_report
 from app.slices.logistics.sku import (
     classification_key_for,
     parse_sku,
@@ -177,17 +178,17 @@ def register_cli(app):
     app.cli.add_command(dev_group)
 
 
-# Semantics/health checks for policies
-try:
-    from app.extensions.policy_semantics import (
-        PolicyError,
-        policy_health_report,
-    )
-except Exception:  # still useful even if semantics module not present yet
-    PolicyError = RuntimeError
+# # Semantics/health checks for policies
+# try:
+#     from app.extensions.policy_semantics import (
+#         PolicyError,
+#         policy_health_report,
+#     )
+# except Exception:  # still useful even if semantics module not present yet
+#     PolicyError = RuntimeError
 
-    def policy_health_report():
-        return (["policy_semantics module not available"], [])
+# def policy_health_report():
+#     return (["policy_semantics module not available"], [])
 
 
 @click.group("dev")

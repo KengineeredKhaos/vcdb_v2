@@ -1,5 +1,17 @@
 {
-  "version": 1,
+  "meta": {
+    "description": "Finance taxonomy and labels.",
+    "effective_on": "2026-03-13",
+    "notes": [
+      "This policy defines semantic finance keys for Governance, Calendar, Sponsors, and Finance.",
+      "No table or column names. Semantic keys only."
+    ],
+    "policy_key": "finance_taxonomy",
+    "schema_version": 1,
+    "status": "draft",
+    "title": "Finance Taxonomy",
+    "version": 2
+  },
   "fund_keys": {
     "general_unrestricted": {
       "label": "General Unrestricted",
@@ -18,33 +30,33 @@
     }
   },
   "restriction_keys": {
-    "local_only": {"label": "Local only"},
-    "vet_only": {"label": "Veterans only"},
-    "homeless_only": {"label": "Homeless only"},
-    "grant_reporting": {"label": "Grant reporting required"}
+    "local_only": { "label": "Local only" },
+    "vet_only": { "label": "Veterans only" },
+    "homeless_only": { "label": "Homeless only" },
+    "grant_reporting": { "label": "Grant reporting required" }
   },
   "income_kinds": {
-    "donation": {"label": "Donation"},
-    "grant_disbursement": {"label": "Grant disbursement"},
-    "reimbursement": {"label": "Reimbursement"},
-    "inkind": {"label": "In-kind contribution"},
-    "other": {"label": "Other income"}
+    "donation": { "label": "Donation" },
+    "grant_disbursement": { "label": "Grant disbursement" },
+    "reimbursement": { "label": "Reimbursement" },
+    "inkind": { "label": "In-kind contribution" },
+    "other": { "label": "Other income" }
   },
   "expense_kinds": {
-    "food": {"label": "Food"},
-    "fuel": {"label": "Fuel"},
-    "supplies": {"label": "Supplies"},
-    "lodging": {"label": "Lodging"},
-    "printing": {"label": "Printing"},
-    "software": {"label": "Software and IT"},
-    "fees": {"label": "Bank and merchant fees"},
-    "other": {"label": "Other expense"}
+    "food": { "label": "Food" },
+    "fuel": { "label": "Fuel" },
+    "supplies": { "label": "Supplies" },
+    "lodging": { "label": "Lodging" },
+    "printing": { "label": "Printing" },
+    "software": { "label": "Software and IT" },
+    "fees": { "label": "Bank and merchant fees" },
+    "other": { "label": "Other expense" }
   },
   "spending_classes": {
-    "basic_needs": {"label": "Basic needs"},
-    "events": {"label": "Events"},
-    "logistics": {"label": "Logistics"},
-    "housing": {"label": "Housing"},
-    "admin": {"label": "Administration"}
+    "basic_needs": { "label": "Basic needs" },
+    "events": { "label": "Events" },
+    "logistics": { "label": "Logistics" },
+    "housing": { "label": "Housing" },
+    "admin": { "label": "Administration" }
   }
 }

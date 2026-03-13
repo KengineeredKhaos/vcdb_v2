@@ -1,5 +1,17 @@
 {
-  "version": 1,
+  "meta": {
+    "description": "Staff spending caps, approval thresholds, and budget periods.",
+    "effective_on": "2026-03-13",
+    "notes": [
+      "This policy governs approval thresholds and budget-period metadata.",
+      "Use semantic fund keys, not table or column names."
+    ],
+    "policy_key": "finance_controls",
+    "schema_version": 1,
+    "status": "draft",
+    "title": "Finance Controls",
+    "version": 2
+  },
   "staff_cap_cents": 20000,
   "approval_rules": [
     {
@@ -17,7 +29,10 @@
       "priority": 120,
       "match": {
         "op": ["encumber", "spend"],
-        "fund_archetype_any": ["temporarily_restricted", "permanently_restricted"]
+        "selected_fund_keys_any": [
+          "general_restricted",
+          "welcome_home_reimbursement"
+        ]
       },
       "required_approvals": ["treasurer"],
       "reason_code": "restricted_fund_requires_approval"

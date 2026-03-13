@@ -29,6 +29,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from app.extensions.validate import validate_json_payload
 from app.lib.jsonutil import canonical_hash, read_json_file, write_json_file
@@ -186,7 +187,6 @@ def _resolve_governance_policy_paths(
 ) -> tuple[Path, Path | None]:
     cat = _load_catalog()
     if policy_key not in cat:
-
         hint = _MOVED_GOVERNANCE_KEYS.get(policy_key)
         if hint:
             raise KeyError(
@@ -256,6 +256,7 @@ def save_governance_policy(
 # Governance typed loaders (v2 keys)
 # ------------------
 
+
 def _raise_moved(policy_key: str) -> None:
     hint = _MOVED_GOVERNANCE_KEYS.get(policy_key)
     msg = (
@@ -266,7 +267,6 @@ def _raise_moved(policy_key: str) -> None:
 
 
 def load_policy_customer() -> dict:
-
     _raise_moved("customer")
 
 
@@ -278,17 +278,23 @@ def load_policy_finance_controls() -> dict:
     return load_governance_policy("finance_controls")
 
 
+def load_policy_finance_selectors() -> dict:
+    return load_governance_policy("finance_selectors")
+
+
 def load_policy_finance_taxonomy() -> dict:
     return load_governance_policy("finance_taxonomy")
 
 
-def load_policy_lifecycle() -> dict:
+def load_policy_funding_decisions() -> dict[str, Any]:
+    return load_governance_policy("funding_decisions")
 
+
+def load_policy_lifecycle() -> dict:
     _raise_moved("lifecycle")
 
 
 def load_policy_locations() -> dict:
-
     _raise_moved("locations")
 
 
@@ -297,13 +303,13 @@ def load_policy_logistics_issuance() -> dict:
 
 
 def load_policy_operations() -> dict:
-
     _raise_moved("operations")
 
 
 def load_policy_service_taxonomy() -> dict:
-
     _raise_moved("service_taxonomy")
+
+
 def load_policy_governance_index() -> dict:
     # Useful for CLI/admin diagnostics.
     return load_governance_policy("governance_index")
@@ -426,6 +432,7 @@ __all__ = [
     "load_policy_entity_roles",
     "load_policy_finance_controls",
     "load_policy_finance_taxonomy",
+    "load_policy_funding_decisions",
     "load_policy_lifecycle",
     "load_policy_locations",
     "load_policy_logistics_issuance",

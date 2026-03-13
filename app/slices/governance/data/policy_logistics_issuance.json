@@ -1,43 +1,11 @@
 {
-  "issuance": {
-    "defaults": {
-      "cadence": {
-        "label": "default-per-30",
-        "max_per_period": 1,
-        "period_days": 30,
-        "scope": "classification"
-      }
-    },
-    "rules": [
-      {
-        "if": {
-          "source": "DR"
-        },
-        "then": {
-          "issuance_class": "V"
-        },
-        "why": "All DRMO items are veteran-only"
-      },
-      {
-        "if": {
-          "category": "CG",
-          "source": "LC",
-          "subcategory": "SL"
-        },
-        "then": {
-          "issuance_class": "H"
-        },
-        "why": "Commercial sleeping gear reserved for homeless issuance"
-      }
-    ]
-  },
   "meta": {
     "description": "Issuance criteria and cadence rules for inventory SKUs.",
-    "effective_on": "2026-02-23",
+    "effective_on": "2026-03-13",
     "notes": [
-      "Governance controls cadence/qualifiers/overrides only.",
+      "Governance controls cadence, qualifiers, and overrides only.",
       "SKU validation taxonomy belongs to Logistics slice.",
-      "Issuance class 'D' means Durable (staff-issued and returned); it is not a discretionary class."
+      "Issuance class 'D' means Durable staff-issued and returned."
     ],
     "policy_key": "logistics_issuance",
     "schema_version": 1,

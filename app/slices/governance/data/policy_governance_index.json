@@ -36,14 +36,12 @@
       "schema_filename": "schemas/policy_governance_index.schema.json"
     },
     {
-      "edit_cadence_hint": "rare",
-      "filename": "policy_entity_roles.json",
-      "notes": [
-        "Domain-role Policy"
-      ],
+      "edit_cadence_hint": "occasional",
+      "filename": "policy_funding_decisions.json",
+      "notes": [],
       "owner_role_hint": "governor",
-      "policy_key": "entity_roles",
-      "schema_filename": "schemas/policy_entity_roles.schema.json"
+      "policy_key": "funding_decisions",
+      "schema_filename": "schemas/policy_funding_decisions.schema.json"
     },
     {
       "edit_cadence_hint": "rare",
@@ -68,6 +66,14 @@
       "owner_role_hint": "governor",
       "policy_key": "logistics_issuance",
       "schema_filename": "schemas/policy_logistics_issuance.schema.json"
+    },
+    {
+      "edit_cadence_hint": "occasional",
+      "filename": "policy_entity_roles.json",
+      "notes": [],
+      "owner_role_hint": "governor",
+      "policy_key": "entity_roles",
+      "schema_filename": "schemas/policy_entity_roles.schema.json"
     }
   ]
 }

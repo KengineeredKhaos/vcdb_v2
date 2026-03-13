@@ -11,6 +11,47 @@
       "items": { "$ref": "#/$defs/selector_rule" }
     }
   },
+  "meta": {
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "description",
+    "effective_on",
+    "notes",
+    "policy_key",
+    "schema_version",
+    "status",
+    "title",
+    "version"
+  ],
+  "properties": {
+    "description": { "type": "string", "minLength": 1 },
+    "effective_on": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "policy_key": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "active", "deprecated"]
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
 
   "$defs": {
     "semantic_key": {

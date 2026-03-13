@@ -52,7 +52,7 @@ from app.slices.governance.services_finance_taxonomy import (
 
 # Governance slice service (pure evaluator; no DB)
 from app.slices.governance.services_funding_decisions import (
-    preview_funding_decision as _preview_funding_decision,
+    preview_funding_decision as svc_preview_funding_decision,
 )
 
 # bind/expose to live module
@@ -505,7 +505,7 @@ def preview_funding_decision(
             "actor_domain_roles": req.actor_domain_roles,
         }
 
-        raw_out = _preview_funding_decision(raw_req)
+        raw_out = svc_preview_funding_decision(raw_req)
 
         return FundingDecisionDTO(
             allowed=bool(raw_out.get("allowed")),

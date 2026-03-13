@@ -245,7 +245,9 @@ def list_funding_intents_for_sponsor(sponsor_entity_ulid: str) -> list:
     return [sponsor_funding_intent_to_view(row) for row in rows]
 
 
-def get_funding_intent_totals(funding_demand_ulid: str) -> dict[str, object]:
+def get_funding_intent_totals(
+    funding_demand_ulid: str,
+) -> dict[str, object]:
     pledged_statuses = ("committed", "fulfilled")
     pledge_kinds = ("pledge", "donation", "pass_through")
 
@@ -263,14 +265,30 @@ def get_funding_intent_totals(funding_demand_ulid: str) -> dict[str, object]:
     )
 
     pledged_cents = sum(int(row.amount_cents or 0) for row in rows)
-    sponsor_ids = {
-        row.sponsor_entity_ulid for row in rows if row.sponsor_entity_ulid
-    }
+
+    by_sponsor: dict[str, int] = {}
+    for row in rows:
+        sponsor_ulid = row.sponsor_entity_ulid
+        if not sponsor_ulid:
+            continue
+        by_sponsor[sponsor_ulid] = by_sponsor.get(sponsor_ulid, 0) + int(
+            row.amount_cents or 0
+        )
+
+    pledged_by_sponsor = [
+        {
+            "key": sponsor_ulid,
+            "amount_cents": amount_cents,
+        }
+        for sponsor_ulid, amount_cents in sorted(by_sponsor.items())
+    ]
+
     pledge_ulids = [
         row.ulid
         for row in rows
         if row.intent_kind in ("pledge", "pass_through")
     ]
+
     donation_ulids = [
         row.ulid for row in rows if row.intent_kind == "donation"
     ]
@@ -278,7 +296,7 @@ def get_funding_intent_totals(funding_demand_ulid: str) -> dict[str, object]:
     return {
         "funding_demand_ulid": funding_demand_ulid,
         "pledged_cents": pledged_cents,
-        "pledged_by_sponsor": len(sponsor_ids),
+        "pledged_by_sponsor": pledged_by_sponsor,
         "pledge_ulids": pledge_ulids,
         "donation_ulids": donation_ulids,
     }
