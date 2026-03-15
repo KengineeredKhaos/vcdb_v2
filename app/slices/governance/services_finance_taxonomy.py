@@ -23,7 +23,7 @@ class FundKeyDTO:
 
 
 @dataclass(frozen=True)
-class FinanceTaxonomyDTO:
+class FinanceTaxonomy:
     version: int
 
     fund_keys: tuple[FundKeyDTO, ...]
@@ -34,7 +34,7 @@ class FinanceTaxonomyDTO:
 
 
 @dataclass(frozen=True)
-class SemanticValidationResultDTO:
+class SemanticValidationResult:
     ok: bool
     errors: tuple[str, ...]
     unknown_keys: tuple[str, ...]
@@ -75,7 +75,7 @@ def _sorted_keylabels(obj: dict[str, Any]) -> tuple[KeyLabelDTO, ...]:
     return tuple(out)
 
 
-def get_finance_taxonomy() -> FinanceTaxonomyDTO:
+def get_finance_taxonomy() -> FinanceTaxonomy:
     """
     Read-only taxonomy projection for UI dropdowns and validation.
     """
@@ -95,7 +95,7 @@ def get_finance_taxonomy() -> FinanceTaxonomyDTO:
         )
     funds.sort(key=lambda x: x.key)
 
-    return FinanceTaxonomyDTO(
+    return FinanceTaxonomy(
         version=int(raw.get("version") or 0),
         fund_keys=tuple(funds),
         restriction_keys=_sorted_keylabels(raw.get("restriction_keys") or {}),
@@ -144,40 +144,46 @@ def validate_semantic_keys(
     restriction_keys: tuple[str, ...] = (),
     income_kind: str | None = None,
     expense_kind: str | None = None,
-    spending_class: str | None = None,
+    spending_classes: str | None = None,
     demand_eligible_fund_keys: tuple[str, ...] = (),
-) -> SemanticValidationResultDTO:
+) -> SemanticValidationResult:
     raw = load_policy_finance_taxonomy()
 
-    unknown: set[str] = set()
     errors: list[str] = []
+    unknown_keys: list[str] = []
 
-    def _check(group: str, k: str | None, label: str) -> None:
-        if k is None:
+    def _check_one(policy_group: str, value: str | None, label: str) -> None:
+        if value is None:
             return
-        if k not in _get_map(raw, group):
-            unknown.add(k)
-            errors.append(f"unknown {label}: {k}")
+        allowed = _get_map(raw, policy_group)
+        if value not in allowed:
+            errors.append(f"unknown {label}: {value}")
+            unknown_keys.append(value)
 
-    _check("fund_keys", fund_key, "fund_key")
-    _check("income_kinds", income_kind, "income_kind")
-    _check("expense_kinds", expense_kind, "expense_kind")
-    _check("spending_classes", spending_class, "spending_class")
+    def _check_many(
+        policy_group: str,
+        values: tuple[str, ...],
+        label: str,
+    ) -> None:
+        allowed = _get_map(raw, policy_group)
+        for value in values:
+            if value not in allowed:
+                errors.append(f"unknown {label}: {value}")
+                unknown_keys.append(value)
 
-    known_restr = set(_get_map(raw, "restriction_keys").keys())
-    for rk in restriction_keys:
-        if rk not in known_restr:
-            unknown.add(rk)
-            errors.append(f"unknown restriction_key: {rk}")
+    _check_one("fund_keys", fund_key, "fund_key")
+    _check_many("restriction_keys", restriction_keys, "restriction_key")
+    _check_one("income_kinds", income_kind, "income_kind")
+    _check_one("expense_kinds", expense_kind, "expense_kind")
+    _check_one("spending_classes", spending_classes, "spending_classes")
+    _check_many(
+        "fund_keys",
+        demand_eligible_fund_keys,
+        "demand_eligible_fund_key",
+    )
 
-    known_funds = set(_get_map(raw, "fund_keys").keys())
-    for fk in demand_eligible_fund_keys:
-        if fk not in known_funds:
-            unknown.add(fk)
-            errors.append(f"unknown demand_eligible_fund_key: {fk}")
-
-    return SemanticValidationResultDTO(
-        ok=(len(errors) == 0),
+    return SemanticValidationResult(
+        ok=not errors,
         errors=tuple(errors),
-        unknown_keys=tuple(sorted(unknown)),
+        unknown_keys=tuple(unknown_keys),
     )

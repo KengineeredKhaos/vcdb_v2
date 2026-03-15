@@ -282,18 +282,13 @@ class ProjectFundingPlan(db.Model, ULIDPK, IsoTimestamps):
     notes: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Optional relationship back to Project (handy in services)
-    # Link: each funding plan row belongs to a single Calendar Project.
-    project: Mapped[Project] = relationship(
-        "Project",
-        back_populates="funding_plans",
-        passive_deletes=True,
-    )
     project_ulid: Mapped[str] = ULIDFK(
         "project_project",
         nullable=False,
         ondelete="CASCADE",  # or SET NULL if you want it nullable
     )
 
+    # Link: each funding plan row belongs to a single Calendar Project.
     project: Mapped[Project] = relationship(
         "Project",
         back_populates="funding_plans",

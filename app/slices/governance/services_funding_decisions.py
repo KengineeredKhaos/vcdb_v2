@@ -46,16 +46,22 @@ def _taxonomy_fund_map() -> dict[str, _FundKey]:
     tx = load_policy_finance_taxonomy()
 
     out: dict[str, _FundKey] = {}
-    for row in tx["fund_keys"]:
-        key = str(row["key"])
-        out[key] = _FundKey(
-            key=key,
-            label=str(row.get("label") or key),
-            archetype=str(row.get("archetype") or ""),
+    fund_keys = tx.get("fund_keys") or {}
+
+    if not isinstance(fund_keys, dict):
+        raise ValueError("finance_taxonomy.fund_keys must be an object")
+
+    for key, spec in fund_keys.items():
+        spec = spec or {}
+        out[str(key)] = _FundKey(
+            key=str(key),
+            label=str(spec.get("label") or key),
+            archetype=str(spec.get("archetype") or ""),
             default_restriction_keys=tuple(
-                row.get("default_restriction_keys") or ()
+                spec.get("default_restriction_keys") or ()
             ),
         )
+
     return out
 
 

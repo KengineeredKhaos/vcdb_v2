@@ -81,7 +81,7 @@ def list_projects_for_form() -> list[tuple[str, str]]:
 
 def get_spending_class_choices() -> list[tuple[str, str]]:
     tx = gov.get_finance_taxonomy()
-    vals = list(getattr(tx, "spending_classes", []) or [])
+    vals = list(getattr(tx, "spending_class", []) or [])
     return [("", "— Select —"), *[(v, v) for v in vals]]
 
 
@@ -108,9 +108,13 @@ def create_funding_demand(
     _get_project_or_raise(project_ulid)
 
     if spending_class:
-        gov.validate_semantic_keys(
-            spending_classes=[spending_class],
+        res = gov.validate_semantic_keys(
+            spending_class=spending_class,
         )
+        if not res.ok:
+            raise ValueError(
+                "; ".join(res.errors) or "invalid spending_class"
+            )
 
     if hasattr(deadline_date, "isoformat"):
         deadline_date = deadline_date.isoformat()
@@ -182,9 +186,13 @@ def update_funding_demand(
     _get_project_or_raise(project_ulid)
 
     if spending_class:
-        gov.validate_semantic_keys(
-            spending_classes=[spending_class],
+        res = gov.validate_semantic_keys(
+            spending_class=spending_class,
         )
+        if not res.ok:
+            raise ValueError(
+                "; ".join(res.errors) or "invalid spending_class"
+            )
 
     if hasattr(deadline_date, "isoformat"):
         deadline_date = deadline_date.isoformat()

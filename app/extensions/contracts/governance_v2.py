@@ -581,11 +581,13 @@ def validate_semantic_keys(
             restriction_keys=restriction_keys,
             income_kind=income_kind,
             expense_kind=expense_kind,
-            spending_class=spending_class,
+            spending_classes=spending_class,
             demand_eligible_fund_keys=demand_eligible_fund_keys,
         )
         return SemanticValidationResultDTO(
-            ok=r.ok, errors=r.errors, unknown_keys=r.unknown_keys
+            ok=r.ok,
+            errors=r.errors,
+            unknown_keys=r.unknown_keys,
         )
     except Exception as exc:  # noqa: BLE001
         raise _as_contract_error(where, exc) from exc
