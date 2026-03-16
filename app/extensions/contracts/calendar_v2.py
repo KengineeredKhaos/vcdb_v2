@@ -96,6 +96,65 @@ class FundingDemandDTO:
     eligible_fund_keys: tuple[str, ...]
 
 
+
+@dataclass(frozen=True)
+class ProjectEncumbranceRequestDTO:
+    funding_demand_ulid: str
+    amount_cents: int
+    fund_key: str
+    expense_kind: str
+    happened_at_utc: str
+    source_ref_ulid: str | None = None
+    memo: str | None = None
+    actor_ulid: str | None = None
+    actor_rbac_roles: tuple[str, ...] = ()
+    actor_domain_roles: tuple[str, ...] = ()
+    request_id: str | None = None
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class ProjectEncumbranceDTO:
+    funding_demand_ulid: str
+    project_ulid: str | None
+    fund_key: str
+    amount_cents: int
+    encumbrance_ulid: str
+    decision_fingerprint: str
+    status: str
+    flags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ProjectSpendRequestDTO:
+    encumbrance_ulid: str
+    amount_cents: int
+    expense_kind: str
+    payment_method: str
+    happened_at_utc: str
+    source_ref_ulid: str | None = None
+    payee_entity_ulid: str | None = None
+    memo: str | None = None
+    actor_ulid: str | None = None
+    actor_rbac_roles: tuple[str, ...] = ()
+    actor_domain_roles: tuple[str, ...] = ()
+    request_id: str | None = None
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class ProjectSpendDTO:
+    funding_demand_ulid: str
+    project_ulid: str | None
+    encumbrance_ulid: str
+    journal_ulid: str
+    amount_cents: int
+    decision_fingerprint: str
+    status: str
+    flags: tuple[str, ...] = ()
+
+
+
 # -----------------
 # Old Paradigm
 # DTO's
@@ -200,6 +259,77 @@ def get_funding_demand(funding_demand_ulid: str) -> FundingDemandDTO:
         raise _as_contract_error(where, exc) from exc
 
 
+def encumber_project_funds(
+    req: ProjectEncumbranceRequestDTO,
+) -> ProjectEncumbranceDTO:
+    where = "calendar_v2.encumber_project_funds"
+    try:
+        mod = importlib.import_module(
+            "app.slices.calendar.services_finance_bridge"
+        )
+        fn = getattr(mod, "encumber_project_funds")
+        out = fn(
+            funding_demand_ulid=req.funding_demand_ulid,
+            amount_cents=req.amount_cents,
+            fund_key=req.fund_key,
+            expense_kind=req.expense_kind,
+            happened_at_utc=req.happened_at_utc,
+            source_ref_ulid=req.source_ref_ulid,
+            memo=req.memo,
+            actor_ulid=req.actor_ulid,
+            actor_rbac_roles=req.actor_rbac_roles,
+            actor_domain_roles=req.actor_domain_roles,
+            request_id=req.request_id,
+            dry_run=req.dry_run,
+        )
+        return ProjectEncumbranceDTO(
+            funding_demand_ulid=out.funding_demand_ulid,
+            project_ulid=out.project_ulid,
+            fund_key=out.fund_key,
+            amount_cents=out.amount_cents,
+            encumbrance_ulid=out.encumbrance_ulid,
+            decision_fingerprint=out.decision_fingerprint,
+            status=out.status,
+            flags=out.flags,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def spend_project_funds(req: ProjectSpendRequestDTO) -> ProjectSpendDTO:
+    where = "calendar_v2.spend_project_funds"
+    try:
+        mod = importlib.import_module(
+            "app.slices.calendar.services_finance_bridge"
+        )
+        fn = getattr(mod, "spend_project_funds")
+        out = fn(
+            encumbrance_ulid=req.encumbrance_ulid,
+            amount_cents=req.amount_cents,
+            expense_kind=req.expense_kind,
+            payment_method=req.payment_method,
+            happened_at_utc=req.happened_at_utc,
+            source_ref_ulid=req.source_ref_ulid,
+            payee_entity_ulid=req.payee_entity_ulid,
+            memo=req.memo,
+            actor_ulid=req.actor_ulid,
+            actor_rbac_roles=req.actor_rbac_roles,
+            actor_domain_roles=req.actor_domain_roles,
+            request_id=req.request_id,
+            dry_run=req.dry_run,
+        )
+        return ProjectSpendDTO(
+            funding_demand_ulid=out.funding_demand_ulid,
+            project_ulid=out.project_ulid,
+            encumbrance_ulid=out.encumbrance_ulid,
+            journal_ulid=out.journal_ulid,
+            amount_cents=out.amount_cents,
+            decision_fingerprint=out.decision_fingerprint,
+            status=out.status,
+            flags=out.flags,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
 def list_published_funding_demands(
     *,
     project_ulid: str | None = None,

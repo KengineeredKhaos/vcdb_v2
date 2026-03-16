@@ -173,6 +173,7 @@ def realize_funding_intent(
             payer_entity_ulid=intent_row.sponsor_entity_ulid,
             memo=memo_txt,
             created_by_actor=actor_ulid,
+            request_id=request_id,
             dry_run=dry_run,
         )
     )
@@ -190,6 +191,8 @@ def realize_funding_intent(
                 project_ulid=demand.project_ulid,
                 source_ref_ulid=intent_row.ulid,
                 memo=memo_txt,
+                actor_ulid=actor_ulid,
+                request_id=request_id,
                 dry_run=dry_run,
             )
         )

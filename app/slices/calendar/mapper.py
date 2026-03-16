@@ -41,6 +41,29 @@ class PublishedFundingDemandListItemView:
     eligible_fund_keys: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class ProjectEncumbranceResult:
+    funding_demand_ulid: str
+    project_ulid: str | None
+    fund_key: str
+    amount_cents: int
+    encumbrance_ulid: str
+    decision_fingerprint: str
+    status: str
+    flags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ProjectSpendResult:
+    funding_demand_ulid: str
+    project_ulid: str | None
+    encumbrance_ulid: str
+    journal_ulid: str
+    amount_cents: int
+    decision_fingerprint: str
+    status: str
+    flags: tuple[str, ...] = ()
+
 def funding_demand_to_view(row) -> FundingDemandView:
     project = getattr(row, "project", None)
     project_title = None

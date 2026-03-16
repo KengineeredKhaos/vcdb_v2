@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from app.extensions import db
-from app.slices.finance.models import Encumbrance, Reserve
+from sqlalchemy import select
+
+from app.extensions import db, event_bus
+from app.lib.chrono import now_iso8601_ms
+from app.slices.finance.models import Encumbrance, Fund, Reserve
 
 from .services_journal import ensure_fund
 
@@ -22,6 +25,9 @@ def reserve_funds(payload: dict, *, dry_run: bool = False) -> dict:
     fund_key = payload.get("fund_key")
     amount = int(payload.get("amount_cents") or 0)
     source = payload.get("source") or "unknown"
+    actor_ulid = payload.get("actor_ulid")
+    request_id = payload.get("request_id")
+
 
     if not fd:
         raise ValueError("funding_demand_ulid required")
@@ -52,6 +58,22 @@ def reserve_funds(payload: dict, *, dry_run: bool = False) -> dict:
     )
     db.session.add(r)
     db.session.flush()
+    event_bus.emit(
+        domain="finance",
+        operation="reserve_recorded",
+        request_id=str(request_id or r.ulid),
+        actor_ulid=actor_ulid,
+        target_ulid=r.ulid,
+        happened_at_utc=now_iso8601_ms(),
+        refs={
+            "funding_demand_ulid": str(fd),
+            "project_ulid": payload.get("project_ulid"),
+            "fund_key": str(fund_key),
+            "amount_cents": amount,
+            "source_ref_ulid": payload.get("source_ref_ulid"),
+        },
+        chain_key="finance.reserve",
+    )
     return {"id": r.ulid, "fund_key": fund_key, "amount_cents": amount}
 
 
@@ -70,6 +92,9 @@ def encumber_funds(payload: dict, *, dry_run: bool = False) -> dict:
     fund_key = payload.get("fund_key")
     amount = int(payload.get("amount_cents") or 0)
     source = payload.get("source") or "unknown"
+    actor_ulid = payload.get("actor_ulid")
+    request_id = payload.get("request_id")
+
 
     if not fd:
         raise ValueError("funding_demand_ulid required")
@@ -101,6 +126,23 @@ def encumber_funds(payload: dict, *, dry_run: bool = False) -> dict:
     )
     db.session.add(e)
     db.session.flush()
+    event_bus.emit(
+        domain="finance",
+        operation="encumbrance_recorded",
+        request_id=str(request_id or e.ulid),
+        actor_ulid=actor_ulid,
+        target_ulid=e.ulid,
+        happened_at_utc=now_iso8601_ms(),
+        refs={
+            "funding_demand_ulid": str(fd),
+            "project_ulid": payload.get("project_ulid"),
+            "fund_key": str(fund_key),
+            "amount_cents": amount,
+            "source_ref_ulid": payload.get("source_ref_ulid"),
+            "decision_fingerprint": payload.get("decision_fingerprint"),
+        },
+        chain_key="finance.encumbrance",
+    )
     return {"id": e.ulid, "fund_key": fund_key, "amount_cents": amount}
 
 
@@ -108,6 +150,8 @@ def relieve_encumbrance(
     *,
     encumbrance_ulid: str,
     amount_cents: int,
+    actor_ulid: str | None = None,
+    request_id: str | None = None,
 ) -> None:
     if amount_cents <= 0:
         return
@@ -119,3 +163,19 @@ def relieve_encumbrance(
     if e.relieved_cents >= e.amount_cents:
         e.status = "relieved"
     db.session.flush()
+    event_bus.emit(
+        domain="finance",
+        operation="encumbrance_relieved",
+        request_id=str(request_id or e.ulid),
+        actor_ulid=actor_ulid,
+        target_ulid=e.ulid,
+        happened_at_utc=now_iso8601_ms(),
+        refs={
+            "funding_demand_ulid": e.funding_demand_ulid,
+            "project_ulid": e.project_ulid,
+            "fund_key": e.fund_code,
+            "amount_cents": amount_cents,
+        },
+        changed={"fields": ["relieved_cents", "status"]},
+        chain_key="finance.encumbrance",
+    )

@@ -598,11 +598,7 @@ Moved to slice-local taxonomy/config:
 All Governance policy files under app/slices/governance/data/ are schema-backed
 under app/slices/governance/data/schemas/.
 
-
-
 ---
-
-
 
 ### Calendar Slice Mechanics:
 
@@ -614,8 +610,6 @@ Calendar may originate and orchestrate funding demands, but Finance remains the 
 
 Governance rules operate on semantic keys and project/demand context, never on another slice’s schema.
 
-
-
 ---
 
 ### Governance Policy Mechanics:
@@ -625,8 +619,6 @@ Governance policy should be consumed through direct decision services, not throu
 Semantic validation should exist only to enforce cross-policy integrity, not to reshape policy for callers.
 
 No governance policy change is “done” until `flask dev policy-health` passes cleanly.
-
-
 
 ---
 
@@ -650,3 +642,25 @@ Use this in every governance policy JSON:
 And require that same shape in every schema.
 
 ---
+
+### Finance bits
+
+**"Only allow spending against an existing encumbrance."**
+
+That buys you a few important things:
+
+- no “mystery spending” straight against a funded demand
+
+- easier overspend prevention
+
+- easier repair when humans make mistakes
+
+- cleaner board/audit reporting because commitment and actual spend stay separate
+
+- a concrete control point where Governance approval proof can attach
+
+**"An encumbrance may not exceed available reserved funds for that same funding demand/fund/project context."**
+
+- cannot encumber more than reserved
+
+- cannot spend more than encumbered

@@ -45,6 +45,8 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
         raise ValueError("receipt_method required")
 
     source = payload.get("source") or "income"
+    req_id = payload.get("request_id")
+
     funding_demand_ulid = payload.get("funding_demand_ulid")
     if not funding_demand_ulid:
         raise ValueError("funding_demand_ulid required")
@@ -100,7 +102,7 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
     event_bus.emit(
         domain="finance",
         operation="income_posted",
-        request_id=journal_ulid,
+        request_id=req_id,
         actor_ulid=created_by_actor,
         target_ulid=journal_ulid,
         happened_at_utc=now_iso8601_ms(),
@@ -155,8 +157,9 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
     if not payment_method:
         raise ValueError("payment_method required")
 
-
     source = payload.get("source") or "expense"
+    request_id = payload.get("request_id")
+
     funding_demand_ulid = payload.get("funding_demand_ulid")
     if not funding_demand_ulid:
         raise ValueError("funding_demand_ulid required")
@@ -211,13 +214,16 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
     enc_ulid = payload.get("encumbrance_ulid")
     if enc_ulid:
         relieve_encumbrance(
-            encumbrance_ulid=str(enc_ulid), amount_cents=amount
+            encumbrance_ulid=str(enc_ulid),
+            amount_cents=amount,
+            actor_ulid=created_by_actor,
+            request_id=str(request_id or journal_ulid),
         )
 
     event_bus.emit(
         domain="finance",
         operation="expense_posted",
-        request_id=journal_ulid,
+        request_id=str(request_id or journal_ulid),
         actor_ulid=created_by_actor,
         target_ulid=journal_ulid,
         happened_at_utc=now_iso8601_ms(),

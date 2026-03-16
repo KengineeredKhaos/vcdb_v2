@@ -128,6 +128,7 @@ class IncomePostRequestDTO:
     payer_entity_ulid: str | None = None
     memo: str | None = None
     created_by_actor: str | None = None
+    request_id: str | None = None
 
     dry_run: bool = False
 
@@ -154,6 +155,7 @@ class ExpensePostRequestDTO:
     encumbrance_ulid: str | None = None
     memo: str | None = None
     created_by_actor: str | None = None
+    request_id: str | None = None
 
     dry_run: bool = False
 
@@ -177,6 +179,8 @@ class ReserveRequestDTO:
     project_ulid: str | None = None
     source_ref_ulid: str | None = None
     memo: str | None = None
+    actor_ulid: str | None = None
+    request_id: str | None = None
     dry_run: bool = False
 
 
@@ -193,7 +197,23 @@ class EncumbranceRequestDTO:
     source_ref_ulid: str | None = None
     memo: str | None = None
     decision_fingerprint: str | None = None
+    actor_ulid: str | None = None
+    request_id: str | None = None
     dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class EncumbranceViewDTO:
+    encumbrance_ulid: str
+    funding_demand_ulid: str
+    project_ulid: str | None
+    fund_key: str
+    amount_cents: int
+    relieved_cents: int
+    open_cents: int
+    status: str
+    decision_fingerprint: str | None
+    source_ref_ulid: str | None
 
 
 # -----------------
@@ -235,6 +255,23 @@ def _load_provider(where: str):
             message=(
                 "Finance provider missing: "
                 "app.slices.finance.services_dashboard.get_funding_demand_money_view"
+            ),
+            http_status=500,
+        ) from exc
+
+
+def _load_encumbrance_provider(where: str):
+    try:
+        mod = importlib.import_module("app.slices.finance.services_dashboard")
+        fn = getattr(mod, "get_encumbrance_view")
+        return fn
+    except Exception as exc:  # noqa: BLE001
+        raise ContractError(
+            code="provider_missing",
+            where=where,
+            message=(
+                "Finance provider missing: "
+                "app.slices.finance.services_dashboard.get_encumbrance_view"
             ),
             http_status=500,
         ) from exc
@@ -295,6 +332,27 @@ def get_funding_demand_money_view(
         raise _as_contract_error(where, exc) from exc
 
 
+def get_encumbrance(encumbrance_ulid: str) -> EncumbranceViewDTO:
+    where = "finance_v2.get_encumbrance"
+    try:
+        provider = _load_encumbrance_provider(where)
+        raw = provider(encumbrance_ulid)
+        return EncumbranceViewDTO(
+            encumbrance_ulid=str(raw["encumbrance_ulid"]),
+            funding_demand_ulid=str(raw["funding_demand_ulid"]),
+            project_ulid=raw.get("project_ulid"),
+            fund_key=str(raw["fund_key"]),
+            amount_cents=int(raw.get("amount_cents") or 0),
+            relieved_cents=int(raw.get("relieved_cents") or 0),
+            open_cents=int(raw.get("open_cents") or 0),
+            status=str(raw.get("status") or "unknown"),
+            decision_fingerprint=raw.get("decision_fingerprint"),
+            source_ref_ulid=raw.get("source_ref_ulid"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
 def post_income(req: IncomePostRequestDTO) -> PostedDTO:
     where = "finance_v2.post_income"
     try:
@@ -314,6 +372,7 @@ def post_income(req: IncomePostRequestDTO) -> PostedDTO:
                 "payer_entity_ulid": req.payer_entity_ulid,
                 "memo": req.memo,
                 "created_by_actor": req.created_by_actor,
+                "request_id": req.request_id,
             },
             dry_run=req.dry_run,
         )
@@ -346,6 +405,7 @@ def post_expense(req: ExpensePostRequestDTO) -> PostedDTO:
                 "encumbrance_ulid": req.encumbrance_ulid,
                 "memo": req.memo,
                 "created_by_actor": req.created_by_actor,
+                "request_id": req.request_id,
             },
             dry_run=req.dry_run,
         )
@@ -372,6 +432,8 @@ def reserve_funds(req: ReserveRequestDTO) -> PostedDTO:
                 "project_ulid": req.project_ulid,
                 "source_ref_ulid": req.source_ref_ulid,
                 "memo": req.memo,
+                "actor_ulid": req.actor_ulid,
+                "request_id": req.request_id,
             },
             dry_run=req.dry_run,
         )
@@ -399,6 +461,8 @@ def encumber_funds(req: EncumbranceRequestDTO) -> PostedDTO:
                 "source_ref_ulid": req.source_ref_ulid,
                 "memo": req.memo,
                 "decision_fingerprint": req.decision_fingerprint,
+                "actor_ulid": req.actor_ulid,
+                "request_id": req.request_id,
             },
             dry_run=req.dry_run,
         )
