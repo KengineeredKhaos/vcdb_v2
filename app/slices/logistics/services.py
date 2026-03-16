@@ -8,6 +8,7 @@ from pathlib import Path
 
 from sqlalchemy import and_, func, select
 
+from app.extensions import db
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 from app.lib.jsonutil import pretty_dumps

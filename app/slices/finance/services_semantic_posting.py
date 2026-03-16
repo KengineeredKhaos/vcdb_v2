@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.extensions import db, event_bus
+from app.extensions import event_bus
 from app.lib.chrono import now_iso8601_ms
 
 from .services_commitments import relieve_encumbrance
@@ -45,6 +45,9 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
         raise ValueError("receipt_method required")
 
     source = payload.get("source") or "income"
+    funding_demand_ulid = payload.get("funding_demand_ulid")
+    if not funding_demand_ulid:
+        raise ValueError("funding_demand_ulid required")
 
     fund_label = payload.get("fund_label") or str(fund_key)
     fund_restr = payload.get("fund_restriction_type") or "unrestricted"
@@ -68,6 +71,7 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
         {
             "account_code": debit_acct,
             "fund_code": str(fund_key),
+            "funding_demand_ulid": str(funding_demand_ulid),
             "project_ulid": payload.get("project_ulid"),
             "amount_cents": amount,
             "memo": memo,
@@ -75,6 +79,7 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
         {
             "account_code": credit_acct,
             "fund_code": str(fund_key),
+            "funding_demand_ulid": str(funding_demand_ulid),
             "project_ulid": payload.get("project_ulid"),
             "amount_cents": -amount,
             "memo": memo,
@@ -150,7 +155,11 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
     if not payment_method:
         raise ValueError("payment_method required")
 
+
     source = payload.get("source") or "expense"
+    funding_demand_ulid = payload.get("funding_demand_ulid")
+    if not funding_demand_ulid:
+        raise ValueError("funding_demand_ulid required")
 
     fund_label = payload.get("fund_label") or str(fund_key)
     fund_restr = payload.get("fund_restriction_type") or "unrestricted"
@@ -174,6 +183,7 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
         {
             "account_code": debit_acct,
             "fund_code": str(fund_key),
+            "funding_demand_ulid": str(funding_demand_ulid),
             "project_ulid": payload.get("project_ulid"),
             "amount_cents": amount,
             "memo": memo,
@@ -181,6 +191,7 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
         {
             "account_code": credit_acct,
             "fund_code": str(fund_key),
+            "funding_demand_ulid": str(funding_demand_ulid),
             "project_ulid": payload.get("project_ulid"),
             "amount_cents": -amount,
             "memo": memo,

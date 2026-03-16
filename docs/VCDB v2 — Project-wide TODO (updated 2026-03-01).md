@@ -225,4 +225,23 @@ Conventions:
   - reassessment: archive prior version snapshot JSON into `customer_history`
     (kind=`needs_reassessment`, schema_name=`customers.needs_snapshot`)
 
-# 
+- [ ] @TODO: Ledger hardening
+  
+  - implement EventHashConflict for duplicate/hash-chain collision handling in the Ledger provider and contract mapping. 
+  
+  - Define when to reject, when to idempotently accept, and what audit/meta fields to record.
+
+- [ ] @TODO: Ledger hardening
+  
+  - implement ProviderTemporarilyDown for transient
+    Ledger/provider outages. 
+  
+  - Add normalized contract mapping, retry/rollback policy, and operator-visible diagnostics for CLI/HTTP workflows.
+
+- [ ] @TODO: Audit resilience pass
+  
+  - review event_bus -> ledger_v2 degraded-mode behavior so transient provider failures are handled explicitly before live deployment.
+
+- [ ] @TODO: Pre-live hardening sweep
+  
+  - replace any temporary generic exception handling around Ledger/provider writes with explicit EventHashConflict and ProviderTemporarilyDown semantics once the money pipeline is complete.

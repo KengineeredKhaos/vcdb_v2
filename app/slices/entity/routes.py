@@ -9,8 +9,6 @@ from flask import (
 )
 from flask_login import login_required
 
-from app.lib.security import require_permission
-
 from . import services as svc
 from .models import EntityPerson
 

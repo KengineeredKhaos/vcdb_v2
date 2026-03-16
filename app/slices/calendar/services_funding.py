@@ -81,7 +81,7 @@ def list_projects_for_form() -> list[tuple[str, str]]:
 
 def get_spending_class_choices() -> list[tuple[str, str]]:
     tx = gov.get_finance_taxonomy()
-    vals = list(getattr(tx, "spending_class", []) or [])
+    vals = list(getattr(tx, "spending_classes", []) or [])
     return [("", "— Select —"), *[(v, v) for v in vals]]
 
 

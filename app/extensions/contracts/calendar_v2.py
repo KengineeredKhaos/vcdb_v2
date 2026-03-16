@@ -166,7 +166,7 @@ def _load_provider(where: str):
     """
     try:
         mod = importlib.import_module("app.slices.calendar.services_funding")
-        fn = getattr(mod, "get_funding_demand")
+        fn = mod.get_funding_demand
         return fn
     except Exception as exc:  # noqa: BLE001
         raise ContractError(
@@ -208,7 +208,7 @@ def list_published_funding_demands(
     where = "calendar_v2.list_published_funding_demands"
     try:
         mod = importlib.import_module("app.slices.calendar.services_funding")
-        fn = getattr(mod, "list_published_funding_demands")
+        fn = mod.list_published_funding_demands
 
         raw_rows = fn(project_ulid=project_ulid, status=status)
         out: list[FundingDemandDTO] = []

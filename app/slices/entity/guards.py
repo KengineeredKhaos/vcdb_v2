@@ -4,7 +4,7 @@ from __future__ import annotations
 from app.extensions import db
 from app.lib.ids import is_ulid_strict
 
-from .models import Entity, EntityOrg, EntityPerson
+from .models import Entity
 
 
 def _clean_ulid(entity_ulid: str | None) -> str:

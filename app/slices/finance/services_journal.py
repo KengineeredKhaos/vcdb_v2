@@ -7,21 +7,19 @@ from collections.abc import Iterable
 from sqlalchemy import select
 
 from app.extensions import db, event_bus
-from app.extensions.contracts.finance_v2 import (
-    DonationDTO,
-    ExpenseDTO,
-)
 from app.lib.chrono import now_iso8601_ms
 from app.slices.finance.models import (
     Account,
     BalanceMonthly,
+    FinanceProject,
     Fund,
     Journal,
     JournalLine,
     Period,
-    Project,
     StatMetric,
 )
+
+from .mapper import DonationDTO, ExpenseDTO
 
 # -----------------
 # Constants
@@ -374,7 +372,7 @@ def ensure_fund(*, code: str, name: str, restriction: str) -> Fund:
 
 
 def ensure_project(*, name: str) -> str:
-    p = Project(name=name, active=True)
+    p = FinanceProject(name=name, active=True)
     db.session.add(p)
     db.session.flush()
     return p.ulid
@@ -414,6 +412,8 @@ def post_journal(
           -amount_cents => credit
       - Journal must balance: sum(amount_cents) == 0
       - fund_code + account_code are *codes* (human-stable), not ULIDs.
+      - At least one line must carry funding_demand_ulid, and all lines
+        must agree on that value when provided.
     """
     if not source:
         raise ValueError("source is required")
@@ -431,6 +431,7 @@ def post_journal(
     total = 0
     acct_codes: set[str] = set()
     fund_codes: set[str] = set()
+    funding_demand_ulid: str | None = None
 
     for i, line in enumerate(lines, start=1):
         if not isinstance(line, dict):
@@ -438,6 +439,7 @@ def post_journal(
         acct = line.get("account_code")
         fund = line.get("fund_code")
         amt = line.get("amount_cents")
+        fd = line.get("funding_demand_ulid")
 
         if not acct or not isinstance(acct, str):
             raise ValueError(f"line {i}: account_code is required")
@@ -450,6 +452,21 @@ def post_journal(
             amt_i = int(amt)
         except Exception as exc:
             raise ValueError(f"line {i}: amount_cents must be int") from exc
+
+        if fd is not None:
+            if not isinstance(fd, str) or not fd.strip():
+                raise ValueError(
+                    f"line {i}: funding_demand_ulid must be a "
+                    "non-empty string when provided"
+                )
+            fd = fd.strip()
+            if funding_demand_ulid is None:
+                funding_demand_ulid = fd
+            elif funding_demand_ulid != fd:
+                raise ValueError(
+                    "all journal lines must use the same "
+                    "funding_demand_ulid"
+                )
 
         if amt_i == 0:
             raise ValueError(f"line {i}: amount_cents cannot be 0")
@@ -485,6 +502,7 @@ def post_journal(
     # Persist journal
     j = Journal(
         source=source,
+        funding_demand_ulid=funding_demand_ulid,
         external_ref_ulid=external_ref_ulid,
         currency=currency,
         period_key=period_key,
@@ -497,9 +515,21 @@ def post_journal(
     db.session.flush()  # assign j.ulid
 
     for seq, line in enumerate(lines, start=1):
+        line_fd = line.get("funding_demand_ulid")
+        if line_fd is None:
+            line_fd = funding_demand_ulid
+        else:
+            line_fd = str(line_fd).strip()
+
+        if line_fd is None:
+            line_fd = funding_demand_ulid
+        else:
+            line_fd = str(line_fd).strip()
+
         db.session.add(
             JournalLine(
                 journal_ulid=j.ulid,
+                funding_demand_ulid=line_fd,
                 seq=seq,
                 account_code=line["account_code"],
                 fund_code=line["fund_code"],
@@ -525,6 +555,7 @@ def post_journal(
             "period_key": period_key,
             "source": source,
             "external_ref_ulid": external_ref_ulid,
+            "funding_demand_ulid": funding_demand_ulid,
             "line_count": len(lines),
             "fund_codes": sorted(fund_codes),
         },

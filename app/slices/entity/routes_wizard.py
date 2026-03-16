@@ -15,7 +15,7 @@ from sqlalchemy import select
 
 from app.extensions import db
 from app.extensions.auth_ctx import current_actor_ulid
-from app.extensions.contracts import governance_v2, resources_v2, sponsors_v2
+from app.extensions.contracts import governance_v2
 from app.lib.ids import new_ulid
 from app.lib.request_ctx import ensure_request_id
 

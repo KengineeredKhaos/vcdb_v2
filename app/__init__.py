@@ -14,17 +14,15 @@ from flask_login import (
     login_user,
 )
 from jinja2 import StrictUndefined
-from sqlalchemy import inspect, text
+from sqlalchemy import text
 from werkzeug.exceptions import HTTPException
 
 from app.cli import register_cli
 from app.extensions.errors import ContractError
 from app.lib.chrono import parse_iso8601, utcnow_aware
-from app.lib.jsonutil import json
 from app.lib.logging import configure_logging
 
 from .extensions import csrf, init_extensions
-from .web import bp as web_bp
 
 
 def _bind_contracts(app: Flask) -> None:

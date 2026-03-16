@@ -16,7 +16,7 @@ from app.slices.ledger import services as ledger_svc
 # -*- coding: utf-8 -*-
 # VCDB Canon — DO NOT MODIFY WITHOUT GOVERNANCE APPROVAL
 CANON_API = "ledger-core"
-CANON_VERSION = "1.0.0"
+CANON_VERSION = "2.0.0"
 
 
 @dataclass(frozen=True)

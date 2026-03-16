@@ -112,7 +112,6 @@ def _nav(entity_ulid: str, current_step: str) -> list[dict[str, object]]:
 )
 def poc_attach(person_ulid: str):
     req = ensure_request_id()
-    actor = current_actor_ulid()
 
     from app.extensions.contracts import entity_v2
     from app.extensions.errors import ContractError

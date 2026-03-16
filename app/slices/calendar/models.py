@@ -161,7 +161,7 @@ class Project(db.Model, ULIDPK, IsoTimestamps):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    funding_demands: Mapped[list["FundingDemand"]] = relationship(
+    funding_demands: Mapped[list[FundingDemand]] = relationship(
         "FundingDemand",
         back_populates="project",
         cascade="all, delete-orphan",

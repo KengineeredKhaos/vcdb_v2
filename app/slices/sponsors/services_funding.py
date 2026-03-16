@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.extensions import db, event_bus
 from app.extensions.contracts import calendar_v2

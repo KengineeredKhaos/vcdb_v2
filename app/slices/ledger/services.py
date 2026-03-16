@@ -27,7 +27,7 @@ from .models import LedgerEvent
 # -*- coding: utf-8 -*-
 # VCDB Canon — DO NOT MODIFY WITHOUT GOVERNANCE APPROVAL
 CANON_API = "ledger-core"
-CANON_VERSION = "1.0.0"
+CANON_VERSION = "2.0.0"
 
 
 def _json_safe(obj: Any) -> Any:

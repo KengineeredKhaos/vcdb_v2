@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
-
 from app.extensions import db
-from app.slices.finance.models import Encumbrance, Fund, Reserve
+from app.slices.finance.models import Encumbrance, Reserve
 
 from .services_journal import ensure_fund
 

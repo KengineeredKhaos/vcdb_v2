@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, NotRequired, TypedDict
 
 from app.extensions.errors import ContractError
+from app.slices.finance.mapper import DonationDTO, ExpenseDTO, ReceiptDTO
 from app.slices.finance.services_commitments import (
     encumber_funds as _encumber_funds,
 )
@@ -225,7 +226,7 @@ def _load_provider(where: str):
     """
     try:
         mod = importlib.import_module("app.slices.finance.services_dashboard")
-        fn = getattr(mod, "get_funding_demand_money_view")
+        fn = mod.get_funding_demand_money_view
         return fn
     except Exception as exc:  # noqa: BLE001
         raise ContractError(
@@ -442,39 +443,6 @@ def _require_int_ge(name: str, value: Any, minval: int = 0) -> int:
 # -----------------
 
 
-class DonationDTO(TypedDict):
-    """PII-free summary of a monetary donation journaled in Finance.
-
-    Fields:
-        id:
-            ULID of the Journal entry that recorded the donation
-            (or 'DRY-RUN' for simulations).
-        sponsor_ulid:
-            ULID of the Sponsor (as known by the Sponsors slice).
-        fund_id:
-            ULID of the fin_fund row used for this donation.
-        happened_at_utc:
-            ISO-8601 UTC timestamp string when the donation was recorded
-            (as used for the Journal's period).
-        amount_cents:
-            Positive integer amount in cents.
-        flags:
-            Optional list of tags such as ['dry_run'] or policy-related
-            markers in the future.
-
-    This mirrors the object returned by
-    app.slices.finance.services_journal.log_donation(...):
-    journal ULID plus sponsor/fund/amount metadata and any flags.
-    """
-
-    id: str
-    sponsor_ulid: str
-    fund_id: str
-    happened_at_utc: str
-    amount_cents: int
-    flags: []
-
-
 class FundDTO(TypedDict):
     id: str
     name: str
@@ -513,27 +481,6 @@ class BudgetDTO(TypedDict):
     fiscal_period: str
     category: str
     amount_cents: int
-
-
-class ReceiptDTO(TypedDict):
-    id: str
-    fund_id: str
-    received_on: str
-    source: str
-    amount_cents: int
-    instrument: NotRequired[str]
-
-
-class ExpenseDTO(TypedDict):
-    id: str
-    fund_id: str
-    project_id: str
-    happened_at_utc: str
-    vendor: str
-    amount_cents: int
-    expense_type: str
-    approved_by_ulid: NotRequired[str | None]
-    flags: NotRequired[list[str]]
 
 
 class ReimbursementDTO(TypedDict):

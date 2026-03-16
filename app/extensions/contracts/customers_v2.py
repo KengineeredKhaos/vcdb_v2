@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 from app.extensions.errors import ContractError
 from app.lib.chrono import now_iso8601_ms

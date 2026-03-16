@@ -9,6 +9,7 @@ from typing import Any, Final
 from app.extensions.errors import ContractError
 from app.slices.sponsors import mapper as sp_mapper
 from app.slices.sponsors import services as sp_svc
+from app.slices.sponsors import services_funding_realization as sp_realize
 
 from ._funding_dto import FundingIntentTotalsDTO, MoneyByKeyDTO, MoneyLinksDTO
 
@@ -59,6 +60,41 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
 # -----------------
 
 
+@dataclass(frozen=True)
+class FundingRealizationRequestDTO:
+    intent_ulid: str
+    amount_cents: int
+    happened_at_utc: str
+    fund_key: str
+    income_kind: str
+    receipt_method: str
+
+    reserve_on_receive: bool = True
+    memo: str | None = None
+    actor_ulid: str | None = None
+    actor_rbac_roles: tuple[str, ...] = ()
+    actor_domain_roles: tuple[str, ...] = ()
+    request_id: str | None = None
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class FundingRealizationDTO:
+    intent_ulid: str
+    sponsor_entity_ulid: str
+    funding_demand_ulid: str
+    project_ulid: str | None
+
+    amount_cents: int
+    fund_key: str
+
+    journal_ulid: str
+    reserve_ulid: str | None
+
+    status: str
+    decision_fingerprint: str
+    flags: tuple[str, ...] = ()
+
 # -----------------
 # New Paradigm
 # -----------------
@@ -79,7 +115,7 @@ def _load_provider(where: str):
     """
     try:
         mod = importlib.import_module("app.slices.sponsors.services_funding")
-        fn = getattr(mod, "get_funding_intent_totals")
+        fn = mod.get_funding_intent_totals
         return fn
     except Exception as exc:  # noqa: BLE001
         raise ContractError(
@@ -131,6 +167,44 @@ def get_funding_intent_totals(
             links=links,
         )
     except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+
+def realize_funding_intent(
+    req: FundingRealizationRequestDTO,
+) -> FundingRealizationDTO:
+    where = "sponsors_v2.realize_funding_intent"
+    try:
+        out = sp_realize.realize_funding_intent(
+            intent_ulid=req.intent_ulid,
+            amount_cents=req.amount_cents,
+            happened_at_utc=req.happened_at_utc,
+            fund_key=req.fund_key,
+            income_kind=req.income_kind,
+            receipt_method=req.receipt_method,
+            reserve_on_receive=req.reserve_on_receive,
+            memo=req.memo,
+            actor_ulid=req.actor_ulid,
+            actor_rbac_roles=req.actor_rbac_roles,
+            actor_domain_roles=req.actor_domain_roles,
+            request_id=req.request_id,
+            dry_run=req.dry_run,
+        )
+        return FundingRealizationDTO(
+            intent_ulid=out.intent_ulid,
+            sponsor_entity_ulid=out.sponsor_entity_ulid,
+            funding_demand_ulid=out.funding_demand_ulid,
+            project_ulid=out.project_ulid,
+            amount_cents=out.amount_cents,
+            fund_key=out.fund_key,
+            journal_ulid=out.journal_ulid,
+            reserve_ulid=out.reserve_ulid,
+            status=out.status,
+            decision_fingerprint=out.decision_fingerprint,
+            flags=out.flags,
+        )
+    except Exception as exc:
         raise _as_contract_error(where, exc) from exc
 
 

@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
 import hashlib
 import json
+from dataclasses import dataclass
+from typing import Any
 
-from app.extensions.policies import load_policy_funding_decisions
-from app.extensions.policies import load_policy_finance_taxonomy
+from app.extensions.policies import (
+    load_policy_finance_taxonomy,
+    load_policy_funding_decisions,
+)
 
 
 @dataclass(frozen=True)

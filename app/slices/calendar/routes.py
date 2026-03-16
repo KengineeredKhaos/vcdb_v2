@@ -12,8 +12,8 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
-from .forms import FundingDemandForm
 from . import services_funding as funding_svc
+from .forms import FundingDemandForm
 
 bp = Blueprint(
     "calendar",

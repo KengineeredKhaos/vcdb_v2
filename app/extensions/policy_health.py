@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from app.extensions.policies import load_governance_policy
-from app.extensions.policies import load_policy_finance_taxonomy
-from app.extensions.policies import load_policy_funding_decisions
+from app.extensions.policies import (
+    load_governance_policy,
+    load_policy_finance_taxonomy,
+    load_policy_funding_decisions,
+)
 
 
 class PolicyError(RuntimeError):

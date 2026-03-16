@@ -1,13 +1,10 @@
 # app/slices/entity/services.py
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 from sqlalchemy import asc, desc
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.extensions import db, event_bus
-from app.extensions.contracts.governance_v2 import get_role_catalogs
 from app.lib.pagination import Page, paginate_sa, rewrap_page
 from app.lib.utils import (
     normalize_ein,
