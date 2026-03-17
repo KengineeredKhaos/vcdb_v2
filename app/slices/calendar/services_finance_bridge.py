@@ -76,9 +76,12 @@ def encumber_project_funds(
         raise ValueError("funding demand spending_class required")
 
     money = finance_v2.get_funding_demand_money_view(row.ulid)
-    available_reserved = _bucket_amount(
-        money.reserved_by_fund, fund_key
-    ) - _bucket_amount(money.encumbered_by_fund, fund_key)
+    ops_float = finance_v2.get_ops_float_summary(row.ulid)
+    available_reserved = (
+        _bucket_amount(money.reserved_by_fund, fund_key)
+        + _bucket_amount(ops_float.incoming_open_by_fund, fund_key)
+        - _bucket_amount(money.encumbered_by_fund, fund_key)
+    )
     if amount_cents > available_reserved:
         raise ValueError("encumbrance exceeds available reserved funds")
 
@@ -320,7 +323,8 @@ def spend_project_funds(
             "fund_key": enc.fund_key,
             "decision_fingerprint": preview.decision_fingerprint,
         },
-        changed={"fields": ["status"]} if new_status != old_status else None,    )
+        changed={"fields": ["status"]} if new_status != old_status else None,
+    )
 
     return ProjectSpendResult(
         funding_demand_ulid=row.ulid,

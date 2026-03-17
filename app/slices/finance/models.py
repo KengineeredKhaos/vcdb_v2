@@ -163,6 +163,77 @@ class Encumbrance(db.Model, ULIDPK, IsoTimestamps):
     )
 
 
+
+
+class OpsFloat(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "finance_ops_float"
+
+    action: Mapped[str] = mapped_column(
+        String(16), nullable=False, index=True
+    )  # allocate|repay|forgive
+
+    support_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, index=True
+    )  # seed|backfill|bridge
+
+    source_funding_demand_ulid: Mapped[str] = mapped_column(
+        String(26), nullable=False, index=True
+    )
+
+    source_project_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+
+    dest_funding_demand_ulid: Mapped[str] = mapped_column(
+        String(26), nullable=False, index=True
+    )
+
+    dest_project_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+
+    fund_code: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True
+    )
+
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, index=True, default="active"
+    )  # active|void
+
+    parent_ops_float_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+
+    decision_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+
+    source_ref_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+
+    memo: Mapped[str | None] = mapped_column(String(160), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("amount_cents >= 0", name="ck_ops_float_nonneg"),
+        CheckConstraint(
+            "action in ('allocate','repay','forgive')",
+            name="ck_ops_float_action",
+        ),
+        CheckConstraint(
+            "support_mode in ('seed','backfill','bridge')",
+            name="ck_ops_float_mode",
+        ),
+        CheckConstraint(
+            "status in ('active','void')",
+            name="ck_ops_float_status",
+        ),
+    )
+
+
+
 class FinanceProject(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "finance_project"
 

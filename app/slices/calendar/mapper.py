@@ -42,6 +42,35 @@ class PublishedFundingDemandListItemView:
 
 
 @dataclass(frozen=True)
+class OpsFloatAllocationResult:
+    source_funding_demand_ulid: str
+    dest_funding_demand_ulid: str
+    source_project_ulid: str | None
+    dest_project_ulid: str | None
+    fund_key: str
+    amount_cents: int
+    support_mode: str
+    ops_float_ulid: str
+    decision_fingerprint: str
+    status: str
+    flags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class OpsFloatSettlementResult:
+    parent_ops_float_ulid: str
+    ops_float_ulid: str
+    action: str
+    support_mode: str
+    source_funding_demand_ulid: str
+    source_project_ulid: str | None
+    dest_funding_demand_ulid: str
+    dest_project_ulid: str | None
+    fund_key: str
+    amount_cents: int
+    decision_fingerprint: str | None
+    flags: tuple[str, ...] = ()
+@dataclass(frozen=True)
 class ProjectEncumbranceResult:
     funding_demand_ulid: str
     project_ulid: str | None

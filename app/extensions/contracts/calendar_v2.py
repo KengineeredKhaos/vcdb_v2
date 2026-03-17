@@ -96,6 +96,65 @@ class FundingDemandDTO:
     eligible_fund_keys: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class OpsFloatAllocationRequestDTO:
+    source_funding_demand_ulid: str
+    dest_funding_demand_ulid: str
+    fund_key: str
+    amount_cents: int
+    support_mode: str
+    memo: str | None = None
+    source_ref_ulid: str | None = None
+    actor_ulid: str | None = None
+    actor_rbac_roles: tuple[str, ...] = ()
+    actor_domain_roles: tuple[str, ...] = ()
+    request_id: str | None = None
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class OpsFloatAllocationDTO:
+    source_funding_demand_ulid: str
+    dest_funding_demand_ulid: str
+    source_project_ulid: str | None
+    dest_project_ulid: str | None
+    fund_key: str
+    amount_cents: int
+    support_mode: str
+    ops_float_ulid: str
+    decision_fingerprint: str
+    status: str
+    flags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class OpsFloatSettlementRequestDTO:
+    parent_ops_float_ulid: str
+    amount_cents: int
+    memo: str | None = None
+    source_ref_ulid: str | None = None
+    actor_ulid: str | None = None
+    actor_rbac_roles: tuple[str, ...] = ()
+    actor_domain_roles: tuple[str, ...] = ()
+    request_id: str | None = None
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class OpsFloatSettlementDTO:
+    parent_ops_float_ulid: str
+    ops_float_ulid: str
+    action: str
+    support_mode: str
+    source_funding_demand_ulid: str
+    source_project_ulid: str | None
+    dest_funding_demand_ulid: str
+    dest_project_ulid: str | None
+    fund_key: str
+    amount_cents: int
+    decision_fingerprint: str | None
+    flags: tuple[str, ...] = ()
+
 
 @dataclass(frozen=True)
 class ProjectEncumbranceRequestDTO:
@@ -152,7 +211,6 @@ class ProjectSpendDTO:
     decision_fingerprint: str
     status: str
     flags: tuple[str, ...] = ()
-
 
 
 # -----------------
@@ -267,7 +325,7 @@ def encumber_project_funds(
         mod = importlib.import_module(
             "app.slices.calendar.services_finance_bridge"
         )
-        fn = getattr(mod, "encumber_project_funds")
+        fn = mod.encumber_project_funds
         out = fn(
             funding_demand_ulid=req.funding_demand_ulid,
             amount_cents=req.amount_cents,
@@ -302,7 +360,7 @@ def spend_project_funds(req: ProjectSpendRequestDTO) -> ProjectSpendDTO:
         mod = importlib.import_module(
             "app.slices.calendar.services_finance_bridge"
         )
-        fn = getattr(mod, "spend_project_funds")
+        fn = mod.spend_project_funds
         out = fn(
             encumbrance_ulid=req.encumbrance_ulid,
             amount_cents=req.amount_cents,
@@ -330,6 +388,8 @@ def spend_project_funds(req: ProjectSpendRequestDTO) -> ProjectSpendDTO:
         )
     except Exception as exc:  # noqa: BLE001
         raise _as_contract_error(where, exc) from exc
+
+
 def list_published_funding_demands(
     *,
     project_ulid: str | None = None,
@@ -357,6 +417,122 @@ def list_published_funding_demands(
                 )
             )
         return tuple(out)
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def allocate_ops_float_to_project(
+    req: OpsFloatAllocationRequestDTO,
+) -> OpsFloatAllocationDTO:
+    where = "calendar_v2.allocate_ops_float_to_project"
+    try:
+        mod = importlib.import_module(
+            "app.slices.calendar.services_ops_float"
+        )
+        fn = mod.allocate_ops_float_to_project
+        out = fn(
+            source_funding_demand_ulid=req.source_funding_demand_ulid,
+            dest_funding_demand_ulid=req.dest_funding_demand_ulid,
+            fund_key=req.fund_key,
+            amount_cents=req.amount_cents,
+            support_mode=req.support_mode,
+            memo=req.memo,
+            source_ref_ulid=req.source_ref_ulid,
+            actor_ulid=req.actor_ulid,
+            actor_rbac_roles=req.actor_rbac_roles,
+            actor_domain_roles=req.actor_domain_roles,
+            request_id=req.request_id,
+            dry_run=req.dry_run,
+        )
+        return OpsFloatAllocationDTO(
+            source_funding_demand_ulid=out.source_funding_demand_ulid,
+            dest_funding_demand_ulid=out.dest_funding_demand_ulid,
+            source_project_ulid=out.source_project_ulid,
+            dest_project_ulid=out.dest_project_ulid,
+            fund_key=out.fund_key,
+            amount_cents=out.amount_cents,
+            support_mode=out.support_mode,
+            ops_float_ulid=out.ops_float_ulid,
+            decision_fingerprint=out.decision_fingerprint,
+            status=out.status,
+            flags=out.flags,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def repay_ops_float_to_operations(
+    req: OpsFloatSettlementRequestDTO,
+) -> OpsFloatSettlementDTO:
+    where = "calendar_v2.repay_ops_float_to_operations"
+    try:
+        mod = importlib.import_module(
+            "app.slices.calendar.services_ops_float"
+        )
+        fn = getattr(mod, "repay_ops_float_to_operations")
+        out = fn(
+            parent_ops_float_ulid=req.parent_ops_float_ulid,
+            amount_cents=req.amount_cents,
+            memo=req.memo,
+            source_ref_ulid=req.source_ref_ulid,
+            actor_ulid=req.actor_ulid,
+            actor_rbac_roles=req.actor_rbac_roles,
+            actor_domain_roles=req.actor_domain_roles,
+            request_id=req.request_id,
+            dry_run=req.dry_run,
+        )
+        return OpsFloatSettlementDTO(
+            parent_ops_float_ulid=out.parent_ops_float_ulid,
+            ops_float_ulid=out.ops_float_ulid,
+            action=out.action,
+            support_mode=out.support_mode,
+            source_funding_demand_ulid=out.source_funding_demand_ulid,
+            source_project_ulid=out.source_project_ulid,
+            dest_funding_demand_ulid=out.dest_funding_demand_ulid,
+            dest_project_ulid=out.dest_project_ulid,
+            fund_key=out.fund_key,
+            amount_cents=out.amount_cents,
+            decision_fingerprint=out.decision_fingerprint,
+            flags=out.flags,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def forgive_ops_float_shortfall(
+    req: OpsFloatSettlementRequestDTO,
+) -> OpsFloatSettlementDTO:
+    where = "calendar_v2.forgive_ops_float_shortfall"
+    try:
+        mod = importlib.import_module(
+            "app.slices.calendar.services_ops_float"
+        )
+        fn = getattr(mod, "forgive_ops_float_shortfall")
+        out = fn(
+            parent_ops_float_ulid=req.parent_ops_float_ulid,
+            amount_cents=req.amount_cents,
+            memo=req.memo,
+            source_ref_ulid=req.source_ref_ulid,
+            actor_ulid=req.actor_ulid,
+            actor_rbac_roles=req.actor_rbac_roles,
+            actor_domain_roles=req.actor_domain_roles,
+            request_id=req.request_id,
+            dry_run=req.dry_run,
+        )
+        return OpsFloatSettlementDTO(
+            parent_ops_float_ulid=out.parent_ops_float_ulid,
+            ops_float_ulid=out.ops_float_ulid,
+            action=out.action,
+            support_mode=out.support_mode,
+            source_funding_demand_ulid=out.source_funding_demand_ulid,
+            source_project_ulid=out.source_project_ulid,
+            dest_funding_demand_ulid=out.dest_funding_demand_ulid,
+            dest_project_ulid=out.dest_project_ulid,
+            fund_key=out.fund_key,
+            amount_cents=out.amount_cents,
+            decision_fingerprint=out.decision_fingerprint,
+            flags=out.flags,
+        )
     except Exception as exc:  # noqa: BLE001
         raise _as_contract_error(where, exc) from exc
 

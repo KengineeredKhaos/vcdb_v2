@@ -103,6 +103,48 @@ def _normalize_req(raw_req: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _normalize_ops_float_req(raw_req: dict[str, Any]) -> dict[str, Any]:
+    action = str(raw_req.get("action") or "allocate").strip()
+    if action not in {"allocate", "repay", "forgive"}:
+        raise ValueError("action must be allocate|repay|forgive")
+
+    support_mode = str(raw_req.get("support_mode") or "").strip()
+    if support_mode not in {"seed", "backfill", "bridge"}:
+        raise ValueError("support_mode must be seed|backfill|bridge")
+
+    amount_cents = raw_req.get("amount_cents")
+    if not isinstance(amount_cents, int):
+        raise ValueError("amount_cents must be an int")
+    if amount_cents < 0:
+        raise ValueError("amount_cents must be >= 0")
+
+    fund_key = str(raw_req.get("fund_key") or "").strip()
+    if not fund_key:
+        raise ValueError("fund_key is required")
+
+    return {
+        "action": action,
+        "support_mode": support_mode,
+        "amount_cents": amount_cents,
+        "fund_key": fund_key,
+        "source_funding_demand_ulid": raw_req.get(
+            "source_funding_demand_ulid"
+        ),
+        "source_project_ulid": raw_req.get("source_project_ulid"),
+        "dest_funding_demand_ulid": raw_req.get("dest_funding_demand_ulid"),
+        "dest_project_ulid": raw_req.get("dest_project_ulid"),
+        "spending_class": raw_req.get("spending_class"),
+        "tag_any": _as_tuple_str(raw_req.get("tag_any")),
+        "dest_eligible_fund_keys": _as_tuple_str(
+            raw_req.get("dest_eligible_fund_keys")
+        ),
+        "actor_rbac_roles": _as_tuple_str(raw_req.get("actor_rbac_roles")),
+        "actor_domain_roles": _as_tuple_str(
+            raw_req.get("actor_domain_roles")
+        ),
+    }
+
+
 def _rule_ops_match(rule: dict[str, Any], op: str) -> bool:
     ops = set(_as_tuple_str(rule.get("ops")))
     return not ops or op in ops
@@ -146,25 +188,18 @@ def _deny_restrictions_hit(
 
 
 def _rule_matches(rule: dict[str, Any], req: dict[str, Any]) -> bool:
-    if not bool(rule.get("enabled", True)):
-        return False
-    if not _rule_ops_match(rule, req["op"]):
-        return False
-    if not _any_match(
-        rule.get("spending_classes_any"), req["spending_class"]
-    ):
-        return False
-    if not _any_match(rule.get("income_kinds_any"), req["income_kind"]):
-        return False
-    if not _any_match(rule.get("expense_kinds_any"), req["expense_kind"]):
-        return False
-    if not _required_tags_match(rule, req["tag_any"]):
-        return False
-    if not _required_restrictions_match(rule, req["restriction_keys"]):
-        return False
-    if _deny_restrictions_hit(rule, req["restriction_keys"]):
-        return False
-    return True
+    return (
+        bool(rule.get("enabled", True))
+        and _rule_ops_match(rule, req["op"])
+        and _any_match(
+            rule.get("spending_classes_any"), req["spending_class"]
+        )
+        and _any_match(rule.get("income_kinds_any"), req["income_kind"])
+        and _any_match(rule.get("expense_kinds_any"), req["expense_kind"])
+        and _required_tags_match(rule, req["tag_any"])
+        and _required_restrictions_match(rule, req["restriction_keys"])
+        and not _deny_restrictions_hit(rule, req["restriction_keys"])
+    )
 
 
 def _sort_funds(
@@ -310,6 +345,97 @@ def preview_funding_decision(raw_req: dict[str, Any]) -> dict[str, Any]:
         "eligible_fund_keys": eligible_fund_keys,
         "selected_fund_key": selected_fund_key,
         "required_approvals": required_approvals,
+        "reason_codes": tuple(reason_codes),
+        "matched_rule_ids": tuple(matched_rule_ids),
+        "decision_fingerprint": _fingerprint(fp_payload),
+    }
+
+
+def preview_ops_float(raw_req: dict[str, Any]) -> dict[str, Any]:
+    req = _normalize_ops_float_req(raw_req)
+    policy = load_policy_funding_decisions()
+    fund_map = _taxonomy_fund_map()
+
+    if req["fund_key"] not in fund_map:
+        raise ValueError(f"unknown fund_key: {req['fund_key']}")
+
+    allowed = True
+    reason_codes: list[str] = [
+        f"ops_float_action:{req['action']}",
+        f"ops_float_mode:{req['support_mode']}",
+    ]
+    matched_rule_ids: list[str] = []
+    required_approvals: list[str] = []
+
+    eligible = tuple(req["dest_eligible_fund_keys"])
+    if eligible and req["fund_key"] not in eligible:
+        allowed = False
+        reason_codes.append("selected_fund_not_eligible_for_destination")
+    else:
+        reason_codes.append("selected_fund_confirmed")
+
+    rules = policy.get("ops_float_rules") or {}
+    auto_allowed = set(_as_tuple_str(rules.get("auto_allowed_modes")))
+    governor_required = set(
+        _as_tuple_str(rules.get("governor_required_modes"))
+    )
+    auto_actions = set(_as_tuple_str(rules.get("auto_allowed_actions")))
+    governor_required_actions = set(
+        _as_tuple_str(rules.get("governor_required_actions"))
+    )
+    if req["action"] == "allocate":
+        eligible = tuple(req["dest_eligible_fund_keys"])
+        if eligible and req["fund_key"] not in eligible:
+            allowed = False
+            reason_codes.append("selected_fund_not_eligible_for_destination")
+        else:
+            reason_codes.append("selected_fund_confirmed")
+
+        if req["support_mode"] in auto_allowed:
+            reason_codes.append("ops_float_auto_allowed")
+
+        needs_governor = req["support_mode"] in governor_required
+        has_governor = "governor" in req["actor_domain_roles"]
+        if needs_governor and not has_governor:
+            matched_rule_ids.append(
+                f"ops_float_requires_governor:{req['support_mode']}"
+            )
+            required_approvals.append("governor")
+            reason_codes.append("ops_float_governor_required")
+        elif needs_governor:
+            matched_rule_ids.append(
+                f"ops_float_requires_governor:{req['support_mode']}"
+            )
+            reason_codes.append("ops_float_governor_present")
+    elif req["action"] == "repay":
+        if "repay" in auto_actions:
+            reason_codes.append("ops_float_repay_auto_allowed")
+    elif req["action"] == "forgive":
+        needs_governor = "forgive" in governor_required_actions
+        has_governor = "governor" in req["actor_domain_roles"]
+        if needs_governor and not has_governor:
+            matched_rule_ids.append("ops_float_forgive_requires_governor")
+            required_approvals.append("governor")
+            reason_codes.append("ops_float_governor_required")
+        elif needs_governor:
+            matched_rule_ids.append("ops_float_forgive_requires_governor")
+            reason_codes.append("ops_float_governor_present")
+  
+
+    fp_payload = {
+        "req": req,
+        "allowed": allowed,
+        "required_approvals": tuple(required_approvals),
+        "reason_codes": tuple(reason_codes),
+        "matched_rule_ids": tuple(matched_rule_ids),
+        "policy_version": int(policy.get("meta", {}).get("version") or 1),
+    }
+
+    return {
+        "allowed": allowed,
+        "eligible_fund_keys": (req["fund_key"],),
+        "selected_fund_key": req["fund_key"],
+        "required_approvals": tuple(required_approvals),
         "reason_codes": tuple(reason_codes),
         "matched_rule_ids": tuple(matched_rule_ids),
         "decision_fingerprint": _fingerprint(fp_payload),

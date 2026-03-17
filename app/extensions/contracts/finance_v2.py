@@ -14,6 +14,21 @@ from app.slices.finance.services_commitments import (
 from app.slices.finance.services_commitments import (
     reserve_funds as _reserve_funds,
 )
+from app.slices.finance.services_ops_float import (
+    allocate_ops_float as _allocate_ops_float,
+)
+from app.slices.finance.services_ops_float import (
+    forgive_ops_float as _forgive_ops_float,
+)
+from app.slices.finance.services_ops_float import (
+    get_ops_float as _get_ops_float,
+)
+from app.slices.finance.services_ops_float import (
+    get_ops_float_summary as _get_ops_float_summary,
+)
+from app.slices.finance.services_ops_float import (
+    repay_ops_float as _repay_ops_float,
+)
 from app.slices.finance.services_semantic_posting import (
     post_expense as _post_expense,
 )
@@ -203,6 +218,63 @@ class EncumbranceRequestDTO:
 
 
 @dataclass(frozen=True)
+class OpsFloatRequestDTO:
+    source_funding_demand_ulid: str
+    dest_funding_demand_ulid: str
+    fund_key: str
+    amount_cents: int
+    support_mode: str
+
+    source_project_ulid: str | None = None
+    dest_project_ulid: str | None = None
+    decision_fingerprint: str | None = None
+    source_ref_ulid: str | None = None
+    memo: str | None = None
+    actor_ulid: str | None = None
+    request_id: str | None = None
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class OpsFloatSettleRequestDTO:
+    parent_ops_float_ulid: str
+    amount_cents: int
+    source_ref_ulid: str | None = None
+    memo: str | None = None
+    actor_ulid: str | None = None
+    request_id: str | None = None
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class OpsFloatSummaryDTO:
+    funding_demand_ulid: str
+    incoming_open_cents: int
+    outgoing_open_cents: int
+    incoming_open_by_fund: tuple[MoneyByKeyDTO, ...]
+    outgoing_open_by_fund: tuple[MoneyByKeyDTO, ...]
+    ops_float_ulids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class OpsFloatViewDTO:
+    ops_float_ulid: str
+    action: str
+    support_mode: str
+    source_funding_demand_ulid: str
+    source_project_ulid: str | None
+    dest_funding_demand_ulid: str
+    dest_project_ulid: str | None
+    fund_key: str
+    amount_cents: int
+    open_cents: int
+    status: str
+    parent_ops_float_ulid: str | None
+    decision_fingerprint: str | None
+    source_ref_ulid: str | None
+
+
+@dataclass(frozen=True)
 class EncumbranceViewDTO:
     encumbrance_ulid: str
     funding_demand_ulid: str
@@ -263,7 +335,7 @@ def _load_provider(where: str):
 def _load_encumbrance_provider(where: str):
     try:
         mod = importlib.import_module("app.slices.finance.services_dashboard")
-        fn = getattr(mod, "get_encumbrance_view")
+        fn = mod.get_encumbrance_view
         return fn
     except Exception as exc:  # noqa: BLE001
         raise ContractError(
@@ -475,7 +547,128 @@ def encumber_funds(req: EncumbranceRequestDTO) -> PostedDTO:
         raise _as_contract_error(where, exc) from exc
 
 
-# -----------------
+def allocate_ops_float(req: OpsFloatRequestDTO) -> PostedDTO:
+    where = "finance_v2.allocate_ops_float"
+    try:
+        out = _allocate_ops_float(
+            {
+                "source_funding_demand_ulid": req.source_funding_demand_ulid,
+                "source_project_ulid": req.source_project_ulid,
+                "dest_funding_demand_ulid": req.dest_funding_demand_ulid,
+                "dest_project_ulid": req.dest_project_ulid,
+                "fund_key": req.fund_key,
+                "amount_cents": req.amount_cents,
+                "support_mode": req.support_mode,
+                "decision_fingerprint": req.decision_fingerprint,
+                "source_ref_ulid": req.source_ref_ulid,
+                "memo": req.memo,
+                "actor_ulid": req.actor_ulid,
+                "request_id": req.request_id,
+            },
+            dry_run=req.dry_run,
+        )
+        return PostedDTO(
+            id=str(out["id"]),
+            amount_cents=int(out["amount_cents"]),
+            flags=(str(out.get("support_mode") or ""),),
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+def repay_ops_float(req: OpsFloatSettleRequestDTO) -> PostedDTO:
+    where = "finance_v2.repay_ops_float"
+    try:
+        out = _repay_ops_float(
+            {
+                "parent_ops_float_ulid": req.parent_ops_float_ulid,
+                "amount_cents": req.amount_cents,
+                "source_ref_ulid": req.source_ref_ulid,
+                "memo": req.memo,
+                "actor_ulid": req.actor_ulid,
+                "request_id": req.request_id,
+            },
+            dry_run=req.dry_run,
+        )
+        return PostedDTO(
+            id=str(out["id"]),
+            amount_cents=int(out["amount_cents"]),
+            flags=(str(out.get("support_mode") or ""),),
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+def forgive_ops_float(req: OpsFloatSettleRequestDTO) -> PostedDTO:
+    where = "finance_v2.forgive_ops_float"
+    try:
+        out = _forgive_ops_float(
+            {
+                "parent_ops_float_ulid": req.parent_ops_float_ulid,
+                "amount_cents": req.amount_cents,
+                "source_ref_ulid": req.source_ref_ulid,
+                "memo": req.memo,
+                "actor_ulid": req.actor_ulid,
+                "request_id": req.request_id,
+            },
+            dry_run=req.dry_run,
+        )
+        return PostedDTO(
+            id=str(out["id"]),
+            amount_cents=int(out["amount_cents"]),
+            flags=(str(out.get("support_mode") or ""),),
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+def get_ops_float_summary(
+    funding_demand_ulid: str,
+) -> OpsFloatSummaryDTO:
+    where = "finance_v2.get_ops_float_summary"
+    try:
+        raw = _get_ops_float_summary(funding_demand_ulid)
+        return OpsFloatSummaryDTO(
+            funding_demand_ulid=str(raw["funding_demand_ulid"]),
+            incoming_open_cents=int(raw["incoming_open_cents"]),
+            outgoing_open_cents=int(raw["outgoing_open_cents"]),
+            incoming_open_by_fund=_to_money_by_key(
+                raw.get("incoming_open_by_fund")
+            ),
+            outgoing_open_by_fund=_to_money_by_key(
+                raw.get("outgoing_open_by_fund")
+            ),
+            ops_float_ulids=tuple(raw.get("ops_float_ulids") or ()),
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+
+def get_ops_float(ops_float_ulid: str) -> OpsFloatViewDTO:
+    where = "finance_v2.get_ops_float"
+    try:
+        raw = _get_ops_float(ops_float_ulid)
+        return OpsFloatViewDTO(
+            ops_float_ulid=str(raw["ops_float_ulid"]),
+            action=str(raw["action"]),
+            support_mode=str(raw["support_mode"]),
+            source_funding_demand_ulid=str(
+                raw["source_funding_demand_ulid"]
+            ),
+            source_project_ulid=raw.get("source_project_ulid"),
+            dest_funding_demand_ulid=str(raw["dest_funding_demand_ulid"]),
+            dest_project_ulid=raw.get("dest_project_ulid"),
+            fund_key=str(raw["fund_key"]),
+            amount_cents=int(raw["amount_cents"]),
+            open_cents=int(raw["open_cents"]),
+            status=str(raw["status"]),
+            parent_ops_float_ulid=raw.get("parent_ops_float_ulid"),
+            decision_fingerprint=raw.get("decision_fingerprint"),
+            source_ref_ulid=raw.get("source_ref_ulid"),
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc# -----------------
 # Old Paradigm
 # below this line
 # -----------------

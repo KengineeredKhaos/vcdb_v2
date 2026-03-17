@@ -346,12 +346,11 @@ def create_project_funding_plan(
     label = (data.get("label") or "unnamed").strip()
 
     expected_amount_cents = data.get("expected_amount_cents")
-    if expected_amount_cents is not None:
-        if (
-            not isinstance(expected_amount_cents, int)
-            or expected_amount_cents < 0
-        ):
-            raise ValueError("expected_amount_cents must be int >= 0 or None")
+    if expected_amount_cents is not None and (
+        not isinstance(expected_amount_cents, int)
+        or expected_amount_cents < 0
+    ):
+        raise ValueError("expected_amount_cents must be int >= 0 or None")
 
     fp = ProjectFundingPlan(
         project_ulid=project_ulid,

@@ -45,7 +45,7 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
         raise ValueError("receipt_method required")
 
     source = payload.get("source") or "income"
-    req_id = payload.get("request_id")
+    request_id = payload.get("request_id")
 
     funding_demand_ulid = payload.get("funding_demand_ulid")
     if not funding_demand_ulid:
@@ -102,7 +102,7 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
     event_bus.emit(
         domain="finance",
         operation="income_posted",
-        request_id=req_id,
+        request_id=str(request_id or journal_ulid),
         actor_ulid=created_by_actor,
         target_ulid=journal_ulid,
         happened_at_utc=now_iso8601_ms(),

@@ -2,6 +2,43 @@ from __future__ import annotations
 
 from typing import Final
 
+# -----------------
+# Funding demand &
+# OpsFloat taxonomy
+# -----------------
+
+FUNDING_DEMAND_STATUSES: Final[tuple[str, ...]] = (
+    "draft",
+    "published",
+    "funding_in_progress",
+    "funded",
+    "executing",
+    "closed",
+)
+
+PROJECT_FUNDING_SOURCE_KINDS: Final[tuple[str, ...]] = (
+    "operations_seed",
+    "operations_backfill",
+    "operations_bridge",
+    "sponsor_cash",
+    "grant_cash",
+    "grant_reimbursement",
+    "in_kind",
+)
+
+OPS_FLOAT_SUPPORT_MODES: Final[tuple[str, ...]] = (
+    "seed",
+    "backfill",
+    "bridge",
+)
+
+OPS_FLOAT_ACTIONS: Final[tuple[str, ...]] = (
+    "allocate",
+    "repay",
+    "forgive",
+)
+
+
 # Calendar/Operations taxonomy (slice-local).
 # This used to live in Governance as policy_operations.json.
 

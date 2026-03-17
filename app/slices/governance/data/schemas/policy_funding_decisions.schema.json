@@ -8,6 +8,7 @@
     "meta",
     "approval_thresholds",
     "intent_counting",
+    "ops_float_rules",
     "eligibility_rules",
     "approval_rules",
     "preference_order"
@@ -106,6 +107,50 @@
               "donation",
               "pass_through"
             ]
+          }
+        }
+      }
+    },
+    "ops_float_rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "auto_allowed_modes",
+        "governor_required_modes",
+        "auto_allowed_actions",
+        "governor_required_actions"
+      ],
+      "properties": {
+        "auto_allowed_modes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["seed", "backfill", "bridge"]
+          }
+        },
+        "governor_required_modes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["seed", "backfill", "bridge"]
+          }
+        },
+        "auto_allowed_actions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["allocate", "repay", "forgive"]
+          }
+        },
+        "governor_required_actions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["allocate", "repay", "forgive"]
           }
         }
       }

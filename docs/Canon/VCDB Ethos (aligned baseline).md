@@ -664,3 +664,95 @@ That buys you a few important things:
 - cannot encumber more than reserved
 
 - cannot spend more than encumbered
+
+## The big picture in one sentence
+
+**Governance is not choosing journal accounts. It is answering, “Given this proposed action, these semantics, this amount, and this actor, what funds are allowed, what approvals are required, and what proof string should follow the action downstream?”**
+
+## What I’d pin in plain English
+
+### Canon rule
+
+A Project remains the authoritative purpose anchor for all Project-related funding, encumbrance, and spend. Operations may seed, backfill, or bridge a Project only through explicit support/allocation movements that are separately journaled and auditable.
+
+### Allowed Operations support modes
+
+- **Seed**: Operations provides initial working funds to start an eligible Project.
+
+- **Shortfall backfill**: Operations covers a verified gap in Project funding.
+
+- **Reimbursement bridge**: Operations fronts cash for a reimbursement-based Project and is replenished later when reimbursement is received.
+
+### Required invariants
+
+- Project keeps its own `funding_demand_ulid`
+
+- spend still requires Project encumbrance
+
+- Operations support is never implicit
+
+- reimbursement to Operations is explicit, not assumed
+
+- Ledger records both sides of the support story
+
+Operations Support to Projects — Canon
+
+Project is always the authoritative purpose anchor for any Project-related
+funding, reserve, encumbrance, spend, reimbursement, and closeout. Operations
+may support a Project only through explicit, auditable support allocations tied
+to that Project’s `funding_demand_ulid` and `project_ulid`. Operations is never
+the hidden owner of Project spending and never acts as a universal slush fund.
+
+Operations support exists in exactly three modes:
+
+1) `ops-seed` — initial authorized funding placed into a Project;
+2) `ops-backfill` — shortfall coverage for an underfunded Project;
+3) `ops-bridge` — temporary fronting of funds for a reimbursement-backed
+   Project.
+
+Authority model:
+
+- `ops-seed` requires Domain role `governor` authority and must trace back to a
+  documented Board motion decision.
+- `ops-backfill` requires Domain role `governor` authority and must trace back
+  to a documented Board motion decision.
+- `ops-bridge` is pre-authorized by the Board’s prior approval of the
+  reimbursement-backed Project / grant solicitation and does not require an
+  additional Governor decision for each bridge movement.
+
+Repayment / replenishment rule:
+Repayment to Operations is always expected for `ops-bridge` and is expected for
+`ops-seed` / `ops-backfill` unless explicitly forgiven by a Domain role
+`governor` override at Project closeout. Forgiveness of any remaining Project
+shortfall must be explicit, auditable, and Ledger-recorded.
+
+State / workflow rule:
+Publication of a Project or Funding Demand does not itself mean the Project is
+funded. A Project becomes funded only when a real receipt, reserve, or explicit
+Operations support allocation is posted. For reimbursement-backed Projects,
+publication may trigger an automatic `ops-bridge` allocation when policy says
+that bridge support is allowed, but the funded state must still reflect the
+posted support fact rather than publication alone.
+
+Ledger / audit rule:
+Ledger event names for Operations support must make the temporary/support nature
+obvious in both directions (out of Operations and back into Operations), using
+semantic names such as `ops-seed`, `ops-backfill`, and `ops-bridge`. All such
+movements must remain traceable to the destination Project’s
+`funding_demand_ulid` and `project_ulid`. Any other downstream transactions
+should continue to reference the Project as the primary purpose anchor.
+
+Planning rule:
+Operations support is a planned funding source, not an invisible side effect.
+Where applicable, Project funding plans should identify expected Operations
+support explicitly (seed, backfill, or bridge) alongside sponsor cash, grant
+cash, reimbursement, and in-kind support.
+
+Umbrella / Operations demand rule:
+General mission-support donations that are local-serving and veteran-serving,
+and are not meant for a discrete Project, should be linked to an annual
+Operations umbrella Funding Demand under the standing Operations Project. Atypical
+or civilian-directed work must be represented as a discrete Project with its own
+Funding Demand and explicit constraints.
+
+Petty cash is explicitly out of scope for OpsFloat and out of scope for the core financial pipeline. OpsFloat must never be used to represent till cash, cash drawer float, petty cash reconciliation, or hand-cash custody.

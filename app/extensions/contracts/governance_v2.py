@@ -49,10 +49,13 @@ from app.slices.governance.services_finance_taxonomy import (
 from app.slices.governance.services_finance_taxonomy import (
     validate_semantic_keys as _validate_semantic_keys,
 )
+from app.slices.governance.services_funding_decisions import (
+    preview_funding_decision as svc_preview_funding_decision,
+)
 
 # Governance slice service (pure evaluator; no DB)
 from app.slices.governance.services_funding_decisions import (
-    preview_funding_decision as svc_preview_funding_decision,
+    preview_ops_float as svc_preview_ops_float,
 )
 
 # bind/expose to live module
@@ -238,6 +241,23 @@ class FundingDecisionRequestDTO:
     selected_fund_key: str | None = None
 
     # Actor roles for authority checks
+    actor_rbac_roles: tuple[str, ...] = ()
+    actor_domain_roles: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class OpsFloatDecisionRequestDTO:
+    support_mode: str
+    amount_cents: int
+    fund_key: str
+    source_funding_demand_ulid: str
+    source_project_ulid: str | None
+    dest_funding_demand_ulid: str
+    dest_project_ulid: str | None
+    action: str = "allocate"
+    spending_class: str | None = None
+    tag_any: tuple[str, ...] = ()
+    dest_eligible_fund_keys: tuple[str, ...] = ()
     actor_rbac_roles: tuple[str, ...] = ()
     actor_domain_roles: tuple[str, ...] = ()
 
@@ -1620,6 +1640,42 @@ def evaluate_donation(
             reporting_tags=list(classification.reporting_tags),
             restricted_project_type_keys=list(
                 classification.restricted_project_type_keys
+            ),
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+def preview_ops_float(
+    req: OpsFloatDecisionRequestDTO,
+) -> FundingDecisionDTO:
+    where = "governance_v2.preview_ops_float"
+    try:
+        raw_req = {
+            "action": req.action,
+            "support_mode": req.support_mode,
+            "amount_cents": req.amount_cents,
+            "fund_key": req.fund_key,
+            "source_funding_demand_ulid": req.source_funding_demand_ulid,
+            "source_project_ulid": req.source_project_ulid,
+            "dest_funding_demand_ulid": req.dest_funding_demand_ulid,
+            "dest_project_ulid": req.dest_project_ulid,
+            "spending_class": req.spending_class,
+            "tag_any": req.tag_any,
+            "dest_eligible_fund_keys": req.dest_eligible_fund_keys,
+            "actor_rbac_roles": req.actor_rbac_roles,
+            "actor_domain_roles": req.actor_domain_roles,
+        }
+        raw_out = svc_preview_ops_float(raw_req)
+        return FundingDecisionDTO(
+            allowed=bool(raw_out["allowed"]),
+            eligible_fund_keys=tuple(raw_out.get("eligible_fund_keys") or ()),
+            selected_fund_key=raw_out.get("selected_fund_key"),
+            required_approvals=tuple(raw_out.get("required_approvals") or ()),
+            reason_codes=tuple(raw_out.get("reason_codes") or ()),
+            matched_rule_ids=tuple(raw_out.get("matched_rule_ids") or ()),
+            decision_fingerprint=str(
+                raw_out.get("decision_fingerprint") or ""
             ),
         )
     except Exception as exc:

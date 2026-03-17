@@ -16,15 +16,9 @@ from .mapper import (
     funding_demand_to_view,
 )
 from .models import FundingDemand, Project
+from .taxonomy import FUNDING_DEMAND_STATUSES
 
-_ALLOWED_STATUS = {
-    "draft",
-    "published",
-    "funding_in_progress",
-    "funded",
-    "executing",
-    "closed",
-}
+_ALLOWED_STATUS = set(FUNDING_DEMAND_STATUSES)
 
 
 def _normalize_tags(raw: str | None) -> list[str]:

@@ -20,6 +20,12 @@
     "count_statuses": ["committed", "fulfilled"],
     "count_intent_kinds": ["pledge", "donation", "pass_through"]
   },
+  "ops_float_rules": {
+    "auto_allowed_modes": ["bridge"],
+    "governor_required_modes": ["seed", "backfill"],
+    "auto_allowed_actions": ["repay"],
+    "governor_required_actions": ["forgive"]
+  },
   "eligibility_rules": [
     {
       "id": "spend_basic_needs_welcome_home",
