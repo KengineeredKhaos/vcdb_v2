@@ -1,0 +1,237 @@
+{
+  "meta": {
+    "description": "Funding source behavior, obligations, and closeout rules for project support before Finance records money movement.",
+    "effective_on": "2026-03-16",
+    "notes": [
+      "Restriction keys live in policy_finance_taxonomy.json.",
+      "Approval thresholds live in policy_finance_controls.json.",
+      "Fund eligibility/preference lives in policy_finance_selectors.json.",
+      "Repayment to Operations is distinct from returning unused sponsor or grant funds."
+    ],
+    "policy_key": "funding_source_controls",
+    "schema_version": 1,
+    "status": "draft",
+    "title": "Funding Source Controls",
+    "version": 1
+  },
+  "source_kinds": {
+    "cash_support": {
+      "label": "Cash support"
+    },
+    "reimbursement_support": {
+      "label": "Reimbursement support"
+    },
+    "in_kind_support": {
+      "label": "In-kind support"
+    },
+    "operations_support": {
+      "label": "Operations support"
+    }
+  },
+  "support_modes": {
+    "direct_cash": {
+      "label": "Direct cash"
+    },
+    "restricted_grant_cash": {
+      "label": "Restricted grant cash"
+    },
+    "reimbursement_promise": {
+      "label": "Reimbursement promise"
+    },
+    "in_kind_offset": {
+      "label": "In-kind offset"
+    },
+    "ops_seed": {
+      "label": "Operations seed"
+    },
+    "ops_backfill": {
+      "label": "Operations backfill"
+    },
+    "ops_bridge": {
+      "label": "Operations bridge"
+    }
+  },
+  "approval_postures": {
+    "none": {
+      "label": "No special posture"
+    },
+    "treasurer_review_required": {
+      "label": "Treasurer review required"
+    },
+    "board_motion_required": {
+      "label": "Board motion / governor authority required"
+    },
+    "preapproved_if_planned": {
+      "label": "Preapproved if declared in Funding Plan"
+    },
+    "exception_only": {
+      "label": "Allowed only as an exception"
+    }
+  },
+  "source_profiles": {
+    "mission_local_veterans_cash": {
+      "label": "Mission support donation for local veterans",
+      "source_profile_key": "mission_local_veterans_cash",
+      "source_kind": "cash_support",
+      "support_mode": "direct_cash",
+      "default_restriction_keys": [
+        "local_only",
+        "vet_only"
+      ],
+      "approval_posture": "none",
+      "reporting_required": false,
+      "return_unused_rule": "retain_for_same_restriction_scope",
+      "reimbursement_expected": false,
+      "ops_support_posture_default": "exception_only",
+      "bridge_allowed": false,
+      "repayment_expectation": "none",
+      "forgiveness_rule": "not_applicable",
+      "auto_ops_bridge_on_publish": false,
+      "prohibited_spending_classes_any": [],
+      "prohibited_expense_kinds_any": [],
+      "evidence_requirements_any": []
+    },
+    "welcome_home_reimbursement_bridgeable": {
+      "label": "Welcome Home reimbursement-backed support",
+      "source_profile_key": "welcome_home_reimbursement_bridgeable",
+      "source_kind": "reimbursement_support",
+      "support_mode": "reimbursement_promise",
+      "default_restriction_keys": [
+        "project_bound"
+      ],
+      "approval_posture": "preapproved_if_planned",
+      "reporting_required": true,
+      "reporting_frequency": "end_of_term",
+      "return_unused_rule": "not_applicable",
+      "reimbursement_expected": true,
+      "reimbursement_window_days": 45,
+      "ops_support_posture_default": "planned",
+      "bridge_allowed": true,
+      "allowed_ops_support_modes": [
+        "ops_bridge"
+      ],
+      "repayment_expectation": "required",
+      "forgiveness_rule": "governor_override_only",
+      "auto_ops_bridge_on_publish": true,
+      "original_receipts_required": true,
+      "prohibited_spending_classes_any": [],
+      "prohibited_expense_kinds_any": [],
+      "evidence_requirements_any": [
+        "original_receipts",
+        "expense_rollup"
+      ]
+    },
+    "restricted_project_grant_return_unused": {
+      "label": "Restricted project grant with return-unused and reporting",
+      "source_profile_key": "restricted_project_grant_return_unused",
+      "source_kind": "cash_support",
+      "support_mode": "restricted_grant_cash",
+      "default_restriction_keys": [
+        "project_bound"
+      ],
+      "approval_posture": "treasurer_review_required",
+      "reporting_required": true,
+      "reporting_frequency": "quarterly",
+      "return_unused_rule": "return_to_source",
+      "reimbursement_expected": false,
+      "ops_support_posture_default": "exception_only",
+      "bridge_allowed": false,
+      "repayment_expectation": "none",
+      "forgiveness_rule": "not_applicable",
+      "auto_ops_bridge_on_publish": false,
+      "prohibited_spending_classes_any": [],
+      "prohibited_expense_kinds_any": [
+        "event_food",
+        "bank_merchant_fees"
+      ],
+      "evidence_requirements_any": [
+        "expense_rollup",
+        "closeout_narrative"
+      ]
+    },
+    "inkind_project_offset": {
+      "label": "In-kind offset against restricted project",
+      "source_profile_key": "inkind_project_offset",
+      "source_kind": "in_kind_support",
+      "support_mode": "in_kind_offset",
+      "default_restriction_keys": [
+        "project_bound"
+      ],
+      "approval_posture": "none",
+      "reporting_required": true,
+      "reporting_frequency": "end_of_term",
+      "return_unused_rule": "not_applicable",
+      "reimbursement_expected": false,
+      "ops_support_posture_default": "none",
+      "bridge_allowed": false,
+      "repayment_expectation": "none",
+      "forgiveness_rule": "not_applicable",
+      "auto_ops_bridge_on_publish": false,
+      "prohibited_spending_classes_any": [],
+      "prohibited_expense_kinds_any": [],
+      "evidence_requirements_any": [
+        "inkind_valuation"
+      ]
+    },
+    "ops_seed_board_motion": {
+      "label": "Operations seed support",
+      "source_profile_key": "ops_seed_board_motion",
+      "source_kind": "operations_support",
+      "support_mode": "ops_seed",
+      "default_restriction_keys": [],
+      "approval_posture": "board_motion_required",
+      "reporting_required": false,
+      "return_unused_rule": "return_to_operations",
+      "reimbursement_expected": false,
+      "ops_support_posture_default": "planned",
+      "bridge_allowed": false,
+      "repayment_expectation": "expected",
+      "forgiveness_rule": "governor_override_only",
+      "auto_ops_bridge_on_publish": false,
+      "prohibited_spending_classes_any": [],
+      "prohibited_expense_kinds_any": [],
+      "evidence_requirements_any": []
+    },
+    "ops_backfill_board_motion": {
+      "label": "Operations backfill support",
+      "source_profile_key": "ops_backfill_board_motion",
+      "source_kind": "operations_support",
+      "support_mode": "ops_backfill",
+      "default_restriction_keys": [],
+      "approval_posture": "board_motion_required",
+      "reporting_required": false,
+      "return_unused_rule": "return_to_operations",
+      "reimbursement_expected": false,
+      "ops_support_posture_default": "exception_only",
+      "bridge_allowed": false,
+      "repayment_expectation": "expected",
+      "forgiveness_rule": "governor_override_only",
+      "auto_ops_bridge_on_publish": false,
+      "prohibited_spending_classes_any": [],
+      "prohibited_expense_kinds_any": [],
+      "evidence_requirements_any": []
+    },
+    "ops_bridge_preapproved": {
+      "label": "Operations bridge support",
+      "source_profile_key": "ops_bridge_preapproved",
+      "source_kind": "operations_support",
+      "support_mode": "ops_bridge",
+      "default_restriction_keys": [],
+      "approval_posture": "preapproved_if_planned",
+      "reporting_required": false,
+      "return_unused_rule": "repay_to_operations",
+      "reimbursement_expected": true,
+      "ops_support_posture_default": "planned",
+      "bridge_allowed": true,
+      "allowed_ops_support_modes": [
+        "ops_bridge"
+      ],
+      "repayment_expectation": "required",
+      "forgiveness_rule": "governor_override_only",
+      "auto_ops_bridge_on_publish": true,
+      "prohibited_spending_classes_any": [],
+      "prohibited_expense_kinds_any": [],
+      "evidence_requirements_any": []
+    }
+  }
+}

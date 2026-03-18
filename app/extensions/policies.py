@@ -282,6 +282,10 @@ def load_policy_finance_selectors() -> dict:
     return load_governance_policy("finance_selectors")
 
 
+def load_policy_funding_source_controls() -> dict:
+    return load_governance_policy("funding_source_controls")
+
+
 def load_policy_finance_taxonomy() -> dict:
     return load_governance_policy("finance_taxonomy")
 

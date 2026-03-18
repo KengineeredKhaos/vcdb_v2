@@ -1,43 +1,18 @@
 {
   "meta": {
-    "description": "Staff spending caps, approval thresholds, and budget periods.",
-    "effective_on": "2026-03-13",
+    "description": "Approval thresholds, approval posture handling, and budget period/cap controls.",
+    "effective_on": "2026-03-16",
     "notes": [
-      "This policy governs approval thresholds and budget-period metadata.",
-      "Use semantic fund keys, not table or column names."
+      "Uses semantic posture keys from policy_funding_source_controls.json.",
+      "Does not define fund-selection behavior."
     ],
     "policy_key": "finance_controls",
     "schema_version": 1,
     "status": "draft",
     "title": "Finance Controls",
-    "version": 2
+    "version": 1
   },
   "staff_cap_cents": 20000,
-  "approval_rules": [
-    {
-      "rule_id": "appr-100-staff-cap",
-      "priority": 100,
-      "match": {
-        "op": ["encumber", "spend"],
-        "amount_cents_gt": 20000
-      },
-      "required_approvals": ["treasurer"],
-      "reason_code": "over_staff_cap"
-    },
-    {
-      "rule_id": "appr-120-restricted-funds-need-approver",
-      "priority": 120,
-      "match": {
-        "op": ["encumber", "spend"],
-        "selected_fund_keys_any": [
-          "general_restricted",
-          "welcome_home_reimbursement"
-        ]
-      },
-      "required_approvals": ["treasurer"],
-      "reason_code": "restricted_fund_requires_approval"
-    }
-  ],
   "budget_periods": [
     {
       "period_key": "annual",
@@ -46,5 +21,78 @@
       "start_day": 1
     }
   ],
-  "budget_caps": []
+  "budget_caps": [],
+  "approval_rules": [
+    {
+      "rule_id": "appr-100-over-staff-cap",
+      "priority": 100,
+      "match": {
+        "op": [
+          "encumber",
+          "spend"
+        ],
+        "amount_cents_gt": 20000
+      },
+      "required_approvals": [
+        "treasurer"
+      ],
+      "reason_code": "over_staff_cap"
+    },
+    {
+      "rule_id": "appr-120-posture-treasurer-review",
+      "priority": 120,
+      "match": {
+        "op": [
+          "reserve",
+          "encumber",
+          "spend",
+          "ops_allocate"
+        ],
+        "approval_posture_any": [
+          "treasurer_review_required"
+        ]
+      },
+      "required_approvals": [
+        "treasurer"
+      ],
+      "reason_code": "source_requires_treasurer_review"
+    },
+    {
+      "rule_id": "appr-140-posture-board-motion",
+      "priority": 140,
+      "match": {
+        "op": [
+          "ops_allocate",
+          "ops_forgive"
+        ],
+        "approval_posture_any": [
+          "board_motion_required"
+        ]
+      },
+      "required_approvals": [
+        "governor"
+      ],
+      "reason_code": "board_motion_required"
+    },
+    {
+      "rule_id": "appr-160-exception-only-needs-governor",
+      "priority": 160,
+      "match": {
+        "op": [
+          "reserve",
+          "encumber",
+          "spend",
+          "ops_allocate"
+        ],
+        "approval_posture_any": [
+          "exception_only"
+        ],
+        "ops_support_planned": false
+      },
+      "required_approvals": [
+        "governor"
+      ],
+      "reason_code": "exceptional_support_requires_governor"
+    }
+  ]
 }

@@ -1,0 +1,301 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vcdb/policy_funding_source_controls.schema.json",
+  "title": "Funding Source Controls Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "meta",
+    "source_kinds",
+    "support_modes",
+    "approval_postures",
+    "source_profiles"
+  ],
+  "properties": {
+    "meta": {
+      "$ref": "#/$defs/meta_funding_source_controls"
+    },
+    "source_kinds": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/semantic_key"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/labeled_def"
+      }
+    },
+    "support_modes": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/semantic_key"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/labeled_def"
+      }
+    },
+    "approval_postures": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/semantic_key"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/labeled_def"
+      }
+    },
+    "source_profiles": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/semantic_key"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/source_profile_def"
+      }
+    }
+  },
+  "$defs": {
+    "semantic_key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "meta_base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "effective_on",
+        "notes",
+        "policy_key",
+        "schema_version",
+        "status",
+        "title",
+        "version"
+      ],
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "effective_on": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "policy_key": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "active",
+            "deprecated"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "meta_funding_source_controls": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/meta_base"
+        },
+        {
+          "properties": {
+            "policy_key": {
+              "const": "funding_source_controls"
+            }
+          }
+        }
+      ]
+    },
+    "labeled_def": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "reporting_frequency": {
+      "type": "string",
+      "enum": [
+        "monthly",
+        "quarterly",
+        "semiannual",
+        "annual",
+        "end_of_term"
+      ]
+    },
+    "ops_support_posture": {
+      "type": "string",
+      "enum": [
+        "none",
+        "planned",
+        "exception_only"
+      ]
+    },
+    "return_unused_rule": {
+      "type": "string",
+      "enum": [
+        "not_applicable",
+        "retain_for_same_restriction_scope",
+        "return_to_source",
+        "return_to_operations",
+        "repay_to_operations"
+      ]
+    },
+    "repayment_expectation": {
+      "type": "string",
+      "enum": [
+        "none",
+        "expected",
+        "required"
+      ]
+    },
+    "forgiveness_rule": {
+      "type": "string",
+      "enum": [
+        "not_applicable",
+        "governor_override_only"
+      ]
+    },
+    "evidence_requirement": {
+      "type": "string",
+      "enum": [
+        "original_receipts",
+        "expense_rollup",
+        "inkind_valuation",
+        "closeout_narrative"
+      ]
+    },
+    "source_profile_def": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "source_profile_key",
+        "source_kind",
+        "support_mode",
+        "default_restriction_keys",
+        "approval_posture",
+        "reporting_required",
+        "return_unused_rule",
+        "reimbursement_expected",
+        "ops_support_posture_default",
+        "bridge_allowed",
+        "repayment_expectation",
+        "forgiveness_rule",
+        "auto_ops_bridge_on_publish",
+        "prohibited_expense_kinds_any"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_profile_key": {
+          "$ref": "#/$defs/semantic_key"
+        },
+        "source_kind": {
+          "$ref": "#/$defs/semantic_key"
+        },
+        "support_mode": {
+          "$ref": "#/$defs/semantic_key"
+        },
+        "default_restriction_keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semantic_key"
+          },
+          "uniqueItems": true
+        },
+        "approval_posture": {
+          "$ref": "#/$defs/semantic_key"
+        },
+        "reporting_required": {
+          "type": "boolean"
+        },
+        "reporting_frequency": {
+          "$ref": "#/$defs/reporting_frequency"
+        },
+        "return_unused_rule": {
+          "$ref": "#/$defs/return_unused_rule"
+        },
+        "reimbursement_expected": {
+          "type": "boolean"
+        },
+        "reimbursement_window_days": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ops_support_posture_default": {
+          "$ref": "#/$defs/ops_support_posture"
+        },
+        "bridge_allowed": {
+          "type": "boolean"
+        },
+        "allowed_ops_support_modes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semantic_key"
+          },
+          "uniqueItems": true
+        },
+        "repayment_expectation": {
+          "$ref": "#/$defs/repayment_expectation"
+        },
+        "forgiveness_rule": {
+          "$ref": "#/$defs/forgiveness_rule"
+        },
+        "auto_ops_bridge_on_publish": {
+          "type": "boolean"
+        },
+        "original_receipts_required": {
+          "type": "boolean"
+        },
+        "prohibited_spending_classes_any": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semantic_key"
+          },
+          "uniqueItems": true
+        },
+        "prohibited_expense_kinds_any": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semantic_key"
+          },
+          "uniqueItems": true
+        },
+        "evidence_requirements_any": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence_requirement"
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

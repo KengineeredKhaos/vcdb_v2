@@ -28,9 +28,7 @@
     {
       "edit_cadence_hint": "rare",
       "filename": "policy_governance_index.json",
-      "notes": [
-        "Manifest for Policy Catalog v2.0."
-      ],
+      "notes": [ "Manifest for Policy Catalog v2.0." ],
       "owner_role_hint": "governor",
       "policy_key": "governance_index",
       "schema_filename": "schemas/policy_governance_index.schema.json"
@@ -50,6 +48,22 @@
       "owner_role_hint": "governor",
       "policy_key": "finance_controls",
       "schema_filename": "schemas/policy_finance_controls.schema.json"
+    },
+    {
+      "edit_cadence_hint": "rare",
+      "filename": "policy_finance_selectors.json",
+      "notes": [],
+      "owner_role_hint": "governor",
+      "policy_key": "finance_selectors",
+      "schema_filename": "schemas/policy_finance_selectors.schema.json"
+    },
+    {
+      "edit_cadence_hint": "rare",
+      "filename": "policy_funding_source_controls.json",
+      "notes": [],
+      "owner_role_hint": "governor",
+      "policy_key": "funding_source_controls",
+      "schema_filename": "schemas/policy_funding_source_controls.schema.json"
     },
     {
       "edit_cadence_hint": "rare",

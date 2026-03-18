@@ -7,12 +7,51 @@
   "required": [
     "meta",
     "staff_cap_cents",
-    "approval_rules",
     "budget_periods",
-    "budget_caps"
+    "budget_caps",
+    "approval_rules"
   ],
   "properties": {
-    "meta": {
+    "meta": { "$ref": "#/$defs/meta_finance_controls" },
+    "staff_cap_cents": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "budget_periods": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/budget_period" }
+    },
+    "budget_caps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/budget_cap" }
+    },
+    "approval_rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/approval_rule" }
+    }
+  },
+  "$defs": {
+    "semantic_key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "role_key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "op_key": {
+      "type": "string",
+      "enum": [
+        "receive",
+        "reserve",
+        "encumber",
+        "spend",
+        "ops_allocate",
+        "ops_repay",
+        "ops_forgive"
+      ]
+    },
+    "meta_base": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -35,10 +74,7 @@
           "type": "array",
           "items": { "type": "string" }
         },
-        "policy_key": {
-          "type": "string",
-          "const": "finance_controls"
-        },
+        "policy_key": { "type": "string" },
         "schema_version": {
           "type": "integer",
           "minimum": 1
@@ -54,99 +90,120 @@
         }
       }
     },
-    "staff_cap_cents": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "approval_rules": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "rule_id",
-          "priority",
-          "match",
-          "required_approvals",
-          "reason_code"
-        ],
-        "properties": {
-          "rule_id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "priority": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "match": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "op": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "enum": ["reserve", "encumber", "spend", "receive"]
-                },
-                "uniqueItems": true
-              },
-              "amount_cents_gt": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "selected_fund_keys_any": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "^[a-z][a-z0-9_]*$"
-                },
-                "uniqueItems": true
-              }
-            }
-          },
-          "required_approvals": {
-            "type": "array",
-            "items": { "type": "string" },
-            "minItems": 1,
-            "uniqueItems": true
-          },
-          "reason_code": {
-            "type": "string",
-            "minLength": 1
+    "meta_finance_controls": {
+      "allOf": [
+        { "$ref": "#/$defs/meta_base" },
+        {
+          "properties": {
+            "policy_key": { "const": "finance_controls" }
           }
+        }
+      ]
+    },
+    "budget_period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "period_key",
+        "label",
+        "start_month",
+        "start_day"
+      ],
+      "properties": {
+        "period_key": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "start_month": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "start_day": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31
         }
       }
     },
-    "budget_periods": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "period_key",
-          "label",
-          "start_month",
-          "start_day"
-        ],
-        "properties": {
-          "period_key": { "type": "string", "minLength": 1 },
-          "label": { "type": "string", "minLength": 1 },
-          "start_month": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 12
-          },
-          "start_day": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 31
-          }
+    "budget_cap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cap_key",
+        "amount_cents"
+      ],
+      "properties": {
+        "cap_key": { "type": "string", "minLength": 1 },
+        "fund_key": { "$ref": "#/$defs/semantic_key" },
+        "spending_class": { "$ref": "#/$defs/semantic_key" },
+        "period_key": { "type": "string", "minLength": 1 },
+        "project_tag": { "type": "string", "minLength": 1 },
+        "amount_cents": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "notes": { "type": "string" }
+      }
+    },
+    "approval_match": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/op_key" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "amount_cents_gt": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selected_fund_keys_any": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        },
+        "approval_posture_any": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semantic_key" },
+          "uniqueItems": true
+        },
+        "ops_support_planned": {
+          "type": "boolean"
         }
       }
     },
-    "budget_caps": {
-      "type": "array"
+    "approval_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rule_id",
+        "priority",
+        "match",
+        "required_approvals",
+        "reason_code"
+      ],
+      "properties": {
+        "rule_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "match": { "$ref": "#/$defs/approval_match" },
+        "required_approvals": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/role_key" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "reason_code": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
     }
   }
 }

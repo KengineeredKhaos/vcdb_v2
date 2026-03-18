@@ -1,50 +1,144 @@
 {
   "meta": {
-    "description": "Finance fund selction",
-    "effective_on": "2026-02-23",
+    "description": "Fund eligibility and preference rules for reserve, encumber, spend, and receipt flows.",
+    "effective_on": "2026-03-16",
     "notes": [
-      "This policy concerns Finance fund classifications.",
+      "Selectors choose eligible/preferred fund keys.",
+      "Selectors do not define reporting, reimbursement, or approval obligations."
     ],
     "policy_key": "finance_selectors",
     "schema_version": 1,
     "status": "draft",
-    "title": "Finance Fund Selectors",
+    "title": "Finance Selectors",
     "version": 1
   },
   "rules": [
     {
-      "rule_id": "sel-900-unrestricted-default",
-      "priority": 10,
+      "rule_id": "sel-100-mission-local-veterans-cash",
+      "priority": 100,
       "match": {
-        "op": ["reserve", "encumber", "spend", "receive"],
-        "restriction_keys_any": []
+        "op": [
+          "receive",
+          "reserve",
+          "encumber",
+          "spend"
+        ],
+        "source_profile_any": [
+          "mission_local_veterans_cash"
+        ]
       },
-      "allow_fund_keys": ["general_unrestricted"],
-      "prefer_fund_keys": ["general_unrestricted"]
+      "allow_fund_keys": [
+        "general_restricted"
+      ],
+      "prefer_fund_keys": [
+        "general_restricted"
+      ]
     },
     {
-      "rule_id": "sel-200-reimbursement-welcome-home",
-      "priority": 200,
+      "rule_id": "sel-120-welcome-home-reimbursement",
+      "priority": 120,
       "match": {
-        "op": ["reserve", "encumber", "spend"],
-        "spending_class": ["basic_needs"],
-        "tag_any": ["welcome_home_kit"]
+        "op": [
+          "receive",
+          "reserve",
+          "encumber",
+          "spend"
+        ],
+        "source_profile_any": [
+          "welcome_home_reimbursement_bridgeable"
+        ],
+        "spending_class": [
+          "basic_needs"
+        ],
+        "tag_any": [
+          "welcome_home_kit"
+        ]
       },
       "allow_fund_keys": [
         "welcome_home_reimbursement",
         "general_unrestricted"
       ],
-      "prefer_fund_keys": ["welcome_home_reimbursement"]
+      "prefer_fund_keys": [
+        "welcome_home_reimbursement"
+      ]
     },
     {
-      "rule_id": "sel-210-restricted-when-grant-reporting",
-      "priority": 210,
+      "rule_id": "sel-140-restricted-project-grant",
+      "priority": 140,
       "match": {
-        "op": ["reserve", "encumber", "spend"],
-        "restriction_keys_any": ["grant_reporting"]
+        "op": [
+          "receive",
+          "reserve",
+          "encumber",
+          "spend"
+        ],
+        "source_profile_any": [
+          "restricted_project_grant_return_unused"
+        ]
       },
-      "allow_fund_keys": ["welcome_home_reimbursement", "general_restricted"],
-      "prefer_fund_keys": ["welcome_home_reimbursement"]
+      "allow_fund_keys": [
+        "general_restricted"
+      ],
+      "prefer_fund_keys": [
+        "general_restricted"
+      ]
+    },
+    {
+      "rule_id": "sel-160-inkind-offset",
+      "priority": 160,
+      "match": {
+        "op": [
+          "receive"
+        ],
+        "source_profile_any": [
+          "inkind_project_offset"
+        ]
+      },
+      "allow_fund_keys": [
+        "general_restricted",
+        "general_unrestricted"
+      ],
+      "prefer_fund_keys": [
+        "general_restricted"
+      ]
+    },
+    {
+      "rule_id": "sel-180-ops-support-defaults",
+      "priority": 180,
+      "match": {
+        "op": [
+          "ops_allocate",
+          "ops_repay",
+          "ops_forgive"
+        ],
+        "source_kind_any": [
+          "operations_support"
+        ]
+      },
+      "allow_fund_keys": [
+        "general_unrestricted"
+      ],
+      "prefer_fund_keys": [
+        "general_unrestricted"
+      ]
+    },
+    {
+      "rule_id": "sel-900-unrestricted-fallback",
+      "priority": 900,
+      "match": {
+        "op": [
+          "receive",
+          "reserve",
+          "encumber",
+          "spend"
+        ]
+      },
+      "allow_fund_keys": [
+        "general_unrestricted"
+      ],
+      "prefer_fund_keys": [
+        "general_unrestricted"
+      ]
     }
   ]
 }
