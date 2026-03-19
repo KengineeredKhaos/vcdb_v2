@@ -245,3 +245,17 @@ Conventions:
 - [ ] @TODO: Pre-live hardening sweep
   
   - replace any temporary generic exception handling around Ledger/provider writes with explicit EventHashConflict and ProviderTemporarilyDown semantics once the money pipeline is complete.
+
+- [ ] @TODO: remove preview_funding_decision getattr backward-compat shim after FundingDecisionRequestDTO and all callers carry ops_support_planned explicitly
+
+- [ ] @TODO: **Revisit Calendar task taxonomy and realign task finance hints to consume canonical Governance policy semantics.**
+
+- What that means in practice:
+
+- stop treating Calendar as a quasi-owner of finance semantics
+
+- make task hints reference Governance-owned `expense_kind` / source-control vocabulary cleanly
+
+- remove drift-prone legacy labels like `travel_meetings` from Calendar hint space
+
+- treat Calendar hints as consumers of policy, not parallel taxonomy authors

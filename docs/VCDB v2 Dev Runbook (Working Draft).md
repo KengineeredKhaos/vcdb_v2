@@ -101,7 +101,7 @@ It does not.
 
 - Governance validation may pass.
 
-- Finance posting may fail because `posting_map_v1.json` has no route for the new key.
+- Finance posting may fail because `posting_map_v1.json` has no route for the new key. A new taxonomy key is not truly usable until posting_map knows where it lands.
 
 - Automated COA selection can break silently unless validation catches the gap.
 

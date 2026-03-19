@@ -76,6 +76,17 @@ class DevConfig(BaseConfig):
         "ledger:read": {"admin", "auditor"},
     }
 
+    # Boot Diagnostics (Dev-only)
+    DEV_BOOT_DIAG = True
+    DEV_BOOT_SANITY = True
+    DEV_POLICY_FINGERPRINT = True
+    DEV_POLICY_FINGERPRINT_LIST = True
+    DEV_POLICY_HEALTH = True
+    DEV_POLICY_HEALTH_LIST = True
+    DEV_SCHEMA_CHECK = True
+    DEV_SCHEMA_CHECK_DEEP = False
+    # Functions for these tests are housed in app/dev/boot_diag.py
+
 
 # ---------- Testing ----------
 class TestConfig(BaseConfig):

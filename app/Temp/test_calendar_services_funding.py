@@ -78,7 +78,7 @@ def test_publish_funding_demand_forwards_source_profile_hint(
 
     def fake_hints(project_ulid: str) -> ProjectPolicyHints:
         return ProjectPolicyHints(
-            source_profile_key="welcome_home_reimbursement_bridgeable",
+            source_profile_key="restricted_project_grant_return_unused",
             ops_support_planned=None,
         )
 

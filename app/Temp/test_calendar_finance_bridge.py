@@ -385,8 +385,8 @@ def test_encumber_project_funds_forwards_source_profile_hint(
 
     captured: dict[str, object] = {}
 
-    def fake_hints(project_ulid: str):
-        return funding_svc.ProjectPolicyHints(
+    def fake_hints(project_ulid: str) -> ProjectPolicyHints:
+        return ProjectPolicyHints(
             source_profile_key="restricted_project_grant_return_unused",
             ops_support_planned=None,
         )

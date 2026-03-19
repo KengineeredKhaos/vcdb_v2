@@ -34,14 +34,6 @@
       "schema_filename": "schemas/policy_governance_index.schema.json"
     },
     {
-      "edit_cadence_hint": "occasional",
-      "filename": "policy_funding_decisions.json",
-      "notes": [],
-      "owner_role_hint": "governor",
-      "policy_key": "funding_decisions",
-      "schema_filename": "schemas/policy_funding_decisions.schema.json"
-    },
-    {
       "edit_cadence_hint": "rare",
       "filename": "policy_finance_controls.json",
       "notes": [],

@@ -1,17 +1,14 @@
 {
   "version": 1,
-
   "receipt_method_debit_account": {
     "bank": "cash",
     "undeposited": "undeposited_funds"
   },
-
   "payment_method_credit_account": {
     "bank": "cash",
     "petty_cash": "petty_cash",
     "ap": "accounts_payable"
   },
-
   "income_kind_credit_account": {
     "donation": "contrib_revenue",
     "grant_disbursement": "grant_revenue",
@@ -19,15 +16,28 @@
     "inkind": "inkind_revenue",
     "other": "other_income"
   },
-
   "expense_kind_debit_account": {
-    "food": "direct_program_costs",
-    "fuel": "travel_meetings",
+    "direct_program_costs": "direct_program_costs",
+    "event_expense": "direct_program_costs",
+    "event_food": "direct_program_costs",
+    "market_cultivation": "market_cultivation",
+    "postage_shipping": "postage_shipping",
+    "occupancy": "occupancy",
+    "insurance": "insurance",
+    "bank_merchant_fees": "bank_merchant_fees",
+    "professional_fees": "professional_fees",
+    "software_it": "software_it",
     "supplies": "supplies",
+    "cogs": "cogs",
+    "equipment": "supplies",
+    "repair_parts": "supplies",
+    "travel": "travel_meetings",
     "lodging": "travel_meetings",
+    "mileage": "travel_meetings",
+    "per_diem": "travel_meetings",
+    "meals": "travel_meetings",
+    "fuel": "travel_meetings",
     "printing": "postage_shipping",
-    "software": "software_it",
-    "fees": "bank_merchant_fees",
-    "other": "other_expense"
+    "other_expense": "other_expense"
   }
 }
