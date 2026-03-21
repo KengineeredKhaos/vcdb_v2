@@ -251,11 +251,13 @@ Conventions:
 - [ ] @TODO: **Revisit Calendar task taxonomy and realign task finance hints to consume canonical Governance policy semantics.**
 
 - What that means in practice:
+  
+  - stop treating Calendar as a quasi-owner of finance semantics
+  
+  - make task hints reference Governance-owned `expense_kind` / source-control vocabulary cleanly
+  
+  - remove drift-prone legacy labels like `travel_meetings` from Calendar hint space
+  
+  - treat Calendar hints as consumers of policy, not parallel taxonomy authors
 
-- stop treating Calendar as a quasi-owner of finance semantics
-
-- make task hints reference Governance-owned `expense_kind` / source-control vocabulary cleanly
-
-- remove drift-prone legacy labels like `travel_meetings` from Calendar hint space
-
-- treat Calendar hints as consumers of policy, not parallel taxonomy authors
+- [ ] @TODO: restore focused seam test for encumber preview op after Calendar/Governance alignment pass

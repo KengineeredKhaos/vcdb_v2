@@ -106,13 +106,6 @@ def _derive_project_policy_hints(rows: list[object]) -> ProjectPolicyHints:
     if len(profile_keys) == 1:
         source_profile_key = next(iter(profile_keys))
 
-    if (
-        ops_support_planned is None
-        and source_profile_key
-        and source_profile_key.startswith("ops_")
-    ):
-        ops_support_planned = True
-
     return ProjectPolicyHints(
         source_profile_key=source_profile_key,
         ops_support_planned=ops_support_planned,
@@ -121,11 +114,12 @@ def _derive_project_policy_hints(rows: list[object]) -> ProjectPolicyHints:
 
 def _project_policy_hints(project_ulid: str | None) -> ProjectPolicyHints:
     """
-    Best-effort bridge during funding-policy cut-over.
+    Return Calendar-owned policy cues for a project.
 
-    Until Funding Plan persistence carries source-control fields cleanly
-    end-to-end, infer project-level Governance preview hints from any
-    funding-plan rows that expose them.
+    Calendar derives these cues from its Funding Plan rows and passes
+    them to Governance as advisory preview inputs. Governance remains
+    the authority for semantic validation, selector behavior, and
+    authorization.
     """
     if not project_ulid:
         return _EMPTY_POLICY_HINTS
@@ -191,7 +185,7 @@ def list_projects_for_form() -> list[tuple[str, str]]:
 def get_spending_class_choices() -> list[tuple[str, str]]:
     tx = gov.get_finance_taxonomy()
     vals = list(getattr(tx, "spending_classes", []) or [])
-    return [("", "— Select —"), *[(v, v) for v in vals]]
+    return [("", "— Select —"), *[(v.key, v.label) for v in vals]]
 
 
 def create_funding_demand(

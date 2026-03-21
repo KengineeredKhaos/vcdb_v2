@@ -15,6 +15,21 @@ _DEST_OK = {"published", "funding_in_progress", "funded", "executing"}
 _REPAY_OK = {"funding_in_progress", "funded", "executing", "closed"}
 _FORGIVE_OK = {"closed"}
 
+
+# -----------------
+# Authority Override
+# helper
+# -----------------
+def _has_required_approvals(
+    required_approvals: tuple[str, ...] | list[str],
+    *,
+    actor_rbac_roles: tuple[str, ...] = (),
+    actor_domain_roles: tuple[str, ...] = (),
+) -> bool:
+    held = set(actor_rbac_roles or ()) | set(actor_domain_roles or ())
+    return all(req in held for req in (required_approvals or ()))
+
+
 def allocate_ops_float_to_project(
     *,
     source_funding_demand_ulid: str,
@@ -77,7 +92,12 @@ def allocate_ops_float_to_project(
         raise PermissionError(
             "; ".join(preview.reason_codes) or "ops float denied"
         )
-    if preview.required_approvals:
+
+    if preview.required_approvals and not _has_required_approvals(
+        preview.required_approvals,
+        actor_rbac_roles=actor_rbac_roles,
+        actor_domain_roles=actor_domain_roles,
+    ):
         raise PermissionError(
             "ops float requires approvals: "
             + ", ".join(preview.required_approvals)
@@ -181,10 +201,9 @@ def repay_ops_float_to_operations(
         )
 
     money = finance_v2.get_funding_demand_money_view(dest.ulid)
-    direct_available = (
-        _bucket_amount(money.reserved_by_fund, parent.fund_key)
-        - _bucket_amount(money.encumbered_by_fund, parent.fund_key)
-    )
+    direct_available = _bucket_amount(
+        money.reserved_by_fund, parent.fund_key
+    ) - _bucket_amount(money.encumbered_by_fund, parent.fund_key)
     if amount_cents > direct_available:
         raise ValueError("ops float repayment exceeds direct available funds")
 
@@ -207,11 +226,16 @@ def repay_ops_float_to_operations(
     )
     if not preview.allowed:
         raise PermissionError(
-            "; ".join(preview.reason_codes) or "ops float repay denied"
+            "; ".join(preview.reason_codes) or "ops float denied"
         )
-    if preview.required_approvals:
+
+    if preview.required_approvals and not _has_required_approvals(
+        preview.required_approvals,
+        actor_rbac_roles=actor_rbac_roles,
+        actor_domain_roles=actor_domain_roles,
+    ):
         raise PermissionError(
-            "ops float repayment requires approvals: "
+            "ops float requires approvals: "
             + ", ".join(preview.required_approvals)
         )
 
@@ -289,7 +313,9 @@ def forgive_ops_float_shortfall(
     source = _get_demand_or_raise(parent.source_funding_demand_ulid)
     dest = _get_demand_or_raise(parent.dest_funding_demand_ulid)
     if dest.status not in _FORGIVE_OK:
-        raise ValueError("destination funding demand must be closed for forgiveness")
+        raise ValueError(
+            "destination funding demand must be closed for forgiveness"
+        )
 
     preview = governance_v2.preview_ops_float(
         governance_v2.OpsFloatDecisionRequestDTO(
@@ -310,11 +336,16 @@ def forgive_ops_float_shortfall(
     )
     if not preview.allowed:
         raise PermissionError(
-            "; ".join(preview.reason_codes) or "ops float forgiveness denied"
+            "; ".join(preview.reason_codes) or "ops float denied"
         )
-    if preview.required_approvals:
+
+    if preview.required_approvals and not _has_required_approvals(
+        preview.required_approvals,
+        actor_rbac_roles=actor_rbac_roles,
+        actor_domain_roles=actor_domain_roles,
+    ):
         raise PermissionError(
-            "ops float forgiveness requires approvals: "
+            "ops float requires approvals: "
             + ", ".join(preview.required_approvals)
         )
 

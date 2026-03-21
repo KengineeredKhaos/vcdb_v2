@@ -522,6 +522,7 @@ def preview_funding_decision(
             "expense_kind": req.expense_kind,
             "source_profile_key": req.source_profile_key,
             "restriction_keys": req.restriction_keys,
+            "ops_support_planned": req.ops_support_planned,
             "demand_eligible_fund_keys": req.demand_eligible_fund_keys,
             "tag_any": req.tag_any,
             "selected_fund_key": req.selected_fund_key,

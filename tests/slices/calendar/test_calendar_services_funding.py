@@ -9,6 +9,7 @@ from app.extensions import db
 from app.slices.calendar.models import Project
 from app.slices.calendar.services_funding import (
     create_funding_demand,
+    get_spending_class_choices,
     publish_funding_demand,
     unpublish_funding_demand,
 )
@@ -125,3 +126,80 @@ def test_publish_funding_demand_forwards_source_profile_hint(
             captured["source_profile_key"]
             == "welcome_home_reimbursement_bridgeable"
         )
+
+
+def test_encumber_project_funds_uses_encumber_op(app, monkeypatch):
+    from app.slices.calendar import services_finance_bridge as svc
+
+    captured: dict[str, object] = {}
+
+    class DummyPreview:
+        allowed = True
+        eligible_fund_keys = ("general_unrestricted",)
+        required_approvals = ()
+        reason_codes = ()
+        matched_rule_ids = ()
+        decision_fingerprint = "fp-test"
+
+    def fake_preview(req):
+        captured["op"] = req.op
+        return DummyPreview()
+
+    monkeypatch.setattr(
+        svc.governance_v2,
+        "preview_funding_decision",
+        fake_preview,
+    )
+
+    # patch downstream side effects as needed here
+
+
+def test_preview_funding_decision_forwards_ops_support_planned(
+    app, monkeypatch
+):
+    from app.extensions.contracts import governance_v2 as gov
+
+    captured: dict[str, object] = {}
+
+    def fake_preview(raw_req: dict[str, object]) -> dict[str, object]:
+        captured["ops_support_planned"] = raw_req.get("ops_support_planned")
+        return {
+            "allowed": True,
+            "eligible_fund_keys": ["general_unrestricted"],
+            "required_approvals": [],
+            "reason_codes": [],
+            "matched_rule_ids": [],
+            "decision_fingerprint": "fp-test",
+        }
+
+    monkeypatch.setattr(
+        gov,
+        "svc_preview_funding_decision",
+        fake_preview,
+    )
+
+    req = gov.FundingDecisionRequestDTO(
+        op="encumber",
+        amount_cents=1000,
+        funding_demand_ulid="01TESTTESTTESTTESTTESTTEST",
+        project_ulid="01TESTTESTTESTTESTTESTTEST",
+        spending_class="events",
+        expense_kind="event_expense",
+        source_profile_key="ops_bridge_preapproved",
+        ops_support_planned=True,
+    )
+
+    gov.preview_funding_decision(req)
+
+    assert captured["ops_support_planned"] is True
+
+
+def test_get_spending_class_choices_uses_key_and_label(app):
+    with app.app_context():
+        choices = get_spending_class_choices()
+        assert choices[0] == ("", "— Select —")
+        assert all(
+            isinstance(v[0], str) and isinstance(v[1], str)
+            for v in choices[1:]
+        )
+        assert any(value == "events" for value, _label in choices[1:])

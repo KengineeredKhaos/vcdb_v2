@@ -1,4 +1,4 @@
-# app / extensions / contracts / calendar_v2.py
+# app/extensions/contracts/calendar_v2.py
 
 # ------------------
 # NOTE:
@@ -58,6 +58,11 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
     )
 
 
+# -----------------
+# Validation Helpers
+# -----------------
+
+
 def _require_str(name: str, value: str | None) -> str:
     if not value or not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} must be a non-empty string")
@@ -77,6 +82,43 @@ def _require_int_ge(name: str, value: Any, minval: int = 0) -> int:
     if value < minval:
         raise ValueError(f"{name} must be >= {minval}")
     return value
+
+
+def _require_int_gt(name: str, value: Any, minval: int = 0) -> int:
+    if not isinstance(value, int):
+        raise ValueError(f"{name} must be an int")
+    if value <= minval:
+        raise ValueError(f"{name} must be > {minval}")
+    return value
+
+
+def _optional_ulid(name: str, value: str | None) -> str | None:
+    if value is None:
+        return None
+    return _require_ulid(name, value)
+
+
+def _optional_str(name: str, value: str | None) -> str | None:
+    if value is None:
+        return None
+    return _require_str(name, value)
+
+
+def _require_str_tuple(
+    name: str,
+    value: tuple[str, ...] | list[str] | None,
+) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, (tuple, list)):
+        raise ValueError(f"{name} must be a tuple/list of strings")
+
+    out: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"{name} must contain only non-empty strings")
+        out.append(item.strip())
+    return tuple(out)
 
 
 # -----------------
@@ -214,9 +256,14 @@ class ProjectSpendDTO:
 
 
 # -----------------
-# Old Paradigm
+# Project Planning
 # DTO's
 # -----------------
+"""
+These are vestages of early Project Planning Development
+This is not part of project funding flow
+
+"""
 
 
 class ProjectDTO(TypedDict):
@@ -267,7 +314,7 @@ __schema__ = {
 
 # -----------------
 # Funding Demand
-# New Paradigm
+# & Fulfillment
 # -----------------
 
 
@@ -300,6 +347,11 @@ def _load_provider(where: str):
 def get_funding_demand(funding_demand_ulid: str) -> FundingDemandDTO:
     where = "calendar_v2.get_funding_demand"
     try:
+        funding_demand_ulid = _require_ulid(
+            "funding_demand_ulid",
+            funding_demand_ulid,
+        )
+
         provider = _load_provider(where)
         raw = provider(funding_demand_ulid)
 
@@ -322,23 +374,49 @@ def encumber_project_funds(
 ) -> ProjectEncumbranceDTO:
     where = "calendar_v2.encumber_project_funds"
     try:
+        funding_demand_ulid = _require_ulid(
+            "funding_demand_ulid",
+            req.funding_demand_ulid,
+        )
+        amount_cents = _require_int_gt("amount_cents", req.amount_cents)
+        fund_key = _require_str("fund_key", req.fund_key)
+        expense_kind = _require_str("expense_kind", req.expense_kind)
+        happened_at_utc = _require_str(
+            "happened_at_utc",
+            req.happened_at_utc,
+        )
+        source_ref_ulid = _optional_ulid(
+            "source_ref_ulid",
+            req.source_ref_ulid,
+        )
+        actor_ulid = _optional_ulid("actor_ulid", req.actor_ulid)
+        actor_rbac_roles = _require_str_tuple(
+            "actor_rbac_roles",
+            req.actor_rbac_roles,
+        )
+        actor_domain_roles = _require_str_tuple(
+            "actor_domain_roles",
+            req.actor_domain_roles,
+        )
+        request_id = _optional_str("request_id", req.request_id)
+
         mod = importlib.import_module(
             "app.slices.calendar.services_finance_bridge"
         )
         fn = mod.encumber_project_funds
         out = fn(
-            funding_demand_ulid=req.funding_demand_ulid,
-            amount_cents=req.amount_cents,
-            fund_key=req.fund_key,
-            expense_kind=req.expense_kind,
-            happened_at_utc=req.happened_at_utc,
-            source_ref_ulid=req.source_ref_ulid,
+            funding_demand_ulid=funding_demand_ulid,
+            amount_cents=amount_cents,
+            fund_key=fund_key,
+            expense_kind=expense_kind,
+            happened_at_utc=happened_at_utc,
+            source_ref_ulid=source_ref_ulid,
             memo=req.memo,
-            actor_ulid=req.actor_ulid,
-            actor_rbac_roles=req.actor_rbac_roles,
-            actor_domain_roles=req.actor_domain_roles,
-            request_id=req.request_id,
-            dry_run=req.dry_run,
+            actor_ulid=actor_ulid,
+            actor_rbac_roles=actor_rbac_roles,
+            actor_domain_roles=actor_domain_roles,
+            request_id=request_id,
+            dry_run=bool(req.dry_run),
         )
         return ProjectEncumbranceDTO(
             funding_demand_ulid=out.funding_demand_ulid,
@@ -357,24 +435,57 @@ def encumber_project_funds(
 def spend_project_funds(req: ProjectSpendRequestDTO) -> ProjectSpendDTO:
     where = "calendar_v2.spend_project_funds"
     try:
+        encumbrance_ulid = _require_ulid(
+            "encumbrance_ulid",
+            req.encumbrance_ulid,
+        )
+        amount_cents = _require_int_gt("amount_cents", req.amount_cents)
+        expense_kind = _require_str("expense_kind", req.expense_kind)
+        payment_method = _require_str(
+            "payment_method",
+            req.payment_method,
+        )
+        happened_at_utc = _require_str(
+            "happened_at_utc",
+            req.happened_at_utc,
+        )
+        source_ref_ulid = _optional_ulid(
+            "source_ref_ulid",
+            req.source_ref_ulid,
+        )
+        payee_entity_ulid = _optional_ulid(
+            "payee_entity_ulid",
+            req.payee_entity_ulid,
+        )
+        actor_ulid = _optional_ulid("actor_ulid", req.actor_ulid)
+        actor_rbac_roles = _require_str_tuple(
+            "actor_rbac_roles",
+            req.actor_rbac_roles,
+        )
+        actor_domain_roles = _require_str_tuple(
+            "actor_domain_roles",
+            req.actor_domain_roles,
+        )
+        request_id = _optional_str("request_id", req.request_id)
+
         mod = importlib.import_module(
             "app.slices.calendar.services_finance_bridge"
         )
         fn = mod.spend_project_funds
         out = fn(
-            encumbrance_ulid=req.encumbrance_ulid,
-            amount_cents=req.amount_cents,
-            expense_kind=req.expense_kind,
-            payment_method=req.payment_method,
-            happened_at_utc=req.happened_at_utc,
-            source_ref_ulid=req.source_ref_ulid,
-            payee_entity_ulid=req.payee_entity_ulid,
+            encumbrance_ulid=encumbrance_ulid,
+            amount_cents=amount_cents,
+            expense_kind=expense_kind,
+            payment_method=payment_method,
+            happened_at_utc=happened_at_utc,
+            source_ref_ulid=source_ref_ulid,
+            payee_entity_ulid=payee_entity_ulid,
             memo=req.memo,
-            actor_ulid=req.actor_ulid,
-            actor_rbac_roles=req.actor_rbac_roles,
-            actor_domain_roles=req.actor_domain_roles,
-            request_id=req.request_id,
-            dry_run=req.dry_run,
+            actor_ulid=actor_ulid,
+            actor_rbac_roles=actor_rbac_roles,
+            actor_domain_roles=actor_domain_roles,
+            request_id=request_id,
+            dry_run=bool(req.dry_run),
         )
         return ProjectSpendDTO(
             funding_demand_ulid=out.funding_demand_ulid,
@@ -397,6 +508,10 @@ def list_published_funding_demands(
 ) -> tuple[FundingDemandDTO, ...]:
     where = "calendar_v2.list_published_funding_demands"
     try:
+        if project_ulid is not None:
+            project_ulid = _require_ulid("project_ulid", project_ulid)
+        status = _require_str("status", status)
+
         mod = importlib.import_module("app.slices.calendar.services_funding")
         fn = mod.list_published_funding_demands
 
@@ -426,23 +541,49 @@ def allocate_ops_float_to_project(
 ) -> OpsFloatAllocationDTO:
     where = "calendar_v2.allocate_ops_float_to_project"
     try:
+        source_funding_demand_ulid = _require_ulid(
+            "source_funding_demand_ulid",
+            req.source_funding_demand_ulid,
+        )
+        dest_funding_demand_ulid = _require_ulid(
+            "dest_funding_demand_ulid",
+            req.dest_funding_demand_ulid,
+        )
+        fund_key = _require_str("fund_key", req.fund_key)
+        amount_cents = _require_int_gt("amount_cents", req.amount_cents)
+        support_mode = _require_str("support_mode", req.support_mode)
+        source_ref_ulid = _optional_ulid(
+            "source_ref_ulid",
+            req.source_ref_ulid,
+        )
+        actor_ulid = _optional_ulid("actor_ulid", req.actor_ulid)
+        actor_rbac_roles = _require_str_tuple(
+            "actor_rbac_roles",
+            req.actor_rbac_roles,
+        )
+        actor_domain_roles = _require_str_tuple(
+            "actor_domain_roles",
+            req.actor_domain_roles,
+        )
+        request_id = _optional_str("request_id", req.request_id)
+
         mod = importlib.import_module(
             "app.slices.calendar.services_ops_float"
         )
         fn = mod.allocate_ops_float_to_project
         out = fn(
-            source_funding_demand_ulid=req.source_funding_demand_ulid,
-            dest_funding_demand_ulid=req.dest_funding_demand_ulid,
-            fund_key=req.fund_key,
-            amount_cents=req.amount_cents,
-            support_mode=req.support_mode,
+            source_funding_demand_ulid=source_funding_demand_ulid,
+            dest_funding_demand_ulid=dest_funding_demand_ulid,
+            fund_key=fund_key,
+            amount_cents=amount_cents,
+            support_mode=support_mode,
             memo=req.memo,
-            source_ref_ulid=req.source_ref_ulid,
-            actor_ulid=req.actor_ulid,
-            actor_rbac_roles=req.actor_rbac_roles,
-            actor_domain_roles=req.actor_domain_roles,
-            request_id=req.request_id,
-            dry_run=req.dry_run,
+            source_ref_ulid=source_ref_ulid,
+            actor_ulid=actor_ulid,
+            actor_rbac_roles=actor_rbac_roles,
+            actor_domain_roles=actor_domain_roles,
+            request_id=request_id,
+            dry_run=bool(req.dry_run),
         )
         return OpsFloatAllocationDTO(
             source_funding_demand_ulid=out.source_funding_demand_ulid,
@@ -461,26 +602,46 @@ def allocate_ops_float_to_project(
         raise _as_contract_error(where, exc) from exc
 
 
+def _validate_ops_float_settlement_request(
+    req: OpsFloatSettlementRequestDTO,
+) -> dict[str, Any]:
+    return {
+        "parent_ops_float_ulid": _require_ulid(
+            "parent_ops_float_ulid",
+            req.parent_ops_float_ulid,
+        ),
+        "amount_cents": _require_int_gt("amount_cents", req.amount_cents),
+        "source_ref_ulid": _optional_ulid(
+            "source_ref_ulid",
+            req.source_ref_ulid,
+        ),
+        "actor_ulid": _optional_ulid("actor_ulid", req.actor_ulid),
+        "actor_rbac_roles": _require_str_tuple(
+            "actor_rbac_roles",
+            req.actor_rbac_roles,
+        ),
+        "actor_domain_roles": _require_str_tuple(
+            "actor_domain_roles",
+            req.actor_domain_roles,
+        ),
+        "request_id": _optional_str("request_id", req.request_id),
+        "memo": req.memo,
+        "dry_run": bool(req.dry_run),
+    }
+
+
 def repay_ops_float_to_operations(
     req: OpsFloatSettlementRequestDTO,
 ) -> OpsFloatSettlementDTO:
     where = "calendar_v2.repay_ops_float_to_operations"
     try:
+        vals = _validate_ops_float_settlement_request(req)
+
         mod = importlib.import_module(
             "app.slices.calendar.services_ops_float"
         )
         fn = getattr(mod, "repay_ops_float_to_operations")
-        out = fn(
-            parent_ops_float_ulid=req.parent_ops_float_ulid,
-            amount_cents=req.amount_cents,
-            memo=req.memo,
-            source_ref_ulid=req.source_ref_ulid,
-            actor_ulid=req.actor_ulid,
-            actor_rbac_roles=req.actor_rbac_roles,
-            actor_domain_roles=req.actor_domain_roles,
-            request_id=req.request_id,
-            dry_run=req.dry_run,
-        )
+        out = fn(**vals)
         return OpsFloatSettlementDTO(
             parent_ops_float_ulid=out.parent_ops_float_ulid,
             ops_float_ulid=out.ops_float_ulid,
@@ -504,21 +665,14 @@ def forgive_ops_float_shortfall(
 ) -> OpsFloatSettlementDTO:
     where = "calendar_v2.forgive_ops_float_shortfall"
     try:
+        vals = _validate_ops_float_settlement_request(req)
+
         mod = importlib.import_module(
             "app.slices.calendar.services_ops_float"
         )
         fn = getattr(mod, "forgive_ops_float_shortfall")
-        out = fn(
-            parent_ops_float_ulid=req.parent_ops_float_ulid,
-            amount_cents=req.amount_cents,
-            memo=req.memo,
-            source_ref_ulid=req.source_ref_ulid,
-            actor_ulid=req.actor_ulid,
-            actor_rbac_roles=req.actor_rbac_roles,
-            actor_domain_roles=req.actor_domain_roles,
-            request_id=req.request_id,
-            dry_run=req.dry_run,
-        )
+        out = fn(**vals)
+
         return OpsFloatSettlementDTO(
             parent_ops_float_ulid=out.parent_ops_float_ulid,
             ops_float_ulid=out.ops_float_ulid,
@@ -538,13 +692,6 @@ def forgive_ops_float_shortfall(
 
 
 # -----------------
-# Old Paradigm
-# below this line
-# -----------------
-
-
-# -----------------
-# Provider:
 # Calendar slice
 # Blackout Check
 # -----------------
@@ -572,8 +719,15 @@ def blackout_ok(when_iso: str | None = None) -> CalendarGateDTO:
 
 
 # -----------------
-# Project Context
+# Project Planning
+# Context Only
+# NOT Funding Flow
 # -----------------
+"""
+These are vestages of early Project Planning Development
+This is not part of project funding flow
+
+"""
 
 
 def create_project(
@@ -586,61 +740,6 @@ def create_project(
     actor_ulid: str,
     request_id: str,
 ) -> ProjectDTO:
-    """
-    Contract entry point for creating a Calendar project.
-
-    This is a thin, versioned wrapper around the Calendar slice's
-    ``services.create_project(...)`` implementation. It:
-
-      * validates argument shape (ULIDs, non-empty strings),
-      * builds a payload dictionary that the slice service expects,
-      * forwards ``actor_ulid`` and ``request_id`` for auditing,
-      * wraps any slice errors as :class:`ContractError` via
-        :func:`_as_contract_error`.
-
-    All policy decisions (blackouts, funding rules, precedence, etc.)
-    are expected to be handled by higher-level flows (Governance /
-    Admin) before calling this contract. This call only creates the
-    project record and emits a Calendar domain event.
-
-    Arguments:
-        project_title:
-            Human-facing title for the project (e.g. "Stand Down 2026").
-        fund_ulid:
-            Optional ULID of a Finance fund to associate as the
-            "primary" fund for this project. May be ``None`` for
-            projects that don't yet have a chosen fund.
-        owner_ulid:
-            Optional Entity ULID representing the project owner
-            (person or org).
-        phase_code:
-            Optional short code describing the phase (e.g. "planning",
-            "execution"); semantics are defined by Governance/UI.
-        status:
-            Optional initial status. If omitted, defaults to
-            ``"planned"``.
-
-        actor_ulid:
-            Entity ULID of the actor creating the project. Used for
-            event_bus / ledger attribution.
-        request_id:
-            Correlation id for the call (ULID or other unique token);
-            propagated into emitted events for traceability.
-
-    Returns:
-        ProjectDTO:
-            PII-free projection of the newly created project, including
-            a resolved Fund summary (if a fund was attached).
-
-    Raises:
-        ContractError:
-            - code="bad_argument" for malformed inputs (bad ULID,
-              empty title, etc.).
-            - code="not_found" if the referenced fund does not exist
-              (when the slice chooses to enforce that).
-            - code="internal_error" for unexpected failures; the
-              underlying exception type is attached in ``data``.
-    """
     where = "calendar_v2.create_project"
     try:
         project_title = _require_str("project_title", project_title)
@@ -799,8 +898,21 @@ def list_projects_for_period(*, period_label: str) -> list[ProjectDTO]:
 
 __all__ = [
     "FundingDemandDTO",
+    "OpsFloatAllocationRequestDTO",
+    "OpsFloatAllocationDTO",
+    "OpsFloatSettlementRequestDTO",
+    "OpsFloatSettlementDTO",
+    "ProjectEncumbranceRequestDTO",
+    "ProjectEncumbranceDTO",
+    "ProjectSpendRequestDTO",
+    "ProjectSpendDTO",
     "get_funding_demand",
     "list_published_funding_demands",
+    "encumber_project_funds",
+    "spend_project_funds",
+    "allocate_ops_float_to_project",
+    "repay_ops_float_to_operations",
+    "forgive_ops_float_shortfall",
     "blackout_ok",
     "create_project",
     "create_project_funding_plan",

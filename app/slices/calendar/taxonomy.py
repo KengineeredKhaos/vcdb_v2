@@ -16,6 +16,9 @@ FUNDING_DEMAND_STATUSES: Final[tuple[str, ...]] = (
     "closed",
 )
 
+# Compatibility hold-over only.
+# Do not expand this unless Calendar still has an active consumer that
+# truly needs it. Governance now owns the canonical source semantics.
 PROJECT_FUNDING_SOURCE_KINDS: Final[tuple[str, ...]] = (
     "operations_seed",
     "operations_backfill",
@@ -25,14 +28,9 @@ PROJECT_FUNDING_SOURCE_KINDS: Final[tuple[str, ...]] = (
     "grant_reimbursement",
     "in_kind",
 )
-"""
-DRIFT RISK -> PROJECT_FUNDING_SOURCE_KINDS
-This is close in spirit to the Governance-side source_kinds / support_modes
-split, so it has drift risk. Not broken right now, but flagged for
-cleanup later so Calendar does not maintain a second near-duplicate
-funding-source language.
-"""
 
+# Calendar workflow vocabulary.
+# Governance owns the canonical support-mode semantics.
 OPS_FLOAT_SUPPORT_MODES: Final[tuple[str, ...]] = (
     "seed",
     "backfill",
@@ -45,155 +43,373 @@ OPS_FLOAT_ACTIONS: Final[tuple[str, ...]] = (
     "forgive",
 )
 
+# -----------------
+# Task taxonomy
+# -----------------
 
-# Calendar/Operations taxonomy (slice-local).
-# This used to live in Governance as policy_operations.json.
-
+# Fallback advisory value only.
 DEFAULT_FINANCE_HINT_EXPENSE_KINDS: Final[tuple[str, ...]] = (
     "direct_program_costs",
 )
 
-# Task kinds: stable keys and human labels.
-# finance_hints are advisory tags for Finance/Reporting integrations.
+# Calendar task taxonomy is slice-local workflow vocabulary.
+# finance_hints are advisory cues only and must reference canonical
+# Governance keys, typically found in policy_finance_taxonomy.
+# Calendar does not own finance semantics.
+# Calendar task kinds may suggest canonical Governance semantic keys,
+# but Governance remains the source of truth for meaning, validation,
+# selector behavior, and approvals.
+#
+# finance_hints shape:
+#   default_expense_kind: primary suggested Governance expense key
+#   allowed_expense_kinds: bounded alternate Governance expense keys
+#   default_spending_class: primary suggested Governance spending class
+
 TASK_KINDS: Final[dict[str, dict]] = {
     "event_catering": {
-        "finance_hints": {"expense_kinds": ["event_food", "event_expense"]},
         "label": "Catering/food service",
+        "finance_hints": {
+            "default_expense_kind": "event_expense",
+            "allowed_expense_kinds": [
+                "event_food",
+                "event_expense",
+            ],
+            "default_spending_class": "events",
+        },
     },
     "event_equipment_rental": {
-        "finance_hints": {"expense_kinds": ["event_expense"]},
         "label": "Equipment rental",
+        "finance_hints": {
+            "default_expense_kind": "event_expense",
+            "allowed_expense_kinds": [
+                "event_expense",
+                "equipment",
+            ],
+            "default_spending_class": "events",
+        },
     },
     "event_insurance": {
-        "finance_hints": {"expense_kinds": ["insurance"]},
         "label": "Insurance (event)",
+        "finance_hints": {
+            "default_expense_kind": "insurance",
+            "allowed_expense_kinds": [
+                "insurance",
+                "event_expense",
+            ],
+            "default_spending_class": "events",
+        },
     },
     "event_marketing": {
-        "finance_hints": {"expense_kinds": ["market_cultivation"]},
         "label": "Event marketing/ads",
+        "finance_hints": {
+            "default_expense_kind": "market_cultivation",
+            "allowed_expense_kinds": [
+                "market_cultivation",
+                "printing",
+                "event_expense",
+            ],
+            "default_spending_class": "events",
+        },
+    },
+    "event_swag": {
+        "label": "Event doorprizes & swagbag bitss",
+        "finance_hints": {
+            "default_expense_kind": "market_cultivation",
+            "allowed_expense_kinds": [
+                "market_cultivation",
+                "event_expense",
+            ],
+            "default_spending_class": "events",
+        },
     },
     "event_permits": {
-        "finance_hints": {"expense_kinds": ["event_expense"]},
         "label": "Permits",
+        "finance_hints": {
+            "default_expense_kind": "event_expense",
+            "allowed_expense_kinds": [
+                "event_expense",
+                "professional_fees",
+            ],
+            "default_spending_class": "events",
+        },
     },
     "event_printing": {
+        "label": "Event printing",
         "finance_hints": {
-            "expense_kinds": [
+            "default_expense_kind": "printing",
+            "allowed_expense_kinds": [
+                "printing",
+                "event_expense",
+                "market_cultivation",
+            ],
+            "default_spending_class": "events",
+        },
+    },
+    "event_sanitation": {
+        "label": "Sanitation",
+        "finance_hints": {
+            "default_expense_kind": "event_expense",
+            "allowed_expense_kinds": [
+                "event_expense",
+                "supplies",
+            ],
+            "default_spending_class": "events",
+        },
+    },
+    "event_security": {
+        "label": "Security",
+        "finance_hints": {
+            "default_expense_kind": "event_expense",
+            "allowed_expense_kinds": [
+                "event_expense",
+                "professional_fees",
+            ],
+            "default_spending_class": "events",
+        },
+    },
+    "event_signage": {
+        "label": "Signage/banners",
+        "finance_hints": {
+            "default_expense_kind": "event_expense",
+            "allowed_expense_kinds": [
                 "event_expense",
                 "printing",
                 "market_cultivation",
-            ]
+            ],
+            "default_spending_class": "events",
         },
-        "label": "Event printing",
-    },
-    "event_sanitation": {
-        "finance_hints": {"expense_kinds": ["event_expense"]},
-        "label": "Sanitation",
-    },
-    "event_security": {
-        "finance_hints": {"expense_kinds": ["event_expense"]},
-        "label": "Security",
-    },
-    "event_signage": {
-        "finance_hints": {
-            "expense_kinds": ["event_expense", "market_cultivation"]
-        },
-        "label": "Signage/banners",
     },
     "event_venue_rental": {
-        "finance_hints": {"expense_kinds": ["event_expense"]},
         "label": "Venue rental",
+        "finance_hints": {
+            "default_expense_kind": "event_expense",
+            "allowed_expense_kinds": [
+                "event_expense",
+                "occupancy",
+            ],
+            "default_spending_class": "events",
+        },
     },
     "fundraising_design": {
-        "finance_hints": {"expense_kinds": ["market_cultivation"]},
         "label": "Fundraising design",
+        "finance_hints": {
+            "default_expense_kind": "market_cultivation",
+            "allowed_expense_kinds": [
+                "market_cultivation",
+                "printing",
+            ],
+            "default_spending_class": "admin",
+        },
     },
     "fundraising_postage": {
-        "finance_hints": {
-            "expense_kinds": ["market_cultivation", "postage_shipping"]
-        },
         "label": "Fundraising postage",
+        "finance_hints": {
+            "default_expense_kind": "postage_shipping",
+            "allowed_expense_kinds": [
+                "postage_shipping",
+                "market_cultivation",
+            ],
+            "default_spending_class": "admin",
+        },
     },
     "fundraising_printing": {
-        "finance_hints": {"expense_kinds": ["market_cultivation"]},
         "label": "Fundraising printing",
+        "finance_hints": {
+            "default_expense_kind": "printing",
+            "allowed_expense_kinds": [
+                "printing",
+                "market_cultivation",
+            ],
+            "default_spending_class": "admin",
+        },
     },
     "fundraising_supplies": {
-        "finance_hints": {"expense_kinds": ["market_cultivation"]},
         "label": "Fundraising supplies",
+        "finance_hints": {
+            "default_expense_kind": "market_cultivation",
+            "allowed_expense_kinds": [
+                "market_cultivation",
+                "supplies",
+            ],
+            "default_spending_class": "admin",
+        },
     },
     "inbound_freight": {
-        "finance_hints": {"expense_kinds": ["postage_shipping", "cogs"]},
         "label": "Inbound freight",
+        "finance_hints": {
+            "default_expense_kind": "postage_shipping",
+            "allowed_expense_kinds": [
+                "postage_shipping",
+                "cogs",
+            ],
+            "default_spending_class": "logistics",
+        },
     },
     "insurance_annual": {
-        "finance_hints": {"expense_kinds": ["insurance"]},
         "label": "Insurance (annual)",
+        "finance_hints": {
+            "default_expense_kind": "insurance",
+            "allowed_expense_kinds": [
+                "insurance",
+            ],
+            "default_spending_class": "facilities",
+        },
     },
     "internet_office": {
-        "finance_hints": {"expense_kinds": ["occupancy"]},
         "label": "Internet service",
+        "finance_hints": {
+            "default_expense_kind": "occupancy",
+            "allowed_expense_kinds": [
+                "occupancy",
+            ],
+            "default_spending_class": "facilities",
+        },
     },
     "merch_inventory_purchase": {
-        "finance_hints": {"expense_kinds": ["cogs"]},
         "label": "Merch inventory purchase",
+        "finance_hints": {
+            "default_expense_kind": "cogs",
+            "allowed_expense_kinds": [
+                "cogs",
+                "supplies",
+            ],
+            "default_spending_class": "logistics",
+        },
     },
     "merchant_fees": {
-        "finance_hints": {"expense_kinds": ["bank_merchant_fees"]},
         "label": "Bank/merchant processing fees",
+        "finance_hints": {
+            "default_expense_kind": "bank_merchant_fees",
+            "allowed_expense_kinds": [
+                "bank_merchant_fees",
+            ],
+            "default_spending_class": "admin",
+        },
     },
     "office_supplies": {
-        "finance_hints": {"expense_kinds": ["supplies"]},
         "label": "Office supplies",
+        "finance_hints": {
+            "default_expense_kind": "supplies",
+            "allowed_expense_kinds": [
+                "supplies",
+            ],
+            "default_spending_class": "admin",
+        },
     },
     "packaging_supplies": {
-        "finance_hints": {"expense_kinds": ["supplies", "cogs"]},
         "label": "Packaging supplies",
+        "finance_hints": {
+            "default_expense_kind": "supplies",
+            "allowed_expense_kinds": [
+                "supplies",
+                "cogs",
+            ],
+            "default_spending_class": "logistics",
+        },
     },
     "phone_office": {
-        "finance_hints": {"expense_kinds": ["occupancy"]},
         "label": "Phone service",
+        "finance_hints": {
+            "default_expense_kind": "occupancy",
+            "allowed_expense_kinds": [
+                "occupancy",
+            ],
+            "default_spending_class": "facilities",
+        },
     },
     "postage_shipping": {
-        "finance_hints": {"expense_kinds": ["postage_shipping"]},
         "label": "Postage & shipping",
+        "finance_hints": {
+            "default_expense_kind": "postage_shipping",
+            "allowed_expense_kinds": [
+                "postage_shipping",
+            ],
+            "default_spending_class": "admin",
+        },
     },
     "professional_services": {
-        "finance_hints": {"expense_kinds": ["professional_fees"]},
         "label": "Professional services",
+        "finance_hints": {
+            "default_expense_kind": "professional_fees",
+            "allowed_expense_kinds": [
+                "professional_fees",
+            ],
+            "default_spending_class": "admin",
+        },
     },
     "program_medical_supplies": {
-        "finance_hints": {
-            "expense_kinds": ["supplies", "direct_program_costs"]
-        },
         "label": "Medical/first-aid supplies",
+        "finance_hints": {
+            "default_expense_kind": "direct_program_costs",
+            "allowed_expense_kinds": [
+                "direct_program_costs",
+                "supplies",
+            ],
+            "default_spending_class": "basic_needs",
+        },
     },
     "program_transport": {
-        "finance_hints": {
-            "expense_kinds": ["direct_program_costs", "fuel", "travel"]
-        },
         "label": "Fuel/transport",
+        "finance_hints": {
+            "default_expense_kind": "direct_program_costs",
+            "allowed_expense_kinds": [
+                "direct_program_costs",
+                "fuel",
+                "travel",
+                "mileage",
+            ],
+            "default_spending_class": "basic_needs",
+        },
     },
     "rent_office": {
-        "finance_hints": {"expense_kinds": ["occupancy"]},
         "label": "Office rent",
+        "finance_hints": {
+            "default_expense_kind": "occupancy",
+            "allowed_expense_kinds": [
+                "occupancy",
+            ],
+            "default_spending_class": "facilities",
+        },
     },
     "software_subscriptions": {
-        "finance_hints": {"expense_kinds": ["software_it"]},
         "label": "Software subscriptions",
+        "finance_hints": {
+            "default_expense_kind": "software_it",
+            "allowed_expense_kinds": [
+                "software_it",
+            ],
+            "default_spending_class": "admin",
+        },
     },
     "unclassified": {
-        "finance_hints": {"expense_kinds": ["other_expense"]},
         "label": "Unclassified / admin review",
+        "finance_hints": {
+            "default_expense_kind": "other_expense",
+            "allowed_expense_kinds": [
+                "other_expense",
+            ],
+            "default_spending_class": "admin",
+        },
     },
     "utilities_office": {
-        "finance_hints": {"expense_kinds": ["occupancy"]},
         "label": "Utilities",
+        "finance_hints": {
+            "default_expense_kind": "occupancy",
+            "allowed_expense_kinds": [
+                "occupancy",
+            ],
+            "default_spending_class": "facilities",
+        },
     },
     "volunteer_swag": {
+        "label": "Volunteer recognition & swag",
         "finance_hints": {
-            "expense_kinds": ["market_cultivation", "supplies"]
+            "default_expense_kind": "market_cultivation",
+            "allowed_expense_kinds": [
+                "market_cultivation",
+                "supplies",
+            ],
+            "default_spending_class": "admin",
         },
-        "label": "Volunteer swag",
     },
 }

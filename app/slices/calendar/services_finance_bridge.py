@@ -111,7 +111,7 @@ def encumber_project_funds(
     preview = governance_v2.preview_funding_decision(
         _build_funding_decision_request(
             row=row,
-            op="spend",
+            op="encumber",
             amount_cents=amount_cents,
             funding_demand_ulid=row.ulid,
             project_ulid=row.project_ulid,
