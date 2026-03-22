@@ -8,7 +8,8 @@ It must not perform DB queries/writes, commits/rollbacks, or Ledger emits.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,8 @@ class OpsFloatSettlementResult:
     amount_cents: int
     decision_fingerprint: str | None
     flags: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class ProjectEncumbranceResult:
     funding_demand_ulid: str
@@ -92,6 +95,80 @@ class ProjectSpendResult:
     decision_fingerprint: str
     status: str
     flags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class FundingSourceProfileSummaryView:
+    key: str
+    source_kind: str
+    support_mode: str
+    approval_posture: str
+    default_restriction_keys: tuple[str, ...]
+    bridge_allowed: bool
+    repayment_expectation: str
+    forgiveness_rule: str
+    auto_ops_bridge_on_publish: bool
+
+
+@dataclass(frozen=True)
+class FundingDemandPublishedSnapshotView:
+    funding_demand_ulid: str
+    project_ulid: str
+    title: str
+    status: str
+    goal_cents: int
+    deadline_date: str | None
+    published_at_utc: str
+
+
+@dataclass(frozen=True)
+class FundingDemandPlanningSnapshotView:
+    project_title: str
+    spending_class: str
+    tag_any: tuple[str, ...]
+    source_profile_key: str | None
+    ops_support_planned: bool | None
+    planning_basis: str
+
+
+@dataclass(frozen=True)
+class FundingDemandPolicySnapshotView:
+    decision_fingerprint: str
+    eligible_fund_keys: tuple[str, ...]
+    default_restriction_keys: tuple[str, ...]
+    source_profile_summary: FundingSourceProfileSummaryView
+
+
+@dataclass(frozen=True)
+class FundingDemandWorkflowCuesView:
+    receive_posture: str | None
+    reserve_on_receive_expected: bool | None
+    reimbursement_expected: bool | None
+    bridge_support_possible: bool | None
+    return_unused_posture: str | None
+    recommended_income_kind: str | None
+    allowed_realization_modes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class FundingDemandContextView:
+    schema_version: int
+    demand: FundingDemandPublishedSnapshotView
+    planning: FundingDemandPlanningSnapshotView
+    policy: FundingDemandPolicySnapshotView
+    workflow: FundingDemandWorkflowCuesView
+
+
+# -----------------
+# DTO Builders
+# -----------------
+
+
+def funding_demand_context_to_json_dict(
+    view: FundingDemandContextView,
+) -> dict[str, Any]:
+    return asdict(view)
+
 
 def funding_demand_to_view(row) -> FundingDemandView:
     project = getattr(row, "project", None)

@@ -22,6 +22,29 @@ from app.slices.sponsors.models import Sponsor
 from app.slices.sponsors.services_funding import create_funding_intent
 
 
+def _patch_publishable_hints(
+    monkeypatch,
+    *,
+    source_profile_key="restricted_project_grant_return_unused",
+    ops_support_planned=False,
+):
+    from app.slices.calendar import services_funding as svc
+
+    monkeypatch.setattr(
+        svc,
+        "_project_policy_hints",
+        lambda project_ulid: svc.ProjectPolicyHints(
+            source_profile_key=source_profile_key,
+            ops_support_planned=ops_support_planned,
+        ),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _default_publishable_hints(monkeypatch):
+    _patch_publishable_hints(monkeypatch)
+
+
 def _create_sponsor(name: str) -> Sponsor:
     entity = Entity(kind="org")
     db.session.add(entity)
@@ -104,7 +127,7 @@ def _realize_into_demand(funding_demand_ulid: str, amount_cents: int) -> str:
     return out.journal_ulid
 
 
-def test_ops_float_seed_requires_governor(app):
+def test_ops_float_seed_requires_governor(app, monkeypatch):
     with app.app_context():
         ensure_default_accounts()
         ops_fd = _create_published_demand(
@@ -112,6 +135,11 @@ def test_ops_float_seed_requires_governor(app):
             demand_title="General Operations 2026",
         )
         _realize_into_demand(ops_fd, 12000)
+        _patch_publishable_hints(
+            monkeypatch,
+            source_profile_key="ops_seed_board_motion",
+            ops_support_planned=True,
+        )
         proj_fd = _create_published_demand(
             project_title="Stand Down",
             demand_title="Stand Down 2026",
@@ -133,7 +161,7 @@ def test_ops_float_seed_requires_governor(app):
         assert "approval" in msg or "permission" in msg
 
 
-def test_ops_float_seed_allocation_enables_project_encumber(app):
+def test_ops_float_seed_allocation_enables_project_encumber(app, monkeypatch):
     with app.app_context():
         ensure_default_accounts()
         ops_fd = _create_published_demand(
@@ -141,6 +169,11 @@ def test_ops_float_seed_allocation_enables_project_encumber(app):
             demand_title="General Operations 2026",
         )
         _realize_into_demand(ops_fd, 12000)
+        _patch_publishable_hints(
+            monkeypatch,
+            source_profile_key="ops_seed_board_motion",
+            ops_support_planned=True,
+        )
         proj_fd = _create_published_demand(
             project_title="Welcome Home Kits",
             demand_title="Welcome Home Kit Project",
@@ -186,7 +219,7 @@ def test_ops_float_seed_allocation_enables_project_encumber(app):
         assert demand.status == "funding_in_progress"
 
 
-def test_ops_float_bridge_is_auto_allowed(app):
+def test_ops_float_bridge_is_auto_allowed(app, monkeypatch):
     with app.app_context():
         ensure_default_accounts()
         ops_fd = _create_published_demand(
@@ -194,6 +227,11 @@ def test_ops_float_bridge_is_auto_allowed(app):
             demand_title="General Operations 2026",
         )
         _realize_into_demand(ops_fd, 12000)
+        _patch_publishable_hints(
+            monkeypatch,
+            source_profile_key="ops_bridge_preapproved",
+            ops_support_planned=True,
+        )
         proj_fd = _create_published_demand(
             project_title="Elks Welcome Home",
             demand_title="Elks WHK Reimbursement Project",
@@ -217,7 +255,7 @@ def test_ops_float_bridge_is_auto_allowed(app):
         assert summary.incoming_open_cents == 3000
 
 
-def test_ops_float_repay_reduces_open_balance(app):
+def test_ops_float_repay_reduces_open_balance(app, monkeypatch):
     with app.app_context():
         ensure_default_accounts()
         ops_fd = _create_published_demand(
@@ -225,6 +263,11 @@ def test_ops_float_repay_reduces_open_balance(app):
             demand_title="General Operations 2026",
         )
         _realize_into_demand(ops_fd, 12000)
+        _patch_publishable_hints(
+            monkeypatch,
+            source_profile_key="welcome_home_reimbursement_bridgeable",
+            ops_support_planned=True,
+        )
         proj_fd = _create_published_demand(
             project_title="Bridge Reimbursement",
             demand_title="Bridge Reimbursement Project",
@@ -264,7 +307,9 @@ def test_ops_float_repay_reduces_open_balance(app):
         assert summary_src.outgoing_open_cents == 3000
 
 
-def test_ops_float_forgive_requires_closed_project_and_governor(app):
+def test_ops_float_forgive_requires_closed_project_and_governor(
+    app, monkeypatch
+):
     with app.app_context():
         ensure_default_accounts()
         ops_fd = _create_published_demand(
@@ -272,6 +317,11 @@ def test_ops_float_forgive_requires_closed_project_and_governor(app):
             demand_title="General Operations 2026",
         )
         _realize_into_demand(ops_fd, 12000)
+        _patch_publishable_hints(
+            monkeypatch,
+            source_profile_key="ops_seed_board_motion",
+            ops_support_planned=True,
+        )
         proj_fd = _create_published_demand(
             project_title="Unreimbursed Shortfall",
             demand_title="Unreimbursed Shortfall Project",

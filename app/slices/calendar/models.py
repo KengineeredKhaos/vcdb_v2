@@ -1,6 +1,8 @@
 # app/slices/calendar/models.py
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -382,6 +384,10 @@ class FundingDemand(db.Model, ULIDPK, IsoTimestamps):
     closed_at_utc: Mapped[str | None] = mapped_column(
         String(30),
         nullable=True,
+    )
+
+    published_context_json: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True
     )
 
     project = relationship(

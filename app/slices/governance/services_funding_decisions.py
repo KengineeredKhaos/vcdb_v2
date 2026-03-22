@@ -34,6 +34,19 @@ class _SourceProfile:
     prohibited_expense_kinds_any: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class FundingSourceProfileSummary:
+    key: str
+    source_kind: str
+    support_mode: str
+    approval_posture: str
+    default_restriction_keys: tuple[str, ...]
+    bridge_allowed: bool
+    repayment_expectation: str
+    forgiveness_rule: str
+    auto_ops_bridge_on_publish: bool
+
+
 _OPS_PROFILE_BY_MODE = {
     "seed": "ops_seed_board_motion",
     "backfill": "ops_backfill_board_motion",
@@ -663,3 +676,27 @@ def preview_ops_float(raw_req: dict[str, Any]) -> dict[str, Any]:
         "matched_rule_ids": tuple(matched_rule_ids),
         "decision_fingerprint": _fingerprint(fp_payload),
     }
+
+
+# for Calendar Project source profile JSON build
+def get_funding_source_profile_summary(
+    profile_key: str,
+) -> FundingSourceProfileSummary:
+    if not profile_key or not str(profile_key).strip():
+        raise ValueError("source_profile_key is required")
+
+    profile = _get_source_profile_or_raise(str(profile_key).strip())
+    if profile is None:
+        raise ValueError("source_profile_key is required")
+
+    return FundingSourceProfileSummary(
+        key=profile.key,
+        source_kind=profile.source_kind,
+        support_mode=profile.support_mode,
+        approval_posture=profile.approval_posture,
+        default_restriction_keys=profile.default_restriction_keys,
+        bridge_allowed=profile.bridge_allowed,
+        repayment_expectation=profile.repayment_expectation,
+        forgiveness_rule=profile.forgiveness_rule,
+        auto_ops_bridge_on_publish=profile.auto_ops_bridge_on_publish,
+    )

@@ -695,6 +695,8 @@ A Project remains the authoritative purpose anchor for all Project-related fundi
 
 - Ledger records both sides of the support story
 
+---
+
 Operations Support to Projects — Canon
 
 Project is always the authoritative purpose anchor for any Project-related
@@ -756,3 +758,7 @@ or civilian-directed work must be represented as a discrete Project with its own
 Funding Demand and explicit constraints.
 
 Petty cash is explicitly out of scope for OpsFloat and out of scope for the core financial pipeline. OpsFloat must never be used to represent till cash, cash drawer float, petty cash reconciliation, or hand-cash custody.
+
+---
+
+`FundingDemandContextDTO` is a complete, versioned, publish-time snapshot stored on `FundingDemand.published_context_json` and exposed by `calendar_v2`. It is assembled by Calendar from Calendar facts plus Governance-authorized semantics, remains frozen after publish, survives de-publish for diagnostics, is replaced wholesale on re-publish, and is consumed by Sponsors and Finance as context—not as live policy and not as accounting truth.

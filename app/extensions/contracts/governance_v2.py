@@ -50,6 +50,9 @@ from app.slices.governance.services_finance_taxonomy import (
     validate_semantic_keys as _validate_semantic_keys,
 )
 from app.slices.governance.services_funding_decisions import (
+    get_funding_source_profile_summary as svc_get_funding_source_profile_summary,
+)
+from app.slices.governance.services_funding_decisions import (
     preview_funding_decision as svc_preview_funding_decision,
 )
 
@@ -77,6 +80,9 @@ __all__ = [
     # Lifecycle policy
     "get_resource_lifecycle_policy",
     "get_sponsor_lifecycle_policy",
+    # Calendar funding source builder
+    "FundingSourceProfileSummaryDTO",
+    "get_funding_source_profile_summary",
 ]
 
 
@@ -294,6 +300,19 @@ class SemanticValidationResultDTO:
     ok: bool
     errors: tuple[str, ...]
     unknown_keys: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class FundingSourceProfileSummaryDTO:
+    key: str
+    source_kind: str
+    support_mode: str
+    approval_posture: str
+    default_restriction_keys: tuple[str, ...]
+    bridge_allowed: bool
+    repayment_expectation: str
+    forgiveness_rule: str
+    auto_ops_bridge_on_publish: bool
 
 
 # -----------------
@@ -641,6 +660,10 @@ def apply_fund_defaults(
         )
     except Exception as exc:  # noqa: BLE001
         raise _as_contract_error(where, exc) from exc
+
+
+# insert calendar source profile function here
+# get_funding_source_profile_summary(source_profile_key: str)
 
 
 # -----------------
@@ -1867,4 +1890,30 @@ def preview_spend_decision(
             requires_override=decision.requires_override,
         )
     except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+# Funding profile for calendar funding source JSON builder
+def get_funding_source_profile_summary(
+    source_profile_key: str,
+) -> FundingSourceProfileSummaryDTO:
+    where = "governance_v2.get_funding_source_profile_summary"
+    try:
+        source_profile_key = _require_str(
+            "source_profile_key",
+            source_profile_key,
+        )
+        x = svc_get_funding_source_profile_summary(source_profile_key)
+        return FundingSourceProfileSummaryDTO(
+            key=x.key,
+            source_kind=x.source_kind,
+            support_mode=x.support_mode,
+            approval_posture=x.approval_posture,
+            default_restriction_keys=x.default_restriction_keys,
+            bridge_allowed=x.bridge_allowed,
+            repayment_expectation=x.repayment_expectation,
+            forgiveness_rule=x.forgiveness_rule,
+            auto_ops_bridge_on_publish=x.auto_ops_bridge_on_publish,
+        )
+    except Exception as exc:  # noqa: BLE001
         raise _as_contract_error(where, exc) from exc

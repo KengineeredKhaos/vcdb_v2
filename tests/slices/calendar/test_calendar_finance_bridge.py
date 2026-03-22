@@ -27,6 +27,29 @@ from app.slices.sponsors.models import Sponsor
 from app.slices.sponsors.services_funding import create_funding_intent
 
 
+def _patch_publishable_hints(
+    monkeypatch,
+    *,
+    source_profile_key="mission_local_veterans_cash",
+    ops_support_planned=False,
+):
+    from app.slices.calendar import services_funding as svc
+
+    monkeypatch.setattr(
+        svc,
+        "_project_policy_hints",
+        lambda project_ulid: svc.ProjectPolicyHints(
+            source_profile_key=source_profile_key,
+            ops_support_planned=ops_support_planned,
+        ),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _default_publishable_hints(monkeypatch):
+    _patch_publishable_hints(monkeypatch)
+
+
 def _pick_approval_free_fund(eligible_fund_keys: tuple[str, ...]) -> str:
     if "general_unrestricted" in eligible_fund_keys:
         return "general_unrestricted"
@@ -174,7 +197,7 @@ def _create_realized_demand() -> tuple[str, str]:
     return demand.ulid, fund_key
 
 
-def test_encumber_project_funds_happy_path(app):
+def test_encumber_project_funds_happy_path(app, monkeypatch):
     with app.app_context():
         ensure_default_accounts()
         demand_ulid, fund_key = _create_realized_demand()
@@ -339,9 +362,17 @@ def test_spend_rejects_when_over_open_encumbrance(app):
         assert "encumbered" in str(exc.value).lower()
 
 
-def test_encumber_rejects_when_selected_fund_requires_approval(app):
+def test_encumber_rejects_when_selected_fund_requires_approval(
+    app, monkeypatch
+):
     with app.app_context():
         ensure_default_accounts()
+        _patch_publishable_hints(
+            monkeypatch,
+            source_profile_key="restricted_project_grant_return_unused",
+            ops_support_planned=False,
+        )
+
         demand_ulid, _ = _create_realized_demand()
         tx = governance_v2.get_finance_taxonomy()
         expense_kind = tx.expense_kinds[0].key
@@ -388,7 +419,7 @@ def test_encumber_project_funds_forwards_source_profile_hint(
     def fake_hints(project_ulid: str):
         return funding_svc.ProjectPolicyHints(
             source_profile_key="restricted_project_grant_return_unused",
-            ops_support_planned=None,
+            ops_support_planned=False,
         )
 
     def fake_preview(req):

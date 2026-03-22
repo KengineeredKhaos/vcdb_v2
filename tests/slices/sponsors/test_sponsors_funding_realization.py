@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 import pytest
 from sqlalchemy import select
 
@@ -18,6 +20,29 @@ from app.slices.finance.services_journal import ensure_default_accounts
 from app.slices.ledger.models import LedgerEvent
 from app.slices.sponsors.models import Sponsor, SponsorFundingIntent
 from app.slices.sponsors.services_funding import create_funding_intent
+
+
+def _patch_publishable_hints(
+    monkeypatch,
+    *,
+    source_profile_key="mission_local_veterans_cash",
+    ops_support_planned=False,
+):
+    from app.slices.calendar import services_funding as svc
+
+    monkeypatch.setattr(
+        svc,
+        "_project_policy_hints",
+        lambda project_ulid: svc.ProjectPolicyHints(
+            source_profile_key=source_profile_key,
+            ops_support_planned=ops_support_planned,
+        ),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _default_publishable_hints(monkeypatch):
+    _patch_publishable_hints(monkeypatch)
 
 
 def _create_sponsor(name: str) -> Sponsor:
@@ -43,6 +68,7 @@ def _create_published_demand() -> str:
         project_title="Bridge Test Project",
         status="planned",
     )
+
     db.session.add(project)
     db.session.flush()
 
@@ -96,9 +122,28 @@ def test_realize_funding_intent_posts_income_and_reserve(app):
         funding_demand = calendar_v2.get_funding_demand(demand_ulid)
         assert funding_demand.eligible_fund_keys
 
-        tx = governance_v2.get_finance_taxonomy()
-        fund_key = funding_demand.eligible_fund_keys[0]
-        income_kind = tx.income_kinds[0].key
+        income_kind = "donation"
+
+        preview = governance_v2.preview_funding_decision(
+            governance_v2.FundingDecisionRequestDTO(
+                op="receive",
+                amount_cents=12000,
+                funding_demand_ulid=funding_demand.funding_demand_ulid,
+                project_ulid=funding_demand.project_ulid,
+                income_kind=income_kind,
+                restriction_keys=(),
+                demand_eligible_fund_keys=tuple(
+                    funding_demand.eligible_fund_keys
+                ),
+                selected_fund_key=None,
+                actor_rbac_roles=(),
+                actor_domain_roles=(),
+            )
+        )
+
+        assert preview.allowed
+        assert preview.eligible_fund_keys
+        fund_key = preview.eligible_fund_keys[0]
 
         out = sponsors_v2.realize_funding_intent(
             sponsors_v2.FundingRealizationRequestDTO(
@@ -115,7 +160,7 @@ def test_realize_funding_intent_posts_income_and_reserve(app):
             )
         )
         db.session.flush()
-        
+
         refreshed = db.session.get(SponsorFundingIntent, intent.ulid)
 
         assert refreshed is not None
@@ -165,7 +210,6 @@ def test_realize_funding_intent_rejects_non_committed(app):
             request_id="req-intent-draft",
         )
         db.session.flush()
-
 
         funding_demand = calendar_v2.get_funding_demand(demand_ulid)
         tx = governance_v2.get_finance_taxonomy()

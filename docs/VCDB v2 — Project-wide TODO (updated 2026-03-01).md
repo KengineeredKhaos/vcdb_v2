@@ -261,3 +261,7 @@ Conventions:
   - treat Calendar hints as consumers of policy, not parallel taxonomy authors
 
 - [ ] @TODO: restore focused seam test for encumber preview op after Calendar/Governance alignment pass
+
+- [ ] @TODO: Revisit Finance handling of Calendar contract FundingDemandContextDTO
+
+- [ ] @TODO: Revisit Calendar Project/Task planning, synthesis & funding demand development
