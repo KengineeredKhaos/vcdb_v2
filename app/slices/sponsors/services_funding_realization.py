@@ -8,6 +8,7 @@ from app.extensions import db, event_bus
 from app.extensions.contracts import calendar_v2, finance_v2, governance_v2
 from app.lib.chrono import now_iso8601_ms
 
+from .mapper import funding_context_to_realization_defaults
 from .services_funding import _get_intent_or_raise
 
 _ALLOWED_INTENT_STATUS = {"committed"}
@@ -65,11 +66,52 @@ def _require_realizable_intent(intent_row) -> None:
         )
 
 
-def _require_realizable_demand(demand: calendar_v2.FundingDemandDTO) -> None:
-    if demand.status not in _ALLOWED_DEMAND_STATUS:
+def _require_realizable_context(
+    context: calendar_v2.FundingDemandContextDTO,
+) -> None:
+    if context.demand.status not in _ALLOWED_DEMAND_STATUS:
         raise ValueError(
             "funding demand must be published or funding_in_progress"
         )
+
+
+def _merge_restriction_keys(*groups: tuple[str, ...]) -> tuple[str, ...]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for raw in group or ():
+            key = str(raw).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            out.append(key)
+    return tuple(out)
+
+
+def _resolve_income_kind(
+    requested_income_kind: str | None,
+    *,
+    defaults,
+) -> str:
+    value = (requested_income_kind or "").strip()
+    if value:
+        return value
+    value = (defaults.recommended_income_kind or "").strip()
+    if value:
+        return value
+    raise ValueError("income_kind required")
+
+
+def _resolve_reserve_on_receive(
+    requested: bool | None,
+    *,
+    defaults,
+) -> bool:
+    if requested is not None:
+        return bool(requested)
+    if defaults.reserve_on_receive_expected is None:
+        return False
+    return bool(defaults.reserve_on_receive_expected)
 
 
 def realize_funding_intent(
@@ -78,9 +120,9 @@ def realize_funding_intent(
     amount_cents: int,
     happened_at_utc: str,
     fund_key: str,
-    income_kind: str,
+    income_kind: str | None,
     receipt_method: str,
-    reserve_on_receive: bool = True,
+    reserve_on_receive: bool | None = None,
     memo: str | None = None,
     actor_ulid: str | None,
     actor_rbac_roles: tuple[str, ...] = (),
@@ -94,8 +136,6 @@ def realize_funding_intent(
         raise ValueError("happened_at_utc required")
     if not fund_key:
         raise ValueError("fund_key required")
-    if not income_kind:
-        raise ValueError("income_kind required")
     if not receipt_method:
         raise ValueError("receipt_method required")
 
@@ -108,20 +148,37 @@ def realize_funding_intent(
             "partial realization is not supported in this baseline"
         )
 
-    demand = calendar_v2.get_funding_demand(intent_row.funding_demand_ulid)
-    _require_realizable_demand(demand)
+    context = calendar_v2.get_funding_demand_context(
+        intent_row.funding_demand_ulid
+    )
+    _require_realizable_context(context)
+
+    defaults = funding_context_to_realization_defaults(
+        context,
+        intent_ulid=intent_row.ulid,
+        amount_cents=amount_cents,
+    )
+    income_kind = _resolve_income_kind(income_kind, defaults=defaults)
+    reserve_on_receive = _resolve_reserve_on_receive(
+        reserve_on_receive,
+        defaults=defaults,
+    )
 
     fund_meta = governance_v2.get_fund_key(fund_key)
     restriction_keys = governance_v2.apply_fund_defaults(
         fund_key=fund_key,
-        restriction_keys=(),
+        restriction_keys=defaults.default_restriction_keys,
+    )
+    restriction_keys = _merge_restriction_keys(
+        defaults.default_restriction_keys,
+        restriction_keys,
     )
 
     sem = governance_v2.validate_semantic_keys(
         fund_key=fund_key,
         restriction_keys=restriction_keys,
         income_kind=income_kind,
-        demand_eligible_fund_keys=tuple(demand.eligible_fund_keys),
+        demand_eligible_fund_keys=defaults.eligible_fund_keys,
     )
     if not sem.ok:
         raise ValueError("; ".join(sem.errors) or "invalid semantics")
@@ -130,11 +187,13 @@ def realize_funding_intent(
         governance_v2.FundingDecisionRequestDTO(
             op="receive",
             amount_cents=amount_cents,
-            funding_demand_ulid=demand.funding_demand_ulid,
-            project_ulid=demand.project_ulid,
+            funding_demand_ulid=defaults.funding_demand_ulid,
+            project_ulid=defaults.project_ulid,
             income_kind=income_kind,
+            source_profile_key=defaults.source_profile_key,
             restriction_keys=restriction_keys,
-            demand_eligible_fund_keys=tuple(demand.eligible_fund_keys),
+            ops_support_planned=defaults.ops_support_planned,
+            demand_eligible_fund_keys=defaults.eligible_fund_keys,
             selected_fund_key=fund_key,
             actor_rbac_roles=actor_rbac_roles,
             actor_domain_roles=actor_domain_roles,
@@ -168,8 +227,8 @@ def realize_funding_intent(
             receipt_method=receipt_method,
             source="sponsors",
             source_ref_ulid=intent_row.ulid,
-            funding_demand_ulid=demand.funding_demand_ulid,
-            project_ulid=demand.project_ulid,
+            funding_demand_ulid=defaults.funding_demand_ulid,
+            project_ulid=defaults.project_ulid,
             payer_entity_ulid=intent_row.sponsor_entity_ulid,
             memo=memo_txt,
             created_by_actor=actor_ulid,
@@ -182,13 +241,13 @@ def realize_funding_intent(
     if reserve_on_receive:
         reserve_post = finance_v2.reserve_funds(
             finance_v2.ReserveRequestDTO(
-                funding_demand_ulid=demand.funding_demand_ulid,
+                funding_demand_ulid=defaults.funding_demand_ulid,
                 fund_key=fund_key,
                 amount_cents=amount_cents,
                 source="sponsors",
                 fund_label=fund_meta.label,
                 fund_restriction_type=fund_restriction_type,
-                project_ulid=demand.project_ulid,
+                project_ulid=defaults.project_ulid,
                 source_ref_ulid=intent_row.ulid,
                 memo=memo_txt,
                 actor_ulid=actor_ulid,
@@ -205,8 +264,8 @@ def realize_funding_intent(
         return FundingRealizationResult(
             intent_ulid=intent_row.ulid,
             sponsor_entity_ulid=intent_row.sponsor_entity_ulid,
-            funding_demand_ulid=demand.funding_demand_ulid,
-            project_ulid=demand.project_ulid,
+            funding_demand_ulid=defaults.funding_demand_ulid,
+            project_ulid=defaults.project_ulid,
             amount_cents=amount_cents,
             fund_key=fund_key,
             journal_ulid=income_post.id,
@@ -228,8 +287,8 @@ def realize_funding_intent(
         happened_at_utc=now_iso8601_ms(),
         refs={
             "sponsor_entity_ulid": intent_row.sponsor_entity_ulid,
-            "funding_demand_ulid": demand.funding_demand_ulid,
-            "project_ulid": demand.project_ulid,
+            "funding_demand_ulid": defaults.funding_demand_ulid,
+            "project_ulid": defaults.project_ulid,
             "journal_ulid": income_post.id,
             "reserve_ulid": (
                 None if reserve_post is None else reserve_post.id
@@ -243,14 +302,16 @@ def realize_funding_intent(
             "income_kind": income_kind,
             "receipt_method": receipt_method,
             "reserve_on_receive": reserve_on_receive,
+            "source_profile_key": defaults.source_profile_key,
+            "ops_support_planned": defaults.ops_support_planned,
         },
     )
 
     return FundingRealizationResult(
         intent_ulid=intent_row.ulid,
         sponsor_entity_ulid=intent_row.sponsor_entity_ulid,
-        funding_demand_ulid=demand.funding_demand_ulid,
-        project_ulid=demand.project_ulid,
+        funding_demand_ulid=defaults.funding_demand_ulid,
+        project_ulid=defaults.project_ulid,
         amount_cents=amount_cents,
         fund_key=fund_key,
         journal_ulid=income_post.id,

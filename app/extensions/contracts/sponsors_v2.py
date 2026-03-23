@@ -66,10 +66,10 @@ class FundingRealizationRequestDTO:
     amount_cents: int
     happened_at_utc: str
     fund_key: str
-    income_kind: str
     receipt_method: str
 
-    reserve_on_receive: bool = True
+    income_kind: str | None = None
+    reserve_on_receive: bool | None = None
     memo: str | None = None
     actor_ulid: str | None = None
     actor_rbac_roles: tuple[str, ...] = ()

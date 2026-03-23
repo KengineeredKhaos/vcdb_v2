@@ -14,6 +14,10 @@
     <td>{{ demand.project_ulid or "" }}</td>
   </tr>
   <tr>
+    <th>Project title</th>
+    <td>{{ demand.planning.project_title }}</td>
+  </tr>
+  <tr>
     <th>Status</th>
     <td>{{ demand.status }}</td>
   </tr>
@@ -26,8 +30,97 @@
     <td>{{ demand.deadline_date or "" }}</td>
   </tr>
   <tr>
+    <th>Published at</th>
+    <td>{{ demand.published_at_utc or "" }}</td>
+  </tr>
+  <tr>
     <th>Eligible funds</th>
     <td>{{ demand.eligible_fund_keys | join(", ") }}</td>
+    <td>{{ demand.policy.eligible_fund_keys | join(", ") }}</td>
+  </tr>
+  <tr>
+    <th>Source profile</th>
+    <td>{{ demand.planning.source_profile_key or "" }}</td>
+  </tr>
+  <tr>
+    <th>Receive posture</th>
+    <td>{{ demand.workflow.receive_posture or "" }}</td>
+  </tr>
+  <tr>
+    <th>Recommended income kind</th>
+    <td>{{ demand.workflow.recommended_income_kind or "" }}</td>
+  </tr>
+  <tr>
+    <th>Reserve on receive expected</th>
+    <td>{{ demand.workflow.reserve_on_receive_expected }}</td>
+  </tr>
+  <tr>
+    <th>Allowed realization modes</th>
+    <td>{{ demand.workflow.allowed_realization_modes | join(", ") }}</td>
+  </tr>
+</table>
+
+<h2>Policy / planning</h2>
+<table>
+  <tr>
+    <th>Spending class</th>
+    <td>{{ demand.planning.spending_class }}</td>
+  </tr>
+  <tr>
+    <th>Tags</th>
+    <td>{{ demand.planning.tag_any | join(", ") }}</td>
+  </tr>
+  <tr>
+    <th>Default restrictions</th>
+    <td>{{ demand.policy.default_restriction_keys | join(", ") }}</td>
+  </tr>
+  <tr>
+    <th>Support mode</th>
+    <td>{{ demand.policy.source_profile_summary.support_mode }}</td>
+  </tr>
+  <tr>
+    <th>Approval posture</th>
+    <td>{{ demand.policy.source_profile_summary.approval_posture }}</td>
+  </tr>
+  <tr>
+    <th>Decision fingerprint</th>
+    <td>{{ demand.policy.decision_fingerprint }}</td>
+  </tr>
+</table>
+
+<h2>Pipeline / money</h2>
+<table>
+  <tr>
+    <th>Pledged</th>
+    <td>{{ demand.totals.pledged_cents }}</td>
+  </tr>
+  <tr>
+    <th>Received</th>
+    <td>{{ demand.money.received_cents }}</td>
+  </tr>
+  <tr>
+    <th>Reserved</th>
+    <td>{{ demand.money.reserved_cents }}</td>
+  </tr>
+  <tr>
+    <th>Encumbered</th>
+    <td>{{ demand.money.encumbered_cents }}</td>
+  </tr>
+  <tr>
+    <th>Spent</th>
+    <td>{{ demand.money.spent_cents }}</td>
+  </tr>
+  <tr>
+    <th>Remaining goal</th>
+    <td>{{ demand.money.remaining_goal_cents }}</td>
+  </tr>
+  <tr>
+    <th>Uncovered pipeline gap</th>
+    <td>{{ demand.money.uncovered_pipeline_gap_cents }}</td>
+  </tr>
+  <tr>
+    <th>Unreserved received</th>
+    <td>{{ demand.money.unreserved_received_cents }}</td>
   </tr>
 </table>
 

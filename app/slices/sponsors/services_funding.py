@@ -7,11 +7,12 @@ from typing import Any
 from sqlalchemy import select
 
 from app.extensions import db, event_bus
-from app.extensions.contracts import calendar_v2
+from app.extensions.contracts import calendar_v2, finance_v2
 from app.lib.chrono import now_iso8601_ms
 
 from .mapper import (
     calendar_demand_to_opportunity_view,
+    funding_context_to_detail_view,
     sponsor_funding_intent_to_view,
 )
 from .models import Sponsor, SponsorFundingIntent
@@ -77,8 +78,14 @@ def list_open_funding_opportunities() -> list:
 
 
 def get_funding_opportunity(funding_demand_ulid: str):
-    dto = calendar_v2.get_funding_demand(funding_demand_ulid)
-    return calendar_demand_to_opportunity_view(dto)
+    context = calendar_v2.get_funding_demand_context(funding_demand_ulid)
+    totals = get_funding_intent_totals(funding_demand_ulid)
+    money = finance_v2.get_funding_demand_money_view(funding_demand_ulid)
+    return funding_context_to_detail_view(
+        context,
+        totals=totals,
+        money=money,
+    )
 
 
 def create_funding_intent(
@@ -106,7 +113,7 @@ def create_funding_intent(
         raise ValueError("amount_cents must be >= 0")
 
     _get_sponsor_or_raise(sponsor_entity_ulid)
-    calendar_v2.get_funding_demand(funding_demand_ulid)
+    calendar_v2.get_funding_demand_context(funding_demand_ulid)
     _require_intent_kind(intent_kind)
     _require_status(status)
 
@@ -174,7 +181,7 @@ def update_funding_intent(
         raise ValueError("amount_cents must be >= 0")
 
     _get_sponsor_or_raise(sponsor_entity_ulid)
-    calendar_v2.get_funding_demand(funding_demand_ulid)
+    calendar_v2.get_funding_demand_context(funding_demand_ulid)
     _require_intent_kind(intent_kind)
     _require_status(status)
 

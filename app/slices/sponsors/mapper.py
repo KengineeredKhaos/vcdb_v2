@@ -45,6 +45,90 @@ class FundingIntentTotalsView:
     donation_ulids: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class OpportunityPlanningView:
+    project_title: str
+    spending_class: str
+    tag_any: tuple[str, ...]
+    source_profile_key: str | None
+    ops_support_planned: bool | None
+    planning_basis: str
+
+
+@dataclass(frozen=True)
+class OpportunitySourceProfileView:
+    key: str
+    source_kind: str
+    support_mode: str
+    approval_posture: str
+    default_restriction_keys: tuple[str, ...]
+    bridge_allowed: bool
+    repayment_expectation: str
+    forgiveness_rule: str
+    auto_ops_bridge_on_publish: bool
+
+
+@dataclass(frozen=True)
+class OpportunityPolicyView:
+    decision_fingerprint: str
+    eligible_fund_keys: tuple[str, ...]
+    default_restriction_keys: tuple[str, ...]
+    source_profile_summary: OpportunitySourceProfileView
+
+
+@dataclass(frozen=True)
+class OpportunityWorkflowView:
+    receive_posture: str | None
+    reserve_on_receive_expected: bool | None
+    reimbursement_expected: bool | None
+    bridge_support_possible: bool | None
+    return_unused_posture: str | None
+    recommended_income_kind: str | None
+    allowed_realization_modes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class OpportunityMoneyView:
+    received_cents: int
+    reserved_cents: int
+    encumbered_cents: int
+    spent_cents: int
+    remaining_goal_cents: int
+    uncovered_pipeline_gap_cents: int
+    unreserved_received_cents: int
+
+
+@dataclass(frozen=True)
+class FundingOpportunityDetailView:
+    funding_demand_ulid: str
+    project_ulid: str | None
+    title: str
+    status: str
+    goal_cents: int
+    deadline_date: str | None
+    published_at_utc: str | None
+    planning: OpportunityPlanningView
+    policy: OpportunityPolicyView
+    workflow: OpportunityWorkflowView
+    totals: FundingIntentTotalsView
+    money: OpportunityMoneyView
+
+
+@dataclass(frozen=True)
+class FundingRealizationDefaultsView:
+    intent_ulid: str
+    funding_demand_ulid: str
+    project_ulid: str | None
+    amount_cents: int
+    source_profile_key: str | None
+    ops_support_planned: bool | None
+    eligible_fund_keys: tuple[str, ...]
+    default_restriction_keys: tuple[str, ...]
+    recommended_income_kind: str | None
+    reserve_on_receive_expected: bool | None
+    allowed_realization_modes: tuple[str, ...]
+
+
 def calendar_demand_to_opportunity_view(dto) -> FundingOpportunityView:
     return FundingOpportunityView(
         funding_demand_ulid=dto.funding_demand_ulid,
@@ -68,6 +152,140 @@ def sponsor_funding_intent_to_view(row) -> SponsorFundingIntentView:
         note=row.note,
         created_at_utc=row.created_at_utc,
         updated_at_utc=row.updated_at_utc,
+    )
+
+
+def funding_intent_totals_to_view(
+    raw: Mapping[str, Any],
+) -> FundingIntentTotalsView:
+    pledged_by_sponsor = 0
+    rows = raw.get("pledged_by_sponsor") or ()
+    for row in rows:
+        try:
+            pledged_by_sponsor += int(row.get("amount_cents") or 0)
+        except Exception:
+            continue
+
+    return FundingIntentTotalsView(
+        funding_demand_ulid=str(raw.get("funding_demand_ulid") or ""),
+        pledged_cents=int(raw.get("pledged_cents") or 0),
+        pledged_by_sponsor=pledged_by_sponsor,
+        pledge_ulids=tuple(raw.get("pledge_ulids") or ()),
+        donation_ulids=tuple(raw.get("donation_ulids") or ()),
+    )
+
+
+def funding_context_to_detail_view(
+    context,
+    *,
+    totals: Mapping[str, Any],
+    money,
+) -> FundingOpportunityDetailView:
+    total_goal = int(context.demand.goal_cents or 0)
+    pledged_cents = int(totals.get("pledged_cents") or 0)
+    received_cents = int(getattr(money, "received_cents", 0) or 0)
+    reserved_cents = int(getattr(money, "reserved_cents", 0) or 0)
+    encumbered_cents = int(getattr(money, "encumbered_cents", 0) or 0)
+    spent_cents = int(getattr(money, "spent_cents", 0) or 0)
+
+    remaining_goal_cents = max(total_goal - received_cents, 0)
+    uncovered_pipeline_gap_cents = max(total_goal - pledged_cents, 0)
+    unreserved_received_cents = max(received_cents - reserved_cents, 0)
+
+    summary = context.policy.source_profile_summary
+
+    return FundingOpportunityDetailView(
+        funding_demand_ulid=context.demand.funding_demand_ulid,
+        project_ulid=context.demand.project_ulid,
+        title=context.demand.title,
+        status=context.demand.status,
+        goal_cents=total_goal,
+        deadline_date=context.demand.deadline_date,
+        published_at_utc=context.demand.published_at_utc,
+        planning=OpportunityPlanningView(
+            project_title=context.planning.project_title,
+            spending_class=context.planning.spending_class,
+            tag_any=tuple(context.planning.tag_any or ()),
+            source_profile_key=context.planning.source_profile_key,
+            ops_support_planned=context.planning.ops_support_planned,
+            planning_basis=context.planning.planning_basis,
+        ),
+        policy=OpportunityPolicyView(
+            decision_fingerprint=context.policy.decision_fingerprint,
+            eligible_fund_keys=tuple(context.policy.eligible_fund_keys or ()),
+            default_restriction_keys=tuple(
+                context.policy.default_restriction_keys or ()
+            ),
+            source_profile_summary=OpportunitySourceProfileView(
+                key=summary.key,
+                source_kind=summary.source_kind,
+                support_mode=summary.support_mode,
+                approval_posture=summary.approval_posture,
+                default_restriction_keys=tuple(
+                    summary.default_restriction_keys or ()
+                ),
+                bridge_allowed=bool(summary.bridge_allowed),
+                repayment_expectation=summary.repayment_expectation,
+                forgiveness_rule=summary.forgiveness_rule,
+                auto_ops_bridge_on_publish=bool(
+                    summary.auto_ops_bridge_on_publish
+                ),
+            ),
+        ),
+        workflow=OpportunityWorkflowView(
+            receive_posture=context.workflow.receive_posture,
+            reserve_on_receive_expected=(
+                context.workflow.reserve_on_receive_expected
+            ),
+            reimbursement_expected=(context.workflow.reimbursement_expected),
+            bridge_support_possible=(
+                context.workflow.bridge_support_possible
+            ),
+            return_unused_posture=(context.workflow.return_unused_posture),
+            recommended_income_kind=(
+                context.workflow.recommended_income_kind
+            ),
+            allowed_realization_modes=tuple(
+                context.workflow.allowed_realization_modes or ()
+            ),
+        ),
+        totals=funding_intent_totals_to_view(totals),
+        money=OpportunityMoneyView(
+            received_cents=received_cents,
+            reserved_cents=reserved_cents,
+            encumbered_cents=encumbered_cents,
+            spent_cents=spent_cents,
+            remaining_goal_cents=remaining_goal_cents,
+            uncovered_pipeline_gap_cents=uncovered_pipeline_gap_cents,
+            unreserved_received_cents=unreserved_received_cents,
+        ),
+    )
+
+
+def funding_context_to_realization_defaults(
+    context,
+    *,
+    intent_ulid: str,
+    amount_cents: int,
+) -> FundingRealizationDefaultsView:
+    return FundingRealizationDefaultsView(
+        intent_ulid=intent_ulid,
+        funding_demand_ulid=context.demand.funding_demand_ulid,
+        project_ulid=context.demand.project_ulid,
+        amount_cents=int(amount_cents or 0),
+        source_profile_key=context.planning.source_profile_key,
+        ops_support_planned=context.planning.ops_support_planned,
+        eligible_fund_keys=tuple(context.policy.eligible_fund_keys or ()),
+        default_restriction_keys=tuple(
+            context.policy.default_restriction_keys or ()
+        ),
+        recommended_income_kind=(context.workflow.recommended_income_kind),
+        reserve_on_receive_expected=(
+            context.workflow.reserve_on_receive_expected
+        ),
+        allowed_realization_modes=tuple(
+            context.workflow.allowed_realization_modes or ()
+        ),
     )
 
 
@@ -255,16 +473,37 @@ def sponsor_poc_list_to_dto(
 
 
 __all__ = [
+    "FundingIntentTotalsView",
+    "FundingOpportunityDetailView",
+    "FundingOpportunityView",
+    "FundingRealizationDefaultsView",
+    "OpportunityMoneyView",
+    "OpportunityPlanningView",
+    "OpportunityPolicyView",
+    "OpportunitySourceProfileView",
+    "OpportunityWorkflowView",
     "SponsorCapabilityView",
+    "SponsorFundingIntentView",
+    "SponsorPOCLinkView",
+    "SponsorPOCView",
     "SponsorPledgeView",
     "SponsorView",
     "SponsorPOCLinkView",
     "SponsorPOCView",
+    "calendar_demand_to_opportunity_view",
+    "funding_context_to_detail_view",
+    "funding_context_to_realization_defaults",
+    "funding_intent_totals_to_view",
     "map_sponsor_capability",
     "map_sponsor_pledge",
+    "map_sponsor_poc_list",
+    "map_sponsor_poc_view",
     "map_sponsor_view",
     "map_sponsor_poc_view",
     "map_sponsor_poc_list",
+    "sponsor_funding_intent_to_view",
+    "sponsor_poc_list_to_dto",
+    "sponsor_poc_view_to_dto",
     "sponsor_view_to_dto",
     "sponsor_poc_view_to_dto",
     "sponsor_poc_list_to_dto",
