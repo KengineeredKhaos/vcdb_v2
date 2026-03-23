@@ -58,6 +58,10 @@
     <th>Allowed realization modes</th>
     <td>{{ demand.workflow.allowed_realization_modes | join(", ") }}</td>
   </tr>
+  <tr>
+    <th>Suggested sponsor intent kinds</th>
+    <td>{{ demand.intent_guidance.suggested_intent_kinds | join(", ") }}</td>
+  </tr>
 </table>
 
 <h2>Policy / planning</h2>
@@ -87,6 +91,27 @@
     <td>{{ demand.policy.decision_fingerprint }}</td>
   </tr>
 </table>
+{% if demand.intent_guidance.advisory %}
+  <h2>Intent guidance</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Intent kind</th>
+        <th>Advised</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in demand.intent_guidance.advisory %}
+        <tr>
+          <td>{{ row.intent_kind }}</td>
+          <td>{{ row.advised }}</td>
+          <td>{{ row.reason }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
 
 <h2>Pipeline / money</h2>
 <table>

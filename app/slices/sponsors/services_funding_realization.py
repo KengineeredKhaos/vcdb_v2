@@ -191,6 +191,8 @@ def realize_funding_intent(
             project_ulid=defaults.project_ulid,
             income_kind=income_kind,
             source_profile_key=defaults.source_profile_key,
+            spending_class=defaults.spending_class,
+            tag_any=defaults.tag_any,
             restriction_keys=restriction_keys,
             ops_support_planned=defaults.ops_support_planned,
             demand_eligible_fund_keys=defaults.eligible_fund_keys,

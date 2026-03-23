@@ -11,6 +11,18 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+_SPONSOR_INTENT_KIND_ORDER = (
+    "pledge",
+    "donation",
+    "pass_through",
+)
+
+_MODE_TO_INTENT_KINDS = {
+    "pledge": ("pledge",),
+    "donation": ("donation",),
+    "reimbursement_receipt": ("pledge",),
+}
+
 
 @dataclass(frozen=True)
 class FundingOpportunityView:
@@ -99,6 +111,19 @@ class OpportunityMoneyView:
 
 
 @dataclass(frozen=True)
+class OpportunityIntentKindAdviceView:
+    intent_kind: str
+    advised: bool
+    reason: str
+
+
+@dataclass(frozen=True)
+class OpportunityIntentGuidanceView:
+    suggested_intent_kinds: tuple[str, ...]
+    advisory: tuple[OpportunityIntentKindAdviceView, ...]
+
+
+@dataclass(frozen=True)
 class FundingOpportunityDetailView:
     funding_demand_ulid: str
     project_ulid: str | None
@@ -110,6 +135,7 @@ class FundingOpportunityDetailView:
     planning: OpportunityPlanningView
     policy: OpportunityPolicyView
     workflow: OpportunityWorkflowView
+    intent_guidance: OpportunityIntentGuidanceView
     totals: FundingIntentTotalsView
     money: OpportunityMoneyView
 
@@ -118,15 +144,17 @@ class FundingOpportunityDetailView:
 class FundingRealizationDefaultsView:
     intent_ulid: str
     funding_demand_ulid: str
-    project_ulid: str | None
+    project_ulid: str
     amount_cents: int
-    source_profile_key: str | None
-    ops_support_planned: bool | None
+    source_profile_key: str
+    ops_support_planned: bool
     eligible_fund_keys: tuple[str, ...]
     default_restriction_keys: tuple[str, ...]
     recommended_income_kind: str | None
     reserve_on_receive_expected: bool | None
     allowed_realization_modes: tuple[str, ...]
+    spending_class: str
+    tag_any: tuple[str, ...]
 
 
 def calendar_demand_to_opportunity_view(dto) -> FundingOpportunityView:
@@ -172,6 +200,66 @@ def funding_intent_totals_to_view(
         pledged_by_sponsor=pledged_by_sponsor,
         pledge_ulids=tuple(raw.get("pledge_ulids") or ()),
         donation_ulids=tuple(raw.get("donation_ulids") or ()),
+    )
+
+
+def workflow_to_intent_guidance(
+    allowed_realization_modes: Sequence[str],
+) -> OpportunityIntentGuidanceView:
+    suggested: list[str] = []
+    seen: set[str] = set()
+
+    for mode in allowed_realization_modes or ():
+        for intent_kind in _MODE_TO_INTENT_KINDS.get(str(mode).strip(), ()):
+            if intent_kind in seen:
+                continue
+            seen.add(intent_kind)
+            suggested.append(intent_kind)
+
+    advisory: list[OpportunityIntentKindAdviceView] = []
+    mode_labels = ", ".join(allowed_realization_modes or ())
+    for intent_kind in _SPONSOR_INTENT_KIND_ORDER:
+        if intent_kind in seen:
+            reason = "Aligned with Calendar realization modes"
+            if mode_labels:
+                reason = (
+                    f"Aligned with Calendar realization modes: {mode_labels}."
+                )
+            advisory.append(
+                OpportunityIntentKindAdviceView(
+                    intent_kind=intent_kind,
+                    advised=True,
+                    reason=reason,
+                )
+            )
+            continue
+
+        if intent_kind == "pass_through":
+            reason = (
+                "Sponsor-local coordination mode. Calendar workflow does not "
+                "infer this intent kind directly."
+            )
+        elif mode_labels:
+            reason = (
+                "Not suggested by Calendar workflow for this demand. "
+                f"Published modes: {mode_labels}."
+            )
+        else:
+            reason = (
+                "No Calendar realization guidance published for this demand."
+            )
+
+        advisory.append(
+            OpportunityIntentKindAdviceView(
+                intent_kind=intent_kind,
+                advised=False,
+                reason=reason,
+            )
+        )
+
+    return OpportunityIntentGuidanceView(
+        suggested_intent_kinds=tuple(suggested),
+        advisory=tuple(advisory),
     )
 
 
@@ -249,6 +337,9 @@ def funding_context_to_detail_view(
                 context.workflow.allowed_realization_modes or ()
             ),
         ),
+        intent_guidance=workflow_to_intent_guidance(
+            tuple(context.workflow.allowed_realization_modes or ())
+        ),
         totals=funding_intent_totals_to_view(totals),
         money=OpportunityMoneyView(
             received_cents=received_cents,
@@ -279,13 +370,15 @@ def funding_context_to_realization_defaults(
         default_restriction_keys=tuple(
             context.policy.default_restriction_keys or ()
         ),
-        recommended_income_kind=(context.workflow.recommended_income_kind),
+        recommended_income_kind=context.workflow.recommended_income_kind,
         reserve_on_receive_expected=(
             context.workflow.reserve_on_receive_expected
         ),
         allowed_realization_modes=tuple(
             context.workflow.allowed_realization_modes or ()
         ),
+        spending_class=context.planning.spending_class,
+        tag_any=tuple(context.planning.tag_any or ()),
     )
 
 
@@ -477,6 +570,8 @@ __all__ = [
     "FundingOpportunityDetailView",
     "FundingOpportunityView",
     "FundingRealizationDefaultsView",
+    "OpportunityIntentGuidanceView",
+    "OpportunityIntentKindAdviceView",
     "OpportunityMoneyView",
     "OpportunityPlanningView",
     "OpportunityPolicyView",
@@ -494,6 +589,7 @@ __all__ = [
     "funding_context_to_detail_view",
     "funding_context_to_realization_defaults",
     "funding_intent_totals_to_view",
+    "workflow_to_intent_guidance",
     "map_sponsor_capability",
     "map_sponsor_pledge",
     "map_sponsor_poc_list",

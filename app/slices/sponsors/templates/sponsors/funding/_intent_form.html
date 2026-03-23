@@ -25,6 +25,18 @@
   {{ form.intent_kind() }}
   {% if form.intent_kind.errors %}
     <div class="text-danger">{{ form.intent_kind.errors[0] }}</div>
+    {% if demand and demand.intent_guidance %}
+      <div class="text-muted">
+        Suggested for this demand: {{ demand.intent_guidance.suggested_intent_kinds | join(", ") or "none" }}
+      </div>
+      <ul>
+        {% for row in demand.intent_guidance.advisory %}
+          <li>
+            <strong>{{ row.intent_kind }}</strong>: {{ row.reason }}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
   {% endif %}
 </div>
 
