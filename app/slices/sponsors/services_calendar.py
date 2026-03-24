@@ -11,6 +11,7 @@ from .mapper import (
     SponsorCultivationOutcomeView,
     map_sponsor_cultivation_outcome,
 )
+from .services import get_profile_hints, set_profile_hints
 
 CULTIVATION_PROJECT_TITLE = "Sponsor Cultivation"
 CULTIVATION_TASK_KIND = "fundraising_cultivation"
@@ -143,3 +144,64 @@ def list_recent_cultivation_outcomes(
         limit=limit,
     )
     return tuple(map_sponsor_cultivation_outcome(row) for row in rows)
+
+
+def get_cultivation_outcome(
+    task_ulid: str,
+) -> SponsorCultivationOutcomeView | None:
+    row = calendar_v2.get_cultivation_outcome(task_ulid=task_ulid)
+    if row is None:
+        return None
+    return map_sponsor_cultivation_outcome(row)
+
+
+def promote_cultivation_outcome_to_relationship_note(
+    *,
+    sponsor_entity_ulid: str,
+    task_ulid: str,
+    actor_ulid: str | None,
+    request_id: str,
+) -> str | None:
+    outcome = get_cultivation_outcome(task_ulid)
+    if outcome is None:
+        raise ValueError("cultivation outcome not found")
+    if outcome.sponsor_entity_ulid != sponsor_entity_ulid:
+        raise ValueError("cultivation outcome does not belong to sponsor")
+
+    note = str(outcome.outcome_note or "").strip()
+    if not note:
+        raise ValueError("cultivation outcome has no note to promote")
+
+    current = get_profile_hints(sponsor_entity_ulid) or {}
+    relationship_note = str(current.get("relationship_note") or "").strip()
+    recognition_note = str(current.get("recognition_note") or "").strip()
+
+    lines = [f"Cultivation outcome — {outcome.task_title}"]
+    if outcome.done_at_utc:
+        lines.append(f"Completed: {outcome.done_at_utc}")
+    elif outcome.due_at_utc:
+        lines.append(f"Due: {outcome.due_at_utc}")
+    if outcome.funding_demand_ulid:
+        lines.append(f"Demand: {outcome.funding_demand_ulid}")
+    lines.append(note)
+
+    promoted = "\n".join(lines).strip()
+
+    if promoted and promoted in relationship_note:
+        return None
+
+    new_relationship_note = (
+        f"{relationship_note}\n\n{promoted}".strip()
+        if relationship_note
+        else promoted
+    )
+
+    return set_profile_hints(
+        sponsor_entity_ulid=sponsor_entity_ulid,
+        payload={
+            "relationship_note": new_relationship_note,
+            "recognition_note": recognition_note,
+        },
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+    )

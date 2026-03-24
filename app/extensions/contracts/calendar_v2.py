@@ -1150,6 +1150,41 @@ def list_cultivation_outcomes_for_sponsor(
         raise _as_contract_error(where, exc) from exc
 
 
+def get_cultivation_outcome(
+    *,
+    task_ulid: str,
+) -> CultivationOutcomeDTO | None:
+    where = "calendar_v2.get_cultivation_outcome"
+    try:
+        task_ulid = _require_ulid("task_ulid", task_ulid)
+
+        from app.slices.calendar import services as svc
+
+        row = svc.get_cultivation_outcome(task_ulid)
+        if row is None:
+            return None
+
+        return CultivationOutcomeDTO(
+            task_ulid=str(row["task_ulid"]),
+            project_ulid=str(row["project_ulid"]),
+            sponsor_entity_ulid=str(row["sponsor_entity_ulid"]),
+            workflow=str(row["workflow"]),
+            status=str(row["status"]),
+            task_title=str(row["task_title"]),
+            due_at_utc=row.get("due_at_utc"),
+            done_at_utc=row.get("done_at_utc"),
+            funding_demand_ulid=row.get("funding_demand_ulid"),
+            outcome_note=row.get("outcome_note"),
+            follow_up_recommended=bool(row.get("follow_up_recommended")),
+            off_cadence_follow_up_signal=bool(
+                row.get("off_cadence_follow_up_signal")
+            ),
+            funding_interest_signal=bool(row.get("funding_interest_signal")),
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
 def list_project_funding_plans(
     *, project_ulid: str
 ) -> list[ProjectFundingPlanDTO]:
@@ -1225,6 +1260,7 @@ __all__ = [
     "TaskDTO",
     "get_funding_demand",
     "get_funding_demand_context",
+    "get_cultivation_outcome",
     "list_published_funding_demands",
     "encumber_project_funds",
     "spend_project_funds",

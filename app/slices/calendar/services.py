@@ -498,6 +498,56 @@ def list_cultivation_outcomes_for_sponsor(
     return out
 
 
+def get_cultivation_outcome(task_ulid: str) -> dict | None:
+    if not isinstance(task_ulid, str) or len(task_ulid) != 26:
+        raise ValueError("task_ulid must be a 26-char ULID")
+
+    row = db.session.get(Task, task_ulid)
+    if row is None:
+        return None
+    if row.task_kind != "fundraising_cultivation":
+        return None
+
+    req = (
+        row.requirements_json
+        if isinstance(row.requirements_json, dict)
+        else {}
+    )
+    if req.get("workflow") != "cultivation":
+        return None
+
+    outcome = req.get("outcome")
+    if not isinstance(outcome, dict):
+        outcome = {}
+
+    sponsor_entity_ulid = req.get("sponsor_entity_ulid")
+    if (
+        not isinstance(sponsor_entity_ulid, str)
+        or len(sponsor_entity_ulid) != 26
+    ):
+        return None
+
+    return {
+        "task_ulid": row.ulid,
+        "project_ulid": row.project_ulid,
+        "sponsor_entity_ulid": sponsor_entity_ulid,
+        "workflow": "cultivation",
+        "status": row.status,
+        "task_title": row.task_title,
+        "due_at_utc": row.due_at_utc,
+        "done_at_utc": row.done_at_utc,
+        "funding_demand_ulid": req.get("funding_demand_ulid"),
+        "outcome_note": outcome.get("outcome_note"),
+        "follow_up_recommended": bool(outcome.get("follow_up_recommended")),
+        "off_cadence_follow_up_signal": bool(
+            outcome.get("off_cadence_follow_up_signal")
+        ),
+        "funding_interest_signal": bool(
+            outcome.get("funding_interest_signal")
+        ),
+    }
+
+
 # -----------------
 # List Project for
 # a given period

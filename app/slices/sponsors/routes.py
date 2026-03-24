@@ -465,3 +465,55 @@ def sponsor_cultivation_task_create(sponsor_entity_ulid: str):
     except Exception as exc:
         db.session.rollback()
         raise
+
+
+@bp.post(
+    "/<sponsor_entity_ulid>/cultivation-outcomes/<task_ulid>/promote-relationship-note"
+)
+@login_required
+def promote_cultivation_outcome_to_relationship_note(
+    sponsor_entity_ulid: str,
+    task_ulid: str,
+):
+    sponsor = sp_svc.sponsor_view(sponsor_entity_ulid)
+    if not sponsor:
+        return _err(LookupError("not found"), 404)
+
+    next_url = (
+        request.form.get("next")
+        or request.referrer
+        or url_for(
+            "sponsors.sponsor_detail_html",
+            sponsor_entity_ulid=sponsor_entity_ulid,
+        )
+    )
+
+    try:
+        req, actor = ensure_request_id(), _actor_ulid()
+        if not actor:
+            raise PermissionError("actor_ulid is required")
+
+        hist = (
+            cal_handoff_svc.promote_cultivation_outcome_to_relationship_note(
+                sponsor_entity_ulid=sponsor_entity_ulid,
+                task_ulid=task_ulid,
+                actor_ulid=actor,
+                request_id=req,
+            )
+        )
+        db.session.commit()
+
+        flash(
+            "Outcome note promoted to relationship note."
+            if hist
+            else "No relationship note change.",
+            "success",
+        )
+        return redirect(next_url)
+    except Exception as exc:
+        db.session.rollback()
+        flash(
+            str(exc) or "Unable to promote cultivation outcome.",
+            "error",
+        )
+        return redirect(next_url)

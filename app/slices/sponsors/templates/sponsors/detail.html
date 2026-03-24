@@ -129,7 +129,22 @@
                 <div>Off cadence: {{ 'yes' if row.off_cadence_follow_up_signal else 'no' }}</div>
                 <div>Funding interest: {{ 'yes' if row.funding_interest_signal else 'no' }}</div>
               </td>
-              <td>{{ row.outcome_note or '' }}</td>
+              <td>
+                {{ row.outcome_note or '' }}</td>
+
+                {% if row.outcome_note %}
+                  <form method="post"
+                    action="{{ url_for('sponsors.promote_cultivation_outcome_to_relationship_note', sponsor_entity_ulid=sponsor.entity_ulid, task_ulid=row.task_ulid) }}"
+                    style="margin-top:.5rem;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="next"
+                     value="{{ url_for('sponsors.sponsor_detail_html', sponsor_entity_ulid=sponsor.entity_ulid) }}">
+                  <button class="btn btn-sm" type="submit">
+                    Promote to relationship note
+                  </button>
+                </form>
+                {% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>
