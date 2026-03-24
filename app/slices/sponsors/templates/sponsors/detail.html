@@ -97,7 +97,47 @@
       <div class="help">No profile note hints recorded yet.</div>
     {% endif %}
   </section>
+  <section class="card">
+    <h2>Recent cultivation activity</h2>
 
+    {% if cultivation_outcomes %}
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Status</th>
+            <th>Due</th>
+            <th>Done</th>
+            <th>Demand</th>
+            <th>Signals</th>
+            <th>Outcome note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in cultivation_outcomes %}
+            <tr>
+              <td>
+                <strong>{{ row.task_title }}</strong>
+                <div class="help mono">{{ row.task_ulid }}</div>
+              </td>
+              <td>{{ row.status }}</td>
+              <td>{{ row.due_at_utc or '' }}</td>
+              <td>{{ row.done_at_utc or '' }}</td>
+              <td class="mono">{{ row.funding_demand_ulid or '' }}</td>
+              <td>
+                <div>Follow-up: {{ 'yes' if row.follow_up_recommended else 'no' }}</div>
+                <div>Off cadence: {{ 'yes' if row.off_cadence_follow_up_signal else 'no' }}</div>
+                <div>Funding interest: {{ 'yes' if row.funding_interest_signal else 'no' }}</div>
+              </td>
+              <td>{{ row.outcome_note or '' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="help">No cultivation activity recorded yet.</div>
+    {% endif %}
+  </section>
   <section class="card">
     <h2>Capabilities</h2>
     {% if sponsor.active_capabilities %}

@@ -159,6 +159,41 @@ class FundingRealizationDefaultsView:
     tag_any: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class SponsorCultivationOutcomeView:
+    task_ulid: str
+    project_ulid: str
+    sponsor_entity_ulid: str
+    workflow: str
+    status: str
+    task_title: str
+    due_at_utc: str | None
+    done_at_utc: str | None
+    funding_demand_ulid: str | None
+    outcome_note: str | None
+    follow_up_recommended: bool
+    off_cadence_follow_up_signal: bool
+    funding_interest_signal: bool
+
+
+def map_sponsor_cultivation_outcome(dto) -> SponsorCultivationOutcomeView:
+    return SponsorCultivationOutcomeView(
+        task_ulid=dto.task_ulid,
+        project_ulid=dto.project_ulid,
+        sponsor_entity_ulid=dto.sponsor_entity_ulid,
+        workflow=dto.workflow,
+        status=dto.status,
+        task_title=dto.task_title,
+        due_at_utc=dto.due_at_utc,
+        done_at_utc=dto.done_at_utc,
+        funding_demand_ulid=dto.funding_demand_ulid,
+        outcome_note=dto.outcome_note,
+        follow_up_recommended=bool(dto.follow_up_recommended),
+        off_cadence_follow_up_signal=bool(dto.off_cadence_follow_up_signal),
+        funding_interest_signal=bool(dto.funding_interest_signal),
+    )
+
+
 def calendar_demand_to_opportunity_view(dto) -> FundingOpportunityView:
     return FundingOpportunityView(
         funding_demand_ulid=dto.funding_demand_ulid,
@@ -878,6 +913,7 @@ __all__ = [
     "SponsorOpportunityMatchView",
     "SponsorCRMFactorEditorRowView",
     "SponsorCRMEditorView",
+    "SponsorCultivationOutcomeView",
     "calendar_demand_to_opportunity_view",
     "funding_context_to_detail_view",
     "funding_context_to_realization_defaults",
@@ -893,6 +929,7 @@ __all__ = [
     "map_sponsor_crm_factor",
     "map_sponsor_posture",
     "map_sponsor_profile_note_hints",
+    "map_sponsor_cultivation_outcome",
     "sponsor_funding_intent_to_view",
     "sponsor_poc_list_to_dto",
     "sponsor_poc_view_to_dto",

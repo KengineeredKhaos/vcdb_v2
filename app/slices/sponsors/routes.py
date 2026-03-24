@@ -138,6 +138,10 @@ def sponsor_detail_html(sponsor_entity_ulid: str):
 
     posture = crm_svc.get_sponsor_posture(sponsor_entity_ulid)
     note_hints = crm_svc.get_sponsor_profile_note_hints(sponsor_entity_ulid)
+    cultivation_outcomes = cal_handoff_svc.list_recent_cultivation_outcomes(
+        sponsor_entity_ulid,
+        limit=10,
+    )
 
     return render_template(
         "sponsors/detail.html",
@@ -145,6 +149,7 @@ def sponsor_detail_html(sponsor_entity_ulid: str):
         sponsor=sponsor,
         posture=posture,
         note_hints=note_hints,
+        cultivation_outcomes=cultivation_outcomes,
         entity_ulid=sponsor_entity_ulid,
         entity_card=_try_entity_name_card(sponsor_entity_ulid),
     )

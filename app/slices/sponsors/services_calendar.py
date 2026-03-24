@@ -7,6 +7,10 @@ from typing import Any
 from app.extensions.contracts import calendar_v2, entity_v2
 
 from . import services_crm as crm_svc
+from .mapper import (
+    SponsorCultivationOutcomeView,
+    map_sponsor_cultivation_outcome,
+)
 
 CULTIVATION_PROJECT_TITLE = "Sponsor Cultivation"
 CULTIVATION_TASK_KIND = "fundraising_cultivation"
@@ -69,6 +73,12 @@ def create_cultivation_task(
         "source_slice": "sponsors",
         "workflow": "cultivation",
         "sponsor_entity_ulid": sponsor_entity_ulid,
+        "outcome": {
+            "outcome_note": None,
+            "follow_up_recommended": False,
+            "off_cadence_follow_up_signal": False,
+            "funding_interest_signal": False,
+        },
     }
 
     if funding_demand_ulid:
@@ -121,3 +131,15 @@ def create_cultivation_task(
         assigned_to_ulid=assigned,
         due_at_utc=due_at_utc,
     )
+
+
+def list_recent_cultivation_outcomes(
+    sponsor_entity_ulid: str,
+    *,
+    limit: int = 10,
+) -> tuple[SponsorCultivationOutcomeView, ...]:
+    rows = calendar_v2.list_cultivation_outcomes_for_sponsor(
+        sponsor_entity_ulid=sponsor_entity_ulid,
+        limit=limit,
+    )
+    return tuple(map_sponsor_cultivation_outcome(row) for row in rows)

@@ -1,7 +1,7 @@
 # app/slices/calendar/services.py
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from app.extensions import db, event_bus
 from app.extensions.policies import GOV_DATA, _load_and_cache
@@ -430,6 +430,72 @@ def list_tasks_for_project(project_ulid: str) -> list[dict]:
 def list_funding_plans_for_project(project_ulid: str) -> list[dict]:
     # Contract expects this name.
     return list_project_funding_plans(project_ulid)
+
+
+def list_cultivation_outcomes_for_sponsor(
+    sponsor_entity_ulid: str,
+    *,
+    limit: int = 10,
+) -> list[dict]:
+    if (
+        not isinstance(sponsor_entity_ulid, str)
+        or len(sponsor_entity_ulid) != 26
+    ):
+        raise ValueError("sponsor_entity_ulid must be a 26-char ULID")
+    if not isinstance(limit, int) or limit < 1:
+        raise ValueError("limit must be an int >= 1")
+
+    rows = (
+        db.session.query(Task)
+        .filter(Task.task_kind == "fundraising_cultivation")
+        .order_by(Task.updated_at_utc.desc(), Task.created_at_utc.desc())
+        .all()
+    )
+
+    out: list[dict] = []
+    for row in rows:
+        req = (
+            row.requirements_json
+            if isinstance(row.requirements_json, dict)
+            else {}
+        )
+        if req.get("workflow") != "cultivation":
+            continue
+        if req.get("sponsor_entity_ulid") != sponsor_entity_ulid:
+            continue
+
+        outcome = req.get("outcome")
+        if not isinstance(outcome, dict):
+            outcome = {}
+
+        out.append(
+            {
+                "task_ulid": row.ulid,
+                "project_ulid": row.project_ulid,
+                "sponsor_entity_ulid": sponsor_entity_ulid,
+                "workflow": "cultivation",
+                "status": row.status,
+                "task_title": row.task_title,
+                "due_at_utc": row.due_at_utc,
+                "done_at_utc": row.done_at_utc,
+                "funding_demand_ulid": req.get("funding_demand_ulid"),
+                "outcome_note": outcome.get("outcome_note"),
+                "follow_up_recommended": bool(
+                    outcome.get("follow_up_recommended")
+                ),
+                "off_cadence_follow_up_signal": bool(
+                    outcome.get("off_cadence_follow_up_signal")
+                ),
+                "funding_interest_signal": bool(
+                    outcome.get("funding_interest_signal")
+                ),
+            }
+        )
+
+        if len(out) >= limit:
+            break
+
+    return out
 
 
 # -----------------

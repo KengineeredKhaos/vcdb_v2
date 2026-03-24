@@ -357,6 +357,23 @@ class TaskDTO(TypedDict):
     updated_at_utc: str
 
 
+@dataclass(frozen=True)
+class CultivationOutcomeDTO:
+    task_ulid: str
+    project_ulid: str
+    sponsor_entity_ulid: str
+    workflow: str
+    status: str
+    task_title: str
+    due_at_utc: str | None
+    done_at_utc: str | None
+    funding_demand_ulid: str | None
+    outcome_note: str | None
+    follow_up_recommended: bool
+    off_cadence_follow_up_signal: bool
+    funding_interest_signal: bool
+
+
 class CalendarGateDTO(TypedDict):
     ok: bool
     label: str | None
@@ -1082,6 +1099,52 @@ def create_task(
             requirements_json=requirements_json,
             assigned_to_ulid=assigned_to_ulid,
             due_at_utc=due_at_utc,
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+def list_cultivation_outcomes_for_sponsor(
+    *,
+    sponsor_entity_ulid: str,
+    limit: int = 10,
+) -> tuple[CultivationOutcomeDTO, ...]:
+    where = "calendar_v2.list_cultivation_outcomes_for_sponsor"
+    try:
+        sponsor_entity_ulid = _require_ulid(
+            "sponsor_entity_ulid",
+            sponsor_entity_ulid,
+        )
+        limit = _require_int_ge("limit", limit, minval=1)
+
+        from app.slices.calendar import services as svc
+
+        rows = svc.list_cultivation_outcomes_for_sponsor(
+            sponsor_entity_ulid,
+            limit=limit,
+        )
+
+        return tuple(
+            CultivationOutcomeDTO(
+                task_ulid=str(row["task_ulid"]),
+                project_ulid=str(row["project_ulid"]),
+                sponsor_entity_ulid=str(row["sponsor_entity_ulid"]),
+                workflow=str(row["workflow"]),
+                status=str(row["status"]),
+                task_title=str(row["task_title"]),
+                due_at_utc=row.get("due_at_utc"),
+                done_at_utc=row.get("done_at_utc"),
+                funding_demand_ulid=row.get("funding_demand_ulid"),
+                outcome_note=row.get("outcome_note"),
+                follow_up_recommended=bool(row.get("follow_up_recommended")),
+                off_cadence_follow_up_signal=bool(
+                    row.get("off_cadence_follow_up_signal")
+                ),
+                funding_interest_signal=bool(
+                    row.get("funding_interest_signal")
+                ),
+            )
+            for row in rows
         )
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
