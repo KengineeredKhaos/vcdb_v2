@@ -11,6 +11,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from . import taxonomy_crm as crm_tax
+
 _SPONSOR_INTENT_KIND_ORDER = (
     "pledge",
     "donation",
@@ -181,6 +183,26 @@ def sponsor_funding_intent_to_view(row) -> SponsorFundingIntentView:
         created_at_utc=row.created_at_utc,
         updated_at_utc=row.updated_at_utc,
     )
+
+
+@dataclass(frozen=True)
+class SponsorCRMFactorView:
+    key: str
+    bucket: str
+    label: str
+    description: str
+    active: bool
+    strength: str
+    source: str
+    note: str | None
+
+
+@dataclass(frozen=True)
+class SponsorPostureView:
+    sponsor_entity_ulid: str
+    factors_by_bucket: dict[str, tuple[SponsorCRMFactorView, ...]]
+    active_factor_count: int
+    note_hint_count: int
 
 
 def funding_intent_totals_to_view(
@@ -565,6 +587,270 @@ def sponsor_poc_list_to_dto(
     return [sponsor_poc_view_to_dto(v) for v in views]
 
 
+def map_sponsor_crm_factor(
+    key: str,
+    payload: Mapping[str, Any],
+) -> SponsorCRMFactorView:
+    spec = crm_tax.factor_spec(key)
+    if not spec:
+        raise ValueError(f"unknown crm factor key: {key}")
+
+    note_raw = payload.get("note")
+    note = None
+    if note_raw is not None:
+        text = str(note_raw).strip()
+        if text:
+            note = text
+
+    return SponsorCRMFactorView(
+        key=spec.key,
+        bucket=spec.bucket,
+        label=spec.label,
+        description=spec.description,
+        active=bool(payload.get("has")),
+        strength=str(payload.get("strength") or "observed"),
+        source=str(payload.get("source") or "operator"),
+        note=note,
+    )
+
+
+def map_sponsor_posture(
+    *,
+    sponsor_entity_ulid: str,
+    snapshot: Mapping[str, Any],
+) -> SponsorPostureView:
+    grouped: dict[str, list[SponsorCRMFactorView]] = {}
+    active_factor_count = 0
+    note_hint_count = 0
+
+    for spec in crm_tax.CRM_FACTORS:
+        raw = snapshot.get(spec.key)
+        if not isinstance(raw, Mapping):
+            continue
+
+        view = map_sponsor_crm_factor(spec.key, raw)
+        grouped.setdefault(view.bucket, []).append(view)
+
+        if view.active:
+            active_factor_count += 1
+        if view.note:
+            note_hint_count += 1
+
+    return SponsorPostureView(
+        sponsor_entity_ulid=sponsor_entity_ulid,
+        factors_by_bucket={
+            bucket: tuple(rows) for bucket, rows in grouped.items()
+        },
+        active_factor_count=active_factor_count,
+        note_hint_count=note_hint_count,
+    )
+
+
+def sponsor_posture_to_dto(
+    view: SponsorPostureView,
+) -> dict[str, Any]:
+    return {
+        "sponsor_entity_ulid": view.sponsor_entity_ulid,
+        "active_factor_count": view.active_factor_count,
+        "note_hint_count": view.note_hint_count,
+        "factors_by_bucket": {
+            bucket: [
+                {
+                    "key": row.key,
+                    "bucket": row.bucket,
+                    "label": row.label,
+                    "description": row.description,
+                    "active": row.active,
+                    "strength": row.strength,
+                    "source": row.source,
+                    "note": row.note,
+                }
+                for row in rows
+            ]
+            for bucket, rows in view.factors_by_bucket.items()
+        },
+    }
+
+
+@dataclass(frozen=True)
+class SponsorProfileNoteHintView:
+    key: str
+    label: str
+    note: str
+
+
+@dataclass(frozen=True)
+class SponsorProfileNoteHintsView:
+    sponsor_entity_ulid: str
+    hints: tuple[SponsorProfileNoteHintView, ...]
+    hint_count: int
+
+
+_PROFILE_NOTE_SPECS = (
+    ("relationship_note", "Relationship note"),
+    ("recognition_note", "Recognition note"),
+)
+
+
+def map_sponsor_profile_note_hints(
+    *,
+    sponsor_entity_ulid: str,
+    snapshot: Mapping[str, Any],
+) -> SponsorProfileNoteHintsView:
+    hints: list[SponsorProfileNoteHintView] = []
+
+    for key, label in _PROFILE_NOTE_SPECS:
+        raw = snapshot.get(key)
+        if raw is None:
+            continue
+
+        note = str(raw).strip()
+        if not note:
+            continue
+
+        hints.append(
+            SponsorProfileNoteHintView(
+                key=key,
+                label=label,
+                note=note,
+            )
+        )
+
+    return SponsorProfileNoteHintsView(
+        sponsor_entity_ulid=sponsor_entity_ulid,
+        hints=tuple(hints),
+        hint_count=len(hints),
+    )
+
+
+def sponsor_profile_note_hints_to_dto(
+    view: SponsorProfileNoteHintsView,
+) -> dict[str, Any]:
+    return {
+        "sponsor_entity_ulid": view.sponsor_entity_ulid,
+        "hint_count": view.hint_count,
+        "hints": [
+            {
+                "key": row.key,
+                "label": row.label,
+                "note": row.note,
+            }
+            for row in view.hints
+        ],
+    }
+
+
+@dataclass(frozen=True)
+class SponsorOpportunityMatchView:
+    sponsor_entity_ulid: str
+    funding_demand_ulid: str
+    fit_band: str
+    positive_reasons: tuple[str, ...]
+    caution_reasons: tuple[str, ...]
+    manual_review_recommended: bool
+    suggested_next_action: str
+    profile_note_hints: tuple[SponsorProfileNoteHintView, ...]
+
+
+def sponsor_opportunity_match_to_dto(
+    view: SponsorOpportunityMatchView,
+) -> dict[str, Any]:
+    return {
+        "sponsor_entity_ulid": view.sponsor_entity_ulid,
+        "funding_demand_ulid": view.funding_demand_ulid,
+        "fit_band": view.fit_band,
+        "positive_reasons": list(view.positive_reasons),
+        "caution_reasons": list(view.caution_reasons),
+        "manual_review_recommended": view.manual_review_recommended,
+        "suggested_next_action": view.suggested_next_action,
+        "profile_note_hints": [
+            {
+                "key": row.key,
+                "label": row.label,
+                "note": row.note,
+            }
+            for row in view.profile_note_hints
+        ],
+    }
+
+
+@dataclass(frozen=True)
+class SponsorCRMFactorEditorRowView:
+    key: str
+    bucket: str
+    label: str
+    description: str
+    present: bool
+    active: bool
+    strength: str
+    source: str
+    note: str | None
+
+
+@dataclass(frozen=True)
+class SponsorCRMEditorView:
+    sponsor_entity_ulid: str
+    rows_by_bucket: dict[str, tuple[SponsorCRMFactorEditorRowView, ...]]
+    present_count: int
+    active_count: int
+
+
+def map_sponsor_crm_editor(
+    *,
+    sponsor_entity_ulid: str,
+    snapshot: Mapping[str, Any],
+) -> SponsorCRMEditorView:
+    grouped: dict[str, list[SponsorCRMFactorEditorRowView]] = {}
+    present_count = 0
+    active_count = 0
+
+    for spec in crm_tax.CRM_FACTORS:
+        raw = snapshot.get(spec.key)
+        present = isinstance(raw, Mapping)
+
+        note = None
+        active = False
+        strength = "observed"
+        source = "operator"
+
+        if present:
+            active = bool(raw.get("has"))
+            strength = str(raw.get("strength") or "observed")
+            source = str(raw.get("source") or "operator")
+
+            note_raw = raw.get("note")
+            if note_raw is not None:
+                text = str(note_raw).strip()
+                if text:
+                    note = text
+
+            present_count += 1
+            if active:
+                active_count += 1
+
+        row = SponsorCRMFactorEditorRowView(
+            key=spec.key,
+            bucket=spec.bucket,
+            label=spec.label,
+            description=spec.description,
+            present=present,
+            active=active,
+            strength=strength,
+            source=source,
+            note=note,
+        )
+        grouped.setdefault(spec.bucket, []).append(row)
+
+    return SponsorCRMEditorView(
+        sponsor_entity_ulid=sponsor_entity_ulid,
+        rows_by_bucket={
+            bucket: tuple(rows) for bucket, rows in grouped.items()
+        },
+        present_count=present_count,
+        active_count=active_count,
+    )
+
+
 __all__ = [
     "FundingIntentTotalsView",
     "FundingOpportunityDetailView",
@@ -585,6 +871,13 @@ __all__ = [
     "SponsorView",
     "SponsorPOCLinkView",
     "SponsorPOCView",
+    "SponsorCRMFactorView",
+    "SponsorPostureView",
+    "SponsorProfileNoteHintView",
+    "SponsorProfileNoteHintsView",
+    "SponsorOpportunityMatchView",
+    "SponsorCRMFactorEditorRowView",
+    "SponsorCRMEditorView",
     "calendar_demand_to_opportunity_view",
     "funding_context_to_detail_view",
     "funding_context_to_realization_defaults",
@@ -597,10 +890,17 @@ __all__ = [
     "map_sponsor_view",
     "map_sponsor_poc_view",
     "map_sponsor_poc_list",
+    "map_sponsor_crm_factor",
+    "map_sponsor_posture",
+    "map_sponsor_profile_note_hints",
     "sponsor_funding_intent_to_view",
     "sponsor_poc_list_to_dto",
     "sponsor_poc_view_to_dto",
     "sponsor_view_to_dto",
     "sponsor_poc_view_to_dto",
     "sponsor_poc_list_to_dto",
+    "sponsor_posture_to_dto",
+    "sponsor_profile_note_hints_to_dto",
+    "sponsor_opportunity_match_to_dto",
+    "map_sponsor_crm_editor",
 ]

@@ -86,7 +86,7 @@ def task_view(task_ulid: str) -> dict:
         "task_kind": t.task_kind,
         "estimate_cents": t.estimate_cents,
         "hours_est_minutes": t.hours_est_minutes,
-        "notes_txt": t.notes_txt,
+        "notes_txt": t.notes,
         "requirements_json": t.requirements_json,
         "assigned_to_ulid": t.assigned_to_ulid,
         "due_at_utc": t.due_at_utc,
@@ -95,6 +95,22 @@ def task_view(task_ulid: str) -> dict:
         "created_at_utc": t.created_at_utc,
         "updated_at_utc": t.updated_at_utc,
     }
+
+
+def find_project_by_title(project_title: str) -> dict | None:
+    title = (project_title or "").strip()
+    if not title:
+        raise ValueError("project_title must be a non-empty string")
+
+    row = (
+        db.session.query(Project)
+        .filter(Project.project_title == title)
+        .order_by(Project.created_at_utc.asc())
+        .first()
+    )
+    if row is None:
+        return None
+    return project_view(row.ulid)
 
 
 def funding_plan_view(plan_ulid: str) -> dict:
@@ -288,7 +304,7 @@ def create_task(
         task_kind=task_kind,
         estimate_cents=estimate_cents,
         hours_est_minutes=hours_est_minutes,
-        notes_txt=notes_txt,
+        notes=notes_txt,
         requirements_json=requirements_json,
         assigned_to_ulid=assigned_to_ulid,
         due_at_utc=due_at_utc,

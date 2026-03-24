@@ -1,0 +1,145 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Sponsor Detail{% endblock %}
+
+{% block content %}
+  <h1>Sponsor Detail</h1>
+  {% include "sponsors/onboard/_entity_card.html" %}
+
+  <section class="card">
+    <h2>Summary</h2>
+    <table class="tbl">
+      <tbody>
+        <tr><th>Entity ULID</th><td class="mono">{{ sponsor.entity_ulid }}</td></tr>
+        <tr><th>Readiness</th><td>{{ sponsor.readiness_status }}</td></tr>
+        <tr><th>MOU</th><td>{{ sponsor.mou_status }}</td></tr>
+        <tr><th>Admin review required</th>
+          <td>{{ 'yes' if sponsor.admin_review_required else 'no' }}</td>
+        </tr>
+        <tr><th>Onboard step</th><td>{{ sponsor.onboard_step or '' }}</td></tr>
+        <tr><th>Last touch</th><td>{{ sponsor.last_touch_utc or '' }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+  <form method="post"
+        action="{{ url_for('sponsors.sponsor_cultivation_task_create', sponsor_entity_ulid=sponsor.entity_ulid) }}"
+        style="display:inline-block;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next"
+           value="{{ url_for('sponsors.sponsor_detail_html', sponsor_entity_ulid=sponsor.entity_ulid) }}">
+    <button class="btn btn-sm" type="submit">
+      Create cultivation task
+    </button>
+  </form>
+  <section class="card">
+    <div class="row" style="justify-content:flex-end;">
+      <a class="btn btn-sm"
+         href="{{ url_for('sponsors.sponsor_crm_edit', sponsor_entity_ulid=sponsor.entity_ulid) }}">
+        Edit CRM posture
+      </a>
+    </div>
+  </section>
+  <section class="card">
+    <h2>CRM posture</h2>
+
+    <div class="help">
+      Active factors: {{ posture.active_factor_count }} ·
+      Note hints inside posture: {{ posture.note_hint_count }}
+    </div>
+
+    {% if posture.factors_by_bucket %}
+      {% for bucket, rows in posture.factors_by_bucket.items() %}
+        <h3>{{ bucket|replace('_', ' ')|title }}</h3>
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Factor</th>
+              <th>Active</th>
+              <th>Strength</th>
+              <th>Source</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td>
+                  <strong>{{ row.label }}</strong>
+                  <div class="help mono">{{ row.key }}</div>
+                  <div class="help">{{ row.description }}</div>
+                </td>
+                <td>{{ 'yes' if row.active else 'no' }}</td>
+                <td>{{ row.strength }}</td>
+                <td>{{ row.source }}</td>
+                <td>{{ row.note or '' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endfor %}
+    {% else %}
+      <div class="help">No CRM posture factors recorded yet.</div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Profile note hints</h2>
+
+    {% if note_hints.hints %}
+      <ul>
+        {% for hint in note_hints.hints %}
+          <li>
+            <strong>{{ hint.label }}:</strong> {{ hint.note }}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="help">No profile note hints recorded yet.</div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Capabilities</h2>
+    {% if sponsor.active_capabilities %}
+      <ul>
+        {% for c in sponsor.active_capabilities %}
+          <li class="mono">{{ c.domain }}.{{ c.key }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="help">No active capabilities recorded.</div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Pledges</h2>
+    {% if sponsor.pledges %}
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Pledge ULID</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Restricted?</th>
+            <th>Value</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in sponsor.pledges %}
+            <tr>
+              <td class="mono">{{ p.pledge_ulid }}</td>
+              <td>{{ p.type }}</td>
+              <td>{{ p.status }}</td>
+              <td>{{ 'yes' if p.has_restriction else 'no' }}</td>
+              <td>{{ p.est_value_number or '' }} {{ p.currency or '' }}</td>
+              <td>{{ p.updated_at_utc or '' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="help">No pledges recorded.</div>
+    {% endif %}
+  </section>
+{% endblock %}

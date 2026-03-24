@@ -66,6 +66,16 @@ DEFAULT_FINANCE_HINT_EXPENSE_KINDS: Final[tuple[str, ...]] = (
 #   default_spending_class: primary suggested Governance spending class
 
 TASK_KINDS: Final[dict[str, dict]] = {
+    "fundraising_cultivation": {
+        "label": "Sponsor cultivation / outreach",
+        "finance_hints": {
+            "default_expense_kind": "market_cultivation",
+            "allowed_expense_kinds": [
+                "market_cultivation",
+            ],
+            "default_spending_class": "admin",
+        },
+    },
     "event_catering": {
         "label": "Catering/food service",
         "finance_hints": {

@@ -1710,9 +1710,9 @@ I’d attack it in this order:
    - `FundingDemandWorkflowCuesDTO`
    
    - `FundingSourceProfileSummaryDTO`
-
-  Then add one serializer and one parser.  
-  Build typed DTO first, then serialize to JSON. Read JSON, then parse back to DTO. That is your anti-drift backbone.
+   
+   Then add one serializer and one parser.  
+   Build typed DTO first, then serialize to JSON. Read JSON, then parse back to DTO. That is your anti-drift backbone.
 
 3. **Calendar builder pipeline**  
    Implement the pure builder helpers we pinned:
@@ -1728,8 +1728,8 @@ I’d attack it in this order:
    - `assemble_funding_demand_context(...)`
    
    - `validate_funding_demand_context(...)`
-
-  This is the heart of the work.
+   
+   This is the heart of the work.
 
 4. **Wire publish / republish path**  
    Update Calendar publish logic so publish:
@@ -1743,15 +1743,15 @@ I’d attack it in this order:
    - keeps existing publish fields in sync,
    
    - emits the normal event/ledger side-effect.
-
-  De-publish should leave the blob in place.
+   
+   De-publish should leave the blob in place.
 
 5. **Expose it through `calendar_v2`**  
    Add the dedicated read:
    
    - `get_funding_demand_context(funding_demand_ulid)`
-
-  That gives Sponsors a stable contract target before you touch Sponsors internals.
+   
+   That gives Sponsors a stable contract target before you touch Sponsors internals.
 
 6. **Tests before Sponsors**  
    Add tests for:
@@ -1775,3 +1775,635 @@ The reason I like this order is simple: once Calendar can produce and publish a 
 The only caution flag I’d raise is this: do not let the first pass get pulled into a generalized “project planning overhaul.” Stay focused on **FundingDemand publish context** only. The task/project synthesis work is real, but it is later work.
 
 The first concrete move should be the migration plus DTO/builder scaffolding, before any route or Sponsor changes.
+
+---
+
+# Sponsor CRM system
+
+This is where squishy feelings and impressions go to become retrievable artifacts that can guide decision making. 
+
+## What are we even talking about
+
+You do **not** want to put a “feeling” into code directly. **That way lies madness**.
+
+The trick is to **stop trying to store the feeling** and instead store the **small concrete observations** that caused the feeling.
+
+Think of it like troubleshooting a machine.
+
+You do not write in the maintenance log:
+
+> “This pump feels cursed.”
+
+You write:
+
+- runs hot after 20 minutes
+
+- vibration increases under load
+
+- seal replaced twice in six months
+
+- tends to fail after restart
+
+Then later, a mechanic looks at those facts and says:
+
+> “Yeah, this pump is trouble.”
+
+That last part is the human judgment. The code should mostly store the first part.
+
+## The simpler mental model
+
+For Sponsor CRM, do not try to encode:
+
+- “good vibe”
+
+- “bad feeling”
+
+- “probably generous”
+
+- “seems fussy”
+
+Instead encode things like:
+
+- funded housing-related asks before
+
+- usually wants local-only impact
+
+- often asks for receipts
+
+- reimburses after delivery, not before
+
+- supports small asks quickly
+
+- larger asks usually need board review
+
+- likes veterans-focused projects
+
+- has declined food-only requests before
+
+Those are not feelings. They are **retrievable observations**.
+
+Then your app can turn those observations into gentle advice like:
+
+- likely fit
+
+- maybe fit
+
+- caution
+
+- manual review recommended
+
+So the app is not pretending to “know a personality.”  
+It is summarizing patterns from concrete evidence.
+
+## A practical formula
+
+Here is the safe pattern:
+
+**Observed facts → tagged patterns → advisory wording**
+
+Example:
+
+Observed facts:
+
+- Sponsor funded 4 housing-related requests
+
+- Sponsor funded 0 transportation requests
+
+- Sponsor required receipts in 3 of last 3 reimbursements
+
+- Sponsor’s past awards were all under $500
+
+- Sponsor often supports local veterans
+
+Tagged patterns:
+
+- housing_affinity
+
+- reimbursement_style
+
+- documentation_sensitive
+
+- small_award_comfort
+
+- local_veteran_preference
+
+Advisory wording:
+
+- likely fit for a small local housing request
+
+- caution for transportation requests
+
+- manual review recommended if asking for advance funding
+
+- expect receipt/documentation follow-up
+
+That is all code-friendly because each step is concrete.
+
+## What belongs in the database
+
+There are really only three kinds of things you need to store.
+
+### 1. Raw facts
+
+These are the hard observations.
+
+Examples:
+
+- date of donation
+
+- amount
+
+- restriction keys
+
+- project tags
+
+- realization mode
+
+- whether reimbursement was required
+
+- whether operator marked “needed manual follow-up”
+
+These are objective.
+
+### 2. Small sponsor-local labels
+
+These are short classifications you choose for retrieval.
+
+Examples:
+
+- prefers_reimbursement
+
+- local_focus
+
+- veteran_focus
+
+- small_award_pattern
+
+- documentation_heavy
+
+- flexible_restrictions
+
+- cautious_on_new_programs
+
+These are still manageable because they are short, named, and reusable.
+
+### 3. Human notes
+
+This is where the true soft stuff lives.
+
+Examples:
+
+- “Treasurer likes a complete receipt packet.”
+
+- “Usually warm to housing asks if framed around immediate stabilization.”
+
+- “May be open to broader support, but prior awards were tightly scoped.”
+
+This should stay as notes, not become law.
+
+## The important design rule
+
+Do **not** let notes decide policy.
+
+Notes can help the operator.  
+They should not hard-block the workflow.
+
+So:
+
+- Governance decides semantic validity
+
+- Finance decides money truth
+
+- Sponsors stores observations, patterns, and operator guidance
+
+That keeps the subjective part from taking over the whole system.
+
+## A very small first version
+
+You do not need machine learning.  
+You do not need fuzzy psychology.  
+You do not even need a fancy score at first.
+
+Start with this:
+
+For each sponsor, store or derive:
+
+- common opportunity types they supported
+
+- common restriction posture
+
+- common realization style
+
+- common funding size band
+
+- whether manual review was often needed
+
+- freeform relationship notes
+
+Then for each opportunity, compare:
+
+- does the opportunity type match prior support?
+
+- does the restriction posture look compatible?
+
+- does the realization style look familiar?
+
+- is the ask size in the sponsor’s usual range?
+
+- do prior notes suggest caution?
+
+From that, return:
+
+- likely fit
+
+- maybe fit
+
+- caution
+
+- manual review recommended
+
+That is enough.
+
+## A good beginner-friendly way to think about “subjective” data
+
+There are two kinds of subjective information.
+
+The first kind is **structured subjective**:
+
+- “prefers reimbursement”
+
+- “usually supports local veteran programs”
+
+- “often requests documentation”
+
+This is subjective, but stable enough to encode as labels.
+
+The second kind is **unstructured subjective**:
+
+- “board chair seemed skeptical”
+
+- “relationship feels warm right now”
+
+- “they may be shifting priorities”
+
+This belongs in notes, because it is too squishy to make into system truth.
+
+That split will save you a lot of headaches.
+
+## A plain-language example
+
+Say Calendar publishes an opportunity:
+
+- housing stabilization
+
+- local veterans
+
+- small dollar amount
+
+- reimbursement likely
+
+- some receipts expected
+
+And Sponsor A has these observed patterns:
+
+- funded local housing 5 times
+
+- all awards under $1,000
+
+- reimbursement common
+
+- requests documentation
+
+- no history with transportation-only asks
+
+Then Sponsors CRM can honestly say:
+
+- likely fit
+
+- reasons:
+  
+  - sponsor has history with local housing requests
+  
+  - dollar size is in usual range
+  
+  - reimbursement style matches prior behavior
+
+- cautions:
+  
+  - documentation likely needed
+
+- next action:
+  
+  - proceed with outreach and prepare receipts packet
+
+Nothing mystical happened there.  
+You just turned stored observations into readable guidance.
+
+## The biggest mindset shift
+
+You are not coding “impressions.”
+
+You are coding:
+
+- **evidence**
+
+- **patterns**
+
+- **operator hints**
+
+That is much more grounded.
+
+# Sponsor vital signs
+
+I would break them into six buckets.
+
+### 1. Mission fit
+
+Does this sponsor generally line up with the kind of need in front of you?
+
+Factors:
+
+- supports veterans
+
+- supports local-only work
+
+- supports housing
+
+- supports food/basic needs
+
+- supports events/community outreach
+
+- supports emergency response
+
+- supports long-term programs vs one-off asks
+
+These are the “do they usually care about this kind of thing?” signals.
+
+### 2. Restriction posture
+
+How tight or loose are they usually with conditions?
+
+Factors:
+
+- unrestricted support common
+
+- usually restricted to a purpose
+
+- often limited by geography
+
+- often limited by population served
+
+- documentation conditions common
+
+- reimbursement-only tendency
+
+- advance funding uncommon
+
+These tell you whether a sponsor is easy-flexible or more rule-bound.
+
+### 3. Support style
+
+How do they tend to help?
+
+Factors:
+
+- cash support
+
+- reimbursement
+
+- in-kind goods
+
+- services/facility use
+
+- event sponsorship
+
+- matching pledge
+
+- recurring support
+
+- one-time support
+
+This is the “how do they like to show up?” bucket.
+
+### 4. Capacity pattern
+
+What size and pace of support do they seem comfortable with?
+
+Factors:
+
+- small asks common
+
+- medium asks common
+
+- large asks rare
+
+- quick turnaround typical
+
+- slow review cycle typical
+
+- seasonal giving pattern
+
+- annual-cycle giving pattern
+
+This helps answer whether the current ask is in their normal range.
+
+### 5. Friction / review signals
+
+What tends to make this sponsor harder to work with?
+
+Factors:
+
+- board approval often needed
+
+- extra documentation often needed
+
+- follow-up reminders often needed
+
+- reimbursement packet sensitivity
+
+- slow response history
+
+- unclear decision-maker
+
+- manual review often required
+
+This is not “bad sponsor.” It is “what friction usually shows up?”
+
+### 6. Relationship health
+
+What does the working history look like?
+
+Factors:
+
+- prior support history exists
+
+- repeated support exists
+
+- recent engagement exists
+
+- prior decline history exists
+
+- good follow-through history
+
+- mixed follow-through history
+
+- operator confidence high / medium / low
+
+This is the closest thing to a “vibe,” but still grounded in known experience.
+
+## What the app should store
+
+For a first pass, keep it dead simple.
+
+Store three kinds of things:
+
+### A. Tagged factors
+
+Examples:
+
+- `mission_housing`
+
+- `mission_local_veterans`
+
+- `restriction_documentation_heavy`
+
+- `style_reimbursement`
+
+- `capacity_small_asks`
+
+- `friction_board_review`
+
+- `relationship_repeat_supporter`
+
+These are easy to search and compare.
+
+### B. Strength or confidence
+
+For each factor, record something simple like:
+
+- observed
+
+- recurring
+
+- strong pattern
+
+Or:
+
+- low
+
+- medium
+
+- high
+
+Not fancy. Just enough to separate “seen once” from “keeps happening.”
+
+### C. Notes
+
+Short plain-English notes like:
+
+- “Usually wants receipts packet within 30 days.”
+
+- “Seems most comfortable with housing stabilization.”
+
+- “Large asks tend to stall.”
+
+That gives human context without turning notes into law.
+
+## What retrieval looks like later
+
+Then your system can do useful things like:
+
+For a new opportunity:
+
+- find sponsors with matching mission-fit tags
+
+- boost those with compatible support-style tags
+
+- flag caution where friction tags conflict
+
+- show notes and prior outcomes beside the match
+
+So instead of coding “this sponsor feels right,” you code:
+
+- match on mission
+
+- match on support style
+
+- compatible restriction posture
+
+- ask size within normal band
+
+- caution if documentation/review friction is high
+
+That is solid and searchable.
+
+## A very practical first scoring model
+
+Keep it simple:
+
+### Good signs
+
+- mission matches
+
+- support style matches
+
+- restriction posture compatible
+
+- ask size in normal range
+
+- prior successful support exists
+
+### Caution signs
+
+- restrictions usually tighter than this ask
+
+- sponsor prefers reimbursement but this looks like advance support
+
+- ask size larger than normal
+
+- slow or high-friction history
+
+- little or no history in this opportunity type
+
+Then band the result:
+
+- likely fit
+
+- maybe fit
+
+- caution
+
+- manual review recommended
+
+That is enough to start.
+
+## The beginner-safe rule
+
+Do not try to make the system “smart.”  
+Make it **consistent**.
+
+A consistent checklist beats a clever fuzzy model every time.
+
+## Plain worksheet version
+
+Here is the paper version I would start with for each sponsor:
+
+**Sponsor Vital Signs**
+
+- Mission fit: what causes do they usually support?
+
+- Restriction posture: loose, moderate, or tight?
+
+- Support style: cash, reimbursement, in-kind, event, recurring?
+
+- Capacity pattern: small, medium, large; quick or slow?
+
+- Friction signals: docs, board review, reminders, receipts?
+
+- Relationship health: proven, mixed, new, or cold?
+
+That is the missing bridge between “gut feeling” and “something I can store in code.”
+
+The next best move is to turn this into a one-page canonical factor list for the Sponsors slice, with suggested enum/tag names and a very small “likely fit / caution” ruleset.
+
+

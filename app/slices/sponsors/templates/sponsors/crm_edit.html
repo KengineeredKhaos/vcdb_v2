@@ -1,0 +1,120 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Sponsor CRM Editor{% endblock %}
+
+{% block content %}
+  <h1>Sponsor CRM Editor</h1>
+  {% include "sponsors/onboard/_entity_card.html" %}
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between; align-items:center;">
+      <div>
+        <strong>Entity ULID:</strong>
+        <span class="mono">{{ sponsor.entity_ulid }}</span>
+      </div>
+      <div>
+        <a class="btn btn-sm"
+           href="{{ url_for('sponsors.sponsor_detail_html', sponsor_entity_ulid=sponsor.entity_ulid) }}">
+          Back to detail
+        </a>
+      </div>
+    </div>
+
+    <div class="help" style="margin-top:.5rem;">
+      Present factors: {{ editor.present_count }} ·
+      Active factors: {{ editor.active_count }}
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Profile note hints</h2>
+    {% if note_hints.hints %}
+      <ul>
+        {% for hint in note_hints.hints %}
+          <li><strong>{{ hint.label }}:</strong> {{ hint.note }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="help">No profile note hints recorded yet.</div>
+    {% endif %}
+  </section>
+
+  {% for bucket, rows in editor.rows_by_bucket.items() %}
+    <section class="card">
+      <h2>{{ bucket|replace('_', ' ')|title }}</h2>
+
+      {% for row in rows %}
+        <form method="post"
+              action="{{ url_for('sponsors.sponsor_crm_edit', sponsor_entity_ulid=sponsor.entity_ulid) }}"
+              style="border:1px solid #ddd; padding:.75rem; margin-bottom:.75rem; border-radius:.5rem;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="key" value="{{ row.key }}">
+
+          <div class="row" style="justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap;">
+            <div style="min-width:18rem; flex:2;">
+              <div><strong>{{ row.label }}</strong></div>
+              <div class="help mono">{{ row.key }}</div>
+              <div class="help">{{ row.description }}</div>
+              <div class="help" style="margin-top:.25rem;">
+                Present in snapshot:
+                <strong>{{ 'yes' if row.present else 'no' }}</strong>
+              </div>
+            </div>
+
+            <div style="min-width:8rem;">
+              <label>
+                <input type="checkbox" name="active"
+                       {% if row.active %}checked{% endif %}>
+                Active
+              </label>
+            </div>
+
+            <div style="min-width:10rem;">
+              <label>Strength</label><br>
+              <select name="strength">
+                {% for choice in crm_strengths %}
+                  <option value="{{ choice }}"
+                    {% if row.strength == choice %}selected{% endif %}>
+                    {{ choice }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div style="min-width:10rem;">
+              <label>Source</label><br>
+              <select name="source">
+                {% for choice in crm_sources %}
+                  <option value="{{ choice }}"
+                    {% if row.source == choice %}selected{% endif %}>
+                    {{ choice }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div style="min-width:18rem; flex:2;">
+              <label>Note</label><br>
+              <input type="text"
+                     name="note"
+                     value="{{ row.note or '' }}"
+                     style="width:100%;"
+                     maxlength="300">
+            </div>
+
+            <div style="min-width:10rem; display:flex; gap:.5rem; align-items:flex-end;">
+              <button class="btn btn-sm" type="submit" name="action" value="save">
+                Save
+              </button>
+              {% if row.present %}
+                <button class="btn btn-sm" type="submit" name="action" value="remove">
+                  Remove
+                </button>
+              {% endif %}
+            </div>
+          </div>
+        </form>
+      {% endfor %}
+    </section>
+  {% endfor %}
+{% endblock %}

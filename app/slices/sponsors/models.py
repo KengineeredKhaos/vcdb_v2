@@ -94,6 +94,11 @@ class Sponsor(db.Model, IsoTimestamps):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    crm_factors: Mapped[list[SponsorCRMFactorIndex]] = relationship(
+        "SponsorCRMFactorIndex",
+        back_populates="sponsor",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         # PK already implies uniqueness; this index helps some query planners.
@@ -167,6 +172,76 @@ class SponsorCapabilityIndex(db.Model, ULIDPK, IsoTimestamps):
             "domain",
             "key",
             name="uq_sponsor_cap_idx_triplet",
+        ),
+    )
+
+
+class SponsorCRMFactorIndex(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "sponsor_crm_factor_index"
+
+    sponsor_entity_ulid: Mapped[str] = mapped_column(
+        String(26),
+        db.ForeignKey("sponsor_sponsor.entity_ulid", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    bucket: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        index=True,
+    )
+
+    key: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        index=True,
+    )
+
+    active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        index=True,
+    )
+
+    strength: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        default="observed",
+    )
+
+    source: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        default="operator",
+    )
+
+    sponsor: Mapped[Sponsor] = relationship(
+        "Sponsor",
+        back_populates="crm_factors",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "sponsor_entity_ulid",
+            "bucket",
+            "key",
+            name="uq_sponsor_crm_factor_triplet",
+        ),
+        CheckConstraint(
+            "strength IN ('observed','recurring','strong_pattern')",
+            name="ck_sponsor_crm_factor_strength",
+        ),
+        CheckConstraint(
+            "source IN ('operator','observed','inferred')",
+            name="ck_sponsor_crm_factor_source",
+        ),
+        Index(
+            "ix_sponsor_crm_factor_bucket_key_active",
+            "bucket",
+            "key",
+            "active",
         ),
     )
 

@@ -35,7 +35,6 @@
   </tr>
   <tr>
     <th>Eligible funds</th>
-    <td>{{ demand.eligible_fund_keys | join(", ") }}</td>
     <td>{{ demand.policy.eligible_fund_keys | join(", ") }}</td>
   </tr>
   <tr>
@@ -112,7 +111,98 @@
     </tbody>
   </table>
 {% endif %}
+<h2>Sponsor opportunity matches</h2>
 
+{% if matches %}
+  <table>
+    <thead>
+      <tr>
+        <th>Sponsor</th>
+        <th>Fit</th>
+        <th>Next action</th>
+        <th>Manual review</th>
+        <th>Why / caution</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in matches %}
+        <tr>
+          <td>{{ row.sponsor_entity_ulid }}</td>
+          <td>{{ row.fit_band }}</td>
+          <td>{{ row.suggested_next_action }}</td>
+          <td>{{ row.manual_review_recommended }}</td>
+          <td>
+            {% if row.positive_reasons %}
+              <strong>Positive signals</strong>
+              <ul>
+                {% for reason in row.positive_reasons %}
+                  <li>{{ reason }}</li>
+                  <form method="post"
+                        action="{{ url_for('sponsors.sponsor_cultivation_task_create', sponsor_entity_ulid=row.sponsor_entity_ulid) }}"
+                        style="margin-top:.5rem;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="funding_demand_ulid"
+                           value="{{ demand.funding_demand_ulid }}">
+                    <input type="hidden" name="next"
+                           value="{{ url_for('sponsors_funding.funding_opportunity_detail', funding_demand_ulid=demand.funding_demand_ulid) }}">
+                    <button class="btn btn-sm" type="submit">
+                      Create cultivation task
+                    </button>
+                  </form>
+                {% endfor %}
+              </ul>
+            {% endif %}
+
+
+            {% if row.caution_reasons %}
+              <strong>Cautions</strong>
+              <ul>
+                {% for reason in row.caution_reasons %}
+                  <li>{{ reason }}</li>
+                  <form method="post"
+                        action="{{ url_for('sponsors.sponsor_cultivation_task_create', sponsor_entity_ulid=row.sponsor_entity_ulid) }}"
+                        style="margin-top:.5rem;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="funding_demand_ulid"
+                           value="{{ demand.funding_demand_ulid }}">
+                    <input type="hidden" name="next"
+                           value="{{ url_for('sponsors_funding.funding_opportunity_detail', funding_demand_ulid=demand.funding_demand_ulid) }}">
+                    <button class="btn btn-sm" type="submit">
+                      Create cultivation task
+                    </button>
+                  </form>
+                {% endfor %}
+              </ul>
+            {% endif %}
+
+            {% if row.profile_note_hints %}
+              <strong>Profile note hints</strong>
+              <ul>
+                {% for hint in row.profile_note_hints %}
+                  <li><strong>{{ hint.label }}:</strong> {{ hint.note }}</li>
+                  <form method="post"
+                        action="{{ url_for('sponsors.sponsor_cultivation_task_create', sponsor_entity_ulid=row.sponsor_entity_ulid) }}"
+                        style="margin-top:.5rem;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="funding_demand_ulid"
+                           value="{{ demand.funding_demand_ulid }}">
+                    <input type="hidden" name="next"
+                           value="{{ url_for('sponsors_funding.funding_opportunity_detail', funding_demand_ulid=demand.funding_demand_ulid) }}">
+                    <button class="btn btn-sm" type="submit">
+                      Create cultivation task
+                    </button>
+                  </form>
+                {% endfor %}
+              </ul>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p>No sponsor opportunity matches available.</p>
+{% endif %}
 <h2>Pipeline / money</h2>
 <table>
   <tr>

@@ -340,7 +340,21 @@ class ProjectDTO(TypedDict):
 
 
 class TaskDTO(TypedDict):
-    pass
+    ulid: str
+    project_ulid: str
+    title: str
+    detail: str | None
+    task_kind: str | None
+    estimate_cents: int | None
+    hours_est_minutes: int | None
+    notes_txt: str | None
+    requirements_json: dict | list | None
+    assigned_to_ulid: str | None
+    due_at_utc: str | None
+    done_at_utc: str | None
+    status: str
+    created_at_utc: str
+    updated_at_utc: str
 
 
 class CalendarGateDTO(TypedDict):
@@ -928,6 +942,18 @@ def create_project(
         raise _as_contract_error(where, exc) from exc
 
 
+def find_project_by_title(*, project_title: str) -> ProjectDTO | None:
+    where = "calendar_v2.find_project_by_title"
+    try:
+        project_title = _require_str("project_title", project_title)
+
+        from app.slices.calendar import services as svc
+
+        return svc.find_project_by_title(project_title)
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
 def create_project_funding_plan(
     *,
     project_ulid: str,
@@ -989,6 +1015,74 @@ def create_project_funding_plan(
             payload, actor_ulid=actor_ulid, request_id=request_id
         )
 
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+def create_task(
+    *,
+    project_ulid: str,
+    task_title: str,
+    actor_ulid: str,
+    request_id: str,
+    task_detail: str | None = None,
+    task_kind: str | None = None,
+    estimate_cents: int | None = None,
+    hours_est_minutes: int | None = None,
+    notes_txt: str | None = None,
+    requirements_json: dict | list | None = None,
+    assigned_to_ulid: str | None = None,
+    due_at_utc: str | None = None,
+) -> TaskDTO:
+    where = "calendar_v2.create_task"
+    try:
+        project_ulid = _require_ulid("project_ulid", project_ulid)
+        task_title = _require_str("task_title", task_title)
+        actor_ulid = _require_ulid("actor_ulid", actor_ulid)
+        request_id = _require_str("request_id", request_id)
+
+        if assigned_to_ulid is not None:
+            assigned_to_ulid = _require_ulid(
+                "assigned_to_ulid",
+                assigned_to_ulid,
+            )
+        if task_kind is not None:
+            task_kind = _require_str("task_kind", task_kind)
+        if task_detail is not None:
+            task_detail = _require_str("task_detail", task_detail)
+        if notes_txt is not None:
+            notes_txt = _require_str("notes_txt", notes_txt)
+        if due_at_utc is not None:
+            due_at_utc = _require_str("due_at_utc", due_at_utc)
+        if estimate_cents is not None:
+            estimate_cents = _require_int_ge(
+                "estimate_cents",
+                estimate_cents,
+                minval=0,
+            )
+        if hours_est_minutes is not None:
+            hours_est_minutes = _require_int_ge(
+                "hours_est_minutes",
+                hours_est_minutes,
+                minval=0,
+            )
+
+        from app.slices.calendar import services as svc
+
+        return svc.create_task(
+            project_ulid=project_ulid,
+            task_title=task_title,
+            actor_ulid=actor_ulid,
+            request_id=request_id,
+            task_detail=task_detail,
+            task_kind=task_kind,
+            estimate_cents=estimate_cents,
+            hours_est_minutes=hours_est_minutes,
+            notes_txt=notes_txt,
+            requirements_json=requirements_json,
+            assigned_to_ulid=assigned_to_ulid,
+            due_at_utc=due_at_utc,
+        )
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
 
@@ -1065,6 +1159,7 @@ __all__ = [
     "ProjectEncumbranceDTO",
     "ProjectSpendRequestDTO",
     "ProjectSpendDTO",
+    "TaskDTO",
     "get_funding_demand",
     "get_funding_demand_context",
     "list_published_funding_demands",
@@ -1075,6 +1170,8 @@ __all__ = [
     "forgive_ops_float_shortfall",
     "blackout_ok",
     "create_project",
+    "find_project_by_title",
+    "create_task",
     "create_project_funding_plan",
     "list_project_funding_plans",
     "list_projects_for_period",

@@ -42,7 +42,16 @@
               <td>{{ s.mou_status }}</td>
               <td>{{ 'yes' if s.admin_review_required else 'no' }}</td>
               <td>{{ s.onboard_step or '' }}</td>
+
               <td>
+                <a class="btn btn-sm"
+                   href="{{ url_for('sponsors.sponsor_detail_html', sponsor_entity_ulid=s.entity_ulid) }}">
+                  Detail
+                </a>
+                <a class="btn btn-sm"
+                   href="{{ url_for('sponsors.sponsor_crm_edit', sponsor_entity_ulid=s.entity_ulid) }}">
+                  CRM
+                </a>
                 <a class="btn btn-sm"
                    href="{{ url_for('sponsors.onboard_start', entity_ulid=s.entity_ulid) }}">
                   Open

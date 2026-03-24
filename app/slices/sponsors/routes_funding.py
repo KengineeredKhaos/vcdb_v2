@@ -59,11 +59,15 @@ def funding_opportunity_list():
 def funding_opportunity_detail(funding_demand_ulid: str):
     demand = funding_svc.get_funding_opportunity(funding_demand_ulid)
     intents = funding_svc.list_funding_intents_for_demand(funding_demand_ulid)
+    matches = funding_svc.list_opportunity_matches_for_demand(
+        funding_demand_ulid
+    )
     return render_template(
         "sponsors/funding/opportunity_detail.html",
         title=demand.title,
         demand=demand,
         intents=intents,
+        matches=matches,
     )
 
 

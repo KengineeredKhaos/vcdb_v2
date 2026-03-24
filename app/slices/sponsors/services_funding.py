@@ -10,6 +10,7 @@ from app.extensions import db, event_bus
 from app.extensions.contracts import calendar_v2, finance_v2
 from app.lib.chrono import now_iso8601_ms
 
+from . import services_crm as crm_svc
 from .mapper import (
     calendar_demand_to_opportunity_view,
     funding_context_to_detail_view,
@@ -307,3 +308,7 @@ def get_funding_intent_totals(
         "pledge_ulids": pledge_ulids,
         "donation_ulids": donation_ulids,
     }
+
+
+def list_opportunity_matches_for_demand(funding_demand_ulid: str):
+    return crm_svc.list_opportunity_matches(funding_demand_ulid)

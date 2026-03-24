@@ -1,13 +1,25 @@
 # app/slices/sponsors/routes.py
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, redirect, request, url_for
+from flask import (
+    Blueprint,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
+from flask_login import current_user, login_required
 
 from app.extensions import db
+from app.extensions.contracts import entity_v2
 from app.extensions.errors import ContractError
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
 
 from . import services as sp_svc
+from . import services_calendar as cal_handoff_svc
+from . import services_crm as crm_svc
 
 bp = Blueprint(
     "sponsors",
@@ -16,6 +28,11 @@ bp = Blueprint(
     static_folder=None,
     url_prefix="/sponsors",
 )
+
+
+# -----------------
+# internal helpers
+# -----------------
 
 
 def _ok(data: dict, request_id: str):
@@ -43,6 +60,23 @@ def _err(exc: Exception, code: int = 400):
         return jsonify({"ok": False, "error": str(exc)}), 400
 
     return jsonify({"ok": False, "error": str(exc)}), code
+
+
+def _try_entity_name_card(entity_ulid: str | None):
+    if not entity_ulid:
+        return None
+    try:
+        return entity_v2.get_entity_name_card(entity_ulid)
+    except Exception:
+        return None
+
+
+def _actor_ulid() -> str | None:
+    return (
+        get_actor_ulid()
+        or getattr(current_user, "entity_ulid", None)
+        or getattr(current_user, "ulid", None)
+    )
 
 
 # -----------------
@@ -92,6 +126,27 @@ def get_sponsor(sponsor_entity_ulid: str):
         _ok(dto, request_id=ensure_request_id())
         if dto
         else _err(LookupError("not found"), 404)
+    )
+
+
+@bp.get("/<sponsor_entity_ulid>/detail", endpoint="sponsor_detail_html")
+@login_required
+def sponsor_detail_html(sponsor_entity_ulid: str):
+    sponsor = sp_svc.sponsor_view(sponsor_entity_ulid)
+    if not sponsor:
+        return _err(LookupError("not found"), 404)
+
+    posture = crm_svc.get_sponsor_posture(sponsor_entity_ulid)
+    note_hints = crm_svc.get_sponsor_profile_note_hints(sponsor_entity_ulid)
+
+    return render_template(
+        "sponsors/detail.html",
+        title=f"Sponsor · {sponsor_entity_ulid}",
+        sponsor=sponsor,
+        posture=posture,
+        note_hints=note_hints,
+        entity_ulid=sponsor_entity_ulid,
+        entity_card=_try_entity_name_card(sponsor_entity_ulid),
     )
 
 
@@ -274,3 +329,134 @@ def search_sponsors():
         )
     except Exception as e:
         return _err(e, 400)
+
+
+@bp.route("/<sponsor_entity_ulid>/crm/edit", methods=["GET", "POST"])
+@login_required
+def sponsor_crm_edit(sponsor_entity_ulid: str):
+    sponsor = sp_svc.sponsor_view(sponsor_entity_ulid)
+    if not sponsor:
+        return _err(LookupError("not found"), 404)
+
+    if request.method == "POST":
+        try:
+            req, actor = ensure_request_id(), get_actor_ulid()
+            key = (request.form.get("key") or "").strip()
+            action = (request.form.get("action") or "save").strip().lower()
+
+            if not key:
+                raise ValueError("factor key is required")
+
+            if action == "remove":
+                hist = crm_svc.patch_crm_factors(
+                    sponsor_entity_ulid=sponsor_entity_ulid,
+                    payload={key: None},
+                    request_id=req,
+                    actor_ulid=actor,
+                )
+                db.session.commit()
+                flash(
+                    "CRM factor removed." if hist else "No CRM change.",
+                    "success",
+                )
+                return redirect(
+                    url_for(
+                        "sponsors.sponsor_crm_edit",
+                        sponsor_entity_ulid=sponsor_entity_ulid,
+                    )
+                )
+
+            active = request.form.get("active") == "on"
+            strength = (request.form.get("strength") or "").strip()
+            source = (request.form.get("source") or "").strip()
+            note = (request.form.get("note") or "").strip()
+
+            item = {
+                "has": active,
+                "strength": strength or "observed",
+                "source": source or "operator",
+            }
+            if note:
+                item["note"] = note
+
+            hist = crm_svc.patch_crm_factors(
+                sponsor_entity_ulid=sponsor_entity_ulid,
+                payload={key: item},
+                request_id=req,
+                actor_ulid=actor,
+            )
+            db.session.commit()
+            flash(
+                "CRM factor saved." if hist else "No CRM change.",
+                "success",
+            )
+            return redirect(
+                url_for(
+                    "sponsors.sponsor_crm_edit",
+                    sponsor_entity_ulid=sponsor_entity_ulid,
+                )
+            )
+        except Exception as exc:
+            db.session.rollback()
+            flash(str(exc) or "Unable to update CRM factor.", "error")
+
+    editor = crm_svc.get_sponsor_crm_editor(sponsor_entity_ulid)
+    note_hints = crm_svc.get_sponsor_profile_note_hints(sponsor_entity_ulid)
+
+    return render_template(
+        "sponsors/crm_edit.html",
+        title=f"Sponsor CRM · {sponsor_entity_ulid}",
+        sponsor=sponsor,
+        entity_ulid=sponsor_entity_ulid,
+        entity_card=_try_entity_name_card(sponsor_entity_ulid),
+        editor=editor,
+        note_hints=note_hints,
+        crm_strengths=crm_svc.allowed_crm_strengths(),
+        crm_sources=crm_svc.allowed_crm_sources(),
+    )
+
+
+@bp.post("/<sponsor_entity_ulid>/cultivation-task")
+@login_required
+def sponsor_cultivation_task_create(sponsor_entity_ulid: str):
+    sponsor = sp_svc.sponsor_view(sponsor_entity_ulid)
+    if not sponsor:
+        return _err(LookupError("not found"), 404)
+
+    next_url = (
+        request.form.get("next")
+        or request.referrer
+        or url_for(
+            "sponsors.sponsor_detail_html",
+            sponsor_entity_ulid=sponsor_entity_ulid,
+        )
+    )
+
+    try:
+        req, actor = ensure_request_id(), _actor_ulid()
+        if not actor:
+            raise PermissionError("actor_ulid is required")
+
+        funding_demand_ulid = (
+            request.form.get("funding_demand_ulid") or ""
+        ).strip() or None
+        due_at_utc = (request.form.get("due_at_utc") or "").strip() or None
+
+        task = cal_handoff_svc.create_cultivation_task(
+            sponsor_entity_ulid=sponsor_entity_ulid,
+            actor_ulid=actor,
+            request_id=req,
+            funding_demand_ulid=funding_demand_ulid,
+            assigned_to_ulid=actor,
+            due_at_utc=due_at_utc,
+        )
+        db.session.commit()
+
+        flash(
+            f"Cultivation task created: {task['title']}",
+            "success",
+        )
+        return redirect(next_url)
+    except Exception as exc:
+        db.session.rollback()
+        raise
