@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.extensions import db
 from app.slices.calendar.models import Project
+from app.slices.calendar.models import Project, Task
 from app.slices.calendar.services_funding import (
     create_funding_demand,
     publish_funding_demand,
@@ -130,3 +131,70 @@ def test_funding_opportunity_detail_shows_sponsor_matches(
     assert "Positive signals" in text
     assert "Profile note hints" in text
     assert "Warm history with veteran-focused asks." in text
+    assert "Current cultivation" in text
+    assert "View sponsor dossier" in text
+    assert "Review CRM posture" in text
+
+
+
+def test_funding_opportunity_detail_shows_recent_cultivation_for_demand(
+    app, staff_client, monkeypatch
+):
+    from app.slices.calendar import services_funding as cal_svc
+    from app.slices.sponsors.services_calendar import ensure_cultivation_project
+
+    monkeypatch.setattr(
+        cal_svc,
+        "_project_policy_hints",
+        lambda project_ulid: cal_svc.ProjectPolicyHints(
+            source_profile_key="mission_local_veterans_cash",
+            ops_support_planned=False,
+        ),
+    )
+
+    with app.app_context():
+        demand_ulid = _create_published_demand(
+            title="Route Demand Activity",
+            spending_class="basic_needs",
+            tag_any="crm_seed",
+        )
+        sponsor = _create_sponsor("Demand Activity Route Sponsor")
+
+        project = ensure_cultivation_project(
+            actor_ulid=sponsor.entity_ulid,
+            request_id="req-route-demand-activity-1",
+        )
+        task = Task(
+            project_ulid=project["ulid"],
+            task_title="Cultivate sponsor: Demand Activity Route Sponsor",
+            task_kind="fundraising_cultivation",
+            status="done",
+            done_at_utc="2026-03-24T18:00:00Z",
+            requirements_json={
+                "source_slice": "sponsors",
+                "workflow": "cultivation",
+                "sponsor_entity_ulid": sponsor.entity_ulid,
+                "funding_demand_ulid": demand_ulid,
+                "outcome": {
+                    "outcome_note": "Interested in the current ask.",
+                    "follow_up_recommended": True,
+                    "off_cadence_follow_up_signal": False,
+                    "funding_interest_signal": True,
+                },
+            },
+        )
+        db.session.add(task)
+        db.session.commit()
+
+    resp = staff_client.get(f"/sponsors/funding-opportunities/{demand_ulid}")
+    assert resp.status_code == 200
+
+    text = resp.get_data(as_text=True)
+    assert "Recent cultivation for this demand" in text
+    assert "Demand Activity Route Sponsor" in text
+    assert "Interested in the current ask." in text
+    assert "Funding interest surfaced" in text
+    assert "Follow-up recommended" in text
+    assert "Follow-up pending review" in text
+    assert "View sponsor dossier" in text
+    assert "Review CRM posture" in text

@@ -8,6 +8,7 @@ from app.extensions.contracts import calendar_v2, entity_v2
 
 from . import services_crm as crm_svc
 from .mapper import (
+    DemandCultivationActivityView,
     SponsorCultivationOutcomeView,
     map_sponsor_cultivation_outcome,
 )
@@ -153,6 +154,174 @@ def get_cultivation_outcome(
     if row is None:
         return None
     return map_sponsor_cultivation_outcome(row)
+
+def _follow_up_signal_labels(
+    outcome: SponsorCultivationOutcomeView,
+) -> tuple[str, ...]:
+    labels: list[str] = []
+    if outcome.follow_up_recommended:
+        labels.append("Follow-up recommended")
+    if outcome.off_cadence_follow_up_signal:
+        labels.append("Off-cadence follow-up")
+    if outcome.funding_interest_signal:
+        labels.append("Funding interest surfaced")
+    return tuple(labels)
+
+
+def _follow_up_status_for_outcome(
+    outcome: SponsorCultivationOutcomeView,
+) -> str:
+    if outcome.status != "done":
+        return "follow_up_scheduled"
+    if (
+        outcome.follow_up_recommended
+        or outcome.off_cadence_follow_up_signal
+    ):
+        return "follow_up_pending_review"
+    return "none"
+
+
+def list_recent_cultivation_activity_for_demand(
+    funding_demand_ulid: str,
+    *,
+    limit: int = 20,
+) -> tuple[DemandCultivationActivityView, ...]:
+    rows = calendar_v2.list_cultivation_outcomes_for_demand(
+        funding_demand_ulid=funding_demand_ulid,
+        limit=limit,
+    )
+
+    latest_by_sponsor: dict[str, SponsorCultivationOutcomeView] = {}
+    for row in rows:
+        outcome = map_sponsor_cultivation_outcome(row)
+        if outcome.sponsor_entity_ulid in latest_by_sponsor:
+            continue
+        latest_by_sponsor[outcome.sponsor_entity_ulid] = outcome
+
+    return tuple(
+        DemandCultivationActivityView(
+            sponsor_entity_ulid=outcome.sponsor_entity_ulid,
+            sponsor_display_name=_display_name_for_sponsor(
+                outcome.sponsor_entity_ulid
+            ),
+            task_ulid=outcome.task_ulid,
+            task_title=outcome.task_title,
+            status=outcome.status,
+            due_at_utc=outcome.due_at_utc,
+            done_at_utc=outcome.done_at_utc,
+            outcome_note=outcome.outcome_note,
+            follow_up_recommended=outcome.follow_up_recommended,
+            off_cadence_follow_up_signal=(
+                outcome.off_cadence_follow_up_signal
+            ),
+            funding_interest_signal=outcome.funding_interest_signal,
+            follow_up_status=_follow_up_status_for_outcome(outcome),
+        )
+        for outcome in latest_by_sponsor.values()
+    )
+
+
+
+
+
+def create_follow_up_cultivation_task(
+    *,
+    sponsor_entity_ulid: str,
+    task_ulid: str,
+    actor_ulid: str,
+    request_id: str,
+    assigned_to_ulid: str | None = None,
+    due_at_utc: str | None = None,
+):
+    outcome = get_cultivation_outcome(task_ulid)
+    if outcome is None:
+        raise ValueError("cultivation outcome not found")
+    if outcome.sponsor_entity_ulid != sponsor_entity_ulid:
+        raise ValueError(
+            "cultivation outcome does not belong to sponsor"
+        )
+    if outcome.status != "done" and not outcome.done_at_utc:
+        raise ValueError("cultivation outcome is not completed yet")
+
+    project = ensure_cultivation_project(
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+    )
+
+    sponsor_name = _display_name_for_sponsor(sponsor_entity_ulid)
+    assigned = assigned_to_ulid or actor_ulid
+    task_title = f"Follow up with sponsor: {sponsor_name}"
+
+    detail_lines = [
+        "Continue the cultivation thread based on the prior touch.",
+        f"Sponsor: {sponsor_name} ({sponsor_entity_ulid})",
+        f"Prior task: {outcome.task_title} ({outcome.task_ulid})",
+    ]
+    if outcome.done_at_utc:
+        detail_lines.append(f"Prior completed: {outcome.done_at_utc}")
+    elif outcome.due_at_utc:
+        detail_lines.append(f"Prior due: {outcome.due_at_utc}")
+    if outcome.funding_demand_ulid:
+        detail_lines.append(f"Demand: {outcome.funding_demand_ulid}")
+
+    note = str(outcome.outcome_note or "").strip()
+    if note:
+        detail_lines.append(f"Prior outcome note: {note}")
+
+    signal_labels = _follow_up_signal_labels(outcome)
+    if signal_labels:
+        detail_lines.append(
+            "Signals: " + "; ".join(signal_labels)
+        )
+
+    requirements_json: dict[str, Any] = {
+        "source_slice": "sponsors",
+        "workflow": "cultivation",
+        "sponsor_entity_ulid": sponsor_entity_ulid,
+        "follow_up_for_task_ulid": outcome.task_ulid,
+        "follow_up_source": {
+            "task_title": outcome.task_title,
+            "due_at_utc": outcome.due_at_utc,
+            "done_at_utc": outcome.done_at_utc,
+            "outcome_note": outcome.outcome_note,
+            "follow_up_recommended": (
+                outcome.follow_up_recommended
+            ),
+            "off_cadence_follow_up_signal": (
+                outcome.off_cadence_follow_up_signal
+            ),
+            "funding_interest_signal": outcome.funding_interest_signal,
+        },
+        "outcome": {
+            "outcome_note": None,
+            "follow_up_recommended": False,
+            "off_cadence_follow_up_signal": False,
+            "funding_interest_signal": False,
+        },
+    }
+    if outcome.funding_demand_ulid:
+        requirements_json["funding_demand_ulid"] = (
+            outcome.funding_demand_ulid
+        )
+
+    notes_txt = (
+        "Capture outcome notes. Continue the prior cultivation "
+        "thread."
+    )
+
+    return calendar_v2.create_task(
+        project_ulid=project["ulid"],
+        task_title=task_title,
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+        task_detail="\n".join(detail_lines),
+        task_kind=CULTIVATION_TASK_KIND,
+        hours_est_minutes=30,
+        notes_txt=notes_txt,
+        requirements_json=requirements_json,
+        assigned_to_ulid=assigned,
+        due_at_utc=due_at_utc,
+    )
 
 
 def promote_cultivation_outcome_to_relationship_note(

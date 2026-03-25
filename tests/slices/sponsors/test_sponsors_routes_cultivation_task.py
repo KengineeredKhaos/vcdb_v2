@@ -174,16 +174,26 @@ def test_create_cultivation_task_from_opportunity_match(
         else:
             assert len(projects_after) == before_project_count
 
-        assert len(tasks_after) == before_task_count + 1
+        created = [
+            row
+            for row in tasks_after
+            if isinstance(row.requirements_json, dict)
+            and row.requirements_json.get("sponsor_entity_ulid")
+            == sponsor.entity_ulid
+            and row.requirements_json.get("funding_demand_ulid")
+            == demand_ulid
+        ]
 
-        task = tasks_after[-1]
+        assert len(tasks_after) == before_task_count + 1
+        assert created
+
+        task = created[-1]
         assert task.project_ulid == projects_after[0].ulid
         assert task.task_kind == "fundraising_cultivation"
         assert "Cultivate sponsor:" in task.task_title
-        assert (
-            sponsor.entity_ulid
-            == task.requirements_json["sponsor_entity_ulid"]
-        )
+        assert sponsor.entity_ulid == task.requirements_json[
+            "sponsor_entity_ulid"
+        ]
         assert demand_ulid == task.requirements_json["funding_demand_ulid"]
         assert task.requirements_json["match"]["fit_band"] in {
             "likely_fit",

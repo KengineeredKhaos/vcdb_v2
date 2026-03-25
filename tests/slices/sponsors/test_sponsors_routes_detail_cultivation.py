@@ -69,9 +69,13 @@ def test_sponsor_detail_page_shows_recent_cultivation_activity(
     assert resp.status_code == 200
 
     text = resp.get_data(as_text=True)
+    assert "Operator workflow" in text
+    assert "Latest cultivation touch" in text
     assert "Recent cultivation activity" in text
     assert "Cultivate sponsor: Cultivation Detail Sponsor" in text
     assert "Asked for a short write-up next week." in text
-    assert "Follow-up: yes" in text
-    assert "Off cadence: yes" in text
-    assert "Funding interest: no" in text
+    assert "Off-cadence follow-up" in text
+    assert "Create follow-up task" in text
+    assert "Promote to relationship note" in text
+    assert "Review CRM posture" in text
+    assert "View funding opportunity" in text

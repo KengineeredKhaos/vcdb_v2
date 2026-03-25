@@ -432,6 +432,52 @@ def list_funding_plans_for_project(project_ulid: str) -> list[dict]:
     return list_project_funding_plans(project_ulid)
 
 
+def _cultivation_outcome_from_task(row: Task) -> dict | None:
+    if row.task_kind != "fundraising_cultivation":
+        return None
+
+    req = (
+        row.requirements_json
+        if isinstance(row.requirements_json, dict)
+        else {}
+    )
+    if req.get("workflow") != "cultivation":
+        return None
+
+    sponsor_entity_ulid = req.get("sponsor_entity_ulid")
+    if (
+        not isinstance(sponsor_entity_ulid, str)
+        or len(sponsor_entity_ulid) != 26
+    ):
+        return None
+
+    outcome = req.get("outcome")
+    if not isinstance(outcome, dict):
+        outcome = {}
+
+    return {
+        "task_ulid": row.ulid,
+        "project_ulid": row.project_ulid,
+        "sponsor_entity_ulid": sponsor_entity_ulid,
+        "workflow": "cultivation",
+        "status": row.status,
+        "task_title": row.task_title,
+        "due_at_utc": row.due_at_utc,
+        "done_at_utc": row.done_at_utc,
+        "funding_demand_ulid": req.get("funding_demand_ulid"),
+        "outcome_note": outcome.get("outcome_note"),
+        "follow_up_recommended": bool(
+            outcome.get("follow_up_recommended")
+        ),
+        "off_cadence_follow_up_signal": bool(
+            outcome.get("off_cadence_follow_up_signal")
+        ),
+        "funding_interest_signal": bool(
+            outcome.get("funding_interest_signal")
+        ),
+    }
+
+
 def list_cultivation_outcomes_for_sponsor(
     sponsor_entity_ulid: str,
     *,
@@ -454,44 +500,48 @@ def list_cultivation_outcomes_for_sponsor(
 
     out: list[dict] = []
     for row in rows:
-        req = (
-            row.requirements_json
-            if isinstance(row.requirements_json, dict)
-            else {}
-        )
-        if req.get("workflow") != "cultivation":
+        item = _cultivation_outcome_from_task(row)
+        if item is None:
             continue
-        if req.get("sponsor_entity_ulid") != sponsor_entity_ulid:
+        if item["sponsor_entity_ulid"] != sponsor_entity_ulid:
             continue
 
-        outcome = req.get("outcome")
-        if not isinstance(outcome, dict):
-            outcome = {}
+        out.append(item)
+        if len(out) >= limit:
+            break
 
-        out.append(
-            {
-                "task_ulid": row.ulid,
-                "project_ulid": row.project_ulid,
-                "sponsor_entity_ulid": sponsor_entity_ulid,
-                "workflow": "cultivation",
-                "status": row.status,
-                "task_title": row.task_title,
-                "due_at_utc": row.due_at_utc,
-                "done_at_utc": row.done_at_utc,
-                "funding_demand_ulid": req.get("funding_demand_ulid"),
-                "outcome_note": outcome.get("outcome_note"),
-                "follow_up_recommended": bool(
-                    outcome.get("follow_up_recommended")
-                ),
-                "off_cadence_follow_up_signal": bool(
-                    outcome.get("off_cadence_follow_up_signal")
-                ),
-                "funding_interest_signal": bool(
-                    outcome.get("funding_interest_signal")
-                ),
-            }
-        )
+    return out
 
+
+def list_cultivation_outcomes_for_demand(
+    funding_demand_ulid: str,
+    *,
+    limit: int = 20,
+) -> list[dict]:
+    if (
+        not isinstance(funding_demand_ulid, str)
+        or len(funding_demand_ulid) != 26
+    ):
+        raise ValueError("funding_demand_ulid must be a 26-char ULID")
+    if not isinstance(limit, int) or limit < 1:
+        raise ValueError("limit must be an int >= 1")
+
+    rows = (
+        db.session.query(Task)
+        .filter(Task.task_kind == "fundraising_cultivation")
+        .order_by(Task.updated_at_utc.desc(), Task.created_at_utc.desc())
+        .all()
+    )
+
+    out: list[dict] = []
+    for row in rows:
+        item = _cultivation_outcome_from_task(row)
+        if item is None:
+            continue
+        if item["funding_demand_ulid"] != funding_demand_ulid:
+            continue
+
+        out.append(item)
         if len(out) >= limit:
             break
 
@@ -505,47 +555,7 @@ def get_cultivation_outcome(task_ulid: str) -> dict | None:
     row = db.session.get(Task, task_ulid)
     if row is None:
         return None
-    if row.task_kind != "fundraising_cultivation":
-        return None
-
-    req = (
-        row.requirements_json
-        if isinstance(row.requirements_json, dict)
-        else {}
-    )
-    if req.get("workflow") != "cultivation":
-        return None
-
-    outcome = req.get("outcome")
-    if not isinstance(outcome, dict):
-        outcome = {}
-
-    sponsor_entity_ulid = req.get("sponsor_entity_ulid")
-    if (
-        not isinstance(sponsor_entity_ulid, str)
-        or len(sponsor_entity_ulid) != 26
-    ):
-        return None
-
-    return {
-        "task_ulid": row.ulid,
-        "project_ulid": row.project_ulid,
-        "sponsor_entity_ulid": sponsor_entity_ulid,
-        "workflow": "cultivation",
-        "status": row.status,
-        "task_title": row.task_title,
-        "due_at_utc": row.due_at_utc,
-        "done_at_utc": row.done_at_utc,
-        "funding_demand_ulid": req.get("funding_demand_ulid"),
-        "outcome_note": outcome.get("outcome_note"),
-        "follow_up_recommended": bool(outcome.get("follow_up_recommended")),
-        "off_cadence_follow_up_signal": bool(
-            outcome.get("off_cadence_follow_up_signal")
-        ),
-        "funding_interest_signal": bool(
-            outcome.get("funding_interest_signal")
-        ),
-    }
+    return _cultivation_outcome_from_task(row)
 
 
 # -----------------

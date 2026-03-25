@@ -1148,6 +1148,54 @@ def list_cultivation_outcomes_for_sponsor(
         )
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
+        
+        
+def list_cultivation_outcomes_for_demand(
+    *,
+    funding_demand_ulid: str,
+    limit: int = 20,
+) -> tuple[CultivationOutcomeDTO, ...]:
+    where = "calendar_v2.list_cultivation_outcomes_for_demand"
+    try:
+        funding_demand_ulid = _require_ulid(
+            "funding_demand_ulid",
+            funding_demand_ulid,
+        )
+        limit = _require_int_ge("limit", limit, 1)
+
+        from app.slices.calendar import services as svc
+
+        rows = svc.list_cultivation_outcomes_for_demand(
+            funding_demand_ulid,
+            limit=limit,
+        )
+
+        return tuple(
+            CultivationOutcomeDTO(
+                task_ulid=str(row["task_ulid"]),
+                project_ulid=str(row["project_ulid"]),
+                sponsor_entity_ulid=str(row["sponsor_entity_ulid"]),
+                workflow=str(row["workflow"]),
+                status=str(row["status"]),
+                task_title=str(row["task_title"]),
+                due_at_utc=row.get("due_at_utc"),
+                done_at_utc=row.get("done_at_utc"),
+                funding_demand_ulid=row.get("funding_demand_ulid"),
+                outcome_note=row.get("outcome_note"),
+                follow_up_recommended=bool(
+                    row.get("follow_up_recommended")
+                ),
+                off_cadence_follow_up_signal=bool(
+                    row.get("off_cadence_follow_up_signal")
+                ),
+                funding_interest_signal=bool(
+                    row.get("funding_interest_signal")
+                ),
+            )
+            for row in rows
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
 
 
 def get_cultivation_outcome(
@@ -1261,6 +1309,8 @@ __all__ = [
     "get_funding_demand",
     "get_funding_demand_context",
     "get_cultivation_outcome",
+    "list_cultivation_outcomes_for_demand",
+    "list_cultivation_outcomes_for_sponsor",
     "list_published_funding_demands",
     "encumber_project_funds",
     "spend_project_funds",

@@ -194,6 +194,22 @@ def map_sponsor_cultivation_outcome(dto) -> SponsorCultivationOutcomeView:
     )
 
 
+@dataclass(frozen=True)
+class DemandCultivationActivityView:
+    sponsor_entity_ulid: str
+    sponsor_display_name: str
+    task_ulid: str
+    task_title: str
+    status: str
+    due_at_utc: str | None
+    done_at_utc: str | None
+    outcome_note: str | None
+    follow_up_recommended: bool
+    off_cadence_follow_up_signal: bool
+    funding_interest_signal: bool
+    follow_up_status: str
+
+
 def calendar_demand_to_opportunity_view(dto) -> FundingOpportunityView:
     return FundingOpportunityView(
         funding_demand_ulid=dto.funding_demand_ulid,
@@ -914,6 +930,7 @@ __all__ = [
     "SponsorCRMFactorEditorRowView",
     "SponsorCRMEditorView",
     "SponsorCultivationOutcomeView",
+    "DemandCultivationActivityView",
     "calendar_demand_to_opportunity_view",
     "funding_context_to_detail_view",
     "funding_context_to_realization_defaults",

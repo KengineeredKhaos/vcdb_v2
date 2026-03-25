@@ -253,8 +253,18 @@ def test_list_opportunity_matches_sorts_likely_before_caution(
         rows = list_opportunity_matches(demand_ulid)
 
         assert len(rows) >= 2
-        assert rows[0].sponsor_entity_ulid == likely.entity_ulid
-        assert rows[0].fit_band == "likely_fit"
+        likely_ix = next(
+            i
+            for i, row in enumerate(rows)
+            if row.sponsor_entity_ulid == likely.entity_ulid
+        )
+        caution_ix = next(
+            i
+            for i, row in enumerate(rows)
+            if row.sponsor_entity_ulid == caution.entity_ulid
+        )
+        assert likely_ix < caution_ix
+        assert rows[likely_ix].fit_band == "likely_fit"
 
         caution_row = next(
             row

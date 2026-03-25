@@ -12,6 +12,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
+from . import services_calendar as cal_handoff_svc
 from . import services_funding as funding_svc
 from .forms_funding import SponsorFundingIntentForm
 
@@ -62,10 +63,21 @@ def funding_opportunity_detail(funding_demand_ulid: str):
     matches = funding_svc.list_opportunity_matches_for_demand(
         funding_demand_ulid
     )
+    cultivation_activity = (
+        cal_handoff_svc.list_recent_cultivation_activity_for_demand(
+            funding_demand_ulid,
+            limit=20,
+        )
+    )
+    activity_by_sponsor = {
+        row.sponsor_entity_ulid: row for row in cultivation_activity
+    }
     return render_template(
         "sponsors/funding/opportunity_detail.html",
         title=demand.title,
         demand=demand,
+        cultivation_activity=cultivation_activity,
+        activity_by_sponsor=activity_by_sponsor,
         intents=intents,
         matches=matches,
     )

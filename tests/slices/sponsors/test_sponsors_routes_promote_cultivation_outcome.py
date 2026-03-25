@@ -49,6 +49,8 @@ def test_promote_cultivation_outcome_to_relationship_note(
             request_id="req-promote-outcome-1",
         )
 
+        demand_ulid = ulid()
+
         task = Task(
             project_ulid=project["ulid"],
             task_title="Cultivate sponsor: Promote Outcome Sponsor",
@@ -59,7 +61,7 @@ def test_promote_cultivation_outcome_to_relationship_note(
                 "source_slice": "sponsors",
                 "workflow": "cultivation",
                 "sponsor_entity_ulid": sponsor.entity_ulid,
-                "funding_demand_ulid": "01CCCCCCCCCCCCCCCCCCCCCCCC",
+                "funding_demand_ulid": demand_ulid,
                 "outcome": {
                     "outcome_note": "Asked for a short project summary next week.",
                     "follow_up_recommended": True,
@@ -94,7 +96,7 @@ def test_promote_cultivation_outcome_to_relationship_note(
             in relationship_note
         )
         assert "Completed: 2026-03-24T21:00:00Z" in relationship_note
-        assert "Demand: 01CCCCCCCCCCCCCCCCCCCCCCCC" in relationship_note
+        assert f"Demand: {demand_ulid}" in relationship_note
         assert (
             "Asked for a short project summary next week."
             in relationship_note
@@ -122,6 +124,8 @@ def test_promote_cultivation_outcome_to_relationship_note_is_idempotent(
             request_id="req-promote-outcome-noop-1",
         )
 
+        demand_ulid = ulid()
+
         task = Task(
             project_ulid=project["ulid"],
             task_title="Cultivate sponsor: Promote Outcome Noop Sponsor",
@@ -132,7 +136,7 @@ def test_promote_cultivation_outcome_to_relationship_note_is_idempotent(
                 "source_slice": "sponsors",
                 "workflow": "cultivation",
                 "sponsor_entity_ulid": sponsor.entity_ulid,
-                "funding_demand_ulid": "01DDDDDDDDDDDDDDDDDDDDDDDD",
+                "funding_demand_ulid": demand_ulid,
                 "outcome": {
                     "outcome_note": "Interested in a one-page project summary.",
                     "follow_up_recommended": True,
