@@ -6,6 +6,8 @@
 {% block content %}
 <h1>{{ page.title }}</h1>
 <p>{{ page.summary or "" }}</p>
-<h2>Current Schedule</h2>
-<p>Jobs: {{ page.jobs }}</p>
+<h2>Inbox</h2>
+<p>Open: {{ page.inbox_summary.total_open }}</p>
+<p>High severity: {{ page.inbox_summary.high_severity }}</p>
+<p>Stale: {{ page.inbox_summary.stale_count }}</p>
 {% endblock %}

@@ -265,3 +265,73 @@ Conventions:
 - [ ] @TODO: Revisit Finance handling of Calendar contract FundingDemandContextDTO
 
 - [ ] @TODO: Revisit Calendar Project/Task planning, synthesis & funding demand development
+
+- [ ] @TODO: Define route-access matrix by slice and role.
+  
+  - classify each route as public / operator / staff / admin / auditor / governor
+  
+  - identify which slices are operator-facing vs Admin-mediated infrastructure
+  
+  - use as the baseline for route guards and permission tests
+
+- [ ] @TODO: Harden access control slice-by-slice and add permission tests.
+  
+  - start with Admin, Entity, Customers, Resources, Sponsors, Calendar
+  
+  - verify allowed / denied access at route level
+  
+  - confirm mutating routes are protected correctly
+  
+  - defer polish until route protection is real
+
+- [ ] @TODO: Define Admin as the control surface for Governance, Finance, and Ledger.
+  
+  - specify which read/edit/review actions belong in Admin
+  
+  - specify which slices remain infrastructure-only
+  
+  - define Admin vs Auditor access boundaries
+
+- [ ] @TODO: Replace generic inbox/message concepts with a typed Admin work queue.
+  
+  - define queue item kinds
+  
+  - define owning-slice contract providers
+  
+  - define status lifecycle and audit expectations
+  
+  - keep queue rows PII-free
+
+- [ ] @TODO: Route/template integrity sweep.
+  
+  - verify every `render_template(...)` target exists
+  
+  - scan global layout/nav for stale endpoint names
+  
+  - retire or fix dead links before further UI build-out
+  
+  - add a lightweight smoke check for known entry pages
+
+- [ ] @TODO: Audit mutating services for transaction-boundary drift.
+  
+  - remove service-layer commit() / rollback() where canon says routes own transaction
+  
+  - document any intentional exception
+  
+  - add targeted tests for transaction ownership at route/command edges
+
+- [ ] @TODO: Audit cross-slice imports and replace reach-arounds with contracts/extensions.
+  
+  - search for direct foreign-slice model/table imports
+  
+  - classify each as allowed, temporary, or must-fix
+  
+  - move read/write seams to contracts or approved projections
+
+- [ ] @TODO: Define and test auth-mode boundaries for dev vs real access control.
+  
+  - document expected behavior in stub auth vs db/real auth
+  
+  - ensure permission tests are meaningful under both
+  
+  - prevent dev conveniences from masking denied-access failures

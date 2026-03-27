@@ -24,7 +24,7 @@ VETERAN_STATUS = ("unknown", "verified", "unverified", "not_veteran")
 HOMELESS_STATUS = ("unknown", "verified", "unverified")
 VETERAN_METHOD = ("dd214", "va_id", "state_dl_veteran", "other")
 BRANCH = ("USA", "USMC", "USN", "USAF", "USSF", "USCG")
-ERA = ("WWI", "WWII", "Korea", "Vietnam", "ColdWar", "GW-IF-EF", "PsyWar")
+ERA = ("WWI", "WWII", "Korea", "Vietnam", "ColdWar", "GWOT", "PsyWar")
 
 NEEDS_CATEGORY_KEY = (
     # Tier 1 (physiological)

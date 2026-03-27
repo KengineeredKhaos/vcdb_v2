@@ -762,3 +762,752 @@ Petty cash is explicitly out of scope for OpsFloat and out of scope for the core
 ---
 
 `FundingDemandContextDTO` is a complete, versioned, publish-time snapshot stored on `FundingDemand.published_context_json` and exposed by `calendar_v2`. It is assembled by Calendar from Calendar facts plus Governance-authorized semantics, remains frozen after publish, survives de-publish for diagnostics, is replaced wholesale on re-publish, and is consumed by Sponsors and Finance as context—not as live policy and not as accounting truth.
+
+---
+
+## Permissions Plan Matrix
+
+This is a **two-level matrix**, not one giant table. The matrix has to capture two different things:
+
+- **RBAC** = who may enter a surface
+
+- **domain role** = who may make certain decisions once inside that surface
+
+## RBAC Slice Surface Matrix (canon)
+
+| Slice      | Surface Type          | Direct UI?            | Primary Access Path         | Entry RBAC                          | Decision Domain Gate                                     | Notes                             |
+| ---------- | --------------------- | --------------------- | --------------------------- | ----------------------------------- | -------------------------------------------------------- | --------------------------------- |
+| Entity     | Operator              | Yes                   | direct slice UI             | staff, admin, dev                   | none / staff for certain actions                         | identity backbone                 |
+| Customers  | Operator              | Yes                   | direct slice UI             | staff, admin, dev                   | staff; governor for exceptional approvals if needed      | intake and casework               |
+| Resources  | Operator              | Yes                   | direct slice UI             | staff, admin, dev                   | staff                                                    | onboarding and management         |
+| Sponsors   | Operator              | Yes                   | direct slice UI             | staff, admin, dev                   | staff; governor where policy/override required           | cultivation and funding workflows |
+| Calendar   | Operator              | Yes                   | direct slice UI             | staff, admin, dev                   | staff; governor on policy-bound decisions                | project/funding-demand surfaces   |
+| Logistics  | Staff-gated           | Limited               | direct slice UI + contracts | staff, admin, dev                   | staff; governor/admin for exceptional controls if needed | inventory operations              |
+| Finance    | Infrastructure-only   | No direct operator UI | Admin UI / contracts        | admin, auditor, dev                 | governor only where policy decision applies              | money facts                       |
+| Ledger     | Infrastructure-only   | No direct operator UI | Admin UI / contracts        | admin, auditor, dev                 | none                                                     | PII-free audit trail              |
+| Governance | Infrastructure-only   | No general UI         | Admin UI / contracts        | admin, dev; auditor maybe read-only | governor for policy changes                              | JSON policy semantics             |
+| Admin      | Admin control surface | Yes                   | direct Admin UI             | admin, auditor, dev                 | governor for policy/override actions                     | oversight, queue, diagnostics     |
+
+---
+
+## Domain Function / Action Matrix (proposed)
+
+This is a conceptual/planning representation, not yet settled and subject to change. 
+Only the schema is canonized.
+
+| Slice       | Function Group            | Human Surface?  | Read/Write/Approve/Audit | Entry RBAC                       | Domain Gate                      | Admin-Mediated? | Data Sensitivity | Test Requirement                                    |
+| ----------- | ------------------------- | --------------- | ------------------------ | -------------------------------- | -------------------------------- | --------------- | ---------------- | --------------------------------------------------- |
+| Governance  | policy view               | admin           | read                     | admin, auditor, dev              | none                             | yes             | policy           | allow/deny, read-only behavior                      |
+| Governance  | policy edit/save          | admin           | write                    | admin, dev                       | governor                         | yes             | policy           | allow/deny, schema fail, semantic fail, audit event |
+| Ledger      | event review              | admin           | audit                    | admin, auditor, dev              | none                             | yes             | audit            | allow/deny, read-only                               |
+| Finance     | finance report review     | admin           | read/audit               | admin, auditor, dev              | none                             | yes             | finance          | allow/deny, correct scope                           |
+| Customers   | intake create/update      | direct          | write                    | staff, admin, dev                | staff                            | no              | PII              | allow/deny, happy path, invalid input               |
+| Customers   | exceptional review item   | admin           | approve                  | admin                            | governor or staff depending rule | yes             | PII/internal     | allow/deny, resolution audit                        |
+| Logistics   | SKU introduction          | direct or admin | write/approve            | staff, admin, dev                | staff or governor if controlled  | maybe           | internal         | allow/deny, rule enforcement                        |
+| Static refs | bylaws/articles/monthlies | direct          | read                     | user, staff, admin, auditor, dev | none                             | no              | public           | access only                                         |
+
+---
+
+# Admin slice notes:
+
+**Slice owns truth. Admin owns operator view.**  
+Admin may aggregate slice-owned read-only DTOs into cross-slice operational reports and maintenance views. Admin does not take ownership of the underlying semantics, and Admin read contracts do not perform corrective action. Corrective action remains the responsibility of the owning slice through its command/workflow interfaces.
+
+**Admin is not the repair mechanism.  
+Admin is the triage and control surface.**
+
+Repairs remain:
+
+- slice-internal
+
+- slice-owned
+
+- command/workflow specific
+
+- as simple or as rough as needed inside the owning slice
+
+That also lowers the pressure on Admin maturity. Admin can be:
+
+- coherent
+
+- safe
+
+- readable
+
+- useful
+
+without needing to solve every operational problem itself.
+
+**No orphaned review flags.**  
+Any slice that raises an Admin-facing review item must also provide a complete, slice-owned resolution path for authorized Admin action. Admin may triage and launch the workflow, but the owning slice must define the issue type, allowed resolutions, resulting state transitions, and audit behavior.
+
+We have hardened the Auth slice into a viable foundation and clarified the architectural role of the Admin slice.
+
+**Admin is the system control surface.**  
+**Slice owns truth. Admin owns operator view.**
+
+Admin is not a repair engine, alternate business layer, or cross-slice bypass. Its job is to gather slice-owned, read-only DTOs into dashboards, inboxes, summaries, anomaly reports, and maintenance cues so trusted operators can see what needs attention and launch the proper owning-slice workflow.
+
+A key rule going forward is: **no orphaned review flags.** If a slice can raise an “admin review required” item, that slice must already provide a complete, Admin-resolvable path for handling it. Admin may triage and launch the workflow, but the owning slice must define the issue type, allowed actions, resulting state transitions, and audit behavior.
+
+For this thread, the goal is to shape **Admin as Control Surface** into a coherent, Ethos-aligned slice and hardening plan. Focus areas:
+
+- define Admin mission, boundaries, and anti-patterns
+
+- confirm Admin as a consolidated triage interface, not a universal fixer
+
+- shape a single **Admin read-only facade** for operator views without taking ownership of slice semantics
+
+- identify first-wave Admin feature groups: Dashboard, Unified Inbox, Audit/Operational Reports, Cron & Maintenance Supervision, Policy Workflow Surface, and Auth Operator Management
+
+- avoid direct cross-slice SQL reach-arounds and “bag of snakes” design
+
+- decide what Admin truly owns versus what it only surfaces
+
+- produce a practical hardening sequence for the current Admin slice
+
+The objective is not to make Admin fully polished or universally capable. The objective is to make it a safe, readable, useful operational cockpit that consolidates observation and triage while keeping correction and repair inside the owning slices.
+
+## Admin Slice — Mission and Boundaries
+
+**Admin is the system control surface.**  
+It is the consolidated triage, oversight, and launch interface for trusted operators performing maintenance-grade work across the application.
+
+### Core principle
+
+**Slice owns truth. Admin owns operator view.**
+
+Admin may gather slice-owned, read-only DTOs and compose them into cross-slice operational views such as dashboards, inboxes, summaries, anomaly reports, and maintenance cues.
+
+Admin does **not** take ownership of the underlying semantics of those DTOs, and it does **not** become an alternate business layer.
+
+### What Admin is for
+
+Admin exists to help authorized operators:
+
+- detect problems
+
+- summarize system state
+
+- prioritize maintenance attention
+
+- surface anomalies and drift
+
+- consolidate review queues
+
+- launch the proper owning-slice workflow
+
+Admin is a **control surface**, not a repair engine.
+
+### What Admin owns
+
+Admin owns the **operator-facing workflow layer** for maintenance-grade activity, including things like:
+
+- dashboard / status board
+
+- unified admin inbox / queue
+
+- operational summaries
+
+- diagnostics launch points
+
+- cron/maintenance supervision
+
+- policy workflow UI
+
+- audit/report entry points
+
+- cross-slice triage views
+
+Admin may also own small amounts of **Admin-local operational state** where appropriate, such as queue metadata, maintenance run receipts, or status markers for Admin workflows.
+
+### What Admin does not own
+
+Admin does **not** own:
+
+- the truth of another slice’s data
+
+- the meaning of another slice’s statuses or policies
+
+- direct cross-slice write authority by default
+
+- repair semantics for another slice
+
+- ad hoc table reach-arounds as a convenience shortcut
+
+Admin must not become a junk drawer, bypass layer, or second application core.
+
+### Read side vs action side
+
+**Admin read facade = observation.**  
+It answers questions like:
+
+- what happened
+
+- where it happened
+
+- how often it is happening
+
+- what appears unhealthy
+
+- what needs attention
+
+**Problem resolution = owning-slice command/workflow.**  
+If Admin identifies a problem, correction remains the responsibility of the owning slice through its own command or workflow interface.
+
+Examples:
+
+- Auth unlock/reset remains Auth-owned
+
+- Governance policy save/validate remains Governance-owned
+
+- Ledger repair remains Ledger-owned
+
+- Logistics reconcile/close remains Logistics-owned
+
+Admin may launch or link to those workflows, but does not replace them.
+
+### Contract posture
+
+Admin is the one slice most likely to need broad read visibility across the system.  
+To avoid polluting normal business-flow contracts with one-off admin queries, Admin may consume a **consolidated Admin read-only facade** composed from slice-owned read projections.
+
+That means:
+
+- slice-native contracts remain the source of truth
+
+- slice-owned admin projections remain slice-owned
+
+- Admin read contracts may compose those projections into operator-facing DTOs
+
+- Admin read contracts remain strictly read-only
+
+- write/corrective actions remain with the owning slice
+
+### Maturity posture
+
+Admin does **not** need to be fully polished or universally capable before it is useful.
+
+Admin is valuable early if it provides:
+
+- a clear dashboard
+
+- a unified inbox
+
+- visible anomaly surfaces
+
+- safe launch points into owning workflows
+
+Admin should be coherent, safe, and readable before it is ambitious.
+
+### Anti-patterns to avoid
+
+Do not let Admin become:
+
+- a bag of snakes
+
+- a global fixer
+
+- a bypass around slice boundaries
+
+- a duplicate Governance slice
+
+- a direct SQL reach-around layer
+
+- a dumping ground for devtools that should live elsewhere
+
+### Mission statement
+
+**Admin is the control surface of VCDB v2: the place trusted operators observe system state, triage problems, and launch the proper owning-slice maintenance workflows through stable interfaces.**
+
+---
+
+## Opening statement for the next chat thread
+
+> We have now hardened the Auth slice into a viable foundation and clarified a key architectural principle for the Admin slice:
+> 
+> **Slice owns truth. Admin owns operator view.**
+> 
+> Admin is not a repair engine, alternate business layer, or cross-slice bypass. It is the **system control surface**: a consolidated triage, oversight, and launch interface for trusted operators performing maintenance-grade work.
+> 
+> Admin may gather slice-owned, read-only DTOs and compose them into dashboards, inboxes, summaries, anomaly reports, and operational views. Problem resolution remains the responsibility of the owning slice through its own command/workflow interfaces.
+> 
+> For this thread, the goal is to shape **Admin as Control Surface** in a way that aligns with VCDB v2 Ethos:
+> 
+> - Admin as consolidated triage interface
+> 
+> - unified Admin inbox / review queue
+> 
+> - cross-slice read-only operational views
+> 
+> - safe launch points into owning-slice workflows
+> 
+> - strong slice-boundary discipline
+> 
+> - avoidance of direct cross-slice SQL reach-arounds and “bag of snakes” design
+> 
+> We should define:
+> 
+> 1. Admin slice mission and boundaries
+> 
+> 2. what Admin truly owns vs what it only surfaces
+> 
+> 3. the shape of an Admin read-only facade for cross-slice operator views
+> 
+> 4. the initial Admin feature groups, likely dashboard, inbox, cron, policy workflows, and audit/report entry points
+> 
+> 5. a practical hardening sequence for turning the current Admin slice into a coherent control surface
+> 
+> The objective is not to make Admin a universal repair engine. The objective is to make it a safe, readable, useful operational cockpit.
+
+# Admin slice — first-pass feature map
+
+## Mission
+
+**Admin is the control surface of VCDB v2.**  
+It gives trusted operators one place to observe system state, triage issues, and launch the proper owning-slice workflow.
+
+**Slice owns truth. Admin owns operator view.**
+
+## Feature groups
+
+### 1. Dashboard
+
+The front door.
+
+Purpose:
+
+- quick operational pulse
+
+- highlight urgent issues
+
+- show what needs attention now
+
+Contents:
+
+- open inbox item counts by type/severity
+
+- recent critical Ledger activity
+
+- cron/job status summary
+
+- policy health summary
+
+- auth activity summary
+
+- slice health cards
+
+- stale workflow / unresolved review counts
+
+Outputs:
+
+- dashboard cards
+
+- “needs attention” links into inbox/reports
+
+This should stay read-only.
+
+---
+
+### 2. Unified Admin inbox
+
+The triage queue.
+
+Purpose:
+
+- consolidate all Admin-facing review items across slices
+
+- prevent scattered “admin review required” islands
+
+Item requirements:
+
+- typed issue category
+
+- source slice
+
+- severity / urgency
+
+- why it was flagged
+
+- what Admin is allowed to do
+
+- link/launch path into owning-slice resolution workflow
+
+- status: open / in_review / resolved / dismissed / escalated
+
+Important rule:
+
+- **no orphaned review flags**
+
+- a slice may not generate an Admin inbox item unless its resolution path already exists in that slice
+
+Examples:
+
+- unclassified resource capability
+
+- policy validation failure
+
+- duplicate candidate unresolved
+
+- lockout spike / suspicious auth pattern
+
+- cron failure
+
+- ledger integrity anomaly
+
+- reconciliation mismatch
+
+Admin owns:
+
+- consolidated listing
+
+- filtering/sorting
+
+- state tracking for the inbox item itself
+
+Owning slice owns:
+
+- issue semantics
+
+- valid resolution actions
+
+- resulting state transitions
+
+---
+
+### 3. Audit and operational reports
+
+The “show me what’s going on” room.
+
+Purpose:
+
+- compose cross-slice read-only reports
+
+- help operators spot patterns and anomalies
+
+Initial report families:
+
+- recent Ledger activity
+
+- auth activity report
+
+- policy validation / drift report
+
+- cron / maintenance report
+
+- review queue aging report
+
+- slice anomaly summary
+
+Admin read facade use:
+
+- consume slice-owned DTOs
+
+- compose operator reports
+
+- no direct business semantics invented here
+
+This is where Ledger reading belongs for Admin.
+
+---
+
+### 4. Cron and maintenance supervision
+
+The “keep the machine healthy” room.
+
+Purpose:
+
+- supervise recurring/system tasks
+
+- acknowledge failures
+
+- manually launch safe maintenance entry points
+
+Initial features:
+
+- cron status board
+
+- last success / last failure view
+
+- acknowledge failure
+
+- run-now launch points where safe
+
+- maintenance receipts/history
+
+- stale job alerting
+
+Admin may own small local state here:
+
+- cron status rows
+
+- maintenance run receipts
+
+- acknowledgement metadata
+
+This is already partly present in your current slice and feels like true Admin ownership.
+
+---
+
+### 5. Policy workflow surface
+
+The “human control panel” for governance-facing maintenance.
+
+Purpose:
+
+- give Admin a safe workflow to preview, validate, and commit policy changes
+
+Features:
+
+- policy index
+
+- policy health overview
+
+- edit / preview / validate / commit flow
+
+- schema + semantic validation output
+
+- change summary / diff
+
+- linked Ledger receipt after commit
+
+Ownership rule:
+
+- Governance owns policy meaning and persistence
+
+- Admin owns the human workflow and operator experience
+
+This also appears already partially present in your current slice and should stay a first-wave feature.
+
+---
+
+### 6. Auth operator management surface
+
+Admin-facing operator lifecycle management.
+
+Purpose:
+
+- administer operators without making Auth read Ledger
+
+Features:
+
+- list operators
+
+- operator detail
+
+- activate / deactivate
+
+- reset password
+
+- unlock account
+
+- assign RBAC roles
+
+- show recent auth-related maintenance cues
+
+Important limit:
+
+- Admin may report on auth activity
+
+- Auth still owns operator truth and command semantics
+
+---
+
+### 7. Launchpad into owning-slice workflows
+
+The “take me where this gets fixed” room.
+
+Purpose:
+
+- give Admin a clean way to hand off from triage to action
+
+Admin does:
+
+- show issue
+
+- show context
+
+- show allowed next steps
+
+- launch/link to owning workflow
+
+Admin does not:
+
+- become the universal fixer
+
+- absorb each slice’s repair logic
+
+Examples:
+
+- “resolve in Governance”
+
+- “open Auth unlock/reset workflow”
+
+- “open Ledger repair workflow”
+
+- “open Logistics reconciliation workflow”
+
+This is the most important anti-snake measure in the whole design.
+
+---
+
+## What belongs in first wave vs later
+
+## First wave
+
+These are the ones I’d harden first because they already align with your current Admin slice bones:
+
+1. Dashboard
+
+2. Unified inbox shell
+
+3. Cron supervision
+
+4. Policy workflow surface
+
+5. Audit/operational reports
+
+6. Auth operator management launch/report surface
+
+## Second wave
+
+These can come later once the control-surface pattern is stable:
+
+1. Ledger integrity reports
+
+2. Cross-slice anomaly rollups
+
+3. maintenance receipts/history
+
+4. queue aging/escalation reports
+
+5. diagnostics / drift suites
+
+6. archive / retention supervision
+
+## Third wave
+
+Only if truly needed:
+
+1. deviation catalog / canon observer page
+
+2. advanced repair runbooks surfaced in UI
+
+3. broader observability / trend analytics
+
+4. role/governance workflow consolidation beyond MVP
+
+---
+
+## Admin read facade implications
+
+This feature map suggests an Admin-facing read facade shaped around operator views, not slice truths.
+
+Likely first DTO families:
+
+- `DashboardDTO`
+
+- `InboxItemDTO`
+
+- `InboxSummaryDTO`
+
+- `AuthActivitySummaryDTO`
+
+- `LedgerActivitySummaryDTO`
+
+- `PolicyHealthSummaryDTO`
+
+- `CronStatusSummaryDTO`
+
+- `SliceHealthCardDTO`
+
+Likely first facade functions:
+
+- `get_dashboard()`
+
+- `list_inbox_items(...)`
+
+- `get_inbox_summary()`
+
+- `get_recent_ledger_activity(...)`
+
+- `get_auth_activity_summary(...)`
+
+- `get_policy_health_summary()`
+
+- `get_cron_status_summary()`
+
+- `get_slice_health_summary()`
+
+These should all be read-only and operator-facing.
+
+---
+
+## Guardrails
+
+### No orphaned review flags
+
+If a slice raises an Admin-facing review item, it must already define:
+
+- issue type
+
+- allowed Admin actions
+
+- resulting state transitions
+
+- audit behavior
+
+- owning-slice resolution path
+
+### No direct cross-slice SQL as a habit
+
+Admin should not become a shortcut layer just because it is “admin.”
+
+### No semantic redefinition
+
+Admin may compose and label.  
+Admin may not redefine what another slice’s facts mean.
+
+### No universal repair engine
+
+Admin is triage and launchpad, not the fixer of all things.
+
+---
+
+## Suggested hardening order
+
+1. Canonize Admin mission and boundaries
+
+2. Refactor Dashboard into true control-surface shape
+
+3. Stand up unified inbox shell and item model
+
+4. Clean up Cron supervision
+
+5. Clean up Policy workflow surface
+
+6. Add Admin read facade for reports/dashboards
+
+7. Add Auth operator management surfaces
+
+8. Later: Ledger reports and broader anomaly views
+
+---
+
+## Simple mental model
+
+Think of Admin as five rooms:
+
+- **Dashboard** — What needs attention right now?
+
+- **Inbox** — What exactly is waiting on Admin?
+
+- **Reports** — What patterns and anomalies do we see?
+
+- **Operations** — What system-grade tasks can we supervise?
+
+- **Launchpad** — Where do we go to resolve this in the owning slice?
+
+That keeps the whole slice readable.
+
+---

@@ -1,0 +1,16 @@
+{% extends "layout/base.html" %}
+{% import "_macros.html" as _macros %}
+
+{% block title %}{{ page.title }}{% endblock %}
+
+{% block content %}
+<h1>{{ page.title }}</h1>
+<p>{{ page.summary }}</p>
+<h2>Auth</h2>
+<p>Auth Summary: {{ page.auth_summary }}</p>
+<p>Active: {{ page.auth_summary.active_operator_count }}</p>
+<p>Disabled: {{ page.auth_summary.disabled_operator_count }}</p>
+<p>Locked: {{ page.auth_summary.locked_operator_count }}</p>
+<p>Attention: {{ page.auth_summary.attention_count }}</p>
+<p>Items: {{ page.items }}</p>
+{% endblock %}

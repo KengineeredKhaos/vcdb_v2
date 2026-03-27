@@ -1,27 +1,114 @@
 # app/slices/auth/routes.py
+"""
+VCDB v2 — Auth slice routes
+
+Auth route-owned audit / transaction deviation
+==============================================
+
+This slice intentionally deviates from the general project mutation pattern.
+
+- Auth services mutate and may flush.
+- Auth services do NOT emit Ledger events.
+- Auth routes own all canonical ``event_bus.emit(...)`` calls.
+- Auth routes also own explicit ``db.session.commit()`` / rollback framing.
+
+Why:
+- login failure is a negative-outcome event that still must be auditable
+- logout success is a session-lifecycle event that still must be auditable
+- keeping all Auth audit writes at the route layer is simpler and easier for
+  Future Dev to reason about than splitting emits between routes and services
+
+This deviation is slice-local and deliberate.
+"""
 from __future__ import annotations
 
 from flask import (
     Blueprint,
+    abort,
     current_app,
     flash,
+    g,
     jsonify,
     redirect,
     render_template,
     request,
+    session,
     url_for,
 )
-from flask_login import login_required, login_user, logout_user
+from flask_login import (
+    current_user,
+    login_required,
+    login_user,
+    logout_user,
+)
 
-from app.extensions import csrf
+from app.extensions import csrf, db, event_bus
+from app.lib.ids import new_ulid
 from app.lib.request_ctx import ensure_request_id
 from app.lib.security import rbac
 
 from . import services as svc
 
 bp = Blueprint(
-    "auth", __name__, url_prefix="/auth", template_folder="templates"
+    "auth",
+    __name__,
+    url_prefix="/auth",
+    template_folder="templates",
 )
+
+
+def _safe_next_url(raw_value: str | None) -> str:
+    value = str(raw_value or "").strip()
+    if value.startswith("/") and not value.startswith("//"):
+        return value
+    return url_for("web.index")
+
+
+def _request_id_value() -> str:
+    rid = ensure_request_id()
+    if rid:
+        return str(rid)
+
+    g_rid = getattr(g, "request_id", None)
+    if g_rid:
+        return str(g_rid)
+
+    return new_ulid()
+
+
+def _current_actor_ulid() -> str | None:
+    if getattr(current_user, "is_authenticated", False):
+        return getattr(current_user, "ulid", None)
+    return None
+
+
+def _emit_and_commit(
+    *,
+    operation: str,
+    target_ulid: str | None = None,
+    actor_ulid: str | None = None,
+    refs: dict[str, object] | None = None,
+    changed: dict[str, object] | None = None,
+    meta: dict[str, object] | None = None,
+) -> None:
+    event_bus.emit(
+        domain="auth",
+        operation=operation,
+        request_id=_request_id_value(),
+        actor_ulid=actor_ulid
+        if actor_ulid is not None
+        else _current_actor_ulid(),
+        target_ulid=target_ulid,
+        refs=refs,
+        changed=changed,
+        meta=meta,
+    )
+    db.session.commit()
+
+
+def _rollback_with_log(message: str) -> None:
+    db.session.rollback()
+    current_app.logger.exception(message)
 
 
 @bp.get("/login", endpoint="login")
@@ -32,48 +119,437 @@ def login_form():
 
 @bp.post("/login", endpoint="login_post")
 def login_post():
-    ensure_request_id()
-    try:
-        ident = request.form.get("ident", "")
-        password = request.form.get("password", "")
-        view = svc.authenticate(ident, password)
-        # create a lightweight session user object resolved by login_manager.user_loader
-        from app.slices.auth.__init__ import SessionUser
+    ident = request.form.get("ident", "")
+    password = request.form.get("password", "")
+    next_url = request.form.get("next", "")
 
-        login_user(
-            SessionUser(
-                ulid=view["ulid"],
-                name=view["username"],
-                username=view["username"],
-                email=view["email"],
-                roles=view["roles"],
-            ),
-            remember=True,
+    try:
+        view = svc.authenticate(ident, password)
+
+        from app.slices.auth import SessionUser, session_identity_from_view
+
+        identity = session_identity_from_view(view)
+        session["session_user"] = identity
+        login_user(SessionUser(**identity), remember=False)
+
+        _emit_and_commit(
+            operation="login_succeeded",
+            actor_ulid=str(view["ulid"]),
+            target_ulid=str(view["ulid"]),
+            meta={
+                "must_change_password": bool(
+                    view.get("must_change_password", False)
+                ),
+                "roles": list(view.get("roles") or []),
+            },
         )
-        return redirect(request.form.get("next") or url_for("web.index"))
+
+        if identity.get("must_change_password"):
+            return redirect(
+                url_for("auth.change_password_form", next=next_url)
+            )
+
+        return redirect(_safe_next_url(next_url))
+
     except ValueError:
+        try:
+            failure_view = svc.get_auth_failure_view(ident)
+            target_ulid = None
+            meta: dict[str, object] = {
+                "reason": "invalid_credentials",
+                "had_ident": bool(str(ident or "").strip()),
+            }
+            if failure_view is not None:
+                target_ulid = str(failure_view["ulid"])
+                meta["failed_login_attempts"] = int(
+                    failure_view["failed_login_attempts"]
+                )
+                meta["is_locked"] = bool(failure_view["is_locked"])
+
+            _emit_and_commit(
+                operation="login_failed",
+                target_ulid=target_ulid,
+                meta=meta,
+            )
+        except Exception:
+            session.pop("session_user", None)
+            try:
+                logout_user()
+            except Exception:
+                pass
+            _rollback_with_log("Auth login failure commit/audit failed")
+            flash("Something went wrong. Please try again.", "error")
+            return redirect(url_for("auth.login", next=next_url))
+
         flash("Invalid username or password", "error")
+        return redirect(url_for("auth.login", next=next_url))
+
     except Exception:
-        current_app.logger.exception("Unexpected error during login")
+        session.pop("session_user", None)
+        try:
+            logout_user()
+        except Exception:
+            pass
+        _rollback_with_log("Unexpected error during login")
         flash("Something went wrong. Please try again.", "error")
+        return redirect(url_for("auth.login", next=next_url))
+
+
+@bp.get("/change-password", endpoint="change_password_form")
+@login_required
+def change_password_form():
+    nxt = request.args.get("next", "")
+    return render_template("auth/change_password.html", next_url=nxt)
+
+
+@bp.post("/change-password", endpoint="change_password_post")
+@login_required
+def change_password_post():
+    current_password = request.form.get("current_password", "")
+    new_password = request.form.get("new_password", "")
+    next_url = request.form.get("next", "")
+
+    try:
+        view = svc.change_own_password(
+            current_user.ulid,
+            current_password=current_password,
+            new_password=new_password,
+        )
+
+        _emit_and_commit(
+            operation="password_changed",
+            target_ulid=str(view["ulid"]),
+            changed={
+                "fields": [
+                    "password_hash",
+                    "password_changed_at_utc",
+                    "must_change_password",
+                    "failed_login_attempts",
+                ]
+            },
+            meta={"self_service": True},
+        )
+
+        from app.slices.auth import SessionUser, session_identity_from_view
+
+        identity = session_identity_from_view(view)
+        session["session_user"] = identity
+        login_user(SessionUser(**identity), remember=False)
+
+        flash("Password changed.", "info")
+        return redirect(_safe_next_url(next_url))
+
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(url_for("auth.change_password_form", next=next_url))
+
+    except Exception:
+        _rollback_with_log("Unexpected error during password change")
+        flash("Something went wrong. Please try again.", "error")
+        return redirect(url_for("auth.change_password_form", next=next_url))
 
 
 @bp.post("/logout", endpoint="logout")
 @login_required
 def logout():
+    actor_ulid = getattr(current_user, "ulid", None)
+
+    try:
+        _emit_and_commit(
+            operation="logout_succeeded",
+            actor_ulid=actor_ulid,
+            target_ulid=actor_ulid,
+        )
+    except Exception:
+        _rollback_with_log("Unexpected error during logout")
+        flash("Sign out could not be completed.", "error")
+        return redirect(url_for("web.index"))
+
+    session.pop("session_user", None)
+    session.pop("assumed_domain_roles", None)
     logout_user()
     flash("Signed out.", "info")
     return redirect(url_for("auth.login"))
 
 
-# --- Minimal admin API to manage roles (JSON) ---
+@bp.post("/bootstrap/first-admin", endpoint="bootstrap_first_admin")
+@csrf.exempt
+def bootstrap_first_admin():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        view = svc.bootstrap_first_admin(
+            username=payload.get("username", ""),
+            password=payload.get("password", ""),
+            email=payload.get("email"),
+            entity_ulid=payload.get("entity_ulid"),
+        )
+
+        _emit_and_commit(
+            operation="bootstrap_first_admin_created",
+            target_ulid=str(view["ulid"]),
+            changed={
+                "fields": [
+                    "username",
+                    "password_hash",
+                    "roles",
+                    "is_active",
+                    "must_change_password",
+                ]
+            },
+            meta={"roles": list(view.get("roles") or [])},
+        )
+
+        return jsonify(view), 201
+
+    except PermissionError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(exc)}), 409
+
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    except Exception:
+        _rollback_with_log("Unexpected error during first-admin bootstrap")
+        return (
+            jsonify({"ok": False, "error": "bootstrap failed unexpectedly"}),
+            500,
+        )
+
+
+@bp.get("/admin/users", endpoint="admin_list_users")
+@rbac("admin")
+def admin_list_users():
+    items = svc.list_user_views()
+    return jsonify(
+        {
+            "items": items,
+            "count": len(items),
+        }
+    )
+
+
+@bp.get("/admin/users/<user_ulid>", endpoint="admin_get_user")
+@rbac("admin")
+def admin_get_user(user_ulid: str):
+    try:
+        view = svc.get_user_view(user_ulid)
+        return jsonify(view)
+    except LookupError:
+        abort(404)
+
+
+@bp.post("/admin/users", endpoint="admin_create_user")
+@csrf.exempt
+@rbac("admin")
+def admin_create_user():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        view = svc.create_account(
+            username=payload.get("username", ""),
+            password=payload.get("password", ""),
+            roles=payload.get("roles", ["user"]),
+            email=payload.get("email"),
+            entity_ulid=payload.get("entity_ulid"),
+            is_active=payload.get("is_active", True),
+            must_change_password=payload.get(
+                "must_change_password",
+                True,
+            ),
+        )
+
+        _emit_and_commit(
+            operation="account_created",
+            target_ulid=str(view["ulid"]),
+            changed={
+                "fields": [
+                    "username",
+                    "password_hash",
+                    "roles",
+                    "is_active",
+                    "must_change_password",
+                ]
+            },
+            meta={
+                "roles": list(view.get("roles") or []),
+                "is_active": bool(view.get("is_active", True)),
+                "must_change_password": bool(
+                    view.get("must_change_password", False)
+                ),
+            },
+        )
+
+        return jsonify(view), 201
+
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    except Exception:
+        _rollback_with_log("Unexpected error during account create")
+        return jsonify({"ok": False, "error": "account create failed"}), 500
+
+
+@bp.post(
+    "/admin/users/<user_ulid>/reset-password",
+    endpoint="admin_reset_password",
+)
+@csrf.exempt
+@rbac("admin")
+def admin_reset_password(user_ulid: str):
+    payload = request.get_json(silent=True) or {}
+    temporary_password = payload.get("temporary_password", "")
+
+    try:
+        view = svc.admin_reset_password(
+            account_ulid=user_ulid,
+            temporary_password=temporary_password,
+        )
+
+        _emit_and_commit(
+            operation="account_password_reset",
+            target_ulid=user_ulid,
+            changed={
+                "fields": [
+                    "password_hash",
+                    "password_changed_at_utc",
+                    "must_change_password",
+                    "reset_issued_at_utc",
+                ]
+            },
+            meta={"must_change_password": True},
+        )
+
+        return jsonify(view)
+
+    except LookupError:
+        db.session.rollback()
+        abort(404)
+
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    except Exception:
+        _rollback_with_log("Unexpected error during admin password reset")
+        return (
+            jsonify({"ok": False, "error": "password reset failed"}),
+            500,
+        )
+
+
+@bp.post("/admin/users/<user_ulid>/unlock", endpoint="admin_unlock_user")
+@csrf.exempt
+@rbac("admin")
+def admin_unlock_user(user_ulid: str):
+    try:
+        view = svc.unlock_account(user_ulid)
+
+        _emit_and_commit(
+            operation="account_unlocked",
+            target_ulid=user_ulid,
+            changed={
+                "fields": [
+                    "is_locked",
+                    "failed_login_attempts",
+                    "locked_at_utc",
+                    "locked_by_ulid",
+                ]
+            },
+        )
+
+        return jsonify(view)
+
+    except LookupError:
+        db.session.rollback()
+        abort(404)
+
+    except Exception:
+        _rollback_with_log("Unexpected error during account unlock")
+        return jsonify({"ok": False, "error": "unlock failed"}), 500
+
+
+@bp.post("/admin/users/<user_ulid>/active", endpoint="admin_set_active")
+@csrf.exempt
+@rbac("admin")
+def admin_set_active(user_ulid: str):
+    payload = request.get_json(silent=True) or {}
+    is_active = payload.get("is_active")
+    if not isinstance(is_active, bool):
+        return (
+            jsonify({"ok": False, "error": "is_active must be a boolean"}),
+            400,
+        )
+
+    try:
+        view = svc.set_account_active(
+            account_ulid=user_ulid,
+            is_active=is_active,
+        )
+
+        _emit_and_commit(
+            operation=(
+                "account_activated" if is_active else "account_deactivated"
+            ),
+            target_ulid=user_ulid,
+            changed={"fields": ["is_active"]},
+        )
+
+        return jsonify(view)
+
+    except LookupError:
+        db.session.rollback()
+        abort(404)
+
+    except Exception:
+        _rollback_with_log(
+            "Unexpected error during account activation toggle"
+        )
+        return (
+            jsonify({"ok": False, "error": "active toggle failed"}),
+            500,
+        )
 
 
 @bp.post("/admin/users/<user_ulid>/roles", endpoint="admin_set_roles")
-@csrf.exempt  # tests don’t send a token; exempt the JSON admin endpoint
-@rbac("admin")  # our decorator returns 401/403 instead of redirecting
+@csrf.exempt
+@rbac("admin")
 def admin_set_roles(user_ulid: str):
-    payload = request.get_json(force=True) or {}
+    payload = request.get_json(silent=True) or {}
     roles = payload.get("roles", [])
-    svc.set_account_roles(account_ulid=user_ulid, roles=roles)
-    return jsonify(svc.user_view(user_ulid))
+
+    if not isinstance(roles, list):
+        return jsonify({"ok": False, "error": "roles must be a list"}), 400
+
+    try:
+        view = svc.set_account_roles(
+            account_ulid=user_ulid,
+            roles=roles,
+        )
+
+        _emit_and_commit(
+            operation="account_roles_updated",
+            target_ulid=user_ulid,
+            changed={"fields": ["roles"]},
+            meta={"roles": list(view.get("roles") or [])},
+        )
+
+        return jsonify(view)
+
+    except LookupError:
+        db.session.rollback()
+        abort(404)
+
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    except Exception:
+        _rollback_with_log("Unexpected error during role update")
+        return (
+            jsonify({"ok": False, "error": "role update failed"}),
+            500,
+        )

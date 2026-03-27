@@ -2,7 +2,10 @@
   "meta": {
     "description": "Canonical domain role catalog and assignment rules.",
     "effective_on": "2026-03-13",
-    "notes": [],
+    "notes": [
+      "assignment_rules define allowed domain-role assignments by RBAC role; they do not imply automatic assignment",
+      "auditor is read-only oversight and carries no operational action-authority domain role"
+    ],
     "policy_key": "entity_roles",
     "schema_version": 1,
     "status": "draft",
@@ -18,9 +21,34 @@
     "staff"
   ],
   "assignment_rules": {
-    "admin": ["governor", "staff"],
-    "auditor": ["staff"],
-    "staff": ["staff"],
-    "user": ["civilian"]
+    "admin": {
+      "allowed": [
+        "staff",
+        "governor"
+      ],
+      "default": [
+        "staff"
+      ]
+    },
+    "auditor": {
+      "allowed": [],
+      "default": []
+    },
+    "staff": {
+      "allowed": [
+        "staff"
+      ],
+      "default": [
+        "staff"
+      ]
+    },
+    "user": {
+      "allowed": [
+        "civilian"
+      ],
+      "default": [
+        "civilian"
+      ]
+    }
   }
 }

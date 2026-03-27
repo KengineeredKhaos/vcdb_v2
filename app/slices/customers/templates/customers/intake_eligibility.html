@@ -54,7 +54,7 @@
       <div class="lbl">Era</div>
       <select name="era" id="id_era">
         <option value="" {{ "selected" if not era else "" }}>(none)</option>
-        {% for opt in ["WWI","WWII","Korea","Vietnam","ColdWar","GW-IF-EF","PsyWar"] %}
+        {% for opt in ["WWI","WWII","Korea","Vietnam","ColdWar","GWOT","PsyWar"] %}
           <option value="{{ opt }}" {{ "selected" if era==opt else "" }}>{{ opt }}</option>
         {% endfor %}
       </select>

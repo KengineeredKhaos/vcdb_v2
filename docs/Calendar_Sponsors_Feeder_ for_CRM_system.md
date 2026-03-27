@@ -2406,4 +2406,791 @@ That is the missing bridge between “gut feeling” and “something I can stor
 
 The next best move is to turn this into a one-page canonical factor list for the Sponsors slice, with suggested enum/tag names and a very small “likely fit / caution” ruleset.
 
+---
 
+Yes — that is the right next artifact.
+
+What you need now is a **small, fixed Sponsor CRM factor catalog** so the slice can store and retrieve meaningful patterns without pretending to store “vibes.”
+
+I would make this a **Sponsor-local advisory catalog**, not a Governance policy file.  
+Governance still owns canonical funding semantics.  
+This catalog only describes **Sponsor CRM posture and retrieval hints**.
+
+# Sponsors CRM factor catalog v1
+
+Use a fixed key set with six buckets.
+
+## 1) Mission fit
+
+Use these when a sponsor tends to support certain kinds of opportunities.
+
+```text
+mission_local_veterans
+mission_housing
+mission_basic_needs
+mission_food_support
+mission_transportation
+mission_health_wellness
+mission_events_outreach
+mission_emergency_relief
+mission_general_ops
+mission_long_term_programs
+mission_one_time_cases
+```
+
+## 2) Restriction posture
+
+Use these to describe how tight or loose the sponsor tends to be.
+
+```text
+restriction_flexible
+restriction_purpose_bound
+restriction_geo_local_only
+restriction_population_veterans_only
+restriction_docs_required
+restriction_receipts_required
+restriction_reimbursement_preferred
+restriction_advance_funding_rare
+restriction_reporting_sensitive
+```
+
+## 3) Support style
+
+Use these for how the sponsor tends to show up.
+
+```text
+style_cash_grant
+style_reimbursement
+style_in_kind_goods
+style_service_support
+style_event_sponsorship
+style_matching
+style_recurring_support
+style_one_time_support
+```
+
+## 4) Capacity pattern
+
+Use these for the sponsor’s usual size and pace.
+
+```text
+capacity_small_asks
+capacity_medium_asks
+capacity_large_asks
+capacity_quick_turnaround
+capacity_slow_review_cycle
+capacity_seasonal_giving
+capacity_annual_cycle
+```
+
+## 5) Friction / review signals
+
+Use these for recurring process headaches or review tendencies.
+
+```text
+friction_board_review
+friction_docs_heavy
+friction_receipt_packet_sensitive
+friction_follow_up_needed
+friction_slow_response
+friction_unclear_decider
+friction_manual_review_common
+```
+
+## 6) Relationship health
+
+Use these for grounded relationship-state observations.
+
+```text
+relationship_new_prospect
+relationship_prior_success
+relationship_repeat_supporter
+relationship_recent_contact
+relationship_lapsed
+relationship_prior_decline
+relationship_follow_through_strong
+relationship_follow_through_mixed
+```
+
+# What not to encode as tags
+
+Do **not** create tags like:
+
+```text
+feels_warm
+seems_nice
+fussy_personality
+good_vibes
+bad_vibes
+```
+
+That stuff belongs in short operator notes, not in the canonical factor list.
+
+# Suggested helper enums
+
+These are enough for a clean first pass.
+
+```text
+factor_strength:
+- observed
+- recurring
+- strong_pattern
+```
+
+```text
+fit_band:
+- likely_fit
+- maybe_fit
+- caution
+```
+
+```text
+next_action:
+- proceed_outreach
+- proceed_with_docs
+- manual_review
+- hold_for_more_info
+```
+
+# Tiny advisory ruleset
+
+This should stay intentionally small.
+
+## Positive signals
+
+Count one positive signal for each of these that is true:
+
+- at least one `mission_*` factor lines up with the Calendar packet
+
+- at least one `style_*` factor lines up with the expected realization mode
+
+- restriction posture looks compatible with packet defaults
+
+- capacity pattern looks compatible with ask size / pace
+
+- relationship history shows `relationship_prior_success` or `relationship_repeat_supporter`
+
+## Caution signals
+
+Count one caution signal for each of these that is true:
+
+- sponsor tends toward `restriction_reimbursement_preferred` but the opportunity looks like advance support
+
+- sponsor tends toward `restriction_geo_local_only` and locality fit is unclear
+
+- sponsor tends toward `restriction_population_veterans_only` and beneficiary fit is unclear
+
+- opportunity size appears outside the sponsor’s normal capacity pattern
+
+- sponsor has `friction_board_review` or `friction_manual_review_common`
+
+- sponsor has `relationship_prior_decline` or `relationship_follow_through_mixed`
+
+## Banding
+
+Use this tiny banding rule:
+
+- `likely_fit`
+  
+  - 3 or more positive signals
+  
+  - 0 caution signals
+
+- `maybe_fit`
+  
+  - 1 to 2 positive signals
+  
+  - no more than 1 caution signal
+
+- `caution`
+  
+  - 2 or more caution signals
+  
+  - or 0 clear positive signals
+
+## Manual review recommended
+
+Set `manual_review_recommended = true` if:
+
+- `friction_board_review`
+
+- `friction_manual_review_common`
+
+- `relationship_prior_decline`
+
+- restriction posture is unclear against packet defaults
+
+- operator note explicitly flags uncertainty
+
+That keeps the model advisory and readable.
+
+# How this fits your slice
+
+This catalog gives you three clean things later:
+
+First, a sponsor can carry a **posture profile** made from these factors.
+
+Second, an opportunity match helper can compare:
+
+- Calendar packet context
+
+- Sponsor factors
+
+- Finance-backed historical outcomes
+
+Third, the UI can return simple operator guidance:
+
+- likely fit
+
+- maybe fit
+
+- caution
+
+- why
+
+- next suggested action
+
+# My recommendation for baseline naming
+
+I would standardize on this prefix shape:
+
+```text
+mission_
+restriction_
+style_
+capacity_
+friction_
+relationship_
+```
+
+That keeps filtering and retrieval dead simple.
+
+# Best first cut
+
+If you want to keep this extra lean, start with just these 18 keys:
+
+```text
+mission_local_veterans
+mission_housing
+mission_basic_needs
+mission_events_outreach
+
+restriction_flexible
+restriction_geo_local_only
+restriction_receipts_required
+restriction_reimbursement_preferred
+
+style_cash_grant
+style_reimbursement
+style_in_kind_goods
+style_event_sponsorship
+
+capacity_small_asks
+capacity_medium_asks
+capacity_quick_turnaround
+
+friction_board_review
+friction_manual_review_common
+
+relationship_prior_success
+relationship_repeat_supporter
+relationship_prior_decline
+```
+
+That is enough to get real value without overbuilding.
+
+The next natural move is to turn this into a **canonical Sponsors CRM mini-spec** with:
+
+- factor key
+
+- label
+
+- bucket
+
+- short description
+
+- whether it is safe to derive from history vs only set by operator judgment
+
+---
+
+Locked in.
+
+Given the slice you uploaded, I’d proceed with a **boring, mechanical first pass** that mirrors your existing Sponsors storage pattern as closely as possible. That is the safest and most forward-looking move, because it gets the bones in place without inventing a second architecture inside the slice.
+
+## What I would lock as the v1 shape
+
+### `taxonomy_crm.py`
+
+Owns only Sponsor-CRM advisory vocabulary:
+
+- factor buckets
+
+- factor keys
+
+- labels
+
+- descriptions
+
+- allowed strengths
+
+- allowed sources
+
+- helper lookups
+
+I would structure it around these bucket prefixes:
+
+- `mission_`
+
+- `restriction_`
+
+- `style_`
+
+- `capacity_`
+
+- `friction_`
+
+- `relationship_`
+
+And these supporting enums:
+
+- `CRM_FACTOR_STRENGTHS = ("observed", "recurring", "strong_pattern")`
+
+- `CRM_FACTOR_SOURCES = ("operator", "observed", "inferred")`
+
+That gives `services_crm.py` a single place to validate against.
+
+---
+
+### `SponsorHistory.section = "sponsor:crm_factors:v1"`
+
+This is the editable snapshot source of truth.
+
+I would store it as a flat dict keyed by factor key, like:
+
+```python
+{
+    "mission_housing": {
+        "has": True,
+        "strength": "strong_pattern",
+        "source": "observed",
+        "note": "Repeated support for housing stabilization asks.",
+    },
+    "style_reimbursement": {
+        "has": True,
+        "strength": "recurring",
+        "source": "observed",
+    },
+}
+```
+
+Why this shape is right:
+
+- matches your existing history usage
+
+- easy to diff
+
+- easy to rebuild into the index
+
+- easy to patch later
+
+- easy to version later
+
+And importantly:
+
+- **history stores factor key only**
+
+- **index stores bucket redundantly for speed**
+
+That is the clean split.
+
+---
+
+### `SponsorCRMFactorIndex`
+
+This should be the queryable projection model.
+
+## Recommended fields
+
+- `sponsor_entity_ulid`
+
+- `bucket`
+
+- `key`
+
+- `active`
+
+- `strength`
+
+- `source`
+
+That is enough for v1.
+
+I would **not** add note text to the index table. Notes belong in history/profile hints, not in the fast filter projection.
+
+## Recommended `__table_args__`
+
+This is the part I would firm up now:
+
+- unique on `(sponsor_entity_ulid, bucket, key)`
+
+- check constraint on `strength`
+
+- check constraint on `source`
+
+- composite index on `(bucket, key, active)`
+
+So conceptually:
+
+- one sponsor cannot have duplicate factor rows
+
+- strength/source stay controlled
+
+- bucket+key+active becomes your retrieval workhorse
+
+I would also keep the normal per-column indexes already implied by `index=True` on the fields, since your slice already uses that style.
+
+## Sponsor relationship
+
+Add this on `Sponsor`:
+
+- `crm_factors: relationship("SponsorCRMFactorIndex", back_populates="sponsor", cascade="all, delete-orphan")`
+
+That keeps it aligned with `capabilities` and `pledges`.
+
+---
+
+## `services_crm.py`
+
+This should be very small at first.
+
+I would give it **five responsibilities only** on first pass:
+
+### 1. Validation helpers
+
+- allowed keys
+
+- allowed strengths
+
+- allowed sources
+
+- bucket lookup by key
+
+### 2. Payload normalization
+
+Accept a simple factor payload and normalize to the history shape.
+
+This is where you enforce:
+
+- unknown key rejection
+
+- invalid strength rejection
+
+- invalid source rejection
+
+- note trimming
+
+- default `has=True` when omitted if you want that behavior
+
+### 3. Snapshot read
+
+- latest CRM factor snapshot from `SponsorHistory`
+
+### 4. Snapshot write
+
+- replace/set full CRM factor snapshot
+
+- create new history version
+
+- no-op detection via stable dump compare
+
+### 5. Projection rebuild
+
+- rebuild `SponsorCRMFactorIndex` from the normalized snapshot
+
+- update `last_touch_utc`
+
+- emit `domain="sponsors", operation="crm_factors_update"`
+
+That’s it for v1.
+
+## Important design choice
+
+For first pass, I recommend:
+
+- **implement `set_crm_factors(...)`**
+
+- **do not implement `patch_crm_factors(...)` yet**
+
+Not because patch is bad, but because replace/set is easier to reason about while the shape settles.
+
+Then second pass:
+
+- add `patch_crm_factors(...)`
+
+- add `derive_crm_factors_from_history(...)`
+
+- add `compute_opportunity_matches(...)`
+
+As you said: not “maybe later,” but definitely next wave.
+
+---
+
+## Event shape
+
+Your choice here is good:
+
+- `domain="sponsors"`
+
+- `operation="crm_factors_update"`
+
+I would keep the ledger payload sparse.
+
+For v1, I would emit:
+
+- `refs={"version_ptr": hist.ulid}`
+
+- `changed={"fields": ["crm_factors"]}`
+
+That is enough.
+
+No need to over-model ledger searchability for this.
+
+---
+
+## DTO / mapper direction for later
+
+You already called out the right missing piece:
+
+- **profile note hints must ride along in the opportunity-fit DTO**
+
+So I would plan for these later mapper/view objects:
+
+### `SponsorPostureView`
+
+Human-readable sponsor posture summary.
+
+### `SponsorCRMFactorView`
+
+Structured factor row or grouped factor summary.
+
+### `SponsorOpportunityMatchView`
+
+Computed, not stored.
+
+Fields I would expect later:
+
+- `sponsor_entity_ulid`
+
+- `fit_band`
+
+- `positive_reasons`
+
+- `caution_reasons`
+
+- `manual_review_recommended`
+
+- `suggested_next_action`
+
+- `profile_note_hints`
+
+That last one is important because it is the bridge between structured factors and operator wisdom.
+
+---
+
+## What I would **not** do yet
+
+### Do not add persistent “fit” storage
+
+No `SponsorOpportunityFit` model.  
+No per-demand fit cache table.  
+No stored score as system truth.
+
+That would muddy the authority boundaries too early.
+
+### Do not add sponsor-level `crm_last_update_utc`
+
+Not yet.
+
+You already have:
+
+- history timestamps
+
+- index timestamps
+
+- sponsor `last_touch_utc`
+
+That is sufficient for v1.
+
+### Do not put this taxonomy in Governance
+
+This is Sponsor advisory vocabulary, not board policy vocabulary.
+
+Keep it slice-local.
+
+---
+
+## The clean build sequence
+
+This is the exact order I would use.
+
+### Step 1 — `taxonomy_crm.py`
+
+Create the factor catalog and helper lookups.
+
+Done right, this becomes the only place `services_crm.py` needs to consult for allowed values.
+
+### Step 2 — model wiring
+
+Add:
+
+- `SponsorCRMFactorIndex`
+
+- `Sponsor.crm_factors` relationship
+
+Then settle `__table_args__`.
+
+### Step 3 — migration
+
+Create only the new table and indexes/constraints.
+
+Keep this migration small.
+
+### Step 4 — `services_crm.py`
+
+Implement:
+
+- constants
+
+- `_latest_snapshot(...)`
+
+- `_next_version(...)` reuse pattern
+
+- normalization
+
+- validation
+
+- `get_crm_factors(...)`
+
+- `set_crm_factors(...)`
+
+- projection rebuild
+
+### Step 5 — tests
+
+Add a dedicated test file for this storage layer.
+
+I would write these first:
+
+- valid payload writes history and projection
+
+- invalid key rejected
+
+- invalid strength rejected
+
+- invalid source rejected
+
+- identical payload returns noop
+
+- replacement removes stale projection rows
+
+- sponsor delete cascades factor rows
+
+### Step 6 — only then start read models
+
+Once storage is green, then you move to:
+
+- posture summary helpers
+
+- derivation helpers
+
+- opportunity matching DTOs
+
+That is the forward-looking part, but after the foundation is solid.
+
+---
+
+## My recommendation on test naming
+
+Since your current Sponsors tests are mostly funding-context and realization oriented, I would add a new file like:
+
+- `tests/slices/sponsors/test_sponsors_services_crm.py`
+
+Keep it sharply focused on storage semantics first.
+
+---
+
+## My recommendation on payload semantics
+
+For v1, keep the input payload simple:
+
+- keyed by factor key
+
+- each value is either:
+  
+  - `True` / `False`
+  
+  - or an object with `has`, `strength`, `source`, `note`
+
+That gives you a very easy userland shape while still allowing richer annotation.
+
+Example mental model:
+
+- `True` means “active with defaults”
+
+- object means “active/inactive with explicit metadata”
+
+That mirrors your capability handling style and keeps operator input simple.
+
+---
+
+## One subtle rule I would adopt now
+
+I would define this behavior explicitly:
+
+- only rows with `has=True` become `active=True` in the index
+
+- factors present with `has=False` may remain in history snapshot but should not become active index rows
+
+For projection rebuild, you can either:
+
+- keep inactive rows with `active=False`, or
+
+- delete absent/inactive rows and treat the index as active-only
+
+Given your existing capability pattern, I would lean toward:
+
+- **keep rows for present keys**
+
+- mark `active=False`
+
+- delete only keys not present in the replaced snapshot
+
+That gives you a slightly richer projection without much extra cost.
+
+---
+
+## The practical summary
+
+You now have a stable paradigm:
+
+- `taxonomy_crm.py` defines Sponsor advisory vocabulary
+
+- `SponsorHistory` stores the full CRM posture snapshot
+
+- `SponsorCRMFactorIndex` stores queryable factor rows
+
+- `services_crm.py` normalizes, validates, snapshots, rebuilds, and reads
+
+- later DTOs compute fit using:
+  
+  - Calendar packet
+  
+  - CRM factor index
+  
+  - Finance-backed historical truth
+  
+  - profile note hints
+
+That is a very clean upward path.
+
+The next best move is for me to draft the **exact contents and shape of `taxonomy_crm.py`** and the **minimal public function surface for `services_crm.py`**, so you can wire the model and migration without guessing.
