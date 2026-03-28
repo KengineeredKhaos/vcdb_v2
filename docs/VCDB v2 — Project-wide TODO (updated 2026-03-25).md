@@ -335,3 +335,34 @@ Conventions:
   - ensure permission tests are meaningful under both
   
   - prevent dev conveniences from masking denied-access failures
+
+@TODO: Major Refactor — Timestamp Canon Unification
+
+Current posture is intentionally temporary:
+
+- parts of the project still store DB timestamps as ISO-8601 Z strings
+  for consistency with existing tables/models
+- canon direction in app/lib/chrono.py is to use naive UTC DateTime for
+  DB columns/defaults/onupdate, and reserve ISO-8601 strings for logs/JSON
+
+Before production:
+
+1. audit all model timestamp fields project-wide
+2. classify each timestamp by purpose:
+   - DB storage / default / onupdate
+   - wire / JSON / logging payload
+3. convert DB timestamp columns to canonical naive UTC DateTime in one
+   focused migration sweep
+4. replace string-based DB defaults/onupdate helpers with chrono canon
+   helpers where appropriate
+5. update services, mappers, tests, fixtures, and migrations together
+6. run full test suite plus migration verification until green
+7. remove transitional split-brain timestamp handling and compatibility
+   reasoning
+8. treat this as a pre-production gate, not a someday cleanup
+
+Rationale:
+Do not allow slow timestamp creep toward canon through scattered partial
+conversions. Keep the project internally consistent for now, then perform
+one deliberate, whole-project timestamp standardization pass and verify it
+thoroughly.

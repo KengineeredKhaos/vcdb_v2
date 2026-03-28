@@ -27,6 +27,10 @@ from .mapper import (
     to_slice_health_card,
 )
 
+# -----------------
+# Admin Dashboard
+# -----------------
+
 
 def get_dashboard() -> DashboardDTO:
     inbox_summary = to_inbox_summary(
@@ -99,6 +103,37 @@ def get_dashboard() -> DashboardDTO:
     )
 
 
+# -----------------
+# Admin Inbox
+# Services Requests
+# -----------------
+"""
+Admin inbox rows are operational queue records only.
+
+They do not represent the authoritative approval/authorization record.
+Owning slices retain workflow truth, validation, state transitions, and
+Ledger emission. Admin stores and presents triage notices for those
+slice-owned workflows.
+
+Admin Inbox Cron Job Outline
+
+archive all terminal inbox items
+where admin_status in terminal_states
+and still terminal at sweep time
+
+Terminal States:
+resolved
+source_closed
+dismissed
+duplicate
+
+Then:
+copy row to AdminInboxArchive
+delete from AdminInboxItem
+no Ledger emit
+"""
+
+
 def get_inbox_page() -> InboxPageDTO:
     inbox_summary = to_inbox_summary(
         total_open=0,
@@ -129,6 +164,33 @@ def get_inbox_page() -> InboxPageDTO:
     )
 
 
+"""
+def upsert_inbox_item(dto: AdminInboxUpsertDTO) -> AdminInboxReceiptDTO:
+    ...
+
+
+def close_inbox_item(dto: AdminInboxCloseDTO) -> AdminInboxReceiptDTO:
+    ...
+
+
+def acknowledge_inbox_item(
+    inbox_item_ulid: str,
+    *,
+    actor_ulid: str,
+) -> None:
+    ...
+
+
+def archive_terminal_items(*, as_of_utc: datetime) -> int:
+    ...
+"""
+
+
+# -----------------
+# Cron Job Ops
+# -----------------
+
+
 def get_cron_page() -> CronPageDTO:
     jobs = (
         to_cron_job_status(
@@ -149,6 +211,16 @@ def get_cron_page() -> CronPageDTO:
         ),
         jobs=jobs,
     )
+
+
+"""
+
+"""
+
+
+# -----------------
+# Policy Maintenance
+# -----------------
 
 
 def get_policy_index_page() -> PolicyIndexPageDTO:
@@ -175,6 +247,11 @@ def get_policy_index_page() -> PolicyIndexPageDTO:
         health=health,
         items=items,
     )
+
+
+# -----------------
+# RBAC Actions
+# -----------------
 
 
 def get_auth_operators_page() -> AuthOperatorsPageDTO:

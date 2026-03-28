@@ -112,3 +112,45 @@ Sponsor Classifications
 - Fund_Restrictions: vet_only, homeless_only, local_only, grant_reporting
 - Spnsr_Tier: Partner, Affiliate, Associate, Valued_Donor
 - Ack_History: t_y_letter, certificate, plaque, recog_event, board_seat
+
+
+Admin inbox taxonomy:
+Status rules:
+
+Keep the split hard between Source and Admin.
+
+Source-owned statuses
+
+pending_review
+awaiting_authorization
+approved
+rejected
+cancelled
+resolved
+
+Admin-owned statuses
+
+Hot queue:
+open
+acknowledged
+in_review
+snoozed
+
+Terminal:
+resolved
+source_closed
+dismissed
+duplicate
+
+Rule:
+
+Terminal Admin statuses leave the active inbox immediately and are
+archived on the next cron cycle.
+
+Use one stable dedupe key:
+
+dedupe_key = (
+    f"{source_slice}:{issue_kind}:{source_ref_ulid}"
+)
+
+That works well with your no reopen rule.
