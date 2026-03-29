@@ -123,7 +123,7 @@ class AdminInboxArchive(db.Model, ULIDPK):
     workflow_key: Mapped[str] = mapped_column(String(128), nullable=False)
     resolution_route: Mapped[str] = mapped_column(String(200), nullable=False)
 
-    context_json: Mapped[str] = mapped_column(
+    context_json: Mapped[dict[str, object]] = mapped_column(
         JSON, nullable=False, default=dict
     )
 

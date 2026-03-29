@@ -40,46 +40,6 @@ def _actor_ulid() -> str:
     raise RuntimeError("current_user is missing an operator ULID")
 
 
-def _render_policy_preview_from_form(
-    *,
-    policy_key: str,
-    form: PolicyEditForm,
-    extra_error: str | None = None,
-):
-    try:
-        new_policy = json.loads(form.policy_text.data or "{}")
-    except json.JSONDecodeError as exc:
-        page = svc.build_policy_preview_page_from_parse_error(
-            policy_key=policy_key,
-            policy_text=form.policy_text.data or "",
-            base_hash=form.base_hash.data or "",
-            message=str(exc),
-        )
-        if extra_error:
-            flash(extra_error, "error")
-        return render_template(
-            "admin/policy/preview.html",
-            page=page,
-            form=form,
-        )
-
-    page = svc.build_policy_preview_page(
-        policy_key=policy_key,
-        new_policy=new_policy,
-        base_hash=form.base_hash.data or "",
-    )
-    form.policy_text.data = page.normalized_text
-    form.base_hash.data = page.current_hash
-    form.proposed_hash.data = page.proposed_hash
-    if extra_error:
-        flash(extra_error, "error")
-    return render_template(
-        "admin/policy/preview.html",
-        page=page,
-        form=form,
-    )
-
-
 # -----------------
 # Dashboard
 # -----------------
@@ -161,8 +121,32 @@ def policy_preview(policy_key: str):
             form=form,
         )
 
-    return _render_policy_preview_from_form(
+    try:
+        new_policy = json.loads(form.policy_text.data or "{}")
+    except json.JSONDecodeError as exc:
+        page = svc.build_policy_preview_page_from_parse_error(
+            policy_key=policy_key,
+            policy_text=form.policy_text.data or "",
+            base_hash=form.base_hash.data or "",
+            message=str(exc),
+        )
+        return render_template(
+            "admin/policy/preview.html",
+            page=page,
+            form=form,
+        )
+
+    page = svc.build_policy_preview_page(
         policy_key=policy_key,
+        new_policy=new_policy,
+        base_hash=form.base_hash.data or "",
+    )
+    form.policy_text.data = page.normalized_text
+    form.base_hash.data = page.current_hash
+    form.proposed_hash.data = page.proposed_hash
+    return render_template(
+        "admin/policy/preview.html",
+        page=page,
         form=form,
     )
 
@@ -174,30 +158,29 @@ def policy_commit(policy_key: str):
     form = PolicyEditForm()
 
     if not form.validate_on_submit():
-        return _render_policy_preview_from_form(
-            policy_key=policy_key,
+        page = svc.get_policy_detail_page(policy_key)
+        return render_template(
+            "admin/policy/detail.html",
+            page=page,
             form=form,
-            extra_error="Commit form is incomplete.",
         )
 
     reason = (form.reason.data or "").strip()
     if not reason:
-        return _render_policy_preview_from_form(
+        page = svc.build_policy_preview_page_from_parse_error(
             policy_key=policy_key,
+            policy_text=form.policy_text.data or "",
+            base_hash=form.base_hash.data or "",
+            message="A commit reason is required.",
+        )
+        return render_template(
+            "admin/policy/preview.html",
+            page=page,
             form=form,
-            extra_error="A commit reason is required.",
         )
 
     try:
         new_policy = json.loads(form.policy_text.data or "{}")
-    except json.JSONDecodeError:
-        return _render_policy_preview_from_form(
-            policy_key=policy_key,
-            form=form,
-            extra_error="Commit payload is not valid JSON.",
-        )
-
-    try:
         result = svc.commit_policy_update(
             policy_key=policy_key,
             new_policy=new_policy,
@@ -209,11 +192,8 @@ def policy_commit(policy_key: str):
         db.session.commit()
     except Exception as exc:
         db.session.rollback()
-        return _render_policy_preview_from_form(
-            policy_key=policy_key,
-            form=form,
-            extra_error=str(exc),
-        )
+        flash(str(exc), "error")
+        return redirect(url_for("admin.policy_detail", policy_key=policy_key))
 
     flash(
         f"Policy {policy_key} committed: {result.get('new_hash', '')}",

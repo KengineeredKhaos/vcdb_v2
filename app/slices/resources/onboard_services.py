@@ -150,6 +150,7 @@ def mark_step(
 
 def review_snapshot(*, entity_ulid: str) -> dict[str, Any]:
     """Gather a PII-minimized snapshot for the review step."""
+
     view = res_svc.resource_view(entity_ulid)
     hints = res_svc.get_profile_hints(entity_ulid)
     pocs = res_svc.resource_list_pocs(resource_ulid=entity_ulid)
@@ -159,3 +160,31 @@ def review_snapshot(*, entity_ulid: str) -> dict[str, Any]:
         "profile_hints": hints,
         "pocs": pocs,
     }
+
+
+def submit_onboard_for_admin_review(
+    *,
+    entity_ulid: str,
+    request_id: str,
+    actor_ulid: str | None,
+):
+    """
+    Advance onboarding to complete and publish the Admin review request.
+
+    Wizard owns step progression.
+    Resources admin_review_services owns the review request lifecycle.
+    """
+    from .admin_review_services import request_onboard_admin_review
+
+    mark_step(
+        entity_ulid=entity_ulid,
+        step="complete",
+        request_id=request_id,
+        actor_ulid=actor_ulid,
+    )
+
+    return request_onboard_admin_review(
+        entity_ulid=entity_ulid,
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+    )

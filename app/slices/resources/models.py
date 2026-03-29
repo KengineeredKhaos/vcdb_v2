@@ -64,6 +64,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -261,5 +262,43 @@ class ResourcePOC(db.Model, ULIDPK, IsoTimestamps):
         ),
         CheckConstraint(
             "rank >= 0 AND rank <= 99", name="ck_resource_poc_rank_range"
+        ),
+    )
+
+
+class ResourceAdminReviewRequest(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "resource_admin_review_request"
+
+    entity_ulid: Mapped[str] = mapped_column(String(26), nullable=False)
+    review_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Example:
+    # resource_onboard_review
+    # resource_mou_status_review
+    # resource_sla_status_review
+
+    source_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    # pending_review | approved | rejected | cancelled
+
+    requested_by_actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+    resolved_by_actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    closed_at_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )
+
+    __table_args__ = (
+        db.Index(
+            "ix_resource_admin_review_request_active",
+            "entity_ulid",
+            "review_kind",
+            "source_status",
         ),
     )

@@ -798,9 +798,8 @@ def onboard_complete(entity_ulid: str):
         )
 
     try:
-        wiz.mark_step(
+        wiz.submit_onboard_for_admin_review(
             entity_ulid=entity_ulid,
-            step=step,
             request_id=req,
             actor_ulid=actor,
         )

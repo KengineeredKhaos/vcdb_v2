@@ -39,20 +39,11 @@
 </section>
 
 <section>
-  <h2>Normalized document</h2>
-  <pre>{{ form.policy_text.data or page.normalized_text or "" }}</pre>
-</section>
-
-<section>
   <h2>Diff</h2>
   <pre>{% for line in page.diff_lines %}{{ line }}
 {% else %}No diff available.
 {% endfor %}</pre>
 </section>
-
-<p>
-  <a href="{{ page.detail_route }}">Back to policy detail</a>
-</p>
 
 <section>
   <h2>Commit</h2>

@@ -811,62 +811,7 @@ Only the schema is canonized.
 # Admin slice notes:
 
 **Slice owns truth. Admin owns operator view.**  
-Admin may aggregate slice-owned read-only DTOs into cross-slice operational reports and maintenance views. Admin does not take ownership of the underlying semantics, and Admin read contracts do not perform corrective action. Corrective action remains the responsibility of the owning slice through its command/workflow interfaces.
 
-**Admin is not the repair mechanism.  
-Admin is the triage and control surface.**
-
-Repairs remain:
-
-- slice-internal
-
-- slice-owned
-
-- command/workflow specific
-
-- as simple or as rough as needed inside the owning slice
-
-That also lowers the pressure on Admin maturity. Admin can be:
-
-- coherent
-
-- safe
-
-- readable
-
-- useful
-
-without needing to solve every operational problem itself.
-
-**No orphaned review flags.**  
-Any slice that raises an Admin-facing review item must also provide a complete, slice-owned resolution path for authorized Admin action. Admin may triage and launch the workflow, but the owning slice must define the issue type, allowed resolutions, resulting state transitions, and audit behavior.
-
-We have hardened the Auth slice into a viable foundation and clarified the architectural role of the Admin slice.
-
-**Admin is the system control surface.**  
-**Slice owns truth. Admin owns operator view.**
-
-Admin is not a repair engine, alternate business layer, or cross-slice bypass. Its job is to gather slice-owned, read-only DTOs into dashboards, inboxes, summaries, anomaly reports, and maintenance cues so trusted operators can see what needs attention and launch the proper owning-slice workflow.
-
-A key rule going forward is: **no orphaned review flags.** If a slice can raise an “admin review required” item, that slice must already provide a complete, Admin-resolvable path for handling it. Admin may triage and launch the workflow, but the owning slice must define the issue type, allowed actions, resulting state transitions, and audit behavior.
-
-For this thread, the goal is to shape **Admin as Control Surface** into a coherent, Ethos-aligned slice and hardening plan. Focus areas:
-
-- define Admin mission, boundaries, and anti-patterns
-
-- confirm Admin as a consolidated triage interface, not a universal fixer
-
-- shape a single **Admin read-only facade** for operator views without taking ownership of slice semantics
-
-- identify first-wave Admin feature groups: Dashboard, Unified Inbox, Audit/Operational Reports, Cron & Maintenance Supervision, Policy Workflow Surface, and Auth Operator Management
-
-- avoid direct cross-slice SQL reach-arounds and “bag of snakes” design
-
-- decide what Admin truly owns versus what it only surfaces
-
-- produce a practical hardening sequence for the current Admin slice
-
-The objective is not to make Admin fully polished or universally capable. The objective is to make it a safe, readable, useful operational cockpit that consolidates observation and triage while keeping correction and repair inside the owning slices.
 
 ## Admin Slice — Mission and Boundaries
 
@@ -1021,44 +966,6 @@ Do not let Admin become:
 **Admin is the control surface of VCDB v2: the place trusted operators observe system state, triage problems, and launch the proper owning-slice maintenance workflows through stable interfaces.**
 
 ---
-
-## Opening statement for the next chat thread
-
-> We have now hardened the Auth slice into a viable foundation and clarified a key architectural principle for the Admin slice:
-> 
-> **Slice owns truth. Admin owns operator view.**
-> 
-> Admin is not a repair engine, alternate business layer, or cross-slice bypass. It is the **system control surface**: a consolidated triage, oversight, and launch interface for trusted operators performing maintenance-grade work.
-> 
-> Admin may gather slice-owned, read-only DTOs and compose them into dashboards, inboxes, summaries, anomaly reports, and operational views. Problem resolution remains the responsibility of the owning slice through its own command/workflow interfaces.
-> 
-> For this thread, the goal is to shape **Admin as Control Surface** in a way that aligns with VCDB v2 Ethos:
-> 
-> - Admin as consolidated triage interface
-> 
-> - unified Admin inbox / review queue
-> 
-> - cross-slice read-only operational views
-> 
-> - safe launch points into owning-slice workflows
-> 
-> - strong slice-boundary discipline
-> 
-> - avoidance of direct cross-slice SQL reach-arounds and “bag of snakes” design
-> 
-> We should define:
-> 
-> 1. Admin slice mission and boundaries
-> 
-> 2. what Admin truly owns vs what it only surfaces
-> 
-> 3. the shape of an Admin read-only facade for cross-slice operator views
-> 
-> 4. the initial Admin feature groups, likely dashboard, inbox, cron, policy workflows, and audit/report entry points
-> 
-> 5. a practical hardening sequence for turning the current Admin slice into a coherent control surface
-> 
-> The objective is not to make Admin a universal repair engine. The objective is to make it a safe, readable, useful operational cockpit.
 
 # Admin slice — first-pass feature map
 
@@ -1351,54 +1258,6 @@ This is the most important anti-snake measure in the whole design.
 
 ---
 
-## What belongs in first wave vs later
-
-## First wave
-
-These are the ones I’d harden first because they already align with your current Admin slice bones:
-
-1. Dashboard
-
-2. Unified inbox shell
-
-3. Cron supervision
-
-4. Policy workflow surface
-
-5. Audit/operational reports
-
-6. Auth operator management launch/report surface
-
-## Second wave
-
-These can come later once the control-surface pattern is stable:
-
-1. Ledger integrity reports
-
-2. Cross-slice anomaly rollups
-
-3. maintenance receipts/history
-
-4. queue aging/escalation reports
-
-5. diagnostics / drift suites
-
-6. archive / retention supervision
-
-## Third wave
-
-Only if truly needed:
-
-1. deviation catalog / canon observer page
-
-2. advanced repair runbooks surfaced in UI
-
-3. broader observability / trend analytics
-
-4. role/governance workflow consolidation beyond MVP
-
----
-
 ## Admin read facade implications
 
 This feature map suggests an Admin-facing read facade shaped around operator views, not slice truths.
@@ -1511,3 +1370,16 @@ Think of Admin as five rooms:
 That keeps the whole slice readable.
 
 ---
+
+Admin Intervention Overlay Pattern
+
+Admin intervention is an exception-path overlay, not a default workflow
+pattern. If needed, it should live in a dedicated slice-local
+admin_review_services.py / admin_review_routes.py package that owns the
+request/resolution lifecycle while the slice retains truth, semantics,
+state transitions, and Ledger emission. Services flush; routes commit.
+Admin inbox receives a notice, not the authoritative record.
+
+---
+
+Admin policy review/edit is an Admin-native operator workflow shell over Governance-owned JSON policy truth. Admin owns navigation, preview, diff presentation, and commit orchestration; Governance owns policy discovery, normalization, validation, diff semantics, and atomic persistence. No policy meaning or write-path logic is duplicated in Admin.

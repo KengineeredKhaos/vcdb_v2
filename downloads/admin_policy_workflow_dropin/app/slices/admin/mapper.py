@@ -154,7 +154,6 @@ class PolicyPreviewPageDTO:
     change_summary: tuple[str, ...]
     commit_allowed: bool
     commit_route: str
-    detail_route: str
 
 
 @dataclass(frozen=True)
@@ -394,7 +393,6 @@ def to_policy_preview_page(
     change_summary: tuple[str, ...],
     commit_allowed: bool,
     commit_route: str,
-    detail_route: str,
 ) -> PolicyPreviewPageDTO:
     return PolicyPreviewPageDTO(
         title=title,
@@ -408,7 +406,6 @@ def to_policy_preview_page(
         change_summary=change_summary,
         commit_allowed=bool(commit_allowed),
         commit_route=commit_route,
-        detail_route=detail_route,
     )
 
 

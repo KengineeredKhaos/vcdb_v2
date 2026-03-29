@@ -1,0 +1,171 @@
+--- a/app/extensions/contracts/governance_v2.py
++++ b/app/extensions/contracts/governance_v2.py
+@@ -1509,13 +1509,30 @@
+ # -----------------
+ 
+ 
++class PolicyIssueDTO(TypedDict):
++    source: str
++    severity: str
++    path: str
++    message: str
++
++
+ class PolicyIndexItemDTO(TypedDict, total=False):
+     key: str
++    title: str
++    status: str
++    version: str
++    focus: str
++    domains: list[str]
+     has_schema: bool
+-    schema_valid: bool
+-    schema_errors: list[str]
+-    domains: list[str]
+-    focus: str
++    schema_ok: bool
++    schema_error_count: int
++    schema_warning_count: int
++    semantic_ok: bool
++    semantic_error_count: int
++    semantic_warning_count: int
++    issue_count: int
++    current_hash: str
++    issues: list[PolicyIssueDTO]
+ 
+ 
+ class PolicyIndexDTO(TypedDict):
+@@ -1523,16 +1540,52 @@
+     policies: list[PolicyIndexItemDTO]
+ 
+ 
+-class PolicyUpdatePreviewDTO(TypedDict):
++class PolicyDocumentDTO(TypedDict, total=False):
++    ok: bool
++    key: str
++    title: str
++    status: str
++    version: str
++    focus: str
++    domains: list[str]
++    meta: dict[str, Any]
++    policy: dict[str, Any]
++    has_schema: bool
++    schema_ok: bool
++    semantic_ok: bool
++    issues: list[PolicyIssueDTO]
++    normalized_text: str
++    current_hash: str
++
++
++class PolicyUpdatePreviewDTO(TypedDict, total=False):
+     ok: bool
+     dry_run: bool
+-    diff_summary: dict[str, list]  # added_keys / removed_keys / changed_keys
+-
+-
+-class PolicyUpdateCommitDTO(TypedDict):
++    key: str
++    current_hash: str
++    proposed_hash: str
++    normalized_text: str
++    has_schema: bool
++    schema_ok: bool
++    semantic_ok: bool
++    issues: list[PolicyIssueDTO]
++    issue_count: int
++    diff_summary: dict[str, list[str]]
++    diff_lines: list[str]
++    change_summary: list[str]
++    base_hash_matches: bool
++    commit_allowed: bool
++
++
++class PolicyUpdateCommitDTO(TypedDict, total=False):
+     ok: bool
+-    dry_run: bool
+-    diff_summary: dict[str, list]
++    committed: bool
++    key: str
++    old_hash: str
++    new_hash: str
++    backup_ref: str
++    reason: str
++    issues: list[PolicyIssueDTO]
+ 
+ 
+ # -----------------
+@@ -1540,7 +1593,7 @@
+ # -----------------
+ 
+ 
+-def list_policies(*, validate: bool = False) -> dict[str, Any]:
++def list_policies(*, validate: bool = False) -> PolicyIndexDTO:
+     """
+     Discover governance policies (PII-free).
+     Optionally JSON-Schema validate.
+@@ -1548,32 +1601,54 @@
+     return list_policies_impl(validate=validate)
+ 
+ 
+-def get_policy(*, key: str, validate: bool = False) -> dict[str, Any]:
+-    """
+-    Fetch one policy’s raw JSON (PII-free).
++def get_policy(
++    *,
++    key: str,
++    validate: bool = False,
++) -> PolicyDocumentDTO:
++    """
++    Fetch one policy’s raw JSON and normalized view (PII-free).
+     Optionally JSON-Schema validate.
+     """
+-    return get_policy_impl(key=key, validate=validate)
++    return get_policy_impl(key, validate=validate)
+ 
+ 
+ def preview_policy_update(
+-    *, key: str, new_policy: dict[str, Any]
+-) -> dict[str, Any]:
++    *,
++    key: str,
++    new_policy: dict[str, Any],
++    base_hash: str | None = None,
++) -> PolicyUpdatePreviewDTO:
+     """
+     Dry-run: canonicalize + validate + diff, but do not write or emit.
+     """
+-    return preview_update_impl(key=key, new_policy=new_policy)
++    return preview_update_impl(
++        key=key,
++        new_policy=new_policy,
++        base_hash=base_hash,
++    )
+ 
+ 
+ def commit_policy_update(
+-    *, key: str, new_policy: dict[str, Any], actor_ulid: str
+-) -> dict[str, Any]:
++    *,
++    key: str,
++    new_policy: dict[str, Any],
++    actor_ulid: str,
++    reason: str,
++    base_hash: str | None = None,
++    proposed_hash: str | None = None,
++) -> PolicyUpdateCommitDTO:
+     """
+     Commit: canonicalize + validate, atomic write with backup, and
+     emit a single ledger event (PII-free).
+     """
+     return commit_update_impl(
+-        key=key, new_policy=new_policy, actor_ulid=actor_ulid
++        key=key,
++        new_policy=new_policy,
++        actor_ulid=actor_ulid,
++        reason=reason,
++        base_hash=base_hash,
++        proposed_hash=proposed_hash,
+     )
+ 
+ 

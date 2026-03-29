@@ -25,7 +25,9 @@ class PolicyEditForm(FlaskForm):
         "Reason for change",
         validators=[Optional(), Length(max=240)],
         render_kw={
-            "placeholder": ("Why is this policy being updated right now?")
+            "placeholder": (
+                "Why is this policy being updated right now?"
+            )
         },
     )
     preview = SubmitField("Preview")

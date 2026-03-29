@@ -1509,11 +1509,11 @@ models or file paths.
 # -----------------
 
 
-class PolicyIssueDTO(TypedDict, total=False):
+class PolicyIssueDTO(TypedDict):
     source: str
     severity: str
-    message: str
     path: str
+    message: str
 
 
 class PolicyIndexItemDTO(TypedDict, total=False):
@@ -1522,10 +1522,17 @@ class PolicyIndexItemDTO(TypedDict, total=False):
     status: str
     version: str
     focus: str
+    domains: list[str]
     has_schema: bool
-    schema_state: str
-    semantic_state: str
+    schema_ok: bool
+    schema_error_count: int
+    schema_warning_count: int
+    semantic_ok: bool
+    semantic_error_count: int
+    semantic_warning_count: int
     issue_count: int
+    current_hash: str
+    issues: list[PolicyIssueDTO]
 
 
 class PolicyIndexDTO(TypedDict):
@@ -1536,32 +1543,49 @@ class PolicyIndexDTO(TypedDict):
 class PolicyDocumentDTO(TypedDict, total=False):
     ok: bool
     key: str
+    title: str
+    status: str
+    version: str
+    focus: str
+    domains: list[str]
+    meta: dict[str, Any]
+    policy: dict[str, Any]
+    has_schema: bool
+    schema_ok: bool
+    semantic_ok: bool
+    issues: list[PolicyIssueDTO]
+    normalized_text: str
     current_hash: str
-    current_text: str
+
+
+class PolicyUpdatePreviewDTO(TypedDict, total=False):
+    ok: bool
+    dry_run: bool
+    key: str
+    current_hash: str
+    proposed_hash: str
     normalized_text: str
     has_schema: bool
     schema_ok: bool
     semantic_ok: bool
     issues: list[PolicyIssueDTO]
-
-
-class PolicyUpdatePreviewDTO(TypedDict, total=False):
-    ok: bool
-    current_hash: str
-    proposed_hash: str
-    normalized_text: str
-    commit_allowed: bool
-    change_summary: list[str]
+    issue_count: int
+    diff_summary: dict[str, list[str]]
     diff_lines: list[str]
-    issues: list[PolicyIssueDTO]
+    change_summary: list[str]
+    base_hash_matches: bool
+    commit_allowed: bool
 
 
 class PolicyUpdateCommitDTO(TypedDict, total=False):
     ok: bool
+    committed: bool
+    key: str
     old_hash: str
     new_hash: str
-    backup_path: str
-    change_summary: list[str]
+    backup_ref: str
+    reason: str
+    issues: list[PolicyIssueDTO]
 
 
 # -----------------
@@ -1569,11 +1593,23 @@ class PolicyUpdateCommitDTO(TypedDict, total=False):
 # -----------------
 
 
-def list_policies(*, validate: bool = False) -> dict[str, Any]:
+def list_policies(*, validate: bool = False) -> PolicyIndexDTO:
+    """
+    Discover governance policies (PII-free).
+    Optionally JSON-Schema validate.
+    """
     return list_policies_impl(validate=validate)
 
 
-def get_policy(*, key: str, validate: bool = False) -> dict[str, Any]:
+def get_policy(
+    *,
+    key: str,
+    validate: bool = False,
+) -> PolicyDocumentDTO:
+    """
+    Fetch one policy’s raw JSON and normalized view (PII-free).
+    Optionally JSON-Schema validate.
+    """
     return get_policy_impl(key, validate=validate)
 
 
@@ -1581,8 +1617,11 @@ def preview_policy_update(
     *,
     key: str,
     new_policy: dict[str, Any],
-    base_hash: str = "",
-) -> dict[str, Any]:
+    base_hash: str | None = None,
+) -> PolicyUpdatePreviewDTO:
+    """
+    Dry-run: canonicalize + validate + diff, but do not write or emit.
+    """
     return preview_update_impl(
         key=key,
         new_policy=new_policy,
@@ -1596,9 +1635,13 @@ def commit_policy_update(
     new_policy: dict[str, Any],
     actor_ulid: str,
     reason: str,
-    base_hash: str,
-    proposed_hash: str,
-) -> dict[str, Any]:
+    base_hash: str | None = None,
+    proposed_hash: str | None = None,
+) -> PolicyUpdateCommitDTO:
+    """
+    Commit: canonicalize + validate, atomic write with backup, and
+    emit a single ledger event (PII-free).
+    """
     return commit_update_impl(
         key=key,
         new_policy=new_policy,

@@ -622,7 +622,6 @@ def build_policy_preview_page_from_parse_error(
         change_summary=("Parse failed; no diff available.",),
         commit_allowed=False,
         commit_route=f"/admin/policy/{policy_key}/commit",
-        detail_route=f"/admin/policy/{policy_key}/",
     )
 
 
@@ -659,7 +658,6 @@ def build_policy_preview_page(
         change_summary=summary,
         commit_allowed=bool(result.get("commit_allowed", False)),
         commit_route=f"/admin/policy/{policy_key}/commit",
-        detail_route=f"/admin/policy/{policy_key}/",
     )
 
 
