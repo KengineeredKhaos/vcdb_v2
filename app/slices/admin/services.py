@@ -15,6 +15,7 @@ This module must not:
 - emit Ledger events
 - own foreign slice semantics
 - execute foreign corrective commands
+Policy edits work
 """
 
 from __future__ import annotations
