@@ -1,0 +1,572 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vcdb.local/schemas/policy_records_lifecycle.schema.json",
+  "title": "VCDB v2 Policy - Records Lifecycle and Archive Schedule",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "meta",
+    "lifecycle_rules",
+    "package_policy",
+    "record_classes"
+  ],
+  "properties": {
+    "meta": {
+      "$ref": "#/$defs/meta"
+    },
+    "lifecycle_rules": {
+      "$ref": "#/$defs/lifecycleRules"
+    },
+    "package_policy": {
+      "$ref": "#/$defs/packagePolicy"
+    },
+    "record_classes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ledger",
+        "finance",
+        "inactive_resource",
+        "inactive_sponsor",
+        "inactive_user"
+      ],
+      "properties": {
+        "ledger": {
+          "$ref": "#/$defs/scheduledArchiveClass"
+        },
+        "finance": {
+          "$ref": "#/$defs/scheduledArchiveClass"
+        },
+        "inactive_resource": {
+          "$ref": "#/$defs/onDemandArchiveClass"
+        },
+        "inactive_sponsor": {
+          "$ref": "#/$defs/onDemandArchiveClass"
+        },
+        "inactive_user": {
+          "$ref": "#/$defs/onDemandArchiveClass"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy_key",
+        "title",
+        "description",
+        "status",
+        "version",
+        "schema_version",
+        "effective_on",
+        "notes"
+      ],
+      "properties": {
+        "policy_key": {
+          "type": "string",
+          "const": "records_lifecycle"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "active",
+            "retired"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "schema_version": {
+          "type": "string",
+          "const": "2020-12"
+        },
+        "effective_on": {
+          "type": "string",
+          "format": "date"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "lifecycleRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "archive_semantics",
+        "nothing_happens_in_the_dark",
+        "hot_store_exit_requires_verified_archive",
+        "cron_rules",
+        "lifecycle_states"
+      ],
+      "properties": {
+        "archive_semantics": {
+          "type": "string",
+          "const": "archive_only"
+        },
+        "nothing_happens_in_the_dark": {
+          "type": "boolean",
+          "const": true
+        },
+        "hot_store_exit_requires_verified_archive": {
+          "type": "boolean",
+          "const": true
+        },
+        "cron_rules": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "idempotent_required",
+            "overlap_forbidden",
+            "unit_of_work_run_once",
+            "max_automatic_retries",
+            "second_failure_action"
+          ],
+          "properties": {
+            "idempotent_required": {
+              "type": "boolean",
+              "const": true
+            },
+            "overlap_forbidden": {
+              "type": "boolean",
+              "const": true
+            },
+            "unit_of_work_run_once": {
+              "type": "boolean",
+              "const": true
+            },
+            "max_automatic_retries": {
+              "type": "integer",
+              "const": 1
+            },
+            "second_failure_action": {
+              "type": "string",
+              "const": "flag_admin"
+            }
+          }
+        },
+        "lifecycle_states": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "hot",
+              "eligible",
+              "archive_requested",
+              "prepared",
+              "copied",
+              "verified",
+              "archived_offline",
+              "archive_failed"
+            ]
+          },
+          "minItems": 8,
+          "uniqueItems": true
+        }
+      }
+    },
+    "packagePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package_format",
+        "staging_root",
+        "local_verified_root",
+        "external_copy_required",
+        "external_copy_root_label",
+        "naming_pattern",
+        "required_files",
+        "manifest_required_fields",
+        "copy_verification",
+        "restore_expectations",
+        "failure_policy",
+        "class_overrides"
+      ],
+      "properties": {
+        "package_format": {
+          "type": "string",
+          "const": "directory_bundle"
+        },
+        "staging_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "local_verified_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "external_copy_required": {
+          "type": "boolean"
+        },
+        "external_copy_root_label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "naming_pattern": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required_files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 4,
+          "uniqueItems": true
+        },
+        "manifest_required_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "copy_verification": {
+          "$ref": "#/$defs/copyVerification"
+        },
+        "restore_expectations": {
+          "$ref": "#/$defs/restoreExpectations"
+        },
+        "failure_policy": {
+          "$ref": "#/$defs/packageFailurePolicy"
+        },
+        "class_overrides": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ledger",
+            "finance",
+            "inactive_resource",
+            "inactive_sponsor",
+            "inactive_user"
+          ],
+          "properties": {
+            "ledger": {
+              "$ref": "#/$defs/packageClassOverride"
+            },
+            "finance": {
+              "$ref": "#/$defs/packageClassOverride"
+            },
+            "inactive_resource": {
+              "$ref": "#/$defs/packageClassOverride"
+            },
+            "inactive_sponsor": {
+              "$ref": "#/$defs/packageClassOverride"
+            },
+            "inactive_user": {
+              "$ref": "#/$defs/packageClassOverride"
+            }
+          }
+        }
+      }
+    },
+    "copyVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hash_verification_required",
+        "byte_count_verification_required",
+        "manifest_re_read_required"
+      ],
+      "properties": {
+        "hash_verification_required": {
+          "type": "boolean"
+        },
+        "byte_count_verification_required": {
+          "type": "boolean"
+        },
+        "manifest_re_read_required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "restoreExpectations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "readme_required",
+        "index_stub_required_in_hot_store",
+        "sample_restore_test_required"
+      ],
+      "properties": {
+        "readme_required": {
+          "type": "boolean"
+        },
+        "index_stub_required_in_hot_store": {
+          "type": "boolean"
+        },
+        "sample_restore_test_required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "packageFailurePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_automatic_retries",
+        "second_failure_action",
+        "allow_hot_store_exit_after_failed_copy",
+        "allow_hot_store_exit_after_failed_verify"
+      ],
+      "properties": {
+        "max_automatic_retries": {
+          "type": "integer",
+          "const": 1
+        },
+        "second_failure_action": {
+          "type": "string",
+          "const": "flag_admin"
+        },
+        "allow_hot_store_exit_after_failed_copy": {
+          "type": "boolean",
+          "const": false
+        },
+        "allow_hot_store_exit_after_failed_verify": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "packageClassOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_files"
+      ],
+      "properties": {
+        "required_files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "checkpoint_verification_required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "month",
+        "day"
+      ],
+      "properties": {
+        "month": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "day": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest_required",
+        "hash_required",
+        "checkpoint_verification_required"
+      ],
+      "properties": {
+        "manifest_required": {
+          "type": "boolean"
+        },
+        "hash_required": {
+          "type": "boolean"
+        },
+        "checkpoint_verification_required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "scheduledEligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "age_years",
+        "anchor",
+        "batch_basis"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "const": "annual_age_gate"
+        },
+        "age_years": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "anchor": {
+          "$ref": "#/$defs/anchor"
+        },
+        "batch_basis": {
+          "type": "string",
+          "enum": [
+            "calendar_year",
+            "fiscal_year"
+          ]
+        }
+      }
+    },
+    "scheduledExecution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "admin_approval_required",
+        "trigger"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "const": "scheduled"
+        },
+        "admin_approval_required": {
+          "type": "boolean",
+          "const": false
+        },
+        "trigger": {
+          "type": "string",
+          "const": "scheduled_cycle"
+        }
+      }
+    },
+    "onDemandEligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "inactivity_decided_by"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "const": "on_demand_inactive"
+        },
+        "inactivity_decided_by": {
+          "type": "string",
+          "const": "owning_slice"
+        }
+      }
+    },
+    "onDemandExecution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "admin_approval_required",
+        "trigger"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "const": "on_demand"
+        },
+        "admin_approval_required": {
+          "type": "boolean",
+          "const": true
+        },
+        "trigger": {
+          "type": "string",
+          "const": "next_cron_cycle_after_approval"
+        }
+      }
+    },
+    "scheduledArchiveClass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slice",
+        "record_scope",
+        "eligibility",
+        "execution",
+        "verification"
+      ],
+      "properties": {
+        "slice": {
+          "type": "string",
+          "enum": [
+            "ledger",
+            "finance"
+          ]
+        },
+        "record_scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "eligibility": {
+          "$ref": "#/$defs/scheduledEligibility"
+        },
+        "execution": {
+          "$ref": "#/$defs/scheduledExecution"
+        },
+        "verification": {
+          "$ref": "#/$defs/verification"
+        }
+      }
+    },
+    "onDemandArchiveClass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slice",
+        "record_scope",
+        "eligibility",
+        "execution",
+        "verification"
+      ],
+      "properties": {
+        "slice": {
+          "type": "string",
+          "enum": [
+            "resources",
+            "sponsors",
+            "auth"
+          ]
+        },
+        "record_scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "eligibility": {
+          "$ref": "#/$defs/onDemandEligibility"
+        },
+        "execution": {
+          "$ref": "#/$defs/onDemandExecution"
+        },
+        "verification": {
+          "$ref": "#/$defs/verification"
+        }
+      }
+    }
+  }
+}

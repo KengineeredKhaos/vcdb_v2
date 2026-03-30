@@ -9,6 +9,7 @@ from app.extensions.policies import (
     load_policy_finance_selectors,
     load_policy_finance_taxonomy,
     load_policy_funding_source_controls,
+    load_policy_records_lifecycle,
 )
 
 

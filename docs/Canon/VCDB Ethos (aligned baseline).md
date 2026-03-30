@@ -812,7 +812,6 @@ Only the schema is canonized.
 
 **Slice owns truth. Admin owns operator view.**  
 
-
 ## Admin Slice — Mission and Boundaries
 
 **Admin is the system control surface.**  
@@ -1383,3 +1382,47 @@ Admin inbox receives a notice, not the authoritative record.
 ---
 
 Admin policy review/edit is an Admin-native operator workflow shell over Governance-owned JSON policy truth. Admin owns navigation, preview, diff presentation, and commit orchestration; Governance owns policy discovery, normalization, validation, diff semantics, and atomic persistence. No policy meaning or write-path logic is duplicated in Admin.
+
+---
+
+### Records Lifecycle, Archive Schedule, and Cron Posture
+
+Archive is not deletion. Nothing is purged in the ordinary sense of the word. Records move from hot storage to alternate storage only under a governed lifecycle that preserves recall, audit, and operator visibility.
+
+Governance owns records lifecycle policy. Cron does not decide what becomes archive-eligible, when a slice may leave hot storage, or what verification is sufficient. Cron only executes governed lifecycle work that has already been authorized by policy.
+
+Nothing happens in the dark. No archive action may silently remove records from hot storage. No archive workflow is complete until an archive package has been prepared, copied, and verified, with an Admin-visible status trail.
+
+All cron archive work must be idempotent, non-overlapping, and run once per unit of work. Cron may retry once on failure. A second failure must flag Admin for intervention. Cron may not silently continue or advance archive state after a second failure.
+
+The shared lifecycle states are: `hot`, `eligible`, `archive_requested`, `prepared`, `copied`, `verified`, `archived_offline`, and `archive_failed`.
+
+Scheduled archive classes:
+
+- Ledger becomes archive-eligible after two years and is processed on the December 31 archive cycle, by closed calendar-year segment.
+- Finance becomes archive-eligible after two years and is processed on the September 30 archive cycle, by closed fiscal-year segment.
+
+On-demand archive classes:
+
+- Inactive Resource, inactive Sponsor, and inactive User records are archived only on demand.
+- The owning slice determines inactivity.
+- Admin approval is required before archive execution.
+- Cron performs the approved archive action on the next cron cycle.
+
+Admin is the operator control surface for archive status, failures, approvals, and intervention. The owning slice remains the source of truth for inactivity, record meaning, and archive packaging semantics.
+
+
+
+### Archive Package Policy
+
+Archive schedule alone is not sufficient. VCDB v2 also defines package policy: the required structure, contents, verification steps, and custody expectations for every archive package.
+
+The canonical archive package format is a plain directory bundle, not a hidden or opaque container. Archive packages must remain inspectable, hashable, and readable by a successor operator without specialized tooling. At minimum, each package includes a manifest, checksum file, exported records payload, and a human-readable README.
+
+No record class may leave hot storage until its archive package has been prepared, copied to alternate storage, and verified. Verification includes hash confirmation, byte-count confirmation, and successful re-read of the package manifest after copy. A failed copy or failed verification blocks archive completion.
+
+The live system must retain an index stub or equivalent hot-store reference for archived-offline batches so the existence, identity, and location of the offline package remain visible to Admin and available for later audit or recall.
+
+Package contents may vary by record class. Ledger packages require a chain checkpoint artifact. Finance packages require a report summary artifact. Other record classes may define lighter package contents, but all must satisfy the baseline manifest, checksum, payload, and README requirements.
+
+Archive packaging is governed policy, not ad hoc operator behavior. Cron executes the package workflow. Admin reviews status, failures, and intervention points. The owning slice remains responsible for record meaning and archive batch semantics.

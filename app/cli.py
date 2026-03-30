@@ -17,7 +17,9 @@ from flask import current_app
 
 
 def register_cli(app) -> None:
-    # Import here so importing app.__init__ doesn’t eagerly pull every CLI module
+    # Import here so importing app.__init__ doesn’t
+    # eagerly pull every CLI module
+    from app.cli_cron import cron_group
     from app.cli_dev import dev_group  # ← new
     from app.cli_ledger import ledger_group
     from app.cli_seed import seed_cmd
@@ -25,6 +27,7 @@ def register_cli(app) -> None:
     app.cli.add_command(dev_group)
     app.cli.add_command(seed_cmd)
     app.cli.add_command(ledger_group)
+    app.cli.add_command(cron_group)
 
 
 def echo_db_banner(tag: str = ""):

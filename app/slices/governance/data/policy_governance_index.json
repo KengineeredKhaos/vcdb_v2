@@ -80,6 +80,14 @@
       "owner_role_hint": "governor",
       "policy_key": "entity_roles",
       "schema_filename": "schemas/policy_entity_roles.schema.json"
+    },
+    {
+      "edit_cadence_hint": "rare",
+      "filename": "policy_records_lifecycle.json",
+      "notes": [],
+      "owner_role_hint": "governor",
+      "policy_key": "records_lifecycle",
+      "schema_filename": "schemas/policy_records_lifecycle.schema.json"
     }
   ]
 }

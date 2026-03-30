@@ -15,18 +15,13 @@ This module must not:
 - emit Ledger events
 - own foreign slice semantics
 - execute foreign corrective commands
-Policy edits work
 """
 
 from __future__ import annotations
 
-import json
-from typing import Any
-
 from sqlalchemy import select
 
 from app.extensions import db
-from app.extensions.contracts import governance_v2
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 
@@ -39,25 +34,15 @@ from .mapper import (
     DashboardDTO,
     InboxItemDTO,
     InboxPageDTO,
-    PolicyDetailPageDTO,
-    PolicyHealthSummaryDTO,
     PolicyIndexPageDTO,
-    PolicyIssueDTO,
-    PolicyMetaItemDTO,
-    PolicyPreviewPageDTO,
     to_auth_operator_summary,
     to_auth_operators_page,
     to_dashboard,
     to_inbox_item,
     to_inbox_page,
     to_inbox_summary,
-    to_policy_detail_page,
     to_policy_health_summary,
-    to_policy_index_item,
     to_policy_index_page,
-    to_policy_issue,
-    to_policy_meta_item,
-    to_policy_preview_page,
     to_slice_health_card,
 )
 from .models import AdminInboxArchive, AdminInboxItem
@@ -121,75 +106,6 @@ def _receipt(row: AdminInboxItem) -> AdminInboxReceiptDTO:
         source_ref_ulid=row.source_ref_ulid,
         admin_status=row.admin_status,
     )
-
-
-def _policy_issue_from_mapping(item: dict[str, Any]) -> PolicyIssueDTO:
-    return to_policy_issue(
-        source=str(item.get("source") or "semantic"),
-        severity=str(item.get("severity") or "error"),
-        path=str(item.get("path") or ""),
-        message=str(item.get("message") or ""),
-    )
-
-
-def _schema_state(item: dict[str, Any]) -> str:
-    if not item.get("has_schema", False):
-        return "missing_schema"
-    if item.get("schema_ok", False):
-        return "ok"
-    return "error"
-
-
-def _semantic_state(item: dict[str, Any]) -> str:
-    if item.get("semantic_ok", False):
-        return "ok"
-    errors = int(item.get("semantic_error_count") or 0)
-    warnings = int(item.get("semantic_warning_count") or 0)
-    if errors:
-        return "error"
-    if warnings:
-        return "warning"
-    return "unknown"
-
-
-def _policy_health(
-    items: tuple[dict[str, Any], ...]
-) -> PolicyHealthSummaryDTO:
-    valid_count = 0
-    warning_count = 0
-    error_count = 0
-
-    for item in items:
-        schema_ok = bool(item.get("schema_ok", False))
-        semantic_ok = bool(item.get("semantic_ok", False))
-        semantic_warnings = int(item.get("semantic_warning_count") or 0)
-        if schema_ok and semantic_ok and not semantic_warnings:
-            valid_count += 1
-            continue
-        if (not schema_ok) or int(item.get("semantic_error_count") or 0):
-            error_count += 1
-            continue
-        warning_count += 1
-
-    return to_policy_health_summary(
-        policy_count=len(items),
-        valid_count=valid_count,
-        warning_count=warning_count,
-        error_count=error_count,
-        last_checked_utc=_now(),
-    )
-
-
-def _safe_list_policies() -> tuple[dict[str, Any], ...]:
-    result = governance_v2.list_policies(validate=True)
-    return tuple(result.get("policies") or ())
-
-
-def _safe_get_policy(key: str) -> dict[str, Any]:
-    result = governance_v2.get_policy(key=key, validate=True)
-    if not result.get("ok"):
-        raise LookupError(f"Governance policy not found: {key}")
-    return result
 
 
 # -----------------
@@ -391,9 +307,7 @@ def archive_terminal_items(*, archive_reason: str = "cron_cycle") -> int:
     stmt = (
         select(AdminInboxItem)
         .where(AdminInboxItem.admin_status.in_(TERMINAL_ADMIN_STATUSES))
-        .order_by(
-            AdminInboxItem.updated_at_utc.asc(),
-        )
+        .order_by(AdminInboxItem.updated_at_utc.asc())
     )
     rows = list(db.session.execute(stmt).scalars().all())
     if not rows:
@@ -503,165 +417,28 @@ def get_cron_page() -> CronPageDTO:
 
 
 def get_policy_index_page() -> PolicyIndexPageDTO:
-    items_raw = _safe_list_policies()
-    items = tuple(
-        to_policy_index_item(
-            key=str(item.get("key") or ""),
-            title=str(item.get("title") or item.get("key") or ""),
-            status=str(item.get("status") or "unknown"),
-            version=str(item.get("version") or ""),
-            focus=str(item.get("focus") or ""),
-            schema_state=_schema_state(item),
-            semantic_state=_semantic_state(item),
-            issue_count=int(item.get("issue_count") or 0),
-            review_route=f"/admin/policy/{item.get('key')}/",
-        )
-        for item in items_raw
+    health = to_policy_health_summary(
+        policy_count=0,
+        valid_count=0,
+        warning_count=0,
+        error_count=0,
+        last_checked_utc=None,
     )
-
+    items = (
+        {
+            "key": "scaffold",
+            "label": "Policy workflow scaffold",
+            "status": "not_connected",
+        },
+    )
     return to_policy_index_page(
         title="Policy Workflow Surface",
         summary=(
             "Admin frames the workflow. Governance owns policy meaning, "
             "validation, persistence, and audit semantics."
         ),
-        health=_policy_health(items_raw),
+        health=health,
         items=items,
-    )
-
-
-def get_policy_detail_page(policy_key: str) -> PolicyDetailPageDTO:
-    item = _safe_get_policy(policy_key)
-
-    meta = item.get("meta") or {}
-    meta_items: list[PolicyMetaItemDTO] = []
-    for key in (
-        "title",
-        "policy_key",
-        "status",
-        "version",
-        "schema_version",
-        "effective_on",
-    ):
-        if meta.get(key) is not None:
-            meta_items.append(
-                to_policy_meta_item(
-                    key=key,
-                    value=str(meta.get(key)),
-                )
-            )
-
-    issues = tuple(
-        _policy_issue_from_mapping(issue)
-        for issue in item.get("issues") or ()
-    )
-
-    title = str(meta.get("title") or policy_key)
-    return to_policy_detail_page(
-        title=title,
-        summary=(
-            "Review the current policy, inspect validation state, and "
-            "stage an edited document for preview."
-        ),
-        policy_key=policy_key,
-        current_hash=str(item.get("current_hash") or ""),
-        current_text=str(item.get("normalized_text") or "{}\n"),
-        meta_items=tuple(meta_items),
-        issues=issues,
-        has_schema=bool(item.get("has_schema", False)),
-        schema_ok=bool(item.get("schema_ok", False)),
-        semantic_ok=bool(item.get("semantic_ok", False)),
-        preview_route=f"/admin/policy/{policy_key}/preview",
-    )
-
-
-def build_policy_preview_page_from_parse_error(
-    *,
-    policy_key: str,
-    policy_text: str,
-    base_hash: str,
-    message: str,
-) -> PolicyPreviewPageDTO:
-    issues = (
-        to_policy_issue(
-            source="parse",
-            severity="error",
-            path="",
-            message=message,
-        ),
-    )
-    return to_policy_preview_page(
-        title=f"{policy_key} — Preview",
-        summary=(
-            "Preview blocked because the proposed policy text is not "
-            "valid JSON."
-        ),
-        policy_key=policy_key,
-        current_hash=base_hash,
-        proposed_hash="",
-        normalized_text=policy_text,
-        diff_lines=(),
-        issues=issues,
-        change_summary=("Parse failed; no diff available.",),
-        commit_allowed=False,
-        commit_route=f"/admin/policy/{policy_key}/commit",
-        detail_route=f"/admin/policy/{policy_key}/",
-    )
-
-
-def build_policy_preview_page(
-    *,
-    policy_key: str,
-    new_policy: dict[str, Any],
-    base_hash: str,
-) -> PolicyPreviewPageDTO:
-    result = governance_v2.preview_policy_update(
-        key=policy_key,
-        new_policy=new_policy,
-        base_hash=base_hash,
-    )
-
-    issues = tuple(
-        _policy_issue_from_mapping(issue)
-        for issue in result.get("issues") or ()
-    )
-    summary = tuple(result.get("change_summary") or ())
-
-    return to_policy_preview_page(
-        title=f"{policy_key} — Preview",
-        summary=(
-            "Dry-run preview. Governance owns normalization, validation, "
-            "diff generation, and commit safety checks."
-        ),
-        policy_key=policy_key,
-        current_hash=str(result.get("current_hash") or ""),
-        proposed_hash=str(result.get("proposed_hash") or ""),
-        normalized_text=str(result.get("normalized_text") or "{}\n"),
-        diff_lines=tuple(result.get("diff_lines") or ()),
-        issues=issues,
-        change_summary=summary,
-        commit_allowed=bool(result.get("commit_allowed", False)),
-        commit_route=f"/admin/policy/{policy_key}/commit",
-        detail_route=f"/admin/policy/{policy_key}/",
-    )
-
-
-def commit_policy_update(
-    *,
-    policy_key: str,
-    new_policy: dict[str, Any],
-    actor_ulid: str,
-    reason: str,
-    base_hash: str,
-    proposed_hash: str,
-) -> dict[str, Any]:
-    return governance_v2.commit_policy_update(
-        key=policy_key,
-        new_policy=new_policy,
-        actor_ulid=actor_ulid,
-        reason=reason,
-        base_hash=base_hash,
-        proposed_hash=proposed_hash,
     )
 
 
@@ -710,7 +487,13 @@ def get_dashboard() -> DashboardDTO:
         stale_count=0,
     )
 
-    policy_summary = get_policy_index_page().health
+    policy_summary = to_policy_health_summary(
+        policy_count=0,
+        valid_count=0,
+        warning_count=0,
+        error_count=0,
+        last_checked_utc=None,
+    )
 
     auth_summary = to_auth_operator_summary(
         active_operator_count=0,
@@ -739,11 +522,9 @@ def get_dashboard() -> DashboardDTO:
         to_slice_health_card(
             slice_key="admin_policy",
             label="Policy",
-            status=(
-                "live" if policy_summary.policy_count else "not_connected"
-            ),
-            summary="Governance policy review and edit workflow.",
-            attention_count=policy_summary.error_count,
+            status="scaffold",
+            summary="Policy workflow surface scaffolded.",
+            attention_count=0,
             launch_route="admin.policy_index",
         ),
         to_slice_health_card(
@@ -758,7 +539,7 @@ def get_dashboard() -> DashboardDTO:
 
     recent_activity_summary = (
         "Admin control surface scaffold is live.",
-        "Policy workflow now reads Governance through contracts.",
+        "Routes and page shells are landing cleanly.",
     )
 
     return to_dashboard(

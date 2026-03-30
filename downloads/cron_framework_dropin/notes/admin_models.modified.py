@@ -180,8 +180,12 @@ class CronRun(db.Model, ULIDPK):
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     error_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    actor_ulid: Mapped[str | None] = mapped_column(String(26), nullable=True)
+    request_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
     trigger_mode: Mapped[str] = mapped_column(String(32), nullable=False)
     host_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 

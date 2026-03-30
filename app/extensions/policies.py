@@ -310,6 +310,11 @@ def load_policy_service_taxonomy() -> dict:
     _raise_moved("service_taxonomy")
 
 
+def load_policy_records_lifecycle() -> dict:
+    # Records Retention
+    return load_governance_policy("records_lifecycle")
+
+
 def load_policy_governance_index() -> dict:
     # Useful for CLI/admin diagnostics.
     return load_governance_policy("governance_index")
@@ -437,6 +442,7 @@ __all__ = [
     "load_policy_logistics_issuance",
     "load_policy_operations",
     "load_policy_service_taxonomy",
+    "load_policy_records_lifecycle",
     "load_policy_governance_index",
     # auth
     "load_policy_rbac",

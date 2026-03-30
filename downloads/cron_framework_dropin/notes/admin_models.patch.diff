@@ -1,0 +1,79 @@
+--- /tmp/adminsrc/admin/models.py	2026-03-28 19:12:10.000000000 +0000
++++ /tmp/cron_models_mod.py	2026-03-30 13:49:25.050323485 +0000
+@@ -2,7 +2,7 @@
+ 
+ from __future__ import annotations
+ 
+-from sqlalchemy import JSON, String, Text
++from sqlalchemy import JSON, Integer, String, Text
+ from sqlalchemy.orm import Mapped, mapped_column
+ 
+ from app.extensions import db
+@@ -162,3 +162,67 @@
+             "source_ref_ulid",
+         ),
+     )
++
++
++class CronRun(db.Model, ULIDPK):
++    __tablename__ = "admin_cron_run"
++
++    job_key: Mapped[str] = mapped_column(String(120), nullable=False)
++    unit_key: Mapped[str] = mapped_column(String(120), nullable=False)
++    status: Mapped[str] = mapped_column(String(32), nullable=False)
++    attempt_no: Mapped[int] = mapped_column(Integer, nullable=False)
++
++    started_at_utc: Mapped[str] = mapped_column(String(30), nullable=False)
++    finished_at_utc: Mapped[str | None] = mapped_column(
++        String(30), nullable=True
++    )
++
++    summary: Mapped[str] = mapped_column(Text, nullable=False)
++    error_text: Mapped[str | None] = mapped_column(Text, nullable=True)
++
++    request_id: Mapped[str | None] = mapped_column(
++        String(64), nullable=True
++    )
++    actor_ulid: Mapped[str | None] = mapped_column(
++        String(26), nullable=True
++    )
++    trigger_mode: Mapped[str] = mapped_column(String(32), nullable=False)
++    host_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
++
++    __table_args__ = (
++        db.UniqueConstraint(
++            "job_key",
++            "unit_key",
++            "attempt_no",
++            name="uq_admin_cron_run_job_unit_attempt",
++        ),
++        db.Index(
++            "ix_admin_cron_run_job_started",
++            "job_key",
++            "started_at_utc",
++        ),
++        db.Index(
++            "ix_admin_cron_run_status_started",
++            "status",
++            "started_at_utc",
++        ),
++    )
++
++
++class CronLock(db.Model):
++    __tablename__ = "admin_cron_lock"
++
++    lock_key: Mapped[str] = mapped_column(String(255), primary_key=True)
++    job_key: Mapped[str] = mapped_column(String(120), nullable=False)
++    unit_key: Mapped[str] = mapped_column(String(120), nullable=False)
++    owner_run_ulid: Mapped[str] = mapped_column(String(26), nullable=False)
++    acquired_at_utc: Mapped[str] = mapped_column(String(30), nullable=False)
++    expires_at_utc: Mapped[str] = mapped_column(String(30), nullable=False)
++
++    __table_args__ = (
++        db.Index(
++            "ix_admin_cron_lock_job_unit",
++            "job_key",
++            "unit_key",
++        ),
++    )

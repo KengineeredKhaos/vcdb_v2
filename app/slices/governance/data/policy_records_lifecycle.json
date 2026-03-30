@@ -1,0 +1,233 @@
+{
+  "meta": {
+    "policy_key": "records_lifecycle",
+    "title": "Records Lifecycle and Archive Schedule",
+    "description": "Governance policy defining archive eligibility, cadence, approval posture, and cron execution rules for VCDB v2 records lifecycle management.",
+    "status": "draft",
+    "version": "1",
+    "schema_version": "2020-12",
+    "effective_on": "2026-03-29",
+    "notes": [
+      "Archive means movement to alternate storage under governed lifecycle control; it is not deletion.",
+      "Cron executes governed lifecycle work only; cron does not decide archive policy.",
+      "All cron archive work must be idempotent, non-overlapping, retried once on failure, and escalated to Admin on second failure.",
+      "Nothing leaves hot storage until an archive package has been prepared, copied, and verified."
+    ]
+  },
+  "lifecycle_rules": {
+    "archive_semantics": "archive_only",
+    "nothing_happens_in_the_dark": true,
+    "hot_store_exit_requires_verified_archive": true,
+    "cron_rules": {
+      "idempotent_required": true,
+      "overlap_forbidden": true,
+      "unit_of_work_run_once": true,
+      "max_automatic_retries": 1,
+      "second_failure_action": "flag_admin"
+    },
+    "lifecycle_states": [
+      "hot",
+      "eligible",
+      "archive_requested",
+      "prepared",
+      "copied",
+      "verified",
+      "archived_offline",
+      "archive_failed"
+    ]
+  },
+  "package_policy": {
+    "package_format": "directory_bundle",
+    "staging_root": "/srv/vcdb/var/archive/staging",
+    "local_verified_root": "/srv/vcdb/var/archive/verified",
+    "external_copy_required": true,
+    "external_copy_root_label": "VCDB_ARCHIVE",
+    "naming_pattern": "{record_class}--{batch_basis}--{batch_id}--{prepared_at}",
+    "required_files": [
+      "MANIFEST.json",
+      "SHA256SUMS.txt",
+      "EXPORT.jsonl",
+      "README.txt"
+    ],
+    "manifest_required_fields": [
+      "package_id",
+      "record_class",
+      "slice",
+      "batch_basis",
+      "batch_id",
+      "prepared_at",
+      "prepared_by",
+      "source_policy_key",
+      "source_policy_version",
+      "record_count",
+      "hot_store_window_rule",
+      "eligibility_rule",
+      "verification_status",
+      "files"
+    ],
+    "copy_verification": {
+      "hash_verification_required": true,
+      "byte_count_verification_required": true,
+      "manifest_re_read_required": true
+    },
+    "restore_expectations": {
+      "readme_required": true,
+      "index_stub_required_in_hot_store": true,
+      "sample_restore_test_required": true
+    },
+    "failure_policy": {
+      "max_automatic_retries": 1,
+      "second_failure_action": "flag_admin",
+      "allow_hot_store_exit_after_failed_copy": false,
+      "allow_hot_store_exit_after_failed_verify": false
+    },
+    "class_overrides": {
+      "ledger": {
+        "required_files": [
+          "MANIFEST.json",
+          "SHA256SUMS.txt",
+          "EXPORT.jsonl",
+          "README.txt",
+          "CHAIN_CHECKPOINT.json"
+        ],
+        "checkpoint_verification_required": true
+      },
+      "finance": {
+        "required_files": [
+          "MANIFEST.json",
+          "SHA256SUMS.txt",
+          "EXPORT.jsonl",
+          "README.txt",
+          "REPORT_SUMMARY.json"
+        ],
+        "checkpoint_verification_required": false
+      },
+      "inactive_resource": {
+        "required_files": [
+          "MANIFEST.json",
+          "SHA256SUMS.txt",
+          "EXPORT.jsonl",
+          "README.txt"
+        ]
+      },
+      "inactive_sponsor": {
+        "required_files": [
+          "MANIFEST.json",
+          "SHA256SUMS.txt",
+          "EXPORT.jsonl",
+          "README.txt"
+        ]
+      },
+      "inactive_user": {
+        "required_files": [
+          "MANIFEST.json",
+          "SHA256SUMS.txt",
+          "EXPORT.jsonl",
+          "README.txt"
+        ]
+      }
+    }
+  },
+  "record_classes": {
+    "ledger": {
+      "slice": "ledger",
+      "record_scope": "closed_year_segments",
+      "eligibility": {
+        "mode": "annual_age_gate",
+        "age_years": 2,
+        "anchor": {
+          "month": 12,
+          "day": 31
+        },
+        "batch_basis": "calendar_year"
+      },
+      "execution": {
+        "mode": "scheduled",
+        "admin_approval_required": false,
+        "trigger": "scheduled_cycle"
+      },
+      "verification": {
+        "manifest_required": true,
+        "hash_required": true,
+        "checkpoint_verification_required": true
+      }
+    },
+    "finance": {
+      "slice": "finance",
+      "record_scope": "closed_fiscal_year_segments",
+      "eligibility": {
+        "mode": "annual_age_gate",
+        "age_years": 2,
+        "anchor": {
+          "month": 9,
+          "day": 30
+        },
+        "batch_basis": "fiscal_year"
+      },
+      "execution": {
+        "mode": "scheduled",
+        "admin_approval_required": false,
+        "trigger": "scheduled_cycle"
+      },
+      "verification": {
+        "manifest_required": true,
+        "hash_required": true,
+        "checkpoint_verification_required": false
+      }
+    },
+    "inactive_resource": {
+      "slice": "resources",
+      "record_scope": "inactive_resource_records",
+      "eligibility": {
+        "mode": "on_demand_inactive",
+        "inactivity_decided_by": "owning_slice"
+      },
+      "execution": {
+        "mode": "on_demand",
+        "admin_approval_required": true,
+        "trigger": "next_cron_cycle_after_approval"
+      },
+      "verification": {
+        "manifest_required": true,
+        "hash_required": true,
+        "checkpoint_verification_required": false
+      }
+    },
+    "inactive_sponsor": {
+      "slice": "sponsors",
+      "record_scope": "inactive_sponsor_records",
+      "eligibility": {
+        "mode": "on_demand_inactive",
+        "inactivity_decided_by": "owning_slice"
+      },
+      "execution": {
+        "mode": "on_demand",
+        "admin_approval_required": true,
+        "trigger": "next_cron_cycle_after_approval"
+      },
+      "verification": {
+        "manifest_required": true,
+        "hash_required": true,
+        "checkpoint_verification_required": false
+      }
+    },
+    "inactive_user": {
+      "slice": "auth",
+      "record_scope": "inactive_user_records",
+      "eligibility": {
+        "mode": "on_demand_inactive",
+        "inactivity_decided_by": "owning_slice"
+      },
+      "execution": {
+        "mode": "on_demand",
+        "admin_approval_required": true,
+        "trigger": "next_cron_cycle_after_approval"
+      },
+      "verification": {
+        "manifest_required": true,
+        "hash_required": true,
+        "checkpoint_verification_required": false
+      }
+    }
+  }
+}
