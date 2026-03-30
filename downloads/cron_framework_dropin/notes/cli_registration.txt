@@ -1,8 +1,0 @@
-Register the CLI group where your app wires custom commands.
-
-Typical pattern:
-
-from app.cli.cron import cron_group
-app.cli.add_command(cron_group)
-
-If you already have app/cli/__init__.py, import and register it there.

@@ -1,3 +1,5 @@
+# app/slices/admin/services_cron.py
+
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -8,7 +10,6 @@ from .mapper import to_cron_job_status, to_cron_page
 from .models import CronRun
 from .registry_cron import list_jobs
 
-
 STATUS_DISPLAY_ORDER = {
     "blocked": 0,
     "failed": 1,
@@ -18,10 +19,16 @@ STATUS_DISPLAY_ORDER = {
 }
 
 
-def _latest_runs() -> dict[str, CronRun]:
+def _latest_runs(*, status: str | None = None) -> dict[str, CronRun]:
+    stmt = select(CronRun)
+
+    if status is not None:
+        stmt = stmt.where(CronRun.status == status)
+
     rows = db.session.execute(
-        select(CronRun).order_by(CronRun.started_at_utc.desc())
+        stmt.order_by(CronRun.started_at_utc.desc())
     ).scalars()
+
     latest: dict[str, CronRun] = {}
     for row in rows:
         latest.setdefault(row.job_key, row)
@@ -29,27 +36,35 @@ def _latest_runs() -> dict[str, CronRun]:
 
 
 def get_cron_page():
-    latest = _latest_runs()
+    latest_any = _latest_runs()
+    latest_success = _latest_runs(status="succeeded")
+    latest_failure = _latest_runs(status="failed")
+
     jobs = []
     for job in list_jobs():
-        row = latest.get(job.job_key)
-        status = row.status if row is not None else "unknown"
+        current_row = latest_any.get(job.job_key)
+        success_row = latest_success.get(job.job_key)
+        failure_row = latest_failure.get(job.job_key)
+
+        status = current_row.status if current_row is not None else "unknown"
+
         note = job.purpose
-        if row is not None and row.summary:
-            note = row.summary
+        if current_row is not None and current_row.summary:
+            note = current_row.summary
+
         jobs.append(
             to_cron_job_status(
                 job_key=job.job_key,
                 label=job.label,
                 status=status,
                 last_success_utc=(
-                    row.finished_at_utc
-                    if row is not None and row.status == "succeeded"
+                    success_row.finished_at_utc
+                    if success_row is not None
                     else None
                 ),
                 last_failure_utc=(
-                    row.finished_at_utc
-                    if row is not None and row.status == "failed"
+                    failure_row.finished_at_utc
+                    if failure_row is not None
                     else None
                 ),
                 stale=False,
@@ -66,6 +81,7 @@ def get_cron_page():
             ),
         )
     )
+
     return to_cron_page(
         title="Cron and Maintenance Supervision",
         summary=(
