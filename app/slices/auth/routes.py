@@ -57,6 +57,25 @@ bp = Blueprint(
 )
 
 
+def _session_account_ulid() -> str | None:
+    if getattr(current_user, "is_authenticated", False):
+        value = getattr(current_user, "ulid", None)
+        if value:
+            return str(value)
+
+    sess = session.get("session_user")
+    if isinstance(sess, dict):
+        value = (
+            sess.get("ulid")
+            or sess.get("user_ulid")
+            or sess.get("account_ulid")
+        )
+        if value:
+            return str(value)
+
+    return None
+
+
 def _safe_next_url(raw_value: str | None) -> str:
     value = str(raw_value or "").strip()
     if value.startswith("/") and not value.startswith("//"):
@@ -119,12 +138,12 @@ def login_form():
 
 @bp.post("/login", endpoint="login_post")
 def login_post():
-    ident = request.form.get("ident", "")
+    username = request.form.get("username", "")
     password = request.form.get("password", "")
     next_url = request.form.get("next", "")
 
     try:
-        view = svc.authenticate(ident, password)
+        view = svc.authenticate(username, password)
 
         from app.slices.auth import SessionUser, session_identity_from_view
 
@@ -153,11 +172,11 @@ def login_post():
 
     except ValueError:
         try:
-            failure_view = svc.get_auth_failure_view(ident)
+            failure_view = svc.get_auth_failure_view(username)
             target_ulid = None
             meta: dict[str, object] = {
                 "reason": "invalid_credentials",
-                "had_ident": bool(str(ident or "").strip()),
+                "had_username": bool(str(username or "").strip()),
             }
             if failure_view is not None:
                 target_ulid = str(failure_view["ulid"])
@@ -207,17 +226,37 @@ def change_password_form():
 def change_password_post():
     current_password = request.form.get("current_password", "")
     new_password = request.form.get("new_password", "")
+    confirm_password = request.form.get("confirm_password", "")
     next_url = request.form.get("next", "")
 
     try:
+        if not str(current_password or "").strip():
+            raise ValueError("Current password is required.")
+
+        if not str(new_password or ""):
+            raise ValueError("New password is required.")
+
+        if not str(confirm_password or ""):
+            raise ValueError("Please confirm the new password.")
+
+        if new_password != confirm_password:
+            raise ValueError("New password and confirmation do not match.")
+
+        account_ulid = getattr(current_user, "ulid", None) or (
+            session.get("session_user") or {}
+        ).get("ulid")
+        if not account_ulid:
+            raise LookupError("No authenticated account ULID in session.")
+
         view = svc.change_own_password(
-            current_user.ulid,
+            str(account_ulid),
             current_password=current_password,
             new_password=new_password,
         )
 
         _emit_and_commit(
             operation="password_changed",
+            actor_ulid=str(view["ulid"]),
             target_ulid=str(view["ulid"]),
             changed={
                 "fields": [
@@ -244,16 +283,24 @@ def change_password_post():
         flash(str(exc), "error")
         return redirect(url_for("auth.change_password_form", next=next_url))
 
-    except Exception:
-        _rollback_with_log("Unexpected error during password change")
-        flash("Something went wrong. Please try again.", "error")
+    except Exception as exc:
+        db.session.rollback()
+        current_app.logger.exception(
+            "Password change failed: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+        flash(
+            f"DEBUG password change failed: {type(exc).__name__}: {exc}",
+            "error",
+        )
         return redirect(url_for("auth.change_password_form", next=next_url))
 
 
 @bp.post("/logout", endpoint="logout")
 @login_required
 def logout():
-    actor_ulid = getattr(current_user, "ulid", None)
+    actor_ulid = _session_account_ulid()
 
     try:
         _emit_and_commit(
@@ -363,6 +410,7 @@ def admin_create_user():
 
         _emit_and_commit(
             operation="account_created",
+            actor_ulid=str(view["ulid"]),
             target_ulid=str(view["ulid"]),
             changed={
                 "fields": [
@@ -532,6 +580,7 @@ def admin_set_roles(user_ulid: str):
 
         _emit_and_commit(
             operation="account_roles_updated",
+            actor_ulid=str(view["ulid"]),
             target_ulid=user_ulid,
             changed={"fields": ["roles"]},
             meta={"roles": list(view.get("roles") or [])},

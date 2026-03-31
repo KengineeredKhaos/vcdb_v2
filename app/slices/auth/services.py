@@ -86,27 +86,16 @@ def _active_role_map() -> dict[str, Role]:
     return {_norm_code(row.code): row for row in rows if row.code}
 
 
-def _find_user_by_ident(ident: str) -> User | None:
-    value = str(ident or "").strip().lower()
+def _find_user_by_username(username: str) -> User | None:
+    value = str(username or "").strip().lower()
     if not value:
-        return None
-
-    by_username = (
-        db.session.execute(
-            select(User).where(func.lower(User.username) == value)
-        )
-        .unique()
-        .scalar_one_or_none()
-    )
-    if by_username:
-        return by_username
-
-    if "@" not in value:
         return None
 
     return (
         db.session.execute(
-            select(User).where(func.lower(User.email) == value)
+            select(User).where(
+                func.lower(User.username) == value,
+            )
         )
         .unique()
         .scalar_one_or_none()
@@ -141,8 +130,8 @@ def get_user_view(account_ulid: str) -> dict[str, object]:
     return user_view(account_ulid)
 
 
-def get_auth_failure_view(ident: str) -> dict[str, object] | None:
-    user = _find_user_by_ident(ident)
+def get_auth_failure_view(username: str) -> dict[str, object] | None:
+    user = _find_user_by_username(username)
     if user is None:
         return None
     return _user_view_dict(user)
@@ -370,8 +359,8 @@ def change_own_password(
     return user_view(user.ulid)
 
 
-def authenticate(ident: str, password: str) -> dict[str, object]:
-    user = _find_user_by_ident(ident)
+def authenticate(username: str, password: str) -> dict[str, object]:
+    user = _find_user_by_username(username)
     if not user:
         raise ValueError("Invalid username or password.")
 

@@ -37,7 +37,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
-from app.lib.models import IsoTimestamps, ULIDFK, ULIDPK
+from app.lib.models import ULIDFK, ULIDPK, IsoTimestamps
 
 
 class User(db.Model, ULIDPK, IsoTimestamps):
