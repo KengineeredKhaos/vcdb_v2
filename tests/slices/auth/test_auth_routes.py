@@ -11,7 +11,7 @@ def test_login_post_stores_session_identity(app, monkeypatch):
     monkeypatch.setattr(
         auth_routes.svc,
         "authenticate",
-        lambda ident, password: {
+        lambda username, password: {
             "ulid": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
             "username": "alice",
             "email": "",
@@ -24,7 +24,7 @@ def test_login_post_stores_session_identity(app, monkeypatch):
         resp = client.post(
             "/auth/login",
             data={
-                "ident": "alice",
+                "username": "alice",
                 "password": "correct-password",
                 "next": "/logistics",
             },
@@ -51,7 +51,7 @@ def test_login_post_redirects_to_change_password_when_flagged(
     monkeypatch.setattr(
         auth_routes.svc,
         "authenticate",
-        lambda ident, password: {
+        lambda username, password: {
             "ulid": "01ARZ3NDEKTSV4RRFFQ69G5FAA",
             "username": "reset-user",
             "email": "",
@@ -64,7 +64,7 @@ def test_login_post_redirects_to_change_password_when_flagged(
         resp = client.post(
             "/auth/login",
             data={
-                "ident": "reset-user",
+                "username": "reset-user",
                 "password": "temporary-pass",
                 "next": "/logistics",
             },
@@ -81,7 +81,7 @@ def test_change_password_post_clears_session_flag(app, monkeypatch):
     monkeypatch.setattr(
         auth_routes.svc,
         "authenticate",
-        lambda ident, password: {
+        lambda username, password: {
             "ulid": "01ARZ3NDEKTSV4RRFFQ69G5FAB",
             "username": "reset-user",
             "email": "",
@@ -104,7 +104,7 @@ def test_change_password_post_clears_session_flag(app, monkeypatch):
     with app.test_client() as client:
         client.post(
             "/auth/login",
-            data={"ident": "reset-user", "password": "temporary-pass"},
+            data={"username": "reset-user", "password": "temporary-pass"},
             follow_redirects=False,
         )
 
@@ -113,6 +113,7 @@ def test_change_password_post_clears_session_flag(app, monkeypatch):
             data={
                 "current_password": "temporary-pass",
                 "new_password": "new-password",
+                "confirm_password": "new-password",
             },
             follow_redirects=False,
         )
@@ -125,13 +126,71 @@ def test_change_password_post_clears_session_flag(app, monkeypatch):
             assert ident["must_change_password"] is False
 
 
+def test_change_password_post_rejects_confirmation_mismatch(
+    app,
+    monkeypatch,
+):
+    app.config["WTF_CSRF_ENABLED"] = False
+
+    monkeypatch.setattr(
+        auth_routes.svc,
+        "authenticate",
+        lambda username, password: {
+            "ulid": "01ARZ3NDEKTSV4RRFFQ69G5FAC",
+            "username": "reset-user",
+            "email": "",
+            "roles": ["staff"],
+            "must_change_password": True,
+        },
+    )
+
+    called = {"count": 0}
+
+    def _should_not_run(*args, **kwargs):
+        called["count"] += 1
+        raise AssertionError("change_own_password should not be called")
+
+    monkeypatch.setattr(
+        auth_routes.svc,
+        "change_own_password",
+        _should_not_run,
+    )
+
+    with app.test_client() as client:
+        client.post(
+            "/auth/login",
+            data={"username": "reset-user", "password": "temporary-pass"},
+            follow_redirects=False,
+        )
+
+        resp = client.post(
+            "/auth/change-password",
+            data={
+                "current_password": "temporary-pass",
+                "new_password": "new-password",
+                "confirm_password": "not-the-same",
+            },
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 302
+        assert "/auth/change-password" in resp.headers["Location"]
+
+        with client.session_transaction() as sess:
+            ident = sess.get("session_user")
+            assert ident is not None
+            assert ident["must_change_password"] is True
+
+    assert called["count"] == 0
+
+
 def test_logout_clears_session_identity(app, monkeypatch):
     app.config["WTF_CSRF_ENABLED"] = False
 
     monkeypatch.setattr(
         auth_routes.svc,
         "authenticate",
-        lambda ident, password: {
+        lambda username, password: {
             "ulid": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
             "username": "alice",
             "email": "",
@@ -143,7 +202,7 @@ def test_logout_clears_session_identity(app, monkeypatch):
     with app.test_client() as client:
         client.post(
             "/auth/login",
-            data={"ident": "alice", "password": "correct-password"},
+            data={"username": "alice", "password": "correct-password"},
             follow_redirects=False,
         )
 
@@ -316,6 +375,8 @@ def test_admin_reset_unlock_and_set_active_routes(app, monkeypatch):
         assert unlock_resp.status_code == 200
         assert active_resp.status_code == 200
         assert active_resp.get_json()["is_active"] is False
+
+
 
 def test_bootstrap_first_admin_happy_path(app, monkeypatch):
     app.config["WTF_CSRF_ENABLED"] = False
