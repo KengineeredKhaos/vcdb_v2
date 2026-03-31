@@ -1,0 +1,86 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Operator Onboarding{% endblock %}
+
+{% block content %}
+<h1>Operator Onboarding</h1>
+<p>
+  Create a person entity, provision login credentials, and assign a
+  single RBAC role. Domain roles are handled elsewhere.
+</p>
+
+<form method="post"
+      action="{{ url_for('admin.auth_operator_onboard_review') }}">
+  {{ form.hidden_tag() }}
+
+  <div>
+    <label for="{{ form.first_name.id }}">
+      {{ form.first_name.label.text }}
+    </label>
+    {{ form.first_name() }}
+    {% for error in form.first_name.errors %}
+      <div>{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <div>
+    <label for="{{ form.last_name.id }}">
+      {{ form.last_name.label.text }}
+    </label>
+    {{ form.last_name() }}
+    {% for error in form.last_name.errors %}
+      <div>{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <div>
+    <label for="{{ form.preferred_name.id }}">
+      {{ form.preferred_name.label.text }}
+    </label>
+    {{ form.preferred_name() }}
+    {% for error in form.preferred_name.errors %}
+      <div>{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <div>
+    <label for="{{ form.username.id }}">
+      {{ form.username.label.text }}
+    </label>
+    {{ form.username() }}
+    {% for error in form.username.errors %}
+      <div>{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <div>
+    <label for="{{ form.email.id }}">{{ form.email.label.text }}</label>
+    {{ form.email() }}
+    {% for error in form.email.errors %}
+      <div>{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <div>
+    <label for="{{ form.temporary_password.id }}">
+      {{ form.temporary_password.label.text }}
+    </label>
+    {{ form.temporary_password() }}
+    {% for error in form.temporary_password.errors %}
+      <div>{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <div>
+    <label for="{{ form.role_code.id }}">
+      {{ form.role_code.label.text }}
+    </label>
+    {{ form.role_code() }}
+    {% for error in form.role_code.errors %}
+      <div>{{ error }}</div>
+    {% endfor %}
+  </div>
+
+  <div>{{ form.review() }}</div>
+</form>
+{% endblock %}

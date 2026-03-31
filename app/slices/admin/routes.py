@@ -10,10 +10,10 @@ import json
 
 from flask import (
     Blueprint,
+    current_app,
     flash,
     redirect,
     render_template,
-    request,
     url_for,
 )
 from flask_login import current_user, login_required
@@ -33,10 +33,22 @@ bp = Blueprint(
 
 
 def _actor_ulid() -> str:
-    for attr in ("entity_ulid", "ulid"):
+    for attr in ("entity_ulid", "ulid", "account_ulid", "id"):
         value = getattr(current_user, attr, None)
         if isinstance(value, str) and value.strip():
             return value.strip()
+
+    getter = getattr(current_user, "get_id", None)
+    if callable(getter):
+        value = getter()
+        if isinstance(value, str) and value.strip():
+            if (
+                current_app.testing
+                or current_app.debug
+                or current_app.config.get("AUTH_MODE") == "stub"
+            ):
+                return value.strip()
+
     raise RuntimeError("current_user is missing an operator ULID")
 
 

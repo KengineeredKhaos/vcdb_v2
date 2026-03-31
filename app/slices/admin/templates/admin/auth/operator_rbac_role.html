@@ -1,0 +1,37 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{{ page.title }}{% endblock %}
+
+{% block content %}
+<h1>{{ page.title }}</h1>
+<p>{{ page.summary }}</p>
+
+<ul>
+  <li><strong>Display name:</strong> {{ page.display_name }}</li>
+  <li><strong>Username:</strong> {{ page.username }}</li>
+  <li><strong>Email:</strong> {{ page.email or "—" }}</li>
+  <li>
+    <strong>Current RBAC:</strong> {{ page.current_role_label or "—" }}
+  </li>
+</ul>
+
+<form method="post"
+      action="{{ url_for('admin.auth_operator_rbac_role_post',
+                          account_ulid=page.account_ulid) }}">
+  {{ form.hidden_tag() }}
+  <div>
+    <label for="{{ form.role_code.id }}">
+      {{ form.role_code.label.text }}
+    </label>
+    {{ form.role_code() }}
+    {% for error in form.role_code.errors %}
+      <div>{{ error }}</div>
+    {% endfor %}
+  </div>
+  <div>{{ form.save() }}</div>
+</form>
+
+<p>
+  <a href="{{ url_for('admin.auth_operators') }}">Back to operators</a>
+</p>
+{% endblock %}

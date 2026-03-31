@@ -110,6 +110,13 @@ class WizardEntityCreatedDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class OperatorCoreCreatedDTO:
+    entity_ulid: str
+    entity_kind: str
+    display_name: str
+
+
+@dataclass(frozen=True, slots=True)
 class WizardStepDTO:
     entity_ulid: str
     created: bool
@@ -369,6 +376,7 @@ __all__ = [
     "EntityLabelDTO",
     # Wizard DTOs (dataclasses)
     "WizardEntityCreatedDTO",
+    "OperatorCoreCreatedDTO",
     "WizardStepDTO",
     "WizardSummaryDTO",
     # Rolodex (TypedDict)

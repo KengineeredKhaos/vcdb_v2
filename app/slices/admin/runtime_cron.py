@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from socket import gethostname
-from typing import Callable, Protocol
+from typing import Protocol
 
 from sqlalchemy import delete, func, select
 
@@ -10,9 +11,9 @@ from app.extensions import db
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 
+from .mapper import AdminInboxUpsertDTO
 from .models import CronLock, CronRun
 from .services import upsert_inbox_item
-from .mapper import AdminInboxUpsertDTO
 
 STATUS_RUNNING = "running"
 STATUS_SUCCEEDED = "succeeded"
@@ -127,7 +128,7 @@ def _acquire_lock(
     )
     # Avoid chrono math assumptions in scaffold. If you already have a
     # helper for adding seconds, swap it in here.
-    from datetime import datetime, timedelta, UTC
+    from datetime import UTC, datetime, timedelta
 
     now_dt = datetime.now(UTC)
     expires_dt = now_dt + timedelta(seconds=int(ttl_seconds))

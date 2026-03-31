@@ -210,7 +210,7 @@ class AuthOperatorsPageDTO:
     title: str
     summary: str
     auth_summary: AuthOperatorSummaryDTO
-    items: tuple[dict[str, str], ...]
+    items: tuple[dict[str, object], ...]
 
 
 def to_slice_health_card(
@@ -496,7 +496,7 @@ def to_auth_operators_page(
     title: str,
     summary: str,
     auth_summary: AuthOperatorSummaryDTO,
-    items: tuple[dict[str, str], ...],
+    items: tuple[dict[str, object], ...],
 ) -> AuthOperatorsPageDTO:
     return AuthOperatorsPageDTO(
         title=title,

@@ -1411,8 +1411,6 @@ On-demand archive classes:
 
 Admin is the operator control surface for archive status, failures, approvals, and intervention. The owning slice remains the source of truth for inactivity, record meaning, and archive packaging semantics.
 
-
-
 ### Archive Package Policy
 
 Archive schedule alone is not sufficient. VCDB v2 also defines package policy: the required structure, contents, verification steps, and custody expectations for every archive package.
@@ -1426,3 +1424,49 @@ The live system must retain an index stub or equivalent hot-store reference for 
 Package contents may vary by record class. Ledger packages require a chain checkpoint artifact. Finance packages require a report summary artifact. Other record classes may define lighter package contents, but all must satisfy the baseline manifest, checksum, payload, and README requirements.
 
 Archive packaging is governed policy, not ad hoc operator behavior. Cron executes the package workflow. Admin reviews status, failures, and intervention points. The owning slice remains responsible for record meaning and archive batch semantics.
+
+---
+
+# Cron v1 Baseline
+
+Cron v1 in VCDB is an infrastructure-backed maintenance execution layer with Admin supervision. It provides run history, overlap prevention, retry-once failure handling, CLI execution, and Admin-visible status. The first supported job is `backup.daily`.
+
+Cron v1 does not decide policy, archive records, validate Governance policy on schedule, or perform silent cleanup. Owning job semantics remain slice-local. Admin supervises recurring jobs, failure escalation, and manual follow-up.
+
+Cron v1 baseline is: **framework + Admin supervision + `backup.daily` local path complete**.
+
+External backup copy and verification are deployment-environment validations and must be proven on the production host before being considered complete.
+
+### Wrap-Up Notes
+
+Cron v1 is limited to supervised maintenance execution. The first production-supported job is `backup.daily`. External copy verification is deployment-environment dependent and must be validated on the production host before being considered complete.
+
+### Not Yet in Scope
+
+Do not:
+
+- start archive jobs yet
+- add more cron jobs simply because the framework exists
+- build fancy manual-run buttons
+- add restore workflows
+- fold policy validation into cron
+- widen the UI into a mini scheduler
+
+That is how cron turns into a bag of snakes.
+
+### What Belongs to the Next Workstream
+
+The next workstream is **archive lifecycle execution**, not cron integration.
+
+That work includes:
+
+- land `records_lifecycle` policy cleanly
+- land the matching schema cleanly
+- add archive manifest schema later
+- define archive request / approval flow
+- build:
+  - `archive.ledger.yearly`
+  - `archive.finance.yearly`
+  - later, on-demand inactive Resource / Sponsor / User archive jobs
+
+These are jobs built on top of cron, not part of cron framework completion.

@@ -6,11 +6,47 @@
 {% block content %}
 <h1>{{ page.title }}</h1>
 <p>{{ page.summary }}</p>
-<h2>Auth</h2>
-<p>Auth Summary: {{ page.auth_summary }}</p>
-<p>Active: {{ page.auth_summary.active_operator_count }}</p>
-<p>Disabled: {{ page.auth_summary.disabled_operator_count }}</p>
-<p>Locked: {{ page.auth_summary.locked_operator_count }}</p>
-<p>Attention: {{ page.auth_summary.attention_count }}</p>
-<p>Items: {{ page.items }}</p>
+
+<p>
+  <a href="{{ url_for('admin.auth_operator_onboard') }}">
+    Operator Onboarding
+  </a>
+</p>
+
+<ul>
+  <li>Active: {{ page.auth_summary.active_operator_count }}</li>
+  <li>Disabled: {{ page.auth_summary.disabled_operator_count }}</li>
+  <li>Locked: {{ page.auth_summary.locked_operator_count }}</li>
+  <li>Attention: {{ page.auth_summary.attention_count }}</li>
+</ul>
+
+<table>
+  <thead>
+    <tr>
+      <th>Display</th>
+      <th>Username</th>
+      <th>Role</th>
+      <th>Status</th>
+      <th>Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in page.items %}
+    <tr>
+      <td>{{ item.display_name }}</td>
+      <td>{{ item.username }}</td>
+      <td>{{ item.role_label or item.role_code or "—" }}</td>
+      <td>
+        {% if item.is_active %}active{% else %}disabled{% endif %}
+        {% if item.is_locked %} / locked{% endif %}
+      </td>
+      <td><a href="{{ item.rbac_edit_route }}">Edit RBAC</a></td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="5">No operators found.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
 {% endblock %}

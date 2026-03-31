@@ -4,7 +4,7 @@
     "schema_version": 1,
     "status": "draft",
     "title": "RBAC Roles",
-    "version": 1,
+    "version": 2,
     "effective_on": "2026-01-01",
     "description": "Auth RBAC role codes available in the system.",
     "notes": [
@@ -13,10 +13,29 @@
     ]
   },
   "rbac_roles": [
-    "admin",
-    "auditor",
-    "dev",
-    "staff",
-    "user"
+    {
+      "code": "user",
+      "label": "User",
+      "summary": "Read only",
+      "sort_order": 10
+    },
+    {
+      "code": "auditor",
+      "label": "Auditor",
+      "summary": "Broad read only",
+      "sort_order": 20
+    },
+    {
+      "code": "staff",
+      "label": "Staff",
+      "summary": "Standard CRUD",
+      "sort_order": 30
+    },
+    {
+      "code": "admin",
+      "label": "Admin",
+      "summary": "Elevated CRUD",
+      "sort_order": 40
+    }
   ]
 }

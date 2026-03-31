@@ -1,0 +1,33 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Operator Onboarding Review{% endblock %}
+
+{% block content %}
+{% set item = review if review is defined else preview %}
+<h1>Operator Onboarding Review</h1>
+<p>
+  Review the operator record before commit. The temporary password is not
+  echoed back here.
+</p>
+
+<ul>
+  <li><strong>Display name:</strong> {{ item.display_name }}</li>
+  <li><strong>Username:</strong> {{ item.username }}</li>
+  <li><strong>Email:</strong> {{ item.email or "—" }}</li>
+  <li>
+    <strong>RBAC role:</strong>
+    {{ item.role_label }}{% if item.role_summary %} ({{ item.role_summary }}){% endif %}
+  </li>
+</ul>
+
+<form method="post"
+      action="{{ url_for('admin.auth_operator_onboard_commit') }}">
+  {{ form.hidden_tag() }}
+  {{ form.preview_token() }}
+  <div>{{ form.commit() }}</div>
+</form>
+
+<p>
+  <a href="{{ url_for('admin.auth_operator_onboard') }}">Back</a>
+</p>
+{% endblock %}

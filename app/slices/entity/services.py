@@ -20,6 +20,7 @@ from .mapper import (
     EntityCardDTO,
     EntityContactSummaryDTO,
     EntityLabelDTO,
+    OperatorCoreCreatedDTO,
     OrgView,
     PersonView,
     map_org_view,
@@ -63,6 +64,60 @@ def _ensure_reqid(request_id: str | None) -> str:
     if request_id is None or not str(request_id).strip():
         raise ValueError("request_id must be non-empty")
     return str(request_id)
+
+
+def _clean_person_name(label: str, value: str) -> str:
+    clean = str(value or "").strip()
+    if not clean:
+        raise ValueError(f"{label} is required.")
+    return clean
+
+
+def _clean_optional_name(value: str | None) -> str | None:
+    clean = str(value or "").strip()
+    return clean or None
+
+
+def create_operator_core(
+    *,
+    first_name: str,
+    last_name: str,
+    preferred_name: str,
+    request_id: str,
+    actor_ulid: str | None,
+) -> OperatorCoreCreatedDTO:
+    _ensure_reqid(request_id)
+    fn = _clean_person_name("first_name", first_name)
+    ln = _clean_person_name("last_name", last_name)
+    pn = _clean_optional_name(preferred_name)
+
+    ent = Entity(kind="person")
+    ent.person = EntityPerson(
+        first_name=fn,
+        last_name=ln,
+        preferred_name=pn,
+        dob=None,
+        last_4=None,
+    )
+    db.session.add(ent)
+    db.session.flush()
+
+    event_bus.emit(
+        domain="entity",
+        operation="operator_core_created",
+        request_id=request_id,
+        actor_ulid=actor_ulid,
+        target_ulid=ent.ulid,
+        refs=None,
+        changed={"fields": ["first_name", "last_name"]},
+    )
+
+    display_name = " ".join(part for part in ((pn or fn), ln) if part).strip()
+    return OperatorCoreCreatedDTO(
+        entity_ulid=ent.ulid,
+        entity_kind="person",
+        display_name=display_name or ent.ulid,
+    )
 
 
 # -----------------

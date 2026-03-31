@@ -26,7 +26,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.extensions import db
-from app.extensions.contracts import governance_v2
+from app.extensions.contracts import auth_v1, entity_v2, governance_v2
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 
@@ -670,19 +670,83 @@ def commit_policy_update(
 # -----------------
 
 
+def _role_label_map() -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    try:
+        for code, choice_label in auth_v1.list_rbac_role_choices():
+            label = str(choice_label).split(" (", 1)[0].strip()
+            mapping[str(code)] = label or str(code)
+    except Exception:
+        return {}
+    return mapping
+
+
 def get_auth_operators_page() -> AuthOperatorsPageDTO:
-    auth_summary = to_auth_operator_summary(
-        active_operator_count=0,
-        disabled_operator_count=0,
-        locked_operator_count=0,
-        attention_count=0,
+    auth_rows = auth_v1.list_user_views()
+    entity_ulids = [
+        str(row.get("entity_ulid"))
+        for row in auth_rows
+        if row.get("entity_ulid")
+    ]
+    label_map = (
+        entity_v2.get_entity_labels(entity_ulids=entity_ulids)
+        if entity_ulids
+        else {}
     )
-    items = (
-        {
-            "key": "scaffold",
-            "label": "Auth operator surface scaffold",
-            "status": "not_connected",
-        },
+    role_labels = _role_label_map()
+
+    active_count = 0
+    disabled_count = 0
+    locked_count = 0
+    attention_count = 0
+    items: list[dict[str, object]] = []
+
+    for row in auth_rows:
+        is_active = bool(row.get("is_active"))
+        is_locked = bool(row.get("is_locked"))
+        must_change = bool(row.get("must_change_password"))
+        if is_active:
+            active_count += 1
+        else:
+            disabled_count += 1
+        if is_locked:
+            locked_count += 1
+        if (not is_active) or is_locked or must_change:
+            attention_count += 1
+
+        entity_ulid = row.get("entity_ulid")
+        username = str(row.get("username") or "")
+        display_name = username
+        if entity_ulid:
+            label = label_map.get(str(entity_ulid))
+            if label is not None:
+                display_name = label.display_name
+
+        roles = tuple(row.get("roles") or ())
+        role_code = str(roles[0]) if roles else None
+        role_label = role_labels.get(role_code, role_code) if role_code else None
+
+        items.append(
+            {
+                "account_ulid": str(row.get("ulid") or ""),
+                "entity_ulid": (str(entity_ulid) if entity_ulid else None),
+                "display_name": display_name,
+                "username": username,
+                "email": (str(row.get("email")) if row.get("email") else None),
+                "role_code": role_code,
+                "role_label": role_label,
+                "is_active": is_active,
+                "is_locked": is_locked,
+                "must_change_password": must_change,
+                "rbac_edit_route": f"/admin/auth/operators/{row.get('ulid')}/rbac-role",
+            }
+        )
+
+    auth_summary = to_auth_operator_summary(
+        active_operator_count=active_count,
+        disabled_operator_count=disabled_count,
+        locked_operator_count=locked_count,
+        attention_count=attention_count,
     )
     return to_auth_operators_page(
         title="Auth Operator Management",
@@ -691,7 +755,7 @@ def get_auth_operators_page() -> AuthOperatorsPageDTO:
             "command semantics."
         ),
         auth_summary=auth_summary,
-        items=items,
+        items=tuple(items),
     )
 
 
@@ -711,13 +775,9 @@ def get_dashboard() -> DashboardDTO:
     )
 
     policy_summary = get_policy_index_page().health
-
-    auth_summary = to_auth_operator_summary(
-        active_operator_count=0,
-        disabled_operator_count=0,
-        locked_operator_count=0,
-        attention_count=0,
-    )
+    auth_page = get_auth_operators_page()
+    auth_summary = auth_page.auth_summary
+    auth_rows = auth_page.items
 
     slice_cards = (
         to_slice_health_card(
@@ -749,9 +809,9 @@ def get_dashboard() -> DashboardDTO:
         to_slice_health_card(
             slice_key="admin_auth",
             label="Auth",
-            status="scaffold",
-            summary="Auth operator management surface scaffolded.",
-            attention_count=0,
+            status="live" if auth_rows else "scaffold",
+            summary="Auth operator onboarding and RBAC management.",
+            attention_count=auth_summary.attention_count,
             launch_route="admin.auth_operators",
         ),
     )

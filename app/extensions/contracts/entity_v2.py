@@ -14,6 +14,7 @@ from app.slices.entity.mapper import (
     EntityContactSummaryDTO,
     EntityLabelDTO,
     EntityNameCardDTO,
+    OperatorCoreCreatedDTO,
     OrgView,
     PersonView,
 )
@@ -210,6 +211,27 @@ def get_entity_name_cards(
 # -----------------
 
 
+def create_operator_core(
+    *,
+    first_name: str,
+    last_name: str,
+    preferred_name: str,
+    request_id: str,
+    actor_ulid: str | None,
+) -> OperatorCoreCreatedDTO:
+    where = "entity_v2.create_operator_core"
+    try:
+        return ent_services.create_operator_core(
+            first_name=first_name,
+            last_name=last_name,
+            preferred_name=preferred_name,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
 # -----------------
 # Summary Views
 # -----------------
@@ -308,6 +330,7 @@ def get_entity_cards(
 
 
 __all__ = [
+    "create_operator_core",
     "require_person_entity_ulid",
     "require_org_entity_ulid",
     "get_person_view",
