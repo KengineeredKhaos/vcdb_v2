@@ -1,5 +1,8 @@
+# app/extensions/policy_semantic.py
+
 """
-Semantic validation and cross-file checks for Governance policies (Policy Catalog v2.0).
+Semantic validation and cross-file checks for Governance policies
+(Policy Catalog v2.0).
 
 JSON Schema validates structure. This module validates business meaning and
 cross-file invariants, without leaking slice schemas or PII.
@@ -106,110 +109,256 @@ def policy_health_report() -> tuple[list[str], list[str]]:
 # -----------------
 
 
-def _domain_role_codes(pol: dict) -> set[str]:
+def _codes_from_items(
+    value: Iterable[Any] | None,
+    *,
+    field: str = "code",
+) -> set[str]:
     """
-    Domain roles may be represented as:
+    Normalize a policy list into a set[str] of codes.
+
+    Accepted input forms:
       - list[str]
       - list[{"code": "..."}]
-    Return a set[str] of codes.
     """
-    raw = pol.get("domain_roles") or []
     out: set[str] = set()
-    for r in raw:
-        if isinstance(r, str):
-            out.add(r)
-        elif isinstance(r, dict) and isinstance(r.get("code"), str):
-            out.add(r["code"])
+    for item in value or []:
+        if isinstance(item, str):
+            out.add(item)
+        elif isinstance(item, dict) and isinstance(item.get(field), str):
+            out.add(item[field])
     return out
+
+
+def _domain_role_codes(pol: dict) -> set[str]:
+    """Return canonical entity-domain role codes from policy."""
+    return _codes_from_items(pol.get("domain_roles") or [])
+
+
+def _rbac_role_codes(pol: dict) -> set[str]:
+    """Return canonical RBAC role codes from policy."""
+    return _codes_from_items(pol.get("rbac_roles") or [])
+
+
+def _role_rule_block(
+    rules: dict[str, Any],
+    name: str,
+    valid_roles: set[str],
+) -> tuple[set[str], set[str]]:
+    """
+    Read a role/entity assignment rule block and validate local shape.
+
+    Each rule block must be:
+      {
+        "allowed": [...],
+        "default": [...]
+      }
+
+    Returns (allowed, default) as sets[str].
+    """
+    block = rules.get(name)
+    if not isinstance(block, dict):
+        raise PolicyError(
+            f"assignment_rules.{name} must be an object with "
+            "'allowed' and 'default' lists"
+        )
+
+    allowed = _codes_from_items(block.get("allowed") or [])
+    default = _codes_from_items(block.get("default") or [])
+
+    unknown = sorted((allowed | default) - valid_roles)
+    if unknown:
+        raise PolicyError(
+            f"assignment_rules.{name} references unknown domain role(s): "
+            f"{unknown}"
+        )
+
+    if not default.issubset(allowed):
+        raise PolicyError(
+            f"assignment_rules.{name}.default must be a subset of "
+            f"assignment_rules.{name}.allowed"
+        )
+
+    return (allowed, default)
 
 
 def check_entity_roles_policy() -> list[str]:
     """
     Pure semantic checks for policy_entity_roles.json.
 
-    Returns list of human messages.
-    Raises PolicyError on fatal issues.
+    Frozen canon:
+    - Domain roles are business-identity facets only.
+    - Governance authority is NOT represented as a domain role.
+    - EntityPerson posture roles are customer/civilian.
+    - civilian may also carry resource and/or sponsor.
+    - customer may not also carry resource or sponsor.
+    - EntityOrg may carry only resource and/or sponsor.
     """
     msgs: list[str] = []
     pol = load_policy_entity_roles()
     roles = _domain_role_codes(pol)
     rules = pol.get("assignment_rules") or {}
 
-    if not roles:
-        raise PolicyError("entity_roles.domain_roles cannot be empty")
-
-    # forbidden_pairs exist in catalog
-    for pair in rules.get("forbidden_pairs", []):
-        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
-            raise PolicyError(
-                f"forbidden_pairs entry must have exactly 2 items: {pair!r}"
-            )
-        a, b = pair
-        if a not in roles or b not in roles:
-            raise PolicyError(
-                f"forbidden_pairs references unknown domain role(s): {pair!r}"
-            )
-
-    # domain_disallows_rbac exist in catalog
-    dis = _as_set(rules.get("domain_disallows_rbac"))
-    missing = [r for r in dis if r not in roles]
-    if missing:
+    expected_roles = {
+        "customer",
+        "resource",
+        "sponsor",
+        "civilian",
+    }
+    if roles != expected_roles:
         raise PolicyError(
-            f"domain_disallows_rbac references unknown roles: {missing}"
+            "entity_roles.domain_roles must equal exactly "
+            "['customer', 'resource', 'sponsor', 'civilian'] "
+            f"(got {sorted(roles)})"
         )
 
-    msgs.append(f"domain roles: {len(roles)}; disallows_rbac: {sorted(dis)}")
+    stale_keys = {
+        "forbidden_pairs",
+        "must_include_when_rbac",
+        "domain_disallows_rbac",
+    } & set(rules)
+    if stale_keys:
+        raise PolicyError(
+            "entity_roles.assignment_rules contains obsolete key(s): "
+            f"{sorted(stale_keys)}"
+        )
+
+    required_blocks = {
+        "civilian",
+        "customer",
+        "EntityPerson",
+        "EntityOrg",
+        "disallow_roles",
+    }
+    missing_blocks = sorted(required_blocks - set(rules))
+    if missing_blocks:
+        raise PolicyError(
+            "entity_roles.assignment_rules missing required block(s): "
+            f"{missing_blocks}"
+        )
+
+    civilian_allowed, _ = _role_rule_block(rules, "civilian", roles)
+    if not civilian_allowed.issubset({"resource", "sponsor"}):
+        raise PolicyError(
+            "assignment_rules.civilian.allowed may contain only "
+            "'resource' and/or 'sponsor'"
+        )
+
+    customer_allowed, _ = _role_rule_block(rules, "customer", roles)
+    if customer_allowed:
+        raise PolicyError(
+            "assignment_rules.customer.allowed must be empty; "
+            "customer may not also be resource or sponsor"
+        )
+
+    person_allowed, _ = _role_rule_block(rules, "EntityPerson", roles)
+    if person_allowed != {"customer", "civilian"}:
+        raise PolicyError(
+            "assignment_rules.EntityPerson.allowed must equal exactly "
+            "['customer', 'civilian']"
+        )
+
+    org_allowed, _ = _role_rule_block(rules, "EntityOrg", roles)
+    if not org_allowed:
+        raise PolicyError(
+            "assignment_rules.EntityOrg.allowed cannot be empty"
+        )
+    if not org_allowed.issubset({"resource", "sponsor"}):
+        raise PolicyError(
+            "assignment_rules.EntityOrg.allowed may contain only "
+            "'resource' and/or 'sponsor'"
+        )
+
+    disallow = rules.get("disallow_roles")
+    if not isinstance(disallow, dict):
+        raise PolicyError("assignment_rules.disallow_roles must be an object")
+
+    org_disallow = _codes_from_items(disallow.get("EntityOrg") or [])
+    unknown_disallow = sorted(org_disallow - roles)
+    if unknown_disallow:
+        raise PolicyError(
+            "assignment_rules.disallow_roles.EntityOrg references "
+            f"unknown domain role(s): {unknown_disallow}"
+        )
+    if org_disallow != {"customer", "civilian"}:
+        raise PolicyError(
+            "assignment_rules.disallow_roles.EntityOrg must equal "
+            "['customer', 'civilian']"
+        )
+
+    msgs.append(
+        "entity roles OK: "
+        "person posture=['customer', 'civilian']; "
+        "civilian additive=['resource', 'sponsor']; "
+        "org roles=['resource', 'sponsor']"
+    )
     return msgs
 
 
 def check_rbac_policy() -> list[str]:
+    """
+    Pure semantic checks for policy_rbac.json.
+
+    RBAC policy is surface-access only. It must define role codes in the
+    object-list form used by policy_rbac.json.
+    """
     pol = load_policy_rbac()
-    rbac_roles = _as_set(pol.get("rbac_roles"))
+    rbac_roles = _rbac_role_codes(pol)
     if not rbac_roles:
         raise PolicyError("rbac_roles list cannot be empty")
+
+    required_minimum = {"user", "auditor", "staff", "admin"}
+    missing = sorted(required_minimum - rbac_roles)
+    if missing:
+        raise PolicyError(
+            "rbac_roles missing required code(s): " f"{missing}"
+        )
+
     return [f"rbac roles: {sorted(rbac_roles)}"]
 
 
 def check_rbac_domain_relationship() -> list[str]:
     """
-    Cross-file constraints that reflect business rules:
-    - admin/staff RBAC must imply domain governor requirement.
-    - civilian disallows any RBAC (recommended hint if missing).
+    Cross-file separation checks:
+
+    - RBAC roles define surface access only.
+    - Domain roles define business identity facets only.
+    - Governance business authority is assigned through Governance
+      office/pro tem records, not domain roles.
     """
     msgs: list[str] = []
-    rbac = _as_set(load_policy_rbac().get("rbac_roles"))
+    rbac = _rbac_role_codes(load_policy_rbac())
     dom = load_policy_entity_roles()
     rules = dom.get("assignment_rules") or {}
-    must = rules.get("must_include_when_rbac", {}) or {}
-    dis = _as_set(rules.get("domain_disallows_rbac"))
-    roles = _domain_role_codes(dom)
-
-    # ensure admin/staff present in rbac catalog when referenced
-    for r in ("admin", "staff"):
-        if r not in rbac:
-            raise PolicyError(
-                f"must_include_when_rbac references RBAC role '{r}' not in rbac catalog"
-            )
-
-    # ensure governor is listed as required for admin/staff
-    for r in ("admin", "staff"):
-        req = _as_set(must.get(r))
-        if "governor" not in req:
-            raise PolicyError(
-                f"RBAC '{r}' must include domain 'governor' in must_include_when_rbac"
-            )
-        if "governor" not in roles:
-            raise PolicyError(
-                "entity_roles.domain_roles must include 'governor'"
-            )
-
-    # civilian disallows RBAC (soft hint)
-    if "civilian" in roles and "civilian" not in dis:
-        msgs.append(
-            "hint: Add 'civilian' to domain_disallows_rbac to prevent RBAC linkage."
+    overlap = sorted(rbac & roles)
+    if overlap:
+        raise PolicyError(
+            "RBAC role codes and domain role codes must be distinct; "
+            f"overlap found: {overlap}"
         )
 
-    msgs.append("rbac↔domain cross-checks OK")
+    forbidden_domain_roles = {"governor", "staff"} & roles
+    if forbidden_domain_roles:
+        raise PolicyError(
+            "entity_roles.domain_roles contains stale authority/access "
+            f"role(s): {sorted(forbidden_domain_roles)}"
+        )
+
+    stale_keys = {
+        "must_include_when_rbac",
+        "domain_disallows_rbac",
+    } & set(rules)
+    if stale_keys:
+        raise PolicyError(
+            "entity_roles.assignment_rules contains obsolete RBAC-coupling "
+            f"key(s): {sorted(stale_keys)}"
+        )
+
+    msgs.append(
+        "rbac↔domain separation OK: "
+        "RBAC=surface access, domain=business identity, "
+        "governance authority lives outside entity roles"
+    )
     return msgs
 
 

@@ -28,7 +28,7 @@ from .forms import (
     PersonCoreForm,
     RoleForm,
 )
-from .models import Entity, EntityRole
+from .models import Entity, EntityAddress, EntityContact, EntityRole
 from .routes import bp
 
 # -----------------
@@ -44,6 +44,8 @@ LABELS = {
 
 
 _WIZ_ACTIVE_ENTITY_KEY = "wiz_active_entity_ulid"
+
+_WIZ_STATE_PREFIX = "wiz:state:"
 
 
 # -----------------
@@ -96,6 +98,106 @@ def _wiz_active_entity_ulid() -> str | None:
     return session.get(_WIZ_ACTIVE_ENTITY_KEY)
 
 
+def _wiz_state_key(entity_ulid: str) -> str:
+    return f"{_WIZ_STATE_PREFIX}{entity_ulid}"
+
+
+def _wiz_get_state(entity_ulid: str) -> dict[str, str]:
+    raw = session.get(_wiz_state_key(entity_ulid))
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _wiz_set_state(entity_ulid: str, **updates: str) -> None:
+    state = _wiz_get_state(entity_ulid)
+    for key, value in updates.items():
+        if value is None:
+            state.pop(key, None)
+        else:
+            state[key] = str(value)
+    session[_wiz_state_key(entity_ulid)] = state
+    session.modified = True
+
+
+def _wiz_mark_contact_status(entity_ulid: str, status: str) -> None:
+    _wiz_set_state(entity_ulid, contact_status=status)
+
+
+def _wiz_mark_address_status(entity_ulid: str, status: str) -> None:
+    _wiz_set_state(entity_ulid, address_status=status)
+
+
+def _wiz_has_active_contact(entity_ulid: str) -> bool:
+    return (
+        db.session.execute(
+            select(EntityContact).where(
+                EntityContact.entity_ulid == entity_ulid,
+                EntityContact.archived_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        is not None
+    )
+
+
+def _wiz_has_active_address(entity_ulid: str) -> bool:
+    return (
+        db.session.execute(
+            select(EntityAddress).where(
+                EntityAddress.entity_ulid == entity_ulid,
+                EntityAddress.archived_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        is not None
+    )
+
+
+def _wiz_has_active_role(entity_ulid: str) -> bool:
+    return (
+        db.session.execute(
+            select(EntityRole).where(
+                EntityRole.entity_ulid == entity_ulid,
+                EntityRole.archived_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        is not None
+    )
+
+
+def _wiz_next_endpoint(entity_ulid: str) -> str:
+    """
+    Route-local wizard progression using session-backed completeness state.
+
+    Minimal-valid entity creation requires:
+      * core
+      * initial role
+
+    Contact and address are optional at intake. Session state records whether
+    those sections were provided or deferred so the wizard can resume honestly
+    without fabricating placeholder rows.
+    """
+    ent = db.session.get(Entity, entity_ulid)
+    if not ent or getattr(ent, "archived_at", None):
+        raise LookupError("wizard entity not found")
+
+    state = _wiz_get_state(entity_ulid)
+
+    if state.get("contact_status") not in {"provided", "deferred"}:
+        if _wiz_has_active_contact(entity_ulid):
+            _wiz_mark_contact_status(entity_ulid, "provided")
+        else:
+            return "entity.wizard_contact"
+
+    if state.get("address_status") not in {"provided", "deferred"}:
+        if _wiz_has_active_address(entity_ulid):
+            _wiz_mark_address_status(entity_ulid, "provided")
+        else:
+            return "entity.wizard_address"
+
+    if not _wiz_has_active_role(entity_ulid):
+        return "entity.wizard_role_get"
+
+    return "entity.wizard_next"
+
+
 # -----------------
 # Wizard Helpers
 # -----------------
@@ -103,7 +205,7 @@ def _wiz_active_entity_ulid() -> str | None:
 
 def _wiz_clear_active() -> None:
     """
-    Clear wizard "active entity" and any related nonce keys.
+    Clear wizard "active entity" and any related nonce/state keys.
     Safe to call repeatedly.
     """
     active = session.pop(_WIZ_ACTIVE_ENTITY_KEY, None)
@@ -113,6 +215,7 @@ def _wiz_clear_active() -> None:
         for k in list(session.keys()):
             if k.startswith("wiz:") and k.endswith(suffix):
                 session.pop(k, None)
+        session.pop(_wiz_state_key(active), None)
     # Clear unscoped core-step nonces too
     for k in ("wiz:person_core", "wiz:org_core"):
         session.pop(k, None)
@@ -137,7 +240,7 @@ def wizard_start_post():
     if active:
         try:
             flash("Wizard already in progress — resuming.", "warning")
-            next_ep = wiz.wizard_next_step(entity_ulid=active)
+            next_ep = _wiz_next_endpoint(active)
             return redirect(url_for(next_ep, entity_ulid=active))
         except Exception:
             # Common after reseed / DB reset: session points at a dead ULID.
@@ -168,7 +271,7 @@ def wizard_person_core():
         if active:
             try:
                 flash("Wizard already in progress — resuming.", "warning")
-                next_ep = wiz.wizard_next_step(entity_ulid=active)
+                next_ep = _wiz_next_endpoint(active)
                 return redirect(url_for(next_ep, entity_ulid=active))
             except Exception:
                 _wiz_clear_active()
@@ -213,6 +316,7 @@ def wizard_person_core():
 
         # Lock browser session onto the created entity until completion/reset.
         session[_WIZ_ACTIVE_ENTITY_KEY] = dto.entity_ulid
+        _wiz_set_state(dto.entity_ulid)
 
         flash(f"Created: {dto.display_name}", "success")
         return redirect(url_for(dto.next_step, entity_ulid=dto.entity_ulid))
@@ -265,7 +369,7 @@ def wizard_org_core():
         if active:
             try:
                 flash("Wizard already in progress — resuming.", "warning")
-                next_ep = wiz.wizard_next_step(entity_ulid=active)
+                next_ep = _wiz_next_endpoint(active)
                 return redirect(url_for(next_ep, entity_ulid=active))
             except Exception:
                 _wiz_clear_active()
@@ -307,6 +411,7 @@ def wizard_org_core():
 
         # Lock browser session onto the created entity until completion/reset.
         session[_WIZ_ACTIVE_ENTITY_KEY] = dto.entity_ulid
+        _wiz_set_state(dto.entity_ulid)
 
         flash(f"Created: {dto.display_name}", "success")
         return redirect(url_for(dto.next_step, entity_ulid=dto.entity_ulid))
@@ -354,7 +459,7 @@ def wizard_contact(entity_ulid: str):
     step = "contact"
 
     if request.method == "GET":
-        current = wiz.wizard_next_step(entity_ulid=entity_ulid)
+        current = _wiz_next_endpoint(entity_ulid)
         if current != request.endpoint:
             return redirect(url_for(current, entity_ulid=entity_ulid))
 
@@ -374,7 +479,7 @@ def wizard_contact(entity_ulid: str):
             "That page is stale. Continue from the wizard flow.",
             "warning",
         )
-        next_ep = wiz.wizard_next_step(entity_ulid=entity_ulid)
+        next_ep = _wiz_next_endpoint(entity_ulid)
         return redirect(url_for(next_ep, entity_ulid=entity_ulid))
 
     if not form.validate_on_submit():
@@ -397,6 +502,14 @@ def wizard_contact(entity_ulid: str):
             actor_ulid=current_actor_ulid(),
         )
         db.session.commit()
+
+        has_contact_data = bool(
+            (form.email.data or "").strip() or (form.phone.data or "").strip()
+        )
+        _wiz_mark_contact_status(
+            entity_ulid,
+            "provided" if has_contact_data else "deferred",
+        )
 
         return redirect(url_for(dto.next_step, entity_ulid=dto.entity_ulid))
 
@@ -450,7 +563,7 @@ def wizard_address(entity_ulid: str):
     step = "address"
 
     if request.method == "GET":
-        current = wiz.wizard_next_step(entity_ulid=entity_ulid)
+        current = _wiz_next_endpoint(entity_ulid)
         if current != request.endpoint:
             return redirect(url_for(current, entity_ulid=entity_ulid))
 
@@ -470,11 +583,22 @@ def wizard_address(entity_ulid: str):
             "That page is stale. Continue from the wizard flow.",
             "warning",
         )
-        next_ep = wiz.wizard_next_step(entity_ulid=entity_ulid)
+        next_ep = _wiz_next_endpoint(entity_ulid)
         return redirect(url_for(next_ep, entity_ulid=entity_ulid))
 
-    # Normal form validation: keep the same nonce on errors
+    # Explicit operator bypass for "no address available right now".
+    if (request.form.get("action") or "").strip().lower() == "skip":
+        _wiz_consume_nonce(step, entity_ulid)
+        _wiz_mark_address_status(entity_ulid, "deferred")
+        flash(
+            "Address deferred. You can add it later through Entity edit tools.",
+            "warning",
+        )
+        return redirect(
+            url_for("entity.wizard_role_get", entity_ulid=entity_ulid)
+        )
 
+    # Normal form validation: keep the same nonce on errors
     if not form.validate_on_submit():
         return render_template(
             "entity/wizard_address.html",
@@ -498,6 +622,7 @@ def wizard_address(entity_ulid: str):
             actor_ulid=current_actor_ulid(),
         )
         db.session.commit()
+        _wiz_mark_address_status(entity_ulid, "provided")
 
         return redirect(url_for(dto.next_step, entity_ulid=dto.entity_ulid))
 
@@ -543,7 +668,7 @@ def wizard_address(entity_ulid: str):
 
 @bp.get("/wizard/<entity_ulid>/role")
 def wizard_role_get(entity_ulid: str):
-    current = wiz.wizard_next_step(entity_ulid=entity_ulid)
+    current = _wiz_next_endpoint(entity_ulid)
     if current != request.endpoint:
         return redirect(url_for(current, entity_ulid=entity_ulid))
     form = RoleForm()
@@ -573,7 +698,7 @@ def wizard_role_post(entity_ulid: str):
             "That page is stale. Continue from the wizard flow.",
             "warning",
         )
-        next_ep = wiz.wizard_next_step(entity_ulid=entity_ulid)
+        next_ep = _wiz_next_endpoint(entity_ulid)
         return redirect(url_for(next_ep, entity_ulid=entity_ulid))
 
     if not form.validate_on_submit():

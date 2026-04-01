@@ -4,6 +4,7 @@
 
 {% block content %}
   <h1>Step 2 — Primary contact</h1>
+  <p>Contact is optional at intake. Leave both fields blank to continue without creating a contact row.</p>
   <p><strong>Entity:</strong> <span class="kbd">{{ entity_ulid }}</span></p>
 
   <form method="post" action="{{ url_for('entity.wizard_contact', entity_ulid=entity_ulid) }}" class="card" style="padding:1rem;max-width:42rem;">

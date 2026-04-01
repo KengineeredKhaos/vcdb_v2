@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from flask import g
+from sqlalchemy import select
 
 from app.extensions import db
 from app.slices.entity.mapper import EntityNameCardDTO
@@ -23,7 +24,11 @@ def get_entity_name_card(entity_ulid: str) -> EntityNameCardDTO:
     if hit is not None:
         return hit
 
-    dto = _load_one(entity_ulid)
+    loaded = _load_many([entity_ulid])
+    dto = loaded.get(entity_ulid)
+    if dto is None:
+        raise LookupError("entity not found")
+
     cache[entity_ulid] = dto
     return dto
 
@@ -32,69 +37,135 @@ def get_entity_name_cards(
     entity_ulids: Sequence[str],
 ) -> list[EntityNameCardDTO]:
     cache = _req_cache()
-    out: list[EntityNameCardDTO] = []
+    ordered = _ordered_unique_entity_ulids(entity_ulids)
+    if not ordered:
+        return []
 
-    for u in entity_ulids:
-        if not u:
+    missing = [u for u in ordered if u not in cache]
+    if missing:
+        cache.update(_load_many(missing))
+
+    return [cache[u] for u in ordered if u in cache]
+
+
+def _ordered_unique_entity_ulids(entity_ulids: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    for raw in entity_ulids:
+        entity_ulid = str(raw or "").strip()
+        if not entity_ulid or entity_ulid in seen:
             continue
-        hit = cache.get(u)
-        if hit is None:
-            try:
-                hit = _load_one(u)
-                cache[u] = hit
-            except LookupError:
-                continue
-        out.append(hit)
 
-    # preserve caller order, omit missing
-    idx = {d.entity_ulid: d for d in out}
-    return [idx[u] for u in entity_ulids if u in idx]
+        seen.add(entity_ulid)
+        ordered.append(entity_ulid)
+
+    return ordered
 
 
-def _load_one(entity_ulid: str) -> EntityNameCardDTO:
-    ent = db.session.get(Entity, entity_ulid)
-    if ent is None:
-        raise LookupError("entity not found")
+def _load_many(entity_ulids: Sequence[str]) -> dict[str, EntityNameCardDTO]:
+    ordered = _ordered_unique_entity_ulids(entity_ulids)
+    if not ordered:
+        return {}
 
+    entities = {
+        row.ulid: row
+        for row in db.session.execute(
+            select(Entity).where(
+                Entity.ulid.in_(ordered),
+                Entity.archived_at.is_(None),
+            )
+        ).scalars()
+    }
+
+    person_rows = {
+        row.entity_ulid: row
+        for row in db.session.execute(
+            select(EntityPerson).where(EntityPerson.entity_ulid.in_(ordered))
+        ).scalars()
+    }
+    org_rows = {
+        row.entity_ulid: row
+        for row in db.session.execute(
+            select(EntityOrg).where(EntityOrg.entity_ulid.in_(ordered))
+        ).scalars()
+    }
+
+    out: dict[str, EntityNameCardDTO] = {}
+    for entity_ulid in ordered:
+        ent = entities.get(entity_ulid)
+        if ent is None:
+            continue
+        out[entity_ulid] = _dto_for_entity(
+            ent=ent,
+            person=person_rows.get(entity_ulid),
+            org=org_rows.get(entity_ulid),
+        )
+    return out
+
+
+def _dto_for_entity(
+    *,
+    ent: Entity,
+    person: EntityPerson | None,
+    org: EntityOrg | None,
+) -> EntityNameCardDTO:
     kind = _normalize_kind(ent.kind)
 
-    # If kind is unknown/odd, infer from facet existence.
-    org = db.session.get(EntityOrg, entity_ulid)
-    person = db.session.get(EntityPerson, entity_ulid)
-
-    if kind == "org" or (kind is None and org is not None):
-        if org is None:
-            raise LookupError("entity org facet missing")
-        display = (org.legal_name or "").strip() or "Unnamed org"
-        short = (org.dba_name or "").strip() or None
-        return EntityNameCardDTO(entity_ulid, "org", display, short)
-
-    if kind == "person" or (kind is None and person is not None):
+    if kind == "person":
         if person is None:
             raise LookupError("entity person facet missing")
         display, short = _fmt_person(person)
-        return EntityNameCardDTO(entity_ulid, "person", display, short)
+        return EntityNameCardDTO(ent.ulid, "person", display, short)
+
+    if kind == "org":
+        if org is None:
+            raise LookupError("entity org facet missing")
+        display, short = _fmt_org(org)
+        return EntityNameCardDTO(ent.ulid, "org", display, short)
+
+    if person is not None and org is None:
+        display, short = _fmt_person(person)
+        return EntityNameCardDTO(ent.ulid, "person", display, short)
+
+    if org is not None and person is None:
+        display, short = _fmt_org(org)
+        return EntityNameCardDTO(ent.ulid, "org", display, short)
 
     raise LookupError("entity kind unsupported")
 
 
 def _normalize_kind(raw: str | None) -> str | None:
-    k = (raw or "").strip().lower()
-    if k in ("org", "organization", "company", "nonprofit"):
+    kind = (raw or "").strip().lower()
+    if kind in ("org", "organization", "company", "nonprofit"):
         return "org"
-    if k in ("person", "human", "individual"):
+    if kind in ("person", "human", "individual"):
         return "person"
     return None
 
 
 def _fmt_person(person: EntityPerson) -> tuple[str, str | None]:
-    first = (person.preferred_name or person.first_name or "").strip()
+    first = (person.first_name or "").strip()
+    preferred = (person.preferred_name or "").strip()
+    lead = preferred or first
     last = (person.last_name or "").strip()
 
-    if first and last:
-        return f"{last}, {first}", f"{last}, {first[0]}."
+    if lead and last:
+        return f"{lead} {last}", f"{last}, {lead[0]}."
     if last:
         return last, last
-    if first:
-        return first, first
+    if lead:
+        return lead, lead
     return "Unnamed person", None
+
+
+def _fmt_org(org: EntityOrg) -> tuple[str, str | None]:
+    legal = (org.legal_name or "").strip()
+    dba = (org.dba_name or "").strip()
+
+    if dba:
+        short = legal if legal and legal != dba else None
+        return dba, short
+    if legal:
+        return legal, None
+    return "Unnamed org", None

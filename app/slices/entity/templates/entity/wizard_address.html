@@ -4,6 +4,7 @@
 
 {% block content %}
   <h1>Step 3 — Address</h1>
+  <p>Address is optional at intake. Use <em>Skip for now</em> when no reliable address is available yet.</p>
   <p><strong>Entity:</strong> <span class="kbd">{{ entity_ulid }}</span></p>
 
   <form method="post" action="{{ url_for('entity.wizard_address', entity_ulid=entity_ulid) }}" class="card" style="padding:1rem;max-width:46rem;">

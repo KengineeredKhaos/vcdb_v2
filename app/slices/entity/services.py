@@ -1,10 +1,14 @@
 # app/slices/entity/services.py
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import asc, desc
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.extensions import db, event_bus
+from app.lib.chrono import now_iso8601_ms
+from app.lib.geo import is_state_code
 from app.lib.pagination import Page, paginate_sa, rewrap_page
 from app.lib.utils import (
     normalize_ein,
@@ -45,6 +49,9 @@ TODO: Create:
 """
 
 
+_ZIP5_RE = re.compile(r"^\d{5}$")
+
+
 def allowed_role_codes() -> set[str]:
     rows = (
         db.session.query(EntityRole.role)
@@ -58,6 +65,137 @@ def allowed_role_codes() -> set[str]:
 # -----------------
 # Internal guard
 # -----------------
+
+
+def _require_entity(entity_ulid: str) -> Entity:
+    ent = db.session.get(Entity, entity_ulid)
+    if ent is None:
+        raise ValueError("entity not found")
+    return ent
+
+
+def _normalize_contact_value(
+    *,
+    email: str | None,
+    phone: str | None,
+) -> tuple[str | None, str | None]:
+    em = normalize_email(email) if email is not None else None
+    if email is not None and em and not validate_email(em):
+        raise ValueError("Invalid email")
+
+    ph = normalize_phone(phone) if phone is not None else None
+    if phone is not None and ph and not validate_phone(ph):
+        raise ValueError("Invalid phone")
+
+    if not em and not ph:
+        raise ValueError("email or phone is required")
+
+    return em, ph
+
+
+def _demote_conflicting_primaries(
+    *,
+    entity_ulid: str,
+    for_email: bool,
+    for_phone: bool,
+    exclude_contact_ulid: str | None,
+) -> None:
+    rows = (
+        db.session.query(EntityContact)
+        .filter_by(entity_ulid=entity_ulid)
+        .filter(EntityContact.archived_at.is_(None))
+        .all()
+    )
+    for row in rows:
+        if not row.is_primary:
+            continue
+        if exclude_contact_ulid and row.ulid == exclude_contact_ulid:
+            continue
+        has_conflict = (for_email and bool(row.email)) or (
+            for_phone and bool(row.phone)
+        )
+        if has_conflict:
+            row.is_primary = False
+
+
+def add_contact(
+    *,
+    entity_ulid: str,
+    email: str | None = None,
+    phone: str | None = None,
+    is_primary: bool = False,
+    request_id: str,
+    actor_ulid: str | None,
+) -> str:
+    """
+    Add an active contact row.
+
+    Notes:
+    - New writes may carry email, phone, or both.
+    - Primary is enforced per contact-type by demoting other active rows that
+      carry the same type(s).
+    - Exact active duplicates are treated idempotently.
+    """
+    _ensure_reqid(request_id)
+    _require_entity(entity_ulid)
+
+    em, ph = _normalize_contact_value(email=email, phone=phone)
+
+    row = (
+        db.session.query(EntityContact)
+        .filter_by(entity_ulid=entity_ulid, email=em, phone=ph)
+        .filter(EntityContact.archived_at.is_(None))
+        .order_by(
+            desc(EntityContact.updated_at_utc),
+            desc(EntityContact.created_at_utc),
+        )
+        .first()
+    )
+
+    created = False
+    changed_fields: list[str] = []
+
+    if row is None:
+        row = EntityContact(
+            entity_ulid=entity_ulid,
+            email=em,
+            phone=ph,
+            is_primary=False,
+        )
+        db.session.add(row)
+        created = True
+        if em:
+            changed_fields.append("email")
+        if ph:
+            changed_fields.append("phone")
+
+    db.session.flush()
+
+    if is_primary and not row.is_primary:
+        _demote_conflicting_primaries(
+            entity_ulid=entity_ulid,
+            for_email=bool(row.email),
+            for_phone=bool(row.phone),
+            exclude_contact_ulid=row.ulid,
+        )
+        row.is_primary = True
+        changed_fields.append("is_primary")
+
+    db.session.flush()
+
+    if created or changed_fields:
+        event_bus.emit(
+            domain="entity",
+            operation="contact_added" if created else "contact_updated",
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+            target_ulid=entity_ulid,
+            refs={"contact_ulid": row.ulid},
+            changed={"fields": list(dict.fromkeys(changed_fields))},
+            happened_at_utc=now_iso8601_ms(),
+        )
+
+    return row.ulid
 
 
 def _ensure_reqid(request_id: str | None) -> str:
@@ -175,14 +313,82 @@ def ensure_person_by_contact(
     request_id: str,
     actor_ulid: str | None,
 ) -> str:
-    return cmd_person_ensure_by_contact(
-        first_name=first_name,
-        last_name=last_name,
-        email=email,
-        phone=phone,
+    _ensure_reqid(request_id)
+
+    fn = _clean_person_name("first_name", first_name)
+    ln = _clean_person_name("last_name", last_name)
+
+    em = normalize_email(email) if email is not None else None
+    if email is not None and em and not validate_email(em):
+        raise ValueError("Invalid email")
+
+    ph = normalize_phone(phone) if phone is not None else None
+    if phone is not None and ph and not validate_phone(ph):
+        raise ValueError("Invalid phone")
+
+    def _find_by_email(value: str) -> Entity | None:
+        return (
+            db.session.query(Entity)
+            .join(EntityContact, EntityContact.entity_ulid == Entity.ulid)
+            .filter(
+                Entity.kind == "person",
+                Entity.archived_at.is_(None),
+                EntityContact.archived_at.is_(None),
+                EntityContact.email == value,
+            )
+            .first()
+        )
+
+    def _find_by_phone(value: str) -> Entity | None:
+        return (
+            db.session.query(Entity)
+            .join(EntityContact, EntityContact.entity_ulid == Entity.ulid)
+            .filter(
+                Entity.kind == "person",
+                Entity.archived_at.is_(None),
+                EntityContact.archived_at.is_(None),
+                EntityContact.phone == value,
+            )
+            .first()
+        )
+
+    ent: Entity | None = None
+    if em:
+        ent = _find_by_email(em)
+    if not ent and ph:
+        ent = _find_by_phone(ph)
+
+    if ent:
+        # If we matched an existing person, make sure any newly supplied
+        # contact method is attached/upserted using the normal contact path.
+        if em is not None or ph is not None:
+            edit_contact(
+                entity_ulid=ent.ulid,
+                email=em,
+                phone=ph,
+                request_id=request_id,
+                actor_ulid=actor_ulid,
+            )
+        return ent.ulid
+
+    created = create_operator_core(
+        first_name=fn,
+        last_name=ln,
+        preferred_name="",
         request_id=request_id,
         actor_ulid=actor_ulid,
-    ).entity_ulid
+    )
+
+    if em is not None or ph is not None:
+        edit_contact(
+            entity_ulid=created.entity_ulid,
+            email=em,
+            phone=ph,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+
+    return created.entity_ulid
 
 
 # -----------------
@@ -287,79 +493,175 @@ def edit_contact(
     actor_ulid: str | None,
 ) -> None:
     """
-    edit the single primary contact row for an entity;
-    emits one event.
-    """
-    # TODO: add choose primary or secondary contact for edit
+    Upsert the best/current contact choices for the supplied method types.
 
+    This convenience path now writes one active primary row per supplied
+    method, which aligns better with the active/archive/primary model than the
+    older single-row primary-contact behavior.
+    """
     _ensure_reqid(request_id)
 
-    ent = db.session.get(Entity, entity_ulid)
-    if not ent:
-        raise ValueError("entity not found")
+    if email is None and phone is None:
+        raise ValueError("email or phone is required")
 
-    em = normalize_email(email) if email is not None else None
-    if email is not None and em and not validate_email(em):
-        raise ValueError("Invalid email")
-
-    ph = normalize_phone(phone) if phone is not None else None
-    if phone is not None and ph and not validate_phone(ph):
-        raise ValueError("Invalid phone")
-
-    changed = {}
-    _edit_contact(entity_ulid=entity_ulid, email=em, phone=ph)
     if email is not None:
-        changed["email"] = em
-    if phone is not None:
-        changed["phone"] = ph
-
-    db.session.flush()
-    if changed:
-        event_bus.emit(
-            domain="entity",
-            operation="contact_upserted",
+        add_contact(
+            entity_ulid=entity_ulid,
+            email=email,
+            is_primary=True,
             request_id=request_id,
             actor_ulid=actor_ulid,
-            target_ulid=entity_ulid,
-            refs=None,
-            changed={"fields": list(changed.keys())},
         )
+
+    if phone is not None:
+        add_contact(
+            entity_ulid=entity_ulid,
+            phone=phone,
+            is_primary=True,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+        )
+
     return ()
 
 
-def _edit_contact(
-    *, entity_ulid: str, email: str | None, phone: str | None
-) -> None:
-    """
-    Maintain exactly one primary EntityContact row per entity.
-    - If no row exists, create one with provided fields (could be email, phone or both).
-    - If row exists, update only fields that are not None.
-    - If a provided field is explicitly None, clear that field (treat as removal).
-    """
-    c = (
-        db.session.query(EntityContact)
-        .filter_by(entity_ulid=entity_ulid, is_primary=True)
-        .first()
-    )
-    if not c:
-        c = EntityContact(entity_ulid=entity_ulid, is_primary=True)
-        if email is not None:
-            c.email = email
-        if phone is not None:
-            c.phone = phone
-        db.session.add(c)
-        return
+def set_contact_primary(
+    *,
+    contact_ulid: str,
+    request_id: str,
+    actor_ulid: str | None,
+) -> bool:
+    _ensure_reqid(request_id)
 
-    # Update in-place
-    if email is not None:
-        c.email = email
-    if phone is not None:
-        c.phone = phone
+    row = db.session.get(EntityContact, contact_ulid)
+    if row is None:
+        raise ValueError("contact not found")
+    if row.archived_at is not None:
+        raise ValueError("contact is archived")
+    if row.is_primary:
+        return False
+
+    _demote_conflicting_primaries(
+        entity_ulid=row.entity_ulid,
+        for_email=bool(row.email),
+        for_phone=bool(row.phone),
+        exclude_contact_ulid=row.ulid,
+    )
+    row.is_primary = True
+    db.session.flush()
+
+    event_bus.emit(
+        domain="entity",
+        operation="contact_primary_set",
+        request_id=request_id,
+        actor_ulid=actor_ulid,
+        target_ulid=row.entity_ulid,
+        refs={"contact_ulid": row.ulid},
+        changed={"fields": ["is_primary"]},
+        happened_at_utc=now_iso8601_ms(),
+    )
+    return True
+
+
+def archive_contact(
+    *,
+    contact_ulid: str,
+    request_id: str,
+    actor_ulid: str | None,
+) -> bool:
+    _ensure_reqid(request_id)
+
+    row = db.session.get(EntityContact, contact_ulid)
+    if row is None or row.archived_at is not None:
+        return False
+
+    row.archived_at = now_iso8601_ms()
+    row.is_primary = False
+    db.session.flush()
+
+    event_bus.emit(
+        domain="entity",
+        operation="contact_archived",
+        request_id=request_id,
+        actor_ulid=actor_ulid,
+        target_ulid=row.entity_ulid,
+        refs={"contact_ulid": row.ulid},
+        changed={"fields": ["archived_at"]},
+        happened_at_utc=row.archived_at,
+    )
+    return True
 
 
 # -----------------
 # Entity Address
 # -----------------
+
+
+def _normalize_zip5(v: str) -> str:
+    s = (v or "").strip()
+    if not _ZIP5_RE.match(s):
+        raise ValueError("postal_code must be 5 digits")
+    return s
+
+
+def _norm_str(
+    label: str, value: str, *, required: bool = False
+) -> str | None:
+    clean = (value or "").strip()
+    if required and not clean:
+        raise ValueError(f"{label} is required")
+    return clean or None
+
+
+def _active_address_rows(entity_ulid: str) -> list[EntityAddress]:
+    return (
+        db.session.query(EntityAddress)
+        .filter_by(entity_ulid=entity_ulid)
+        .filter(EntityAddress.archived_at.is_(None))
+        .order_by(
+            desc(EntityAddress.updated_at_utc),
+            desc(EntityAddress.created_at_utc),
+        )
+        .all()
+    )
+
+
+def _address_matches(
+    row: EntityAddress,
+    *,
+    address1: str,
+    address2: str | None,
+    city: str,
+    state: str,
+    postal_code: str,
+) -> bool:
+    return (
+        row.address1 == address1
+        and (row.address2 or None) == address2
+        and row.city == city
+        and row.state == state
+        and row.postal_code == postal_code
+    )
+
+
+def _move_address_role(
+    *,
+    current: EntityAddress | None,
+    target: EntityAddress,
+    role_field: str,
+    as_of: str,
+    changed_fields: list[str],
+) -> None:
+    if current is not None and current.ulid != target.ulid:
+        if getattr(current, "is_physical") and getattr(current, "is_postal"):
+            setattr(current, role_field, False)
+        else:
+            current.archived_at = as_of
+            changed_fields.append(f"archived_{role_field}")
+
+    if not getattr(target, role_field):
+        setattr(target, role_field, True)
+        changed_fields.append(role_field)
 
 
 def upsert_address(
@@ -376,64 +678,134 @@ def upsert_address(
     actor_ulid: str | None,
 ) -> str:
     """
-    Create/update the single 'primary' address by (is_physical, is_postal) flags.
-    Returns the address ulid.
+    Upsert active address roles.
+
+    Rules:
+    - at most one active physical role per entity
+    - at most one active postal role per entity
+    - the same address row may satisfy both roles
+    - replacing one role archives or downgrades the prior active row
     """
     _ensure_reqid(request_id)
-    ent = db.session.get(Entity, entity_ulid)
-    if not ent:
-        raise ValueError("entity not found")
+    _require_entity(entity_ulid)
 
-    def _norm(s: str | None) -> str | None:
-        return (s or "").strip() or None
+    phy = bool(is_physical)
+    post = bool(is_postal)
+    if not phy and not post:
+        phy = True
 
-    addr = (
-        db.session.query(EntityAddress)
-        .filter_by(
-            entity_ulid=entity_ulid,
-            is_physical=is_physical,
-            is_postal=is_postal,
-        )
-        .first()
+    a1 = _norm_str("address1", address1, required=True) or ""
+    a2 = _norm_str("address2", address2)
+    cty = _norm_str("city", city, required=True) or ""
+    st = (_norm_str("state", state, required=True) or "").upper()
+    if not is_state_code(st):
+        raise ValueError("invalid state code")
+    zipc = _normalize_zip5(postal_code)
+
+    rows = _active_address_rows(entity_ulid)
+
+    target = next(
+        (
+            row
+            for row in rows
+            if _address_matches(
+                row,
+                address1=a1,
+                address2=a2,
+                city=cty,
+                state=st,
+                postal_code=zipc,
+            )
+        ),
+        None,
     )
 
-    # created = False
-    if not addr:
-        addr = EntityAddress(
-            entity_ulid=entity_ulid,
-            is_physical=is_physical,
-            is_postal=is_postal,
-            address1=_norm(address1) or "",
-            address2=_norm(address2),
-            city=_norm(city) or "",
-            state=_norm(state) or "",
-            postal_code=_norm(postal_code) or "",
-        )
-        db.session.add(addr)
-        # created = True
-    else:
-        addr.address1 = _norm(address1) or addr.address1
-        addr.address2 = _norm(address2)
-        addr.city = _norm(city) or addr.city
-        addr.state = _norm(state) or addr.state
-        addr.postal_code = _norm(postal_code) or addr.postal_code
+    created = False
+    changed_fields: list[str] = []
+    as_of = now_iso8601_ms()
 
+    if target is None:
+        target = EntityAddress(
+            entity_ulid=entity_ulid,
+            is_physical=False,
+            is_postal=False,
+            address1=a1,
+            address2=a2,
+            city=cty,
+            state=st,
+            postal_code=zipc,
+        )
+        db.session.add(target)
+        db.session.flush()
+        created = True
+        changed_fields.extend(
+            ["address1", "city", "state", "postal_code"]
+            + (["address2"] if a2 else [])
+        )
+
+    current_physical = next((row for row in rows if row.is_physical), None)
+    current_postal = next((row for row in rows if row.is_postal), None)
+
+    if phy:
+        _move_address_role(
+            current=current_physical,
+            target=target,
+            role_field="is_physical",
+            as_of=as_of,
+            changed_fields=changed_fields,
+        )
+    if post:
+        _move_address_role(
+            current=current_postal,
+            target=target,
+            role_field="is_postal",
+            as_of=as_of,
+            changed_fields=changed_fields,
+        )
+
+    db.session.flush()
+
+    if created or changed_fields:
+        event_bus.emit(
+            domain="entity",
+            operation="address_upserted",
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+            target_ulid=entity_ulid,
+            refs={"address_ulid": target.ulid},
+            changed={"fields": list(dict.fromkeys(changed_fields))},
+            happened_at_utc=as_of,
+        )
+
+    return target.ulid
+
+
+def archive_address(
+    *,
+    address_ulid: str,
+    request_id: str,
+    actor_ulid: str | None,
+) -> bool:
+    _ensure_reqid(request_id)
+
+    row = db.session.get(EntityAddress, address_ulid)
+    if row is None or row.archived_at is not None:
+        return False
+
+    row.archived_at = now_iso8601_ms()
     db.session.flush()
 
     event_bus.emit(
         domain="entity",
-        operation="address_upserted",
+        operation="address_archived",
         request_id=request_id,
         actor_ulid=actor_ulid,
-        target_ulid=entity_ulid,
-        refs={"address_ulid": addr.ulid},
-        changed={
-            "fields": ["is_physical", "is_postal"]
-            + (["postal_code"] if postal_code else [])
-        },
+        target_ulid=row.entity_ulid,
+        refs={"address_ulid": row.ulid},
+        changed={"fields": ["archived_at"]},
+        happened_at_utc=row.archived_at,
     )
-
-    return addr.ulid
+    return True
 
 
 # -----------------

@@ -31,10 +31,34 @@ from app.slices.entity.services_name_cards import (
 # -----------------
 
 
+
+
+def _validated_ulids(
+    entity_ulids: Sequence[str],
+    *,
+    where: str,
+) -> list[str]:
+    vals = [str(u).strip() for u in (entity_ulids or []) if str(u).strip()]
+    bad = [u for u in vals if not is_ulid(u)]
+    if bad:
+        raise ContractError(
+            code="bad_argument",
+            where=where,
+            message="one or more invalid entity_ulids",
+            http_status=400,
+        )
+    return vals
 def _as_contract_error(where: str, exc: Exception) -> ContractError:
     if isinstance(exc, ContractError):
         return exc
     msg = str(exc) or exc.__class__.__name__
+    if isinstance(exc, ValueError) and msg == "entity is archived":
+        return ContractError(
+            code="not_found",
+            where=where,
+            message=msg,
+            http_status=404,
+        )
     if isinstance(exc, ValueError):
         return ContractError(
             code="bad_argument",
@@ -67,10 +91,11 @@ def require_person_entity_ulid(
 ) -> str:
     err_where = where or "entity_v2.require_person_entity_ulid"
     try:
-        return ent_guards.require_person_entity_ulid(
+        ent = ent_guards.require_person_entity_ulid(
             entity_ulid,
             allow_archived=allow_archived,
         )
+        return ent.ulid
     except Exception as exc:
         raise _as_contract_error(err_where, exc) from exc
 
@@ -83,10 +108,11 @@ def require_org_entity_ulid(
 ) -> str:
     err_where = where or "entity_v2.require_org_entity_ulid"
     try:
-        return ent_guards.require_org_entity_ulid(
+        ent = ent_guards.require_org_entity_ulid(
             entity_ulid,
             allow_archived=allow_archived,
         )
+        return ent.ulid
     except Exception as exc:
         raise _as_contract_error(err_where, exc) from exc
 
@@ -271,6 +297,7 @@ def get_org_view(entity_ulid: str) -> OrgView:
 def get_entity_labels(entity_ulids: list[str]) -> dict[str, EntityLabelDTO]:
     where = "entity_v2.get_entity_labels"
     try:
+        _validated_ulids(entity_ulids, where=where)
         return ent_services.get_entity_labels(entity_ulids=entity_ulids)
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
@@ -279,9 +306,16 @@ def get_entity_labels(entity_ulids: list[str]) -> dict[str, EntityLabelDTO]:
 def get_entity_label(entity_ulid: str) -> EntityLabelDTO:
     where = "entity_v2.get_entity_label"
     try:
+        if not is_ulid(entity_ulid):
+            raise ContractError(
+                code="bad_argument",
+                where=where,
+                message="invalid entity_ulid",
+                http_status=400,
+            )
         d = ent_services.get_entity_labels(entity_ulids=[entity_ulid])
         v = d.get(entity_ulid)
-        if v is None:
+        if v is None or v.kind == "unknown":
             raise LookupError("entity not found")
         return v
     except Exception as exc:
@@ -293,6 +327,7 @@ def get_entity_contact_summary(
 ) -> dict[str, EntityContactSummaryDTO]:
     where = "entity_v2.get_entity_contact_summary"
     try:
+        _validated_ulids(entity_ulids, where=where)
         return ent_services.get_entity_contact_summary(
             entity_ulids=entity_ulids
         )
@@ -305,6 +340,7 @@ def get_entity_address_summary(
 ) -> dict[str, EntityAddressSummaryDTO]:
     where = "entity_v2.get_entity_address_summary"
     try:
+        _validated_ulids(entity_ulids, where=where)
         return ent_services.get_entity_address_summary(
             entity_ulids=entity_ulids
         )
@@ -320,6 +356,7 @@ def get_entity_cards(
 ) -> dict[str, EntityCardDTO]:
     where = "entity_v2.get_entity_cards"
     try:
+        _validated_ulids(entity_ulids, where=where)
         return ent_services.get_entity_cards(
             entity_ulids=entity_ulids,
             include_contacts=include_contacts,
@@ -333,6 +370,8 @@ __all__ = [
     "create_operator_core",
     "require_person_entity_ulid",
     "require_org_entity_ulid",
+    "get_entity_name_card",
+    "get_entity_name_cards",
     "get_person_view",
     "get_org_view",
     "get_entity_labels",

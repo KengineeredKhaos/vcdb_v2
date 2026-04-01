@@ -172,6 +172,7 @@ class AddressForm(FlaskForm):
     )
 
     submit = SubmitField("Continue")
+    skip = SubmitField("Skip for now")
 
 
 class RoleForm(FlaskForm):

@@ -166,16 +166,25 @@ def to_wizard_summary(ent: Entity) -> WizardSummaryDTO:
     else:
         display = (o.legal_name or "") if o is not None else ent.ulid
 
-    role = ent.roles[0].role_code if ent.roles else None
-    c = ent.contacts[0] if ent.contacts else None
+    role = ent.roles[0].role if ent.roles else None
+    active_contacts = sorted(
+        [c for c in (ent.contacts or []) if c.archived_at is None],
+        key=lambda c: (
+            1 if c.is_primary else 0,
+            c.updated_at_utc or "",
+            c.created_at_utc or "",
+        ),
+        reverse=True,
+    )
+    summary = to_contact_summary(ent.ulid, active_contacts)
 
     return WizardSummaryDTO(
         entity_ulid=ent.ulid,
         kind=ent.kind,
         display_name=display.strip() or ent.ulid,
         role_code=role,
-        email=(c.email if c else None),
-        phone=(c.phone if c else None),
+        email=summary.primary_email,
+        phone=summary.primary_phone,
     )
 
 
@@ -332,25 +341,34 @@ def to_address_summary(
 # -----------------
 
 
-def _pick_primary_contact(ent: Entity | None) -> EntityContact | None:
+def _active_contact_summary(
+    ent: Entity | None,
+) -> EntityContactSummaryDTO | None:
     if not ent or not ent.contacts:
         return None
-    for c in ent.contacts:
-        if c.is_primary:
-            return c
-    return None
+
+    rows = sorted(
+        [c for c in ent.contacts if c.archived_at is None],
+        key=lambda c: (
+            1 if c.is_primary else 0,
+            c.updated_at_utc or "",
+            c.created_at_utc or "",
+        ),
+        reverse=True,
+    )
+    return to_contact_summary(ent.ulid, rows)
 
 
 def map_person_view(p: EntityPerson) -> PersonView:
     ent = p.entity
-    primary = _pick_primary_contact(ent)
+    summary = _active_contact_summary(ent)
     return {
         "entity_ulid": ent.ulid if ent else p.entity_ulid,
         "first_name": p.first_name,
         "last_name": p.last_name,
         "preferred_name": p.preferred_name,
-        "email": primary.email if primary else None,
-        "phone": primary.phone if primary else None,
+        "email": summary.primary_email if summary else None,
+        "phone": summary.primary_phone if summary else None,
         "created_at_utc": ent.created_at_utc if ent else None,
         "updated_at_utc": ent.updated_at_utc if ent else None,
     }
@@ -358,14 +376,14 @@ def map_person_view(p: EntityPerson) -> PersonView:
 
 def map_org_view(o: EntityOrg) -> OrgView:
     ent = o.entity
-    primary = _pick_primary_contact(ent)
+    summary = _active_contact_summary(ent)
     return {
         "entity_ulid": ent.ulid if ent else o.entity_ulid,
         "legal_name": o.legal_name,
         "dba_name": o.dba_name,
         "ein": o.ein,
-        "email": primary.email if primary else None,
-        "phone": primary.phone if primary else None,
+        "email": summary.primary_email if summary else None,
+        "phone": summary.primary_phone if summary else None,
         "created_at_utc": ent.created_at_utc if ent else None,
         "updated_at_utc": ent.updated_at_utc if ent else None,
     }

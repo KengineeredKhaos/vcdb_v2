@@ -336,14 +336,13 @@ Conventions:
   
   - prevent dev conveniences from masking denied-access failures
 
-@TODO: Major Refactor — Timestamp Canon Unification
+- [ ] @TODO: Major Refactor — Timestamp Canon Unification
 
-Current posture is intentionally temporary:
+- Current posture is intentionally temporary:
 
-- parts of the project still store DB timestamps as ISO-8601 Z strings
-  for consistency with existing tables/models
-- canon direction in app/lib/chrono.py is to use naive UTC DateTime for
-  DB columns/defaults/onupdate, and reserve ISO-8601 strings for logs/JSON
+-  parts of the project still store DB timestamps as ISO-8601 Z strings for consistency with existing tables/models
+
+-  canon direction in app/lib/chrono.py is to use naive UTC DateTime for DB columns/defaults/onupdate, and reserve ISO-8601 strings for logs/JSON
 
 Before production:
 
@@ -366,3 +365,42 @@ Do not allow slow timestamp creep toward canon through scattered partial
 conversions. Keep the project internally consistent for now, then perform
 one deliberate, whole-project timestamp standardization pass and verify it
 thoroughly.
+
+- [ ]@TODO: Security/Governance authority cleanup
+
+- security.py:
+  
+  - Keep RBAC helpers/decorators as the route-level access standard.
+  - Retain Domain-role helpers only for true Entity Domain roles
+    (customer, civilian, resource, sponsor).
+  - Deprecate/remove any use of require_domain_role("governor")
+    or require_domain_roles_*("governor"); business authority is
+    no longer a Domain-role concern.
+  - Add a standard commented placeholder/pattern for two-step route
+    gating on authority-sensitive routes:
+    1) RBAC check
+    2) Governance authority check
+  - Ensure dev-assumed Domain roles never satisfy Governance
+    business-authority checks.
+
+- Governance authority model:
+  
+  - Treat officer/pro tem authority as Governance assignment data,
+    not Entity Domain roles and not standalone RBAC roles.
+  - Add a dedicated Governance authority helper/contract for
+    route/service checks (current office holder, pro tem, effective/
+    expired status, allowed action).
+  - Standardize two-step gating on authority-sensitive routes:
+      RBAC  ->  Governance authority
+  - Standardize assignment/rescind routes for Governance authority:
+      requires RBAC admin + current Governance authority.
+  - Document/bootstrap first-governor runbook sequence and
+    break-glass recovery path.
+  - Ensure expired office term automatically invalidates dependent
+    pro tem authority unless rescinded earlier.
+
+- Canon follow-up:
+  
+  - Remove stale examples/docs that imply "governor" is a Domain role.
+  - Update route examples to show RBAC + Governance authority
+    as separate concerns.

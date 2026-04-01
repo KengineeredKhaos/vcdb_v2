@@ -93,33 +93,17 @@ def _display_name_org(*, legal_name: str, dba_name: str | None) -> str:
 
 
 def wizard_next_step(*, entity_ulid: str) -> str:
+    """
+    Service-layer fallback used when no route-local wizard progress state
+    is available. Minimal-valid wizard completion is:
+        core + initial role
+
+    Contact and address are optional at intake, so this helper only blocks
+    on active role assignment. Route/session progress may still choose to
+    drive operators through contact/address steps before role selection.
+    """
     ent = require_wizard_entity(entity_ulid)
     _validate_entity_shape(ent)
-
-    has_contact = (
-        db.session.execute(
-            select(EntityContact).where(
-                EntityContact.entity_ulid == entity_ulid,
-                EntityContact.is_primary.is_(True),
-                EntityContact.archived_at.is_(None),
-            )
-        ).scalar_one_or_none()
-        is not None
-    )
-    if not has_contact:
-        return "entity.wizard_contact"
-
-    has_addr = (
-        db.session.execute(
-            select(EntityAddress).where(
-                EntityAddress.entity_ulid == entity_ulid,
-                EntityAddress.archived_at.is_(None),
-            )
-        ).scalar_one_or_none()
-        is not None
-    )
-    if not has_addr:
-        return "entity.wizard_address"
 
     has_role = (
         db.session.execute(
@@ -287,6 +271,17 @@ def wizard_upsert_primary_contact(
         if phone_norm and not validate_phone(phone_norm):
             raise ValueError("invalid phone")
 
+    # Minimal-intake rule: contact is optional. If the operator has no
+    # contact data right now, move forward honestly without fabricating
+    # placeholder contact rows.
+    if not email_norm and not phone_norm:
+        return WizardStepDTO(
+            entity_ulid=entity_ulid,
+            created=False,
+            changed_fields=(),
+            next_step="entity.wizard_address",
+        )
+
     changed: list[str] = []
 
     c = db.session.execute(
@@ -307,15 +302,15 @@ def wizard_upsert_primary_contact(
             phone=phone_norm,
         )
         db.session.add(c)
-        if email is not None:
+        if email_norm:
             changed.append("email")
-        if phone is not None:
+        if phone_norm:
             changed.append("phone")
     else:
-        if email is not None and c.email != email_norm:
+        if email_norm is not None and c.email != email_norm:
             c.email = email_norm
             changed.append("email")
-        if phone is not None and c.phone != phone_norm:
+        if phone_norm is not None and c.phone != phone_norm:
             c.phone = phone_norm
             changed.append("phone")
 

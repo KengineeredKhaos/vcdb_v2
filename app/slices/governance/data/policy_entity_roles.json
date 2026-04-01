@@ -3,8 +3,10 @@
     "description": "Canonical domain role catalog and assignment rules.",
     "effective_on": "2026-03-13",
     "notes": [
-      "assignment_rules define allowed domain-role assignments by RBAC role; they do not imply automatic assignment",
-      "auditor is read-only oversight and carries no operational action-authority domain role"
+      "assignment_rules define allowed domain-role combinations and ",
+      "disallowed combinations by entity type.",
+      "Governance business authority is not represented as an",
+      " Entity domain role."
     ],
     "policy_key": "entity_roles",
     "schema_version": 1,
@@ -16,37 +18,37 @@
     "customer",
     "resource",
     "sponsor",
-    "governor",
-    "civilian",
-    "staff"
+    "civilian"
   ],
   "assignment_rules": {
-    "admin": {
+    "civilian": {
       "allowed": [
-        "staff",
-        "governor"
+        "resource",
+        "sponsor"
       ],
-      "default": [
-        "staff"
-      ]
+      "default": []
     },
-    "auditor": {
+    "customer": {
       "allowed": [],
       "default": []
     },
-    "staff": {
+    "EntityPerson": {
       "allowed": [
-        "staff"
-      ],
-      "default": [
-        "staff"
-      ]
-    },
-    "user": {
-      "allowed": [
+        "customer",
         "civilian"
       ],
-      "default": [
+      "default": []
+    },
+    "EntityOrg": {
+      "allowed": [
+        "resource",
+        "sponsor"
+      ],
+      "default": []
+    },
+    "disallow_roles": {
+      "EntityOrg": [
+        "customer",
         "civilian"
       ]
     }
