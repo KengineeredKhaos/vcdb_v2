@@ -1470,3 +1470,9 @@ That work includes:
   - later, on-demand inactive Resource / Sponsor / User archive jobs
 
 These are jobs built on top of cron, not part of cron framework completion.
+
+---
+
+## Customer slice notes from hardening pass
+
+Customer owns customer-domain state, workflow, servicing status, needs/eligibility/profile facts, and customer-facing case history references. It does not own canonical identity/contact/address PII, and it does not own governance authority.

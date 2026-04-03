@@ -7,7 +7,7 @@
 <section class="card" style="margin-top:18px;">
   <h1 style="margin:0 0 8px;">Customer Intake — Needs Tier 1</h1>
   {% include "customers/_entity_card.html" %}
-  <div class="muted">Leave <code>n/a</code> if skipping an item. Use <code>unknown</code> if you attempted assessment but couldn’t determine.</div>
+  <div class="muted">Record a value for each factor. Use <code>unknown</code> when assessed but indeterminate, or <code>n/a</code> when the factor truly does not apply.</div>
 </section>
 
 {% set r = ratings|default({}) %}
@@ -20,12 +20,12 @@
   <div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap:12px;">
 
     {% for key,label in [("food","Food"),("hygiene","Hygiene"),("health","Health"),("housing","Housing"),("clothing","Clothing")] %}
-      {% set v = r.get(key, 'na') %}
+      {% set v = r.get(key, 'unknown') %}
       <label class="fld">
         <div class="lbl">{{ label }}</div>
         <select name="{{ key }}" id="id_{{ key }}">
-          <option value="na" {{ 'selected' if v=='na' else '' }}>n/a (not assessed)</option>
           <option value="unknown" {{ 'selected' if v=='unknown' else '' }}>unknown</option>
+          <option value="not_applicable" {{ 'selected' if v=='not_applicable' else '' }}>n/a (not applicable)</option>
           <option value="immediate" {{ 'selected' if v=='immediate' else '' }}>1 — immediate</option>
           <option value="marginal" {{ 'selected' if v=='marginal' else '' }}>2 — marginal</option>
           <option value="sufficient" {{ 'selected' if v=='sufficient' else '' }}>3 — sufficient</option>
@@ -38,10 +38,6 @@
   <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:14px;">
     <button class="btn" type="submit">Save &amp; Continue</button>
     <a class="btn" href="{{ url_for('customers.intake_review_get', entity_ulid=entity_ulid) }}">Review</a>
-    <button class="btn" type="submit" formmethod="post"
-            formaction="{{ url_for('customers.intake_needs_skip', entity_ulid=entity_ulid) }}">
-      Skip Assessment
-    </button>
   </div>
 </form>
 {% endblock %}

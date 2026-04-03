@@ -33,9 +33,10 @@
         <th>ULID</th>
         <th>Status</th>
         <th>Resume step</th>
-        <th>Needs</th>
+        <th>Elig</th>
+        <th>T1 assessed</th>
+        <th>T1 unlocked</th>
         <th>T1</th>
-        <th>Watch</th>
         <th>Veteran</th>
         <th style="width:1%; white-space:nowrap;">Actions</th>
       </tr>
@@ -51,13 +52,17 @@
             {% if r.flag_tier1_immediate %}
               <span class="muted" title="Tier 1 immediate">⚑</span>
             {% endif %}
+            {% if r.entity_package_incomplete %}
+              <span class="muted" title="Entity intake package incomplete">✱</span>
+            {% endif %}
           </td>
           <td><code>{{ r.entity_ulid }}</code></td>
           <td><code>{{ r.status }}</code></td>
           <td><code>{{ r.intake_step }}</code></td>
-          <td><code>{{ r.needs_state }}</code></td>
+          <td>{{ "yes" if r.eligibility_complete else "no" }}</td>
+          <td>{{ "yes" if r.tier1_assessed else "no" }}</td>
+          <td>{{ "yes" if r.tier1_unlocked else "no" }}</td>
           <td>{{ r.tier1_min if r.tier1_min is not none else "—" }}</td>
-          <td>{{ "yes" if r.watchlist else "—" }}</td>
           <td><code>{{ r.veteran_status }}</code></td>
           <td style="white-space:nowrap;">
             <a class="btn" href="{{ url_for('customers.customer_overview_get', entity_ulid=r.entity_ulid) }}">Open</a>
@@ -65,7 +70,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="9"><em>No customers yet.</em></td></tr>
+        <tr><td colspan="10"><em>No customers yet.</em></td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -155,31 +155,29 @@ def wizard_next_step(entity_ulid: str) -> str:
     """
     Deterministic "resume" logic for stale submits / deep links.
 
-    For now, keep this simple and conservative:
-    - If eligibility looks untouched -> eligibility
-    - Else if needs_state is skipped/complete -> review
-    - Else -> needs_tier1
+    Keep this simple and staged:
+    - If eligibility is incomplete -> eligibility
+    - Else if Tier 1 is not assessed -> tier1
+    - Else if Tier 2 is not assessed -> tier2
+    - Else if Tier 3 is not assessed -> tier3
+    - Else if intake_step is complete -> done
+    - Else -> review
     """
     c = db.session.get(Customer, entity_ulid)
     if c is None:
         return STEP_ELIGIBILITY
 
-    e = db.session.get(CustomerEligibility, entity_ulid)
-    if e is not None:
-        untouched = (
-            (e.veteran_status == "unknown")
-            and (e.homeless_status == "unknown")
-            and (e.veteran_method is None)
-            and (e.branch is None)
-            and (e.era is None)
-        )
-        if untouched:
-            return STEP_ELIGIBILITY
-
-    if c.needs_state in ("skipped", "complete"):
-        return STEP_REVIEW
-
-    return STEP_NEEDS_T1
+    if c.intake_step == "complete":
+        return STEP_DONE
+    if not c.eligibility_complete:
+        return STEP_ELIGIBILITY
+    if not c.tier1_assessed:
+        return STEP_NEEDS_T1
+    if not c.tier2_assessed:
+        return STEP_NEEDS_T2
+    if not c.tier3_assessed:
+        return STEP_NEEDS_T3
+    return STEP_REVIEW
 
 
 def _goto_step(entity_ulid: str, step: str) -> Any:
@@ -346,7 +344,7 @@ def intake_eligibility_post(entity_ulid: str):
         dto = svc.set_customer_eligibility(
             entity_ulid=entity_ulid,
             veteran_status=request.form.get("veteran_status", ""),
-            homeless_status=request.form.get("homeless_status", ""),
+            housing_status=request.form.get("housing_status", ""),
             veteran_method=request.form.get("veteran_method") or None,
             branch=request.form.get("branch") or None,
             era=request.form.get("era") or None,
@@ -405,13 +403,11 @@ def _needs_post(
     rid, actor = _ctx_mut()
 
     try:
-        # Convenience: begin assessment on first needs POST if not started.
-        with suppress(Exception):
-            svc.needs_begin(
-                entity_ulid=entity_ulid,
-                request_id=rid,
-                actor_ulid=actor,
-            )
+        svc.needs_begin(
+            entity_ulid=entity_ulid,
+            request_id=rid,
+            actor_ulid=actor,
+        )
 
         dto = svc.needs_set_block(
             entity_ulid=entity_ulid,
@@ -443,11 +439,11 @@ def intake_needs_tier1_get(entity_ulid: str):
 @bp.post("/intake/<entity_ulid>/needs/tier1")
 def intake_needs_tier1_post(entity_ulid: str):
     ratings = {
-        "food": request.form.get("food", "na"),
-        "hygiene": request.form.get("hygiene", "na"),
-        "health": request.form.get("health", "na"),
-        "housing": request.form.get("housing", "na"),
-        "clothing": request.form.get("clothing", "na"),
+        "food": request.form.get("food", "unknown"),
+        "hygiene": request.form.get("hygiene", "unknown"),
+        "health": request.form.get("health", "unknown"),
+        "housing": request.form.get("housing", "unknown"),
+        "clothing": request.form.get("clothing", "unknown"),
     }
     return _needs_post(
         entity_ulid=entity_ulid,
@@ -469,10 +465,10 @@ def intake_needs_tier2_get(entity_ulid: str):
 @bp.post("/intake/<entity_ulid>/needs/tier2")
 def intake_needs_tier2_post(entity_ulid: str):
     ratings = {
-        "income": request.form.get("income", "na"),
-        "employment": request.form.get("employment", "na"),
-        "transportation": request.form.get("transportation", "na"),
-        "education": request.form.get("education", "na"),
+        "income": request.form.get("income", "unknown"),
+        "employment": request.form.get("employment", "unknown"),
+        "transportation": request.form.get("transportation", "unknown"),
+        "education": request.form.get("education", "unknown"),
     }
     return _needs_post(
         entity_ulid=entity_ulid,
@@ -494,9 +490,9 @@ def intake_needs_tier3_get(entity_ulid: str):
 @bp.post("/intake/<entity_ulid>/needs/tier3")
 def intake_needs_tier3_post(entity_ulid: str):
     ratings = {
-        "family": request.form.get("family", "na"),
-        "peergroup": request.form.get("peergroup", "na"),
-        "tech": request.form.get("tech", "na"),
+        "family": request.form.get("family", "unknown"),
+        "peergroup": request.form.get("peergroup", "unknown"),
+        "tech": request.form.get("tech", "unknown"),
     }
     return _needs_post(
         entity_ulid=entity_ulid,
@@ -504,19 +500,6 @@ def intake_needs_tier3_post(entity_ulid: str):
         ratings=ratings,
         next_step=STEP_REVIEW,
     )
-
-
-@bp.post("/intake/<entity_ulid>/needs/skip")
-def intake_needs_skip(entity_ulid: str):
-    rid, actor = _ctx_mut()
-    dto = svc.needs_skip(
-        entity_ulid=entity_ulid,
-        request_id=rid,
-        actor_ulid=actor,
-    )
-    db.session.commit()
-    step = dto.next_step or STEP_REVIEW
-    return _goto_step(entity_ulid, step)
 
 
 # -----------------

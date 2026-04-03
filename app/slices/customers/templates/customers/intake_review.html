@@ -12,8 +12,9 @@
 <section class="card">
   <h2 style="margin-top:0;">Eligibility</h2>
   <table class="table">
+    <tr><th>Eligibility complete</th><td>{{ "yes" if dash.eligibility_complete else "no" }}</td></tr>
     <tr><th>Veteran status</th><td><code>{{ dash.veteran_status }}</code></td></tr>
-    <tr><th>Homeless status</th><td><code>{{ dash.homeless_status }}</code></td></tr>
+    <tr><th>Housing status</th><td><code>{{ dash.housing_status }}</code></td></tr>
     <tr><th>Assessment version</th><td>{{ dash.assessment_version }}</td></tr>
     <tr><th>Last assessed</th><td>{{ dash.last_assessed_at_iso or "(none)" }}</td></tr>
   </table>
@@ -22,12 +23,19 @@
 <section class="card">
   <h2 style="margin-top:0;">Needs rollups (cached cues)</h2>
   <table class="table">
-    <tr><th>needs_state</th><td><code>{{ dash.needs_state }}</code></td></tr>
+    <tr><th>Tier 1 assessed</th><td>{{ "yes" if dash.tier1_assessed else "no" }}</td></tr>
+    <tr><th>Tier 2 assessed</th><td>{{ "yes" if dash.tier2_assessed else "no" }}</td></tr>
+    <tr><th>Tier 3 assessed</th><td>{{ "yes" if dash.tier3_assessed else "no" }}</td></tr>
+    <tr><th>Tier 1 unlocked</th><td>{{ "yes" if dash.tier1_unlocked else "no" }}</td></tr>
+    <tr><th>Tier 2 unlocked</th><td>{{ "yes" if dash.tier2_unlocked else "no" }}</td></tr>
+    <tr><th>Tier 3 unlocked</th><td>{{ "yes" if dash.tier3_unlocked else "no" }}</td></tr>
+    <tr><th>Assessment complete</th><td>{{ "yes" if dash.assessment_complete else "no" }}</td></tr>
     <tr><th>watchlist</th><td>{{ "yes" if dash.watchlist else "no" }}</td></tr>
     <tr><th>tier1_min</th><td>{{ dash.tier1_min if dash.tier1_min is not none else "unknown" }}</td></tr>
     <tr><th>tier2_min</th><td>{{ dash.tier2_min if dash.tier2_min is not none else "unknown" }}</td></tr>
     <tr><th>tier3_min</th><td>{{ dash.tier3_min if dash.tier3_min is not none else "unknown" }}</td></tr>
     <tr><th>flag_tier1_immediate</th><td>{{ "yes" if dash.flag_tier1_immediate else "no" }}</td></tr>
+    <tr><th>Entity package incomplete</th><td>{{ "yes" if dash.entity_package_incomplete else "no" }}</td></tr>
   </table>
 </section>
 
@@ -39,7 +47,7 @@
       {% for k in ["food","hygiene","health","housing","clothing",
                   "income","employment","transportation","education",
                   "family","peergroup","tech"] %}
-        <tr><th>{{ k }}</th><td><code>{{ r.get(k, "na") }}</code></td></tr>
+        <tr><th>{{ k }}</th><td><code>{{ r.get(k, "unassessed") }}</code></td></tr>
       {% endfor %}
     </table>
   {% else %}
@@ -59,13 +67,5 @@
     <a class="btn" href="{{ url_for('customers.intake_needs_tier1_get', entity_ulid=entity_ulid) }}">Edit Needs</a>
     <a class="btn" href="{{ url_for('customers.intake_eligibility_get', entity_ulid=entity_ulid) }}">Edit Eligibility</a>
   </div>
-</form>
-
-<form class="card" method="post"
-      action="{{ url_for('customers.intake_needs_skip', entity_ulid=entity_ulid) }}">
-  {{ macros.csrf_field() }}
-  <h2 style="margin-top:0;">Skip assessment</h2>
-  <p class="muted">Marks the assessment as skipped. Does not create rating rows.</p>
-  <button class="btn" type="submit">Skip</button>
 </form>
 {% endblock %}

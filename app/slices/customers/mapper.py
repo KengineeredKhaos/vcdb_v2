@@ -14,33 +14,40 @@ from typing import Any
 
 @dataclass(frozen=True, slots=True)
 class CustomerSummaryView:
-    """
-    Non-PII list & card projection for operator quick view.
-    Database fields stored in tables as noted.
-    """
-
-    entity_ulid: str  # Customer table
-    status: str  # Customer table
-    intake_step: str  # Customer table
-    intake_completed_at_iso: str | None  # Customer table
-    needs_state: str  # Customer table
-    tier1_min: int | None  # Customer table
-    flag_tier1_immediate: bool  # Customer table
-    watchlist: bool  # Customer table
-    veteran_status: str  # CustomerEligibility table
-
-
-@dataclass(frozen=True, slots=True)
-class CustomerSummaryRow:
-    """
-    Row DTO for building list views
-    """
-
     entity_ulid: str
     status: str
     intake_step: str
     intake_completed_at_iso: str | None
-    needs_state: str
+    eligibility_complete: bool
+    entity_package_incomplete: bool
+    tier1_assessed: bool
+    tier2_assessed: bool
+    tier3_assessed: bool
+    tier1_unlocked: bool
+    tier2_unlocked: bool
+    tier3_unlocked: bool
+    assessment_complete: bool
+    tier1_min: int | None
+    flag_tier1_immediate: bool
+    watchlist: bool
+    veteran_status: str
+
+
+@dataclass(frozen=True, slots=True)
+class CustomerSummaryRow:
+    entity_ulid: str
+    status: str
+    intake_step: str
+    intake_completed_at_iso: str | None
+    eligibility_complete: bool
+    entity_package_incomplete: bool
+    tier1_assessed: bool
+    tier2_assessed: bool
+    tier3_assessed: bool
+    tier1_unlocked: bool
+    tier2_unlocked: bool
+    tier3_unlocked: bool
+    assessment_complete: bool
     tier1_min: int | None
     flag_tier1_immediate: bool
     watchlist: bool
@@ -48,55 +55,55 @@ class CustomerSummaryRow:
 
 
 def map_customer_summary(r: CustomerSummaryRow) -> CustomerSummaryView:
-    """
-    Maps Rows to View DTO using comprehensions
-    """
     return CustomerSummaryView(**asdict(r))
 
 
 @dataclass(frozen=True, slots=True)
 class CustomerDashboardView:
-    """
-    Operator-facing, aggregated, detailed view of
-    Customer status, needs, intake and eligibility triage.
-    Database fields stored in tables as noted.
-    """
-
-    entity_ulid: str  # Customer table
-    status: str  # Customer table
-    intake_step: str  # Customer table
-    intake_completed_at_iso: str | None  # Customer table
-    needs_state: str  # Customer table
-    watchlist: bool  # Customer table
-
-    veteran_status: str  # CustomerEligibility table
-    homeless_status: str  # CustomerEligibility table
-
-    assessment_version: int  # CustomerProfile table
-    last_assessed_at_iso: str | None  # CustomerProfile table
-
-    tier1_min: int | None  # Customer table
-    tier2_min: int | None  # Customer table
-    tier3_min: int | None  # Customer table
-    flag_tier1_immediate: bool  # Customer table
-
-
-@dataclass(frozen=True, slots=True)
-class CustomerDashboardRow:
-    """
-    Row DTO for building list views
-    """
-
     entity_ulid: str
     status: str
     intake_step: str
     intake_completed_at_iso: str | None
-    needs_state: str
     watchlist: bool
+    eligibility_complete: bool
+    entity_package_incomplete: bool
     veteran_status: str
-    homeless_status: str
+    housing_status: str
     assessment_version: int
     last_assessed_at_iso: str | None
+    tier1_assessed: bool
+    tier2_assessed: bool
+    tier3_assessed: bool
+    tier1_unlocked: bool
+    tier2_unlocked: bool
+    tier3_unlocked: bool
+    assessment_complete: bool
+    tier1_min: int | None
+    tier2_min: int | None
+    tier3_min: int | None
+    flag_tier1_immediate: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CustomerDashboardRow:
+    entity_ulid: str
+    status: str
+    intake_step: str
+    intake_completed_at_iso: str | None
+    watchlist: bool
+    eligibility_complete: bool
+    entity_package_incomplete: bool
+    veteran_status: str
+    housing_status: str
+    assessment_version: int
+    last_assessed_at_iso: str | None
+    tier1_assessed: bool
+    tier2_assessed: bool
+    tier3_assessed: bool
+    tier1_unlocked: bool
+    tier2_unlocked: bool
+    tier3_unlocked: bool
+    assessment_complete: bool
     tier1_min: int | None
     tier2_min: int | None
     tier3_min: int | None
@@ -104,40 +111,29 @@ class CustomerDashboardRow:
 
 
 def map_customer_dashboard(r: CustomerDashboardRow) -> CustomerDashboardView:
-    """
-    Maps Rows to View DTO using comprehensions
-    """
     return CustomerDashboardView(**asdict(r))
 
 
 @dataclass(frozen=True, slots=True)
 class CustomerEligibilityView:
-    """
-    PII-free eligibility snapshot anchored by entity_ulid.
-    """
-
-    entity_ulid: str  # CustomerEligibility table
-    veteran_status: str  # CustomerEligibility table
-    veteran_method: str | None  # CustomerEligibility table
-    branch: str | None  # CustomerEligibility table
-    era: str | None  # CustomerEligibility table
-    homeless_status: str  # CustomerEligibility table
-    approved_by_ulid: str | None  # CustomerEligibility table
-    approved_at_iso: str | None  # CustomerEligibility table
-
-
-@dataclass(frozen=True, slots=True)
-class CustomerEligibilityRow:
-    """
-    Row DTO for building list views
-    """
-
     entity_ulid: str
     veteran_status: str
     veteran_method: str | None
     branch: str | None
     era: str | None
-    homeless_status: str
+    housing_status: str
+    approved_by_ulid: str | None
+    approved_at_iso: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CustomerEligibilityRow:
+    entity_ulid: str
+    veteran_status: str
+    veteran_method: str | None
+    branch: str | None
+    era: str | None
+    housing_status: str
     approved_by_ulid: str | None
     approved_at_iso: str | None
 
@@ -145,24 +141,18 @@ class CustomerEligibilityRow:
 def map_customer_eligibility(
     r: CustomerEligibilityRow,
 ) -> CustomerEligibilityView:
-    """
-    Maps Rows to View DTO using comprehensions
-    """
     return CustomerEligibilityView(**asdict(r))
 
 
 @dataclass(frozen=True, slots=True)
 class EnvelopeDTO:
-    # Required by envelope schema
-    schema_name: str  # e.g. "logistics.issuance_summary"
-    schema_version: int  # e.g. 1
-    title: str  # timeline title
-    summary: str  # short synopsis (non-authoritative)
-    severity: str  # "info" | "warn"
-    happened_at_iso: str  # ISO 8601 string from envelope
-    source_slice: str  # "customers" | "logistics" | "resources"
-
-    # Optional in envelope
+    schema_name: str
+    schema_version: int
+    title: str
+    summary: str
+    severity: str
+    happened_at_iso: str
+    source_slice: str
     source_ref_ulid: str | None
     created_by_actor_ulid: str | None
     public_tags: tuple[str, ...]
@@ -174,27 +164,21 @@ class EnvelopeDTO:
 @dataclass(frozen=True, slots=True)
 class ParsedHistoryBlobDTO:
     envelope: EnvelopeDTO
-    payload: dict[str, Any]  # producer-owned; Customers doesn't interpret
-
-
-# -----------------
-# History Timeline
-# + Detail DTOs
-# -----------------
+    payload: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
 class CustomerHistoryItemView:
-    ulid: str  # CustomerHistory.ulid
-    entity_ulid: str  # CustomerHistory.entity_ulid
-    kind: str  # CustomerHistory.kind
-    happened_at_iso: str  # CustomerHistory.happened_at_iso
-    severity: str  # CustomerHistory.severity
-    title: str | None  # cached envelope.title
-    summary: str | None  # cached envelope.summary
-    source_slice: str  # cached envelope.source_slice
-    source_ref_ulid: str | None  # cached envelope.source_ref_ulid
-    public_tags: tuple[str, ...]  # parsed from public_tags_csv
+    ulid: str
+    entity_ulid: str
+    kind: str
+    happened_at_iso: str
+    severity: str
+    title: str | None
+    summary: str | None
+    source_slice: str
+    source_ref_ulid: str | None
+    public_tags: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,7 +222,6 @@ class CustomerHistoryDetailRow:
 def map_customer_history_detail(
     r: CustomerHistoryDetailRow,
 ) -> CustomerHistoryDetailView:
-    # NOTE: do NOT use asdict() here; it would flatten nested dataclasses.
     return CustomerHistoryDetailView(
         ulid=r.ulid,
         entity_ulid=r.entity_ulid,
@@ -246,11 +229,6 @@ def map_customer_history_detail(
         happened_at_iso=r.happened_at_iso,
         parsed=r.parsed,
     )
-
-
-# -----------------
-# Admin Inbox DTOs
-# -----------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -287,12 +265,6 @@ def map_admin_inbox_item(r: AdminInboxItemRow) -> AdminInboxItemView:
     return AdminInboxItemView(**asdict(r))
 
 
-# -----------------
-# Intake / Update
-# Confirmation DTO
-# -----------------
-
-
 @dataclass(frozen=True, slots=True)
 class ChangeSetDTO:
     entity_ulid: str
@@ -302,7 +274,6 @@ class ChangeSetDTO:
     next_step: str | None
 
 
-# Public exports
 __all__ = [
     "ChangeSetDTO",
     "CustomerHistoryItemView",

@@ -6,13 +6,14 @@ timeline history.
 
 Canonical intent:
 
-- Customer (customer_customer) is a shallow "customer card" for lists and
-  dashboards: intake state, needs state, and cached cues (tier mins, watchlist).
+- Customer (customer_customer) is a shallow customer card for lists and
+  dashboards: coarse status, intake step, and cached service-readiness cues.
 - CustomerEligibility is a facet (PK=FK) holding policy-relevant qualifiers
-  (veteran/homeless status + branch/era + verification method).
+  (veteran/housing status + branch/era + verification method).
 - CustomerProfile anchors the current needs assessment session.
 - CustomerProfileRating stores the 12 category ratings for the CURRENT
-  assessment_version (rows precreated as 'na' when assessment starts).
+  assessment_version and separates touched/assessed truth from the rating
+  result.
 - CustomerHistory is append-only narrative + structured snapshots. Each JSON
   blob is expected to be a CustomerHistory "envelope + payload" document.
 
@@ -49,7 +50,7 @@ from app.lib.models import ULIDPK, IsoTimestamps
 # ---------------------------------------------------------------------------
 
 """
-_CUSTOMER_STATUS = ("intake", "active", "suspended", "archived")
+_CUSTOMER_STATUS = ("intake", "active", "inactive", "archived")
 
 _CUSTOMER_INTAKE_STEP = (
     "ensure",
@@ -61,8 +62,13 @@ _CUSTOMER_INTAKE_STEP = (
     "complete",
 )
 
-_NEEDS_STATE = ("not_started", "in_progress", "complete", "skipped")
-
+_PROFILE_RATING_VALUE = (
+    "immediate",
+    "marginal",
+    "sufficient",
+    "unknown",
+    "not_applicable",
+)
 
 _HISTORY_SEVERITY = ("info", "warn")
 """
@@ -76,7 +82,7 @@ class Customer(db.Model, IsoTimestamps):
     """
     FACET TABLE (anchor = entity_ulid)
 
-    Shallow, denormalized "customer card" for dashboards/lists and wizard
+    Shallow, denormalized "customer card" for dashboards/lists and workflow
     resume logic. No high-granularity profile details live here.
     """
 
@@ -88,7 +94,7 @@ class Customer(db.Model, IsoTimestamps):
         primary_key=True,
     )
 
-    # lifecycle/status
+    # coarse lifecycle/status posture
     status: Mapped[str] = mapped_column(
         String(24),
         default="intake",
@@ -96,7 +102,7 @@ class Customer(db.Model, IsoTimestamps):
         index=True,
     )
 
-    # wizard state
+    # operator workflow step (navigation truth, not deep business truth)
     intake_step: Mapped[str] = mapped_column(
         String(32),
         default="ensure",
@@ -109,15 +115,71 @@ class Customer(db.Model, IsoTimestamps):
         nullable=True,
     )
 
-    # needs assessment posture
-    needs_state: Mapped[str] = mapped_column(
-        String(24),
-        default="not_started",
+    # staged service-readiness truth
+    eligibility_complete: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
         nullable=False,
         index=True,
     )
 
-    # escape hatch
+    entity_package_incomplete: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True,
+    )
+
+    tier1_assessed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True,
+    )
+
+    tier2_assessed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True,
+    )
+
+    tier3_assessed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True,
+    )
+
+    tier1_unlocked: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True,
+    )
+
+    tier2_unlocked: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True,
+    )
+
+    tier3_unlocked: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True,
+    )
+
+    assessment_complete: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True,
+    )
+
+    # escape hatch / operator review flag
     watchlist: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
@@ -125,7 +187,7 @@ class Customer(db.Model, IsoTimestamps):
         index=True,
     )
 
-    # cached cues (derived from profile ratings + watchlist rules)
+    # cached cues (derived from profile ratings + workflow rules)
     tier1_min: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
@@ -170,7 +232,7 @@ class Customer(db.Model, IsoTimestamps):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('intake','active','suspended','archived')",
+            "status IN ('intake','active','inactive','archived')",
             name="ck_customer_status_enum",
         ),
         CheckConstraint(
@@ -179,11 +241,6 @@ class Customer(db.Model, IsoTimestamps):
             "'review','complete'"
             ")",
             name="ck_customer_intake_step_enum",
-        ),
-        CheckConstraint(
-            "needs_state IN "
-            "('not_started','in_progress','complete','skipped')",
-            name="ck_customer_needs_state_enum",
         ),
         CheckConstraint(
             "tier1_min IS NULL OR (tier1_min BETWEEN 1 AND 3)",
@@ -214,7 +271,7 @@ class CustomerEligibility(db.Model, IsoTimestamps):
     state.
 
     Effective qualifier (used by downstream flows) should be computed as:
-      homeless_effective = (homeless_status == 'verified') OR housing_immediate
+      housing_effective = (housing_status == 'unhoused') OR housing_immediate
     """
 
     __tablename__ = "customer_eligibility"
@@ -250,11 +307,10 @@ class CustomerEligibility(db.Model, IsoTimestamps):
         index=True,
     )
 
-    homeless_status: Mapped[str] = mapped_column(
-        String(16),
-        default="unknown",
+    housing_status = db.Column(
+        db.String(16),
         nullable=False,
-        index=True,
+        default="unknown",
     )
 
     approved_by_ulid: Mapped[str | None] = mapped_column(
@@ -299,6 +355,10 @@ class CustomerEligibility(db.Model, IsoTimestamps):
             "NOT (approved_at_iso IS NOT NULL AND approved_by_ulid IS NULL)",
             name="ck_cel_timestamp_requires_approver",
         ),
+        CheckConstraint(
+            housing_status.in_(("unknown", "housed", "unhoused")),
+            name="ck_customer_elig_housing_status",
+        ),
     )
 
 
@@ -313,7 +373,8 @@ class CustomerProfile(db.Model, IsoTimestamps):
 
     Anchors the current needs assessment session. assessment_version starts at 0
     (no assessment yet). When assessment begins, version is incremented to 1 and
-    the 12 rating rows are precreated with rating_value='na'.
+    the 12 rating rows are precreated with is_assessed=False and rating_value
+    unset.
     """
 
     __tablename__ = "customer_profile"
@@ -385,10 +446,16 @@ class CustomerProfileRating(db.Model, IsoTimestamps):
         primary_key=True,
     )
 
-    rating_value: Mapped[str] = mapped_column(
-        String(16),
-        default="na",
+    is_assessed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
         nullable=False,
+        index=True,
+    )
+
+    rating_value: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
         index=True,
     )
 
@@ -403,8 +470,14 @@ class CustomerProfileRating(db.Model, IsoTimestamps):
             name="ck_cpr_assessment_version_pos",
         ),
         CheckConstraint(
-            "rating_value IN ('immediate','marginal','sufficient','unknown','na')",
+            "rating_value IS NULL OR rating_value IN ("
+            "'immediate','marginal','sufficient','unknown','not_applicable'"
+            ")",
             name="ck_cpr_rating_value_enum",
+        ),
+        CheckConstraint(
+            "NOT (is_assessed = 0 AND rating_value IS NOT NULL)",
+            name="ck_cpr_unassessed_requires_null_rating",
         ),
     )
 

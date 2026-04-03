@@ -12,7 +12,11 @@
   <h2 style="margin-top:0;">Summary</h2>
   <table class="table">
     <tr><th>Status</th><td><code>{{ dash.status }}</code></td></tr>
-    <tr><th>Needs state</th><td><code>{{ dash.needs_state }}</code></td></tr>
+    <tr><th>Eligibility complete</th><td>{{ "yes" if dash.eligibility_complete else "no" }}</td></tr>
+    <tr><th>Assessment complete</th><td>{{ "yes" if dash.assessment_complete else "no" }}</td></tr>
+    <tr><th>Tier 1 assessed</th><td>{{ "yes" if dash.tier1_assessed else "no" }}</td></tr>
+    <tr><th>Tier 2 assessed</th><td>{{ "yes" if dash.tier2_assessed else "no" }}</td></tr>
+    <tr><th>Tier 3 assessed</th><td>{{ "yes" if dash.tier3_assessed else "no" }}</td></tr>
     <tr><th>Tier 1</th><td>{{ dash.tier1_min if dash.tier1_min is not none else "unknown" }}</td></tr>
     <tr><th>Tier 2</th><td>{{ dash.tier2_min if dash.tier2_min is not none else "unknown" }}</td></tr>
     <tr><th>Tier 3</th><td>{{ dash.tier3_min if dash.tier3_min is not none else "unknown" }}</td></tr>

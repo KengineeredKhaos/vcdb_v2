@@ -61,10 +61,10 @@
     </label>
 
     <label class="fld">
-      <div class="lbl">Homeless status</div>
-      <select name="homeless_status" id="id_homeless_status" required>
-        {% for opt in ["unknown","verified","unverified"] %}
-          <option value="{{ opt }}" {{ "selected" if snap.homeless_status==opt else "" }}>{{ opt }}</option>
+      <div class="lbl">Housing status</div>
+      <select name="housing_status" id="id_housing_status" required>
+        {% for opt in ["unknown","housed","unhoused"] %}
+          <option value="{{ opt }}" {{ "selected" if snap.housing_status==opt else "" }}>{{ opt }}</option>
         {% endfor %}
       </select>
     </label>

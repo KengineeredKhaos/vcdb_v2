@@ -36,12 +36,12 @@
     <h2 style="margin-top:0;">At a glance</h2>
     <table class="table">
       <tr><th>Status</th><td><code>{{ dash.status }}</code></td></tr>
-      <tr><th>Needs state</th><td><code>{{ dash.needs_state }}</code></td></tr>
       <tr><th>Watchlist</th><td>{{ "yes" if dash.watchlist else "no" }}</td></tr>
       <tr><th>Resume step</th><td><code>{{ dash.intake_step }}</code></td></tr>
       <tr><th>Completed</th><td>{{ dash.intake_completed_at_iso or "—" }}</td></tr>
+      <tr><th>Entity package incomplete</th><td>{{ "yes" if dash.entity_package_incomplete else "no" }}</td></tr>
       <tr><th>Veteran</th><td><code>{{ dash.veteran_status }}</code></td></tr>
-      <tr><th>Homeless</th><td><code>{{ dash.homeless_status }}</code></td></tr>
+      <tr><th>Housing</th><td><code>{{ dash.housing_status }}</code></td></tr>
     </table>
   </section>
 
@@ -53,11 +53,12 @@
       {% set branch = e.branch|default(None) %}
       {% set era = e.era|default(None) %}
       <table class="table">
+        <tr><th>Eligibility complete</th><td>{{ "yes" if dash.eligibility_complete else "no" }}</td></tr>
         <tr><th>Veteran status</th><td><code>{{ e.veteran_status }}</code></td></tr>
         <tr><th>Verification method</th><td><code>{{ e.veteran_method or "—" }}</code></td></tr>
         <tr><th>Branch</th><td><code>{{ branch or "—" }}</code></td></tr>
         <tr><th>Era</th><td><code>{{ era or "—" }}</code></td></tr>
-        <tr><th>Homeless status</th><td><code>{{ e.homeless_status }}</code></td></tr>
+        <tr><th>Housing status</th><td><code>{{ e.housing_status }}</code></td></tr>
         <tr>
           <th>Approval</th>
           <td>
@@ -81,6 +82,13 @@
     <table class="table">
       <tr><th>Assessment version</th><td>{{ dash.assessment_version }}</td></tr>
       <tr><th>Last assessed</th><td>{{ dash.last_assessed_at_iso or "(never)" }}</td></tr>
+      <tr><th>Tier 1 assessed</th><td>{{ "yes" if dash.tier1_assessed else "no" }}</td></tr>
+      <tr><th>Tier 2 assessed</th><td>{{ "yes" if dash.tier2_assessed else "no" }}</td></tr>
+      <tr><th>Tier 3 assessed</th><td>{{ "yes" if dash.tier3_assessed else "no" }}</td></tr>
+      <tr><th>Tier 1 unlocked</th><td>{{ "yes" if dash.tier1_unlocked else "no" }}</td></tr>
+      <tr><th>Tier 2 unlocked</th><td>{{ "yes" if dash.tier2_unlocked else "no" }}</td></tr>
+      <tr><th>Tier 3 unlocked</th><td>{{ "yes" if dash.tier3_unlocked else "no" }}</td></tr>
+      <tr><th>Assessment complete</th><td>{{ "yes" if dash.assessment_complete else "no" }}</td></tr>
       <tr><th>Tier 1 min</th><td>{{ dash.tier1_min if dash.tier1_min is not none else "unknown" }}</td></tr>
       <tr><th>Tier 2 min</th><td>{{ dash.tier2_min if dash.tier2_min is not none else "unknown" }}</td></tr>
       <tr><th>Tier 3 min</th><td>{{ dash.tier3_min if dash.tier3_min is not none else "unknown" }}</td></tr>
@@ -88,15 +96,8 @@
     </table>
 
     <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:10px;">
-      <a class="btn" href="{{ url_for('customers.intake_needs_tier1_get', entity_ulid=entity_ulid) }}">
-        {% if reassess_due|default(false) %}Begin reassessment{% else %}Reassess{% endif %}
-      </a>
       <a class="btn" href="{{ url_for('customers.intake_needs_tier1_get', entity_ulid=entity_ulid) }}">Edit Needs</a>
     </div>
-
-    <p class="muted" style="margin:10px 0 0;">
-      Reassessment starts when you submit Tier 1.
-    </p>
   </section>
 
   <section class="card">
@@ -110,7 +111,7 @@
           "income","employment","transportation","education",
           "family","peergroup","tech"
         ] %}
-          <tr><th>{{ k }}</th><td><code>{{ r.get(k, "na") }}</code></td></tr>
+          <tr><th>{{ k }}</th><td><code>{{ r.get(k, "unassessed") }}</code></td></tr>
         {% endfor %}
       </table>
     {% else %}

@@ -1120,7 +1120,7 @@ def needs_complete(
 
     db.session.flush()
 
-    history_kind, history_blob = _build_assessment_history_entry(
+    history_blob = _build_assessment_history_blob(
         entity_ulid=ent,
         actor_ulid=act,
         happened_at=now,
@@ -1131,7 +1131,7 @@ def needs_complete(
 
     history_ulid = append_history_entry(
         target_entity_ulid=ent,
-        kind=history_kind,
+        kind=history_blob["kind"],
         blob_json=history_blob,
         actor_ulid=act,
         request_id=rid,
@@ -1267,7 +1267,7 @@ def _assessment_factor_list(
     return out
 
 
-def _build_assessment_history_entry(
+def _build_assessment_history_blob(
     *,
     entity_ulid: str,
     actor_ulid: str,
@@ -1275,7 +1275,7 @@ def _build_assessment_history_entry(
     assessment_version: int,
     eligibility: CustomerEligibility,
     rows: list[CustomerProfileRating],
-) -> tuple[str, dict[str, Any]]:
+) -> dict[str, Any]:
     session_type = _assessment_session_type(assessment_version)
 
     if session_type == "initial":
@@ -1292,7 +1292,8 @@ def _build_assessment_history_entry(
         )
         kind = "assessment.reassessment"
 
-    blob = {
+    return {
+        "kind": kind,
         "envelope": {
             "schema_name": "customers.assessment.synopsis.v1",
             "schema_version": 1,
@@ -1324,7 +1325,6 @@ def _build_assessment_history_entry(
             "note": None,
         },
     }
-    return kind, blob
 
 
 def append_history_entry(

@@ -21,7 +21,7 @@ INTAKE_STEPS = (
 )
 
 VETERAN_STATUS = ("unknown", "verified", "unverified", "not_veteran")
-HOMELESS_STATUS = ("unknown", "verified", "unverified")
+HOUSING_STATUS = ("unknown", "housed", "unhoused")
 VETERAN_METHOD = ("dd214", "va_id", "state_dl_veteran", "other")
 BRANCH = ("USA", "USMC", "USN", "USAF", "USSF", "USCG")
 ERA = ("WWI", "WWII", "Korea", "Vietnam", "ColdWar", "GWOT", "PsyWar")
@@ -48,5 +48,11 @@ TIER1 = ("food", "hygiene", "health", "housing", "clothing")
 TIER2 = ("income", "employment", "transportation", "education")
 TIER3 = ("family", "peergroup", "tech")
 
-RATING_ALLOWED = ("immediate", "marginal", "sufficient", "unknown", "na")
+RATING_ALLOWED = (
+    "immediate",
+    "marginal",
+    "sufficient",
+    "unknown",
+    "not_applicable",
+)
 RANK = {"immediate": 1, "marginal": 2, "sufficient": 3}
