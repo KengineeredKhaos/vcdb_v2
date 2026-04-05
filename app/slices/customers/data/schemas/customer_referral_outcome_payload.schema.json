@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vcdb.customer_referral_outcome_payload.schema.json",
+  "title": "VCDB Customer Referral Outcome Payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "referral_ulid",
+    "resource_ulid",
+    "resource_name",
+    "need_key",
+    "need_label",
+    "outcome",
+    "outcome_label"
+  ],
+  "properties": {
+    "referral_ulid": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "resource_ulid": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "resource_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "need_key": {
+      "type": "string",
+      "enum": [
+        "food",
+        "hygiene",
+        "health",
+        "housing",
+        "clothing",
+        "income",
+        "employment",
+        "transportation",
+        "education",
+        "family",
+        "peergroup",
+        "tech"
+      ]
+    },
+    "need_label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "connected",
+        "attempted_no_contact",
+        "declined_by_customer",
+        "declined_by_resource",
+        "waitlisted",
+        "in_progress",
+        "completed",
+        "unable_to_verify",
+        "other"
+      ]
+    },
+    "outcome_label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "note": {
+      "type": ["string", "null"],
+      "maxLength": 4000
+    }
+  }
+}

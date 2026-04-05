@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vcdb.customer_referral_payload.schema.json",
+  "title": "VCDB Customer Referral Payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "referral_ulid",
+    "resource_ulid",
+    "resource_name",
+    "need_key",
+    "need_label",
+    "method"
+  ],
+  "properties": {
+    "referral_ulid": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "resource_ulid": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "resource_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "need_key": {
+      "type": "string",
+      "enum": [
+        "food",
+        "hygiene",
+        "health",
+        "housing",
+        "clothing",
+        "income",
+        "employment",
+        "transportation",
+        "education",
+        "family",
+        "peergroup",
+        "tech"
+      ]
+    },
+    "need_label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "match_bucket": {
+      "type": ["string", "null"],
+      "enum": ["exact", "adjacent", "review", null]
+    },
+    "method": {
+      "type": "string",
+      "enum": ["phone", "email", "in_person", "handoff", "other"]
+    },
+    "note": {
+      "type": ["string", "null"],
+      "maxLength": 4000
+    }
+  }
+}

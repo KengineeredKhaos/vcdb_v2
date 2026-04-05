@@ -1,0 +1,81 @@
+{% extends "layout/base.html" %}
+{% import "_macros.html" as macros %}
+
+{% block title %}Customer · Record Referral Outcome{% endblock %}
+
+{% block content %}
+{% set c = entity_card|default(None) %}
+{% set name = (c.display_name if c else (display_name|default(entity_ulid))) %}
+<section class="card" style="margin-top:18px;">
+  <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div>
+      <h1 style="margin:0 0 6px;">Record Referral Outcome</h1>
+      <div class="muted">
+        {{ name }} · <code>{{ entity_ulid }}</code>
+        {% if c and c.short_label %} · {{ c.short_label }}{% endif %}
+      </div>
+    </div>
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+      <a class="btn" href="{{ url_for('customers.customer_overview_get', entity_ulid=entity_ulid) }}">Back to Overview</a>
+      <a class="btn" href="{{ url_for('customers.customer_history_timeline_get', entity_ulid=entity_ulid) }}">History</a>
+    </div>
+  </div>
+</section>
+
+<form class="card" method="post"
+      action="{{ url_for('customers.referral_outcome_new_post', entity_ulid=entity_ulid) }}">
+  {{ macros.csrf_field() }}
+
+  <div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap:12px;">
+    <label class="fld">
+      <div class="lbl">Referral ULID</div>
+      <input type="text" name="referral_ulid" value="{{ seed.referral_ulid or '' }}" required maxlength="26">
+    </label>
+
+    <label class="fld">
+      <div class="lbl">Resource ULID</div>
+      <input type="text" name="resource_ulid" value="{{ seed.resource_ulid or '' }}" required maxlength="26">
+      {% if seed.resource_name %}
+        <div class="help">{{ seed.resource_name }}</div>
+      {% endif %}
+    </label>
+
+    <label class="fld">
+      <div class="lbl">Need</div>
+      <select name="need_key" required>
+        <option value="">(select)</option>
+        {% for key in need_keys %}
+          <option value="{{ key }}" {{ 'selected' if seed.need_key == key else '' }}>{{ need_labels.get(key, key) }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="fld">
+      <div class="lbl">Outcome</div>
+      <select name="outcome" required>
+        <option value="">(select)</option>
+        {% for outcome in outcomes %}
+          <option value="{{ outcome }}" {{ 'selected' if seed.outcome == outcome else '' }}>{{ outcome }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+
+  <label class="fld" style="display:block; margin-top:12px;">
+    <div class="lbl">Synopsis</div>
+    <textarea name="synopsis" rows="4" required maxlength="512">{{ seed.synopsis }}</textarea>
+    <div class="help">Timeline-facing synopsis for what became of the referral.</div>
+  </label>
+
+  <label class="fld" style="display:block; margin-top:12px;">
+    <div class="lbl">Narrative note</div>
+    <textarea name="note" rows="6" maxlength="4000">{{ seed.note }}</textarea>
+    <div class="help">Optional free-form detail stored in payload narrative.</div>
+  </label>
+
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:12px;">
+    <button class="btn" type="submit">Record Outcome</button>
+    <a class="btn" href="{{ url_for('customers.customer_history_timeline_get', entity_ulid=entity_ulid) }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

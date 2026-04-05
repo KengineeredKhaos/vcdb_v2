@@ -340,9 +340,9 @@ Conventions:
 
 - Current posture is intentionally temporary:
 
--  parts of the project still store DB timestamps as ISO-8601 Z strings for consistency with existing tables/models
+- parts of the project still store DB timestamps as ISO-8601 Z strings for consistency with existing tables/models
 
--  canon direction in app/lib/chrono.py is to use naive UTC DateTime for DB columns/defaults/onupdate, and reserve ISO-8601 strings for logs/JSON
+- canon direction in app/lib/chrono.py is to use naive UTC DateTime for DB columns/defaults/onupdate, and reserve ISO-8601 strings for logs/JSON
 
 Before production:
 

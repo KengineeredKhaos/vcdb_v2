@@ -1476,3 +1476,148 @@ These are jobs built on top of cron, not part of cron framework completion.
 ## Customer slice notes from hardening pass
 
 Customer owns customer-domain state, workflow, servicing status, needs/eligibility/profile facts, and customer-facing case history references. It does not own canonical identity/contact/address PII, and it does not own governance authority.
+
+---
+
+## Resource slice hardening notes
+
+#### Canon rule
+
+Every new Resource capability must be handled in **both** places:
+
+- `app/slices/resources/taxonomy.py`
+
+- `app/slices/resources/matching_matrix.py`
+
+Or, if it is not intended for customer need matching, it must be explicitly listed as excluded from matching with a reason.
+
+#### Step 1 — Decide whether the capability is real and distinct
+
+Before adding a capability key, confirm that it represents a genuinely distinct provider service and is not:
+
+- a duplicate synonym of an existing key
+
+- too broad to be operationally useful
+
+- so narrow that it should just be covered by notes on an existing capability
+
+Capability keys should stay granular enough to support operator search and matching, but not so microscopic that the taxonomy becomes brittle.
+
+#### Step 2 — Add the capability to `resources/taxonomy.py`
+
+Add the new key under the correct Resource domain in:
+
+- `RESOURCE_CAPABILITY_KEYS_BY_DOMAIN`
+
+Use the existing naming style:
+
+- lower-case
+
+- underscore-separated
+
+- plain operational language
+
+If a new domain is required, create it only when the capability does not fit honestly under an existing domain.
+
+#### Step 3 — Make an explicit matching decision in `matching_matrix.py`
+
+For the new capability, decide one of the following:
+
+##### A. Exact match
+
+The capability is a direct response to a Customer need key.
+
+Add it to the `exact` tuple for one or more relevant Customer need rows.
+
+##### B. Adjacent match
+
+The capability does not directly satisfy the need, but it reduces barriers or supports the outcome.
+
+Add it to the `adjacent` tuple for one or more relevant Customer need rows.
+
+##### C. Review-only
+
+The capability may be useful in some cases, but the relationship is too fuzzy or situational to auto-promote.
+
+Add it to the `review` tuple for one or more relevant Customer need rows.
+
+##### D. Excluded from customer matching
+
+The capability is real, but it should not appear in normal Customer → Resource matching.
+
+List it in an explicit excluded set with a short reason.
+
+Typical examples:
+
+- event services
+
+- partner discount offers
+
+- meta/unclassified
+
+- internal or situational support capabilities not meant for direct customer matching
+
+#### Step 4 — Update or add drift tests
+
+Any change to capability taxonomy should be accompanied by tests that prove:
+
+- every capability referenced in `matching_matrix.py` exists in `resources/taxonomy.py`
+
+- every taxonomy capability is either:
+  
+  - used in `exact`, `adjacent`, or `review`, or
+  
+  - explicitly excluded from customer matching
+
+- no typo or orphaned capability codes exist in the matrix
+
+This prevents silent drift between service vocabulary and matching behavior.
+
+#### Step 5 — Review rows for unintended overlap
+
+After adding the new capability, review the impacted Customer need rows and confirm:
+
+- the capability is not over-mapped into unrelated need buckets
+
+- the capability is not listed as both exact and adjacent for the same need
+
+- the capability does not create a fake sense of precision where operator judgment is still required
+
+Matching logic should stay readable and conservative.
+
+#### Step 6 — Update notes when the capability changes operator behavior
+
+If the new capability changes how operators interpret a Customer need row, update the `notes` field in the affected matrix row so Future Dev can understand why the mapping exists.
+
+#### Matching philosophy
+
+Customer taxonomy and Resource taxonomy are intentionally different.
+
+- Customer need keys are broad human-need buckets
+
+- Resource capability keys are concrete provider/service offerings
+
+The bridge table is where those two vocabularies are intentionally connected.
+
+Do not collapse Resource taxonomy into Customer taxonomy.  
+Do not add a capability without deciding how it participates in matching.
+
+#### Completion standard
+
+A capability addition is complete only when all of the following are true:
+
+- the capability exists in `resources/taxonomy.py`
+
+- it has an explicit matching decision in `matching_matrix.py`
+
+- exclusions are documented where applicable
+
+- drift tests pass
+
+If one of those is missing, the capability addition is incomplete.
+
+---
+
+## Customer refit to incorporate Resouce Referral
+
+Referral and referral outcome are documented interactions, not managed workflow objects. For now, VCDB records them as Ledger events plus CustomerHistory narrative entries. The CustomerHistory envelope keeps a short scannable title and a richer `summary` capped at 512 characters, while fuller descriptive context lives in the producer payload.

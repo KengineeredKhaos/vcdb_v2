@@ -15,6 +15,7 @@ from typing import Any, TypedDict
 from app.extensions.errors import ContractError
 from app.slices.resources import mapper as res_mapper
 from app.slices.resources import services as svc
+from app.slices.resources import services_matching as match_svc
 
 
 class ResourceFactsDTO(TypedDict, total=False):
@@ -28,8 +29,31 @@ class ResourceFactsDTO(TypedDict, total=False):
 
 class ResourceProfileHintsDTO(TypedDict, total=False):
     entity_ulid: str
-    service_area_notes: str | None
+    service_area_note: str | None
     sla_note: str | None
+
+
+class ResourceNeedMatchItemDTO(TypedDict, total=False):
+    entity_ulid: str
+    readiness_status: str
+    mou_status: str
+    matched_capability_keys: list[str]
+    bucket: str
+    reason_codes: list[str]
+
+
+class ResourceNeedMatchResultDTO(TypedDict, total=False):
+    customer_ulid: str
+    need_key: str
+    tier: int
+    tier_priority: int | None
+    customer_gate: str
+    blocked_reason: str | None
+    operator_cautions: list[str]
+    exact_matches: list[ResourceNeedMatchItemDTO]
+    adjacent_matches: list[ResourceNeedMatchItemDTO]
+    review_matches: list[ResourceNeedMatchItemDTO]
+    as_of_iso: str
 
 
 __schema__ = {
@@ -48,13 +72,29 @@ __schema__ = {
         "requires": ["entity_ulid"],
         "returns_keys": [
             "entity_ulid",
-            "service_area_notes",
-            "sla_notes",
+            "service_area_note",
+            "sla_note",
         ],
     },
     "find_resources": {
         "requires": [],
         "returns_keys": ["items", "total", "page", "per"],
+    },
+    "match_customer_need": {
+        "requires": ["customer_ulid", "need_key"],
+        "returns_keys": [
+            "customer_ulid",
+            "need_key",
+            "tier",
+            "tier_priority",
+            "customer_gate",
+            "blocked_reason",
+            "operator_cautions",
+            "exact_matches",
+            "adjacent_matches",
+            "review_matches",
+            "as_of_iso",
+        ],
     },
 }
 
@@ -99,11 +139,6 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
     )
 
 
-# -----------------
-# Read-Only Contracts
-# -----------------
-
-
 def get_resource_facts(*, entity_ulid: str) -> ResourceFactsDTO | None:
     where = "resources_v2.get_resource_facts"
     try:
@@ -124,8 +159,8 @@ def get_resource_profile_hints(
         hints = svc.get_profile_hints(entity_ulid)
         return {
             "entity_ulid": entity_ulid,
-            "service_area_notes": hints.get("service_area_notes"),
-            "sla_notes": hints.get("sla_notes"),
+            "service_area_note": hints.get("service_area_note"),
+            "sla_note": hints.get("sla_note"),
         }
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
@@ -162,10 +197,53 @@ def find_resources(
         raise _as_contract_error(where, exc) from exc
 
 
-# -----------------
-# Mutation Services
-# & Confirmations
-# -----------------
+def _match_item_to_dto(
+    item: match_svc.ResourceNeedMatchItemView,
+) -> ResourceNeedMatchItemDTO:
+    return {
+        "entity_ulid": item.entity_ulid,
+        "readiness_status": item.readiness_status,
+        "mou_status": item.mou_status,
+        "matched_capability_keys": list(item.matched_capability_keys),
+        "bucket": item.bucket,
+        "reason_codes": list(item.reason_codes),
+    }
+
+
+def match_customer_need(
+    *,
+    customer_ulid: str,
+    need_key: str,
+    include_adjacent: bool = True,
+) -> ResourceNeedMatchResultDTO:
+    where = "resources_v2.match_customer_need"
+    try:
+        view = match_svc.match_customer_need(
+            customer_ulid=customer_ulid,
+            need_key=need_key,
+            include_adjacent=include_adjacent,
+        )
+        return {
+            "customer_ulid": view.customer_ulid,
+            "need_key": view.need_key,
+            "tier": view.tier,
+            "tier_priority": view.tier_priority,
+            "customer_gate": view.customer_gate,
+            "blocked_reason": view.blocked_reason,
+            "operator_cautions": list(view.operator_cautions),
+            "exact_matches": [
+                _match_item_to_dto(v) for v in view.exact_matches
+            ],
+            "adjacent_matches": [
+                _match_item_to_dto(v) for v in view.adjacent_matches
+            ],
+            "review_matches": [
+                _match_item_to_dto(v) for v in view.review_matches
+            ],
+            "as_of_iso": view.as_of_iso,
+        }
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
 
 
 def ensure_resource(
@@ -187,4 +265,5 @@ __all__ = [
     "get_resource_profile_hints",
     "ensure_resource",
     "find_resources",
+    "match_customer_need",
 ]

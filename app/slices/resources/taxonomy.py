@@ -90,6 +90,15 @@ RESOURCE_CAPABILITY_KEYS_BY_DOMAIN: Final[dict[str, tuple[str, ...]]] = {
         "legal_criminal",
         "legal_civil",
     ),
+    "employment_services": (
+        "temporary_staffing_service",
+        "casual_labor",
+        "union_hall",
+        "handyman_general",
+        "yard_maintenance",
+        "weed_abatement",
+        "junk_trash_removal",
+    ),
     "events": (
         "event_coordination",
         "promotions_print_radio",
@@ -119,10 +128,6 @@ RESOURCE_CAPABILITY_KEYS_BY_DOMAIN: Final[dict[str, tuple[str, ...]]] = {
         "household_goods",
         "internet_phone",
         "childcare_assistance",
-        "handyman_general",
-        "yard_maintenance",
-        "weed_abatement",
-        "junk_trash_removal",
     ),
     "meta": ("unclassified",),
     "quartermaster": (

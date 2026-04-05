@@ -17,10 +17,18 @@ from flask import (
 )
 
 from app.extensions import auth_ctx, db
+from app.extensions.errors import ContractError
 from app.lib import request_ctx
 
 from . import services as svc
 from .models import Customer, CustomerEligibility
+from .taxonomy import (
+    NEEDS_CATEGORY_KEY,
+    NEED_LABELS,
+    REFERRAL_MATCH_BUCKETS,
+    REFERRAL_METHODS,
+    REFERRAL_OUTCOMES,
+)
 
 
 def _try_entity_card(entity_ulid: str | None):
@@ -249,6 +257,29 @@ def customer_overview_get(entity_ulid: str):
     )
 
 
+@bp.get("/<entity_ulid>/providers")
+def customer_provider_matches_get(entity_ulid: str):
+    _ctx_ro()
+    need_key = (request.args.get("need_key") or "").strip().lower()
+    try:
+        vm = svc.get_provider_match_vm(
+            entity_ulid=entity_ulid,
+            need_key=need_key or None,
+            include_adjacent=True,
+        )
+    except ValueError:
+        abort(400)
+    except ContractError as exc:
+        abort(exc.http_status)
+
+    return render_template(
+        "customers/provider_matches.html",
+        entity_ulid=entity_ulid,
+        entity_card=_try_entity_card(entity_ulid),
+        vm=vm,
+    )
+
+
 # -----------------
 # Dataset #5/#6
 # History Timeline
@@ -291,6 +322,159 @@ def customer_history_detail_get(entity_ulid: str, history_ulid: str):
         display_name=display_name,
         detail=d,
     )
+
+
+@bp.get("/<entity_ulid>/referrals/new")
+def customer_referral_new_get(entity_ulid: str):
+    _ctx_ro()
+    seed = svc.get_referral_compose_seed(
+        entity_ulid=entity_ulid,
+        resource_ulid=request.args.get("resource_ulid") or None,
+        need_key=request.args.get("need_key") or None,
+        match_bucket=request.args.get("match_bucket") or None,
+        method=request.args.get("method") or None,
+        synopsis=request.args.get("synopsis") or None,
+        note=request.args.get("note") or None,
+    )
+    return render_template(
+        "customers/referral_new.html",
+        entity_ulid=entity_ulid,
+        entity_card=_try_entity_card(entity_ulid),
+        display_name=svc.get_entity_display_name(entity_ulid),
+        seed=seed,
+        need_keys=NEEDS_CATEGORY_KEY,
+        need_labels=NEED_LABELS,
+        methods=REFERRAL_METHODS,
+        match_buckets=REFERRAL_MATCH_BUCKETS,
+    )
+
+
+@bp.post("/<entity_ulid>/referrals/new")
+def customer_referral_new_post(entity_ulid: str):
+    rid, actor = _ctx_mut()
+    try:
+        result = svc.record_resource_referral(
+            entity_ulid=entity_ulid,
+            resource_ulid=request.form.get("resource_ulid", ""),
+            need_key=request.form.get("need_key", ""),
+            method=request.form.get("method", ""),
+            synopsis=request.form.get("synopsis", ""),
+            actor_ulid=actor,
+            request_id=rid,
+            match_bucket=request.form.get("match_bucket") or None,
+            note=request.form.get("note") or None,
+        )
+        db.session.commit()
+        flash("Referral recorded in history.", "success")
+        return redirect(
+            url_for(
+                "customers.customer_history_detail_get",
+                entity_ulid=entity_ulid,
+                history_ulid=result["history_ulid"],
+            )
+        )
+    except Exception as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        seed = svc.get_referral_compose_seed(
+            entity_ulid=entity_ulid,
+            resource_ulid=request.form.get("resource_ulid") or None,
+            need_key=request.form.get("need_key") or None,
+            match_bucket=request.form.get("match_bucket") or None,
+            method=request.form.get("method") or None,
+            synopsis=request.form.get("synopsis") or None,
+            note=request.form.get("note") or None,
+        )
+        return render_template(
+            "customers/referral_new.html",
+            entity_ulid=entity_ulid,
+            entity_card=_try_entity_card(entity_ulid),
+            display_name=svc.get_entity_display_name(entity_ulid),
+            seed=seed,
+            need_keys=NEEDS_CATEGORY_KEY,
+            need_labels=NEED_LABELS,
+            methods=REFERRAL_METHODS,
+            match_buckets=REFERRAL_MATCH_BUCKETS,
+        )
+
+
+@bp.get("/<entity_ulid>/referrals/outcomes/new")
+def referral_outcome_new_get(entity_ulid: str):
+    _ctx_ro()
+    history_ulid = request.args.get("history_ulid") or None
+    if history_ulid:
+        seed = svc.get_referral_seed_from_history(
+            entity_ulid=entity_ulid,
+            history_ulid=history_ulid,
+        )
+    else:
+        seed = svc.get_referral_outcome_compose_seed(
+            entity_ulid=entity_ulid,
+            referral_ulid=request.args.get("referral_ulid") or None,
+            resource_ulid=request.args.get("resource_ulid") or None,
+            need_key=request.args.get("need_key") or None,
+            outcome=request.args.get("outcome") or None,
+            synopsis=request.args.get("synopsis") or None,
+            note=request.args.get("note") or None,
+        )
+    return render_template(
+        "customers/referral_outcome_new.html",
+        entity_ulid=entity_ulid,
+        entity_card=_try_entity_card(entity_ulid),
+        display_name=svc.get_entity_display_name(entity_ulid),
+        seed=seed,
+        need_keys=NEEDS_CATEGORY_KEY,
+        need_labels=NEED_LABELS,
+        outcomes=REFERRAL_OUTCOMES,
+    )
+
+
+@bp.post("/<entity_ulid>/referrals/outcomes/new")
+def referral_outcome_new_post(entity_ulid: str):
+    rid, actor = _ctx_mut()
+    try:
+        result = svc.record_referral_outcome(
+            entity_ulid=entity_ulid,
+            referral_ulid=request.form.get("referral_ulid", ""),
+            resource_ulid=request.form.get("resource_ulid", ""),
+            need_key=request.form.get("need_key", ""),
+            outcome=request.form.get("outcome", ""),
+            synopsis=request.form.get("synopsis", ""),
+            actor_ulid=actor,
+            request_id=rid,
+            note=request.form.get("note") or None,
+        )
+        db.session.commit()
+        flash("Referral outcome recorded in history.", "success")
+        return redirect(
+            url_for(
+                "customers.customer_history_detail_get",
+                entity_ulid=entity_ulid,
+                history_ulid=result["history_ulid"],
+            )
+        )
+    except Exception as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        seed = svc.get_referral_outcome_compose_seed(
+            entity_ulid=entity_ulid,
+            referral_ulid=request.form.get("referral_ulid") or None,
+            resource_ulid=request.form.get("resource_ulid") or None,
+            need_key=request.form.get("need_key") or None,
+            outcome=request.form.get("outcome") or None,
+            synopsis=request.form.get("synopsis") or None,
+            note=request.form.get("note") or None,
+        )
+        return render_template(
+            "customers/referral_outcome_new.html",
+            entity_ulid=entity_ulid,
+            entity_card=_try_entity_card(entity_ulid),
+            display_name=svc.get_entity_display_name(entity_ulid),
+            seed=seed,
+            need_keys=NEEDS_CATEGORY_KEY,
+            need_labels=NEED_LABELS,
+            outcomes=REFERRAL_OUTCOMES,
+        )
 
 
 # -----------------

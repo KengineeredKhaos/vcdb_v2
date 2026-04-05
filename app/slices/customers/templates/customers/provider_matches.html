@@ -1,0 +1,252 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Provider Matches · {{ vm.display_name }}{% endblock %}
+
+{% block content %}
+{% set c = entity_card|default(None) %}
+{% set name = (c.display_name if c else vm.display_name) %}
+
+<section class="card" style="margin-top:18px;">
+  <div
+    style="display:flex; align-items:flex-end; justify-content:space-between;
+           gap:12px; flex-wrap:wrap;"
+  >
+    <div>
+      <h1 style="margin:0 0 6px;">{{ name }}</h1>
+      <div class="muted">
+        Resource matching · <code>{{ entity_ulid }}</code>
+        {% if c and c.short_label %} · {{ c.short_label }}{% endif %}
+      </div>
+    </div>
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+      <a class="btn"
+         href="{{ url_for('customers.customer_overview_get',
+                            entity_ulid=entity_ulid) }}">
+        Back to Customer
+      </a>
+      <a class="btn"
+         href="{{ url_for('customers.customer_history_timeline_get',
+                            entity_ulid=entity_ulid) }}">
+        History
+      </a>
+      <a class="btn"
+         href="{{ url_for('customers.customer_referral_new_get',
+                            entity_ulid=entity_ulid,
+                            need_key=vm.need_key or None) }}">
+        Record Referral
+      </a>
+      <a class="btn"
+         href="{{ url_for('customers.intake_start',
+                            entity_ulid=entity_ulid) }}">
+        Resume Wizard
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0;">Find providers</h2>
+  <form method="get"
+        action="{{ url_for('customers.customer_provider_matches_get',
+                           entity_ulid=entity_ulid) }}"
+        style="display:flex; gap:.75rem; flex-wrap:wrap; align-items:end;">
+    <div>
+      <label for="need_key"><strong>Need</strong></label><br>
+      <select id="need_key" name="need_key">
+        <option value="">Choose a need…</option>
+        {% for opt in vm.need_options %}
+          <option value="{{ opt.key }}"
+            {% if vm.need_key == opt.key %}selected{% endif %}>
+            Tier {{ opt.tier }} · {{ opt.label }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+      <button class="btn" type="submit">Find Providers</button>
+      {% if vm.need_key %}
+        <a class="btn"
+           href="{{ url_for('customers.customer_provider_matches_get',
+                              entity_ulid=entity_ulid) }}">
+          Clear
+        </a>
+      {% endif %}
+    </div>
+  </form>
+  <p class="muted" style="margin:10px 0 0;">
+    Customer picks the broad need bucket. Resources owns the actual
+    provider matching logic.
+  </p>
+</section>
+
+{% if not vm.need_key %}
+  <section class="card">
+    <p class="muted" style="margin:0;">
+      Choose a need key to ask the simple read-only question:
+      <strong>what Resources look viable right now?</strong>
+    </p>
+  </section>
+{% else %}
+  <div class="grid"
+       style="display:grid;
+              grid-template-columns: repeat(auto-fit,minmax(320px,1fr));
+              gap:12px;">
+
+    <section class="card">
+      <h2 style="margin-top:0;">Request summary</h2>
+      <table class="table">
+        <tr><th>Need</th><td><code>{{ vm.need_key }}</code></td></tr>
+        <tr><th>Label</th><td>{{ vm.need_label }}</td></tr>
+        <tr><th>Tier</th><td>{{ vm.need_tier }}</td></tr>
+        <tr>
+          <th>Current factor value</th>
+          <td><code>{{ vm.need_rating or "unassessed" }}</code></td>
+        </tr>
+        <tr>
+          <th>Tier priority</th>
+          <td>{{ vm.tier_priority if vm.tier_priority is not none else "unknown" }}</td>
+        </tr>
+        <tr><th>Customer gate</th><td><code>{{ vm.customer_gate or "—" }}</code></td></tr>
+        <tr><th>Blocked reason</th><td><code>{{ vm.blocked_reason or "—" }}</code></td></tr>
+        <tr><th>As of</th><td>{{ vm.as_of_iso or "—" }}</td></tr>
+      </table>
+      <p class="muted" style="margin:10px 0 0;">
+        Tier priority is operator context only. It is not a provider-fit
+        rule.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2 style="margin-top:0;">Customer state</h2>
+      <table class="table">
+        <tr><th>Eligibility complete</th><td>{{ "yes" if vm.dash.eligibility_complete else "no" }}</td></tr>
+        <tr><th>Entity package incomplete</th><td>{{ "yes" if vm.dash.entity_package_incomplete else "no" }}</td></tr>
+        <tr><th>Tier 1 unlocked</th><td>{{ "yes" if vm.dash.tier1_unlocked else "no" }}</td></tr>
+        <tr><th>Tier 2 unlocked</th><td>{{ "yes" if vm.dash.tier2_unlocked else "no" }}</td></tr>
+        <tr><th>Tier 3 unlocked</th><td>{{ "yes" if vm.dash.tier3_unlocked else "no" }}</td></tr>
+        <tr><th>Tier 1 immediate</th><td>{{ "yes" if vm.dash.flag_tier1_immediate else "no" }}</td></tr>
+        <tr><th>Watchlist</th><td>{{ "yes" if vm.dash.watchlist else "no" }}</td></tr>
+      </table>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2 style="margin-top:0;">Operator cautions</h2>
+    {% if vm.operator_cautions %}
+      <ul>
+        {% for code in vm.operator_cautions %}
+          <li>
+            <code>{{ code }}</code> —
+            {% if code == "tier_immediate" %}
+              Tier 1 is immediate. Escalate operator attention accordingly.
+            {% elif code == "entity_package_incomplete" %}
+              Entity package is incomplete. Advisory only, not a matching
+              blocker in this flow.
+            {% elif code == "customer_watchlist" %}
+              Customer is on the watchlist. Follow local handling practice.
+            {% else %}
+              Review this caution before acting on a result.
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted" style="margin:0;">No additional cautions.</p>
+    {% endif %}
+  </section>
+
+  {% if vm.customer_gate == "blocked" %}
+    <section class="card">
+      <h2 style="margin-top:0;">Matching blocked</h2>
+      <p style="margin-bottom:0;">
+        {% if vm.blocked_reason == "customer_not_eligible" %}
+          Customer eligibility is not complete yet.
+        {% elif vm.blocked_reason == "tier_not_unlocked" %}
+          The selected need belongs to a tier that is not unlocked yet.
+        {% else %}
+          Matching is blocked for this request.
+        {% endif %}
+      </p>
+      <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:10px;">
+        <a class="btn"
+           href="{{ url_for('customers.customer_referral_new_get',
+                              entity_ulid=entity_ulid,
+                              need_key=vm.need_key) }}">
+          Record Referral Anyway
+        </a>
+      </div>
+    </section>
+  {% elif not vm.exact_matches and not vm.adjacent_matches and not vm.review_matches %}
+    <section class="card">
+      <h2 style="margin-top:0;">No current matches</h2>
+      <p style="margin-bottom:0;">
+        No active Resources matched this need at this moment.
+      </p>
+      <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:10px;">
+        <a class="btn"
+           href="{{ url_for('customers.customer_referral_new_get',
+                              entity_ulid=entity_ulid,
+                              need_key=vm.need_key) }}">
+          Record Referral Note
+        </a>
+      </div>
+    </section>
+  {% endif %}
+
+  {% macro render_bucket(title, items, bucket_key) -%}
+    <section class="card">
+      <h2 style="margin-top:0;">{{ title }}</h2>
+      {% if items %}
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Resource</th>
+              <th>ULID</th>
+              <th>Readiness</th>
+              <th>MOU</th>
+              <th>Matched capability keys</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+              <tr>
+                <td>
+                  <a href="{{ url_for('resources.get_resource',
+                                     entity_ulid=item.entity_ulid) }}">
+                    {{ item.display_name }}
+                  </a>
+                </td>
+                <td><code>{{ item.entity_ulid }}</code></td>
+                <td><code>{{ item.readiness_status }}</code></td>
+                <td><code>{{ item.mou_status }}</code></td>
+                <td>
+                  {% for code in item.matched_capability_keys %}
+                    <code>{{ code }}</code>{% if not loop.last %}, {% endif %}
+                  {% endfor %}
+                </td>
+                <td>
+                  <a class="btn"
+                     href="{{ url_for('customers.customer_referral_new_get',
+                                        entity_ulid=entity_ulid,
+                                        resource_ulid=item.entity_ulid,
+                                        need_key=vm.need_key,
+                                        match_bucket=bucket_key) }}">
+                    Record Referral
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted" style="margin:0;">None in this bucket.</p>
+      {% endif %}
+    </section>
+  {%- endmacro %}
+
+  {{ render_bucket("Exact matches", vm.exact_matches, "exact") }}
+  {{ render_bucket("Adjacent matches", vm.adjacent_matches, "adjacent") }}
+  {{ render_bucket("Review matches", vm.review_matches, "review") }}
+{% endif %}
+{% endblock %}

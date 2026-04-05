@@ -551,7 +551,7 @@ class CustomerHistory(db.Model, ULIDPK, IsoTimestamps):
     )
 
     summary: Mapped[str | None] = mapped_column(
-        String(320),
+        String(512),
         nullable=True,
     )
 

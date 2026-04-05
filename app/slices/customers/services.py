@@ -18,6 +18,7 @@ from app.lib.guards import (
     ensure_entity_ulid,
     ensure_request_id,
 )
+from app.lib.ids import new_ulid
 from app.lib.jsonutil import stable_dumps
 from app.lib.pagination import Page, paginate
 
@@ -33,15 +34,26 @@ from .mapper import (
     CustomerHistoryDetailView,
     CustomerHistoryItemRow,
     CustomerHistoryItemView,
+    CustomerProviderMatchItemRow,
+    CustomerProviderMatchItemView,
+    CustomerProviderMatchRow,
+    CustomerProviderMatchView,
+    CustomerProviderNeedOptionRow,
+    CustomerProviderNeedOptionView,
     CustomerSummaryRow,
     CustomerSummaryView,
     EnvelopeDTO,
     ParsedHistoryBlobDTO,
+    ReferralComposeView,
+    ReferralOutcomeComposeView,
     map_admin_inbox_item,
     map_customer_dashboard,
     map_customer_eligibility,
     map_customer_history_detail,
     map_customer_history_item,
+    map_customer_provider_match,
+    map_customer_provider_match_item,
+    map_customer_provider_need_option,
     map_customer_summary,
 )
 from .models import (
@@ -56,9 +68,13 @@ from .taxonomy import (
     ERA,
     HOUSING_STATUS,
     INTAKE_STEPS,
+    NEED_LABELS,
     NEEDS_CATEGORY_KEY,
     RANK,
     RATING_ALLOWED,
+    REFERRAL_MATCH_BUCKETS,
+    REFERRAL_METHODS,
+    REFERRAL_OUTCOMES,
     TIER1,
     TIER2,
     TIER3,
@@ -130,6 +146,33 @@ def _norm(s: str | None) -> str | None:
         return None
     v = s.strip()
     return v if v else None
+
+
+def _require_len(
+    field: str,
+    value: str | None,
+    *,
+    max_len: int,
+    required: bool = False,
+) -> str | None:
+    v = _norm(value)
+    if not v:
+        if required:
+            raise ValueError(f"{field} is required")
+        return None
+    if len(v) > max_len:
+        raise ValueError(f"{field} exceeds {max_len} characters")
+    return v
+
+
+def _need_label(need_key: str) -> str:
+    return NEED_LABELS.get(
+        need_key, str(need_key or "").replace("_", " ").title()
+    )
+
+
+def _outcome_label(outcome: str) -> str:
+    return str(outcome or "").replace("_", " ").title()
 
 
 def _tier_min_for(
@@ -340,6 +383,151 @@ class CustomerOverviewVM:
     elig: CustomerEligibilityView
     ratings: dict[str, str]
     reassess_due: bool
+
+
+def _need_tier(need_key: str) -> int:
+    if need_key in TIER1:
+        return 1
+    if need_key in TIER2:
+        return 2
+    if need_key in TIER3:
+        return 3
+    raise ValueError(f"invalid need_key: {need_key!r}")
+
+
+def list_provider_need_options() -> (
+    tuple[CustomerProviderNeedOptionView, ...]
+):
+    out: list[CustomerProviderNeedOptionView] = []
+    for key in NEEDS_CATEGORY_KEY:
+        out.append(
+            map_customer_provider_need_option(
+                CustomerProviderNeedOptionRow(
+                    key=key,
+                    label=_need_label(key),
+                    tier=_need_tier(key),
+                )
+            )
+        )
+    return tuple(out)
+
+
+def _provider_match_item_from_dto(
+    item: Mapping[str, Any],
+    *,
+    labels: Mapping[str, str],
+) -> CustomerProviderMatchItemView:
+    entity_ulid = str(item.get("entity_ulid") or "")
+    return map_customer_provider_match_item(
+        CustomerProviderMatchItemRow(
+            entity_ulid=entity_ulid,
+            display_name=labels.get(entity_ulid, entity_ulid),
+            readiness_status=str(item.get("readiness_status") or ""),
+            mou_status=str(item.get("mou_status") or ""),
+            matched_capability_keys=tuple(
+                str(v) for v in (item.get("matched_capability_keys") or [])
+            ),
+            bucket=str(item.get("bucket") or ""),
+            reason_codes=tuple(
+                str(v) for v in (item.get("reason_codes") or [])
+            ),
+        )
+    )
+
+
+def get_provider_match_vm(
+    *,
+    entity_ulid: str,
+    need_key: str | None,
+    include_adjacent: bool = True,
+) -> CustomerProviderMatchView:
+    ent = ensure_entity_ulid(entity_ulid)
+    dash = get_customer_dashboard(ent)
+    display_name = get_entity_display_name(ent)
+    need_options = list_provider_need_options()
+    selected = str(need_key or "").strip().lower() or None
+    ratings = get_current_needs_ratings(ent)
+
+    if selected is None:
+        return map_customer_provider_match(
+            CustomerProviderMatchRow(
+                entity_ulid=ent,
+                display_name=display_name,
+                dash=dash,
+                need_options=need_options,
+                need_key=None,
+                need_label=None,
+                need_tier=None,
+                need_rating=None,
+                tier_priority=None,
+                customer_gate=None,
+                blocked_reason=None,
+                operator_cautions=(),
+                exact_matches=(),
+                adjacent_matches=(),
+                review_matches=(),
+                as_of_iso=None,
+            )
+        )
+
+    if selected not in NEEDS_CATEGORY_KEY:
+        raise ValueError(f"invalid need_key: {need_key!r}")
+
+    from app.extensions.contracts import resources_v2
+
+    result = resources_v2.match_customer_need(
+        customer_ulid=ent,
+        need_key=selected,
+        include_adjacent=bool(include_adjacent),
+    )
+
+    resource_ulids: list[str] = []
+    for bucket_key in (
+        "exact_matches",
+        "adjacent_matches",
+        "review_matches",
+    ):
+        for item in result.get(bucket_key, []) or []:
+            resource_ulid = str(item.get("entity_ulid") or "")
+            if resource_ulid:
+                resource_ulids.append(resource_ulid)
+
+    labels = get_entity_display_names(resource_ulids)
+    exact = tuple(
+        _provider_match_item_from_dto(item, labels=labels)
+        for item in (result.get("exact_matches") or [])
+    )
+    adjacent = tuple(
+        _provider_match_item_from_dto(item, labels=labels)
+        for item in (result.get("adjacent_matches") or [])
+    )
+    review = tuple(
+        _provider_match_item_from_dto(item, labels=labels)
+        for item in (result.get("review_matches") or [])
+    )
+
+    return map_customer_provider_match(
+        CustomerProviderMatchRow(
+            entity_ulid=ent,
+            display_name=display_name,
+            dash=dash,
+            need_options=need_options,
+            need_key=selected,
+            need_label=_need_label(selected),
+            need_tier=_need_tier(selected),
+            need_rating=ratings.get(selected),
+            tier_priority=result.get("tier_priority"),
+            customer_gate=result.get("customer_gate"),
+            blocked_reason=result.get("blocked_reason"),
+            operator_cautions=tuple(
+                str(v) for v in (result.get("operator_cautions") or [])
+            ),
+            exact_matches=exact,
+            adjacent_matches=adjacent,
+            review_matches=review,
+            as_of_iso=result.get("as_of_iso"),
+        )
+    )
 
 
 # -----------------
@@ -1173,14 +1361,27 @@ def csv_to_tags(csv: str | None) -> tuple[str, ...]:
     return tuple(parts)
 
 
-@lru_cache(maxsize=1)
-def _history_blob_validator() -> Draft202012Validator:
+@lru_cache(maxsize=None)
+def _json_schema_validator(filename: str) -> Draft202012Validator:
     here = Path(__file__).resolve().parent
-    schema_path = (
-        here / "data" / "schemas" / "customer_history_blob.schema.json"
-    )
+    schema_path = here / "data" / "schemas" / filename
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     return Draft202012Validator(schema, format_checker=FormatChecker())
+
+
+@lru_cache(maxsize=1)
+def _history_blob_validator() -> Draft202012Validator:
+    return _json_schema_validator("customer_history_blob.schema.json")
+
+
+def _referral_payload_validator() -> Draft202012Validator:
+    return _json_schema_validator("customer_referral_payload.schema.json")
+
+
+def _referral_outcome_payload_validator() -> Draft202012Validator:
+    return _json_schema_validator(
+        "customer_referral_outcome_payload.schema.json"
+    )
 
 
 def _parse_history_blob(
@@ -1327,6 +1528,368 @@ def _build_assessment_history_entry(
     return kind, blob
 
 
+def _build_referral_history_entry(
+    *,
+    entity_ulid: str,
+    actor_ulid: str,
+    happened_at: str,
+    referral_ulid: str,
+    resource_ulid: str,
+    resource_name: str,
+    need_key: str,
+    match_bucket: str | None,
+    method: str,
+    synopsis: str,
+    note: str | None,
+) -> tuple[str, dict[str, Any]]:
+    need_label = _need_label(need_key)
+    payload = {
+        "referral_ulid": referral_ulid,
+        "resource_ulid": resource_ulid,
+        "resource_name": resource_name,
+        "need_key": need_key,
+        "need_label": need_label,
+        "match_bucket": match_bucket,
+        "method": method,
+        "note": note,
+    }
+    _referral_payload_validator().validate(payload)
+
+    return (
+        "referral.created",
+        {
+            "envelope": {
+                "schema_name": "customers.referral.synopsis.v1",
+                "schema_version": 1,
+                "title": "Referral recorded",
+                "summary": synopsis,
+                "severity": "info",
+                "happened_at": happened_at,
+                "source_slice": "customers",
+                "source_ref_ulid": entity_ulid,
+                "created_by_actor_ulid": actor_ulid,
+                "public_tags": ["referral"],
+                "admin_tags": [],
+                "refs": {
+                    "referral_ulid": referral_ulid,
+                    "resource_ulid": resource_ulid,
+                    "need_key": need_key,
+                    "method": method,
+                    "match_bucket": match_bucket,
+                },
+            },
+            "payload": payload,
+        },
+    )
+
+
+def _build_referral_outcome_history_entry(
+    *,
+    entity_ulid: str,
+    actor_ulid: str,
+    happened_at: str,
+    referral_ulid: str,
+    resource_ulid: str,
+    resource_name: str,
+    need_key: str,
+    outcome: str,
+    synopsis: str,
+    note: str | None,
+) -> tuple[str, dict[str, Any]]:
+    need_label = _need_label(need_key)
+    outcome_label = _outcome_label(outcome)
+    payload = {
+        "referral_ulid": referral_ulid,
+        "resource_ulid": resource_ulid,
+        "resource_name": resource_name,
+        "need_key": need_key,
+        "need_label": need_label,
+        "outcome": outcome,
+        "outcome_label": outcome_label,
+        "note": note,
+    }
+    _referral_outcome_payload_validator().validate(payload)
+
+    return (
+        "referral.outcome_recorded",
+        {
+            "envelope": {
+                "schema_name": "customers.referral_outcome.synopsis.v1",
+                "schema_version": 1,
+                "title": "Referral outcome recorded",
+                "summary": synopsis,
+                "severity": "info",
+                "happened_at": happened_at,
+                "source_slice": "customers",
+                "source_ref_ulid": entity_ulid,
+                "created_by_actor_ulid": actor_ulid,
+                "public_tags": ["referral", "outcome"],
+                "admin_tags": [],
+                "refs": {
+                    "referral_ulid": referral_ulid,
+                    "resource_ulid": resource_ulid,
+                    "need_key": need_key,
+                    "outcome": outcome,
+                },
+            },
+            "payload": payload,
+        },
+    )
+
+
+def get_referral_compose_seed(
+    *,
+    entity_ulid: str,
+    resource_ulid: str | None = None,
+    need_key: str | None = None,
+    match_bucket: str | None = None,
+    method: str | None = None,
+    synopsis: str | None = None,
+    note: str | None = None,
+) -> ReferralComposeView:
+    ent = ensure_entity_ulid(entity_ulid)
+    res_ulid = ensure_entity_ulid(resource_ulid) if resource_ulid else None
+    need = (
+        _require_one_of("need_key", need_key, NEEDS_CATEGORY_KEY)
+        if need_key
+        else None
+    )
+    bucket = (
+        _require_nullable_one_of(
+            "match_bucket", match_bucket, REFERRAL_MATCH_BUCKETS
+        )
+        if match_bucket is not None
+        else None
+    )
+    meth = (
+        _require_nullable_one_of("method", method, REFERRAL_METHODS)
+        if method is not None
+        else None
+    )
+    res_name = get_entity_display_name(res_ulid) if res_ulid else None
+    return ReferralComposeView(
+        entity_ulid=ent,
+        resource_ulid=res_ulid,
+        resource_name=res_name,
+        need_key=need,
+        need_label=_need_label(need) if need else None,
+        match_bucket=bucket,
+        method=meth,
+        synopsis=(synopsis or "").strip(),
+        note=(note or "").strip(),
+    )
+
+
+def get_referral_outcome_compose_seed(
+    *,
+    entity_ulid: str,
+    referral_ulid: str | None = None,
+    resource_ulid: str | None = None,
+    need_key: str | None = None,
+    outcome: str | None = None,
+    synopsis: str | None = None,
+    note: str | None = None,
+) -> ReferralOutcomeComposeView:
+    ent = ensure_entity_ulid(entity_ulid)
+    ref_ulid = ensure_entity_ulid(referral_ulid) if referral_ulid else None
+    res_ulid = ensure_entity_ulid(resource_ulid) if resource_ulid else None
+    need = (
+        _require_one_of("need_key", need_key, NEEDS_CATEGORY_KEY)
+        if need_key
+        else None
+    )
+    out = (
+        _require_nullable_one_of("outcome", outcome, REFERRAL_OUTCOMES)
+        if outcome is not None
+        else None
+    )
+    res_name = get_entity_display_name(res_ulid) if res_ulid else None
+    return ReferralOutcomeComposeView(
+        entity_ulid=ent,
+        referral_ulid=ref_ulid,
+        resource_ulid=res_ulid,
+        resource_name=res_name,
+        need_key=need,
+        need_label=_need_label(need) if need else None,
+        outcome=out,
+        synopsis=(synopsis or "").strip(),
+        note=(note or "").strip(),
+    )
+
+
+def record_resource_referral(
+    *,
+    entity_ulid: str,
+    resource_ulid: str,
+    need_key: str,
+    method: str,
+    synopsis: str,
+    actor_ulid: str,
+    request_id: str,
+    match_bucket: str | None = None,
+    note: str | None = None,
+) -> dict[str, str]:
+    ent = ensure_entity_ulid(entity_ulid)
+    res_ulid = ensure_entity_ulid(resource_ulid)
+    act = ensure_actor_ulid(actor_ulid)
+    rid = ensure_request_id(request_id)
+    need = _require_one_of("need_key", need_key, NEEDS_CATEGORY_KEY)
+    meth = _require_one_of("method", method, REFERRAL_METHODS)
+    bucket = _require_nullable_one_of(
+        "match_bucket", match_bucket, REFERRAL_MATCH_BUCKETS
+    )
+    syn = _require_len("synopsis", synopsis, max_len=512, required=True)
+    note_clean = _require_len("note", note, max_len=4000)
+
+    if db.session.get(Customer, ent) is None:
+        raise LookupError("customer facet missing")
+
+    resource_name = get_entity_display_name(res_ulid)
+    referral_ulid = new_ulid()
+    happened_at = now_iso8601_ms()
+    history_kind, history_blob = _build_referral_history_entry(
+        entity_ulid=ent,
+        actor_ulid=act,
+        happened_at=happened_at,
+        referral_ulid=referral_ulid,
+        resource_ulid=res_ulid,
+        resource_name=resource_name,
+        need_key=need,
+        match_bucket=bucket,
+        method=meth,
+        synopsis=syn,
+        note=note_clean,
+    )
+    history_ulid = append_history_entry(
+        target_entity_ulid=ent,
+        kind=history_kind,
+        blob_json=history_blob,
+        actor_ulid=act,
+        request_id=rid,
+    )
+
+    event_bus.emit(
+        domain="customers",
+        operation="resource_referral_recorded",
+        request_id=rid,
+        actor_ulid=act,
+        target_ulid=ent,
+        refs={
+            "history_ulid": history_ulid,
+            "referral_ulid": referral_ulid,
+            "resource_ulid": res_ulid,
+            "need_key": need,
+            "method": meth,
+            "match_bucket": bucket,
+        },
+        changed={"fields": ("customer_history.append", "referral")},
+        happened_at_utc=happened_at,
+    )
+    return {
+        "history_ulid": history_ulid,
+        "referral_ulid": referral_ulid,
+        "resource_ulid": res_ulid,
+        "resource_name": resource_name,
+        "need_key": need,
+    }
+
+
+def get_referral_seed_from_history(
+    *, entity_ulid: str, history_ulid: str
+) -> ReferralOutcomeComposeView:
+    detail = get_customer_history_detail_public(
+        entity_ulid=entity_ulid,
+        history_ulid=history_ulid,
+    )
+    if detail.kind != "referral.created":
+        raise ValueError("history entry is not a referral record")
+    payload = detail.parsed.payload
+    return get_referral_outcome_compose_seed(
+        entity_ulid=entity_ulid,
+        referral_ulid=str(payload.get("referral_ulid") or ""),
+        resource_ulid=str(payload.get("resource_ulid") or ""),
+        need_key=str(payload.get("need_key") or ""),
+    )
+
+
+def record_referral_outcome(
+    *,
+    entity_ulid: str,
+    referral_ulid: str,
+    resource_ulid: str,
+    need_key: str,
+    outcome: str,
+    synopsis: str,
+    actor_ulid: str,
+    request_id: str,
+    note: str | None = None,
+) -> dict[str, str]:
+    ent = ensure_entity_ulid(entity_ulid)
+    ref_ulid = ensure_entity_ulid(referral_ulid)
+    res_ulid = ensure_entity_ulid(resource_ulid)
+    act = ensure_actor_ulid(actor_ulid)
+    rid = ensure_request_id(request_id)
+    need = _require_one_of("need_key", need_key, NEEDS_CATEGORY_KEY)
+    out = _require_one_of("outcome", outcome, REFERRAL_OUTCOMES)
+    syn = _require_len("synopsis", synopsis, max_len=512, required=True)
+    note_clean = _require_len("note", note, max_len=4000)
+
+    if db.session.get(Customer, ent) is None:
+        raise LookupError("customer facet missing")
+
+    resource_name = get_entity_display_name(res_ulid)
+    happened_at = now_iso8601_ms()
+    history_kind, history_blob = _build_referral_outcome_history_entry(
+        entity_ulid=ent,
+        actor_ulid=act,
+        happened_at=happened_at,
+        referral_ulid=ref_ulid,
+        resource_ulid=res_ulid,
+        resource_name=resource_name,
+        need_key=need,
+        outcome=out,
+        synopsis=syn,
+        note=note_clean,
+    )
+    history_ulid = append_history_entry(
+        target_entity_ulid=ent,
+        kind=history_kind,
+        blob_json=history_blob,
+        actor_ulid=act,
+        request_id=rid,
+    )
+
+    event_bus.emit(
+        domain="customers",
+        operation="referral_outcome_recorded",
+        request_id=rid,
+        actor_ulid=act,
+        target_ulid=ent,
+        refs={
+            "history_ulid": history_ulid,
+            "referral_ulid": ref_ulid,
+            "resource_ulid": res_ulid,
+            "need_key": need,
+            "outcome": out,
+        },
+        changed={
+            "fields": (
+                "customer_history.append",
+                "referral.outcome",
+            )
+        },
+        happened_at_utc=happened_at,
+    )
+    return {
+        "history_ulid": history_ulid,
+        "referral_ulid": ref_ulid,
+        "resource_ulid": res_ulid,
+        "resource_name": resource_name,
+        "need_key": need,
+        "outcome": out,
+    }
+
+
 def append_history_entry(
     *,
     target_entity_ulid: str,
@@ -1388,6 +1951,52 @@ def append_history_entry(
     return row.ulid
 
 
+def _unwrap_single_entity(item: Any, expected_type: type) -> Any:
+    if isinstance(item, expected_type):
+        return item
+
+    seq: tuple[Any, ...] | list[Any] | None = None
+    if isinstance(item, tuple):
+        seq = item
+    elif hasattr(item, "_mapping"):
+        seq = tuple(item._mapping.values())
+    elif hasattr(item, "_tuple"):
+        seq = tuple(item._tuple())
+
+    if seq and len(seq) >= 1 and isinstance(seq[0], expected_type):
+        return seq[0]
+
+    raise TypeError(f"unexpected paginated item shape: {type(item).__name__}")
+
+
+def _unwrap_pair(
+    item: Any, left_type: type, right_type: type
+) -> tuple[Any, Any]:
+    if (
+        isinstance(item, tuple)
+        and len(item) >= 2
+        and isinstance(item[0], left_type)
+        and isinstance(item[1], right_type)
+    ):
+        return item[0], item[1]
+
+    seq: tuple[Any, ...] | None = None
+    if hasattr(item, "_mapping"):
+        seq = tuple(item._mapping.values())
+    elif hasattr(item, "_tuple"):
+        seq = tuple(item._tuple())
+
+    if (
+        seq
+        and len(seq) >= 2
+        and isinstance(seq[0], left_type)
+        and isinstance(seq[1], right_type)
+    ):
+        return seq[0], seq[1]
+
+    raise TypeError(f"unexpected paginated pair shape: {type(item).__name__}")
+
+
 def _strip_admin_tags(dto: ParsedHistoryBlobDTO) -> ParsedHistoryBlobDTO:
     env = dto.envelope
     env2 = EnvelopeDTO(
@@ -1418,7 +2027,23 @@ def list_customer_history_items(
         .order_by(CustomerHistory.happened_at_iso.desc())
     )
 
-    def _to_row(h: CustomerHistory) -> CustomerHistoryItemRow:
+    def _unwrap_history(item: object) -> CustomerHistory:
+        if isinstance(item, CustomerHistory):
+            return item
+        try:
+            hist = item[0]  # type: ignore[index]
+        except Exception as exc:
+            raise TypeError(
+                "expected CustomerHistory row from paginate()"
+            ) from exc
+        if not isinstance(hist, CustomerHistory):
+            raise TypeError(
+                "expected CustomerHistory as first selected value"
+            )
+        return hist
+
+    def _to_row(item: Any) -> CustomerHistoryItemRow:
+        h = _unwrap_history(item)
         return CustomerHistoryItemRow(
             ulid=h.ulid,
             entity_ulid=h.entity_ulid,
@@ -1470,8 +2095,24 @@ def list_admin_inbox_items(
         .order_by(CustomerHistory.happened_at_iso.desc())
     )
 
-    def _to_row(t: tuple[CustomerHistory, Customer]) -> AdminInboxItemRow:
-        h, c = t
+    def _unwrap_history_customer_pair(
+        item: object,
+    ) -> tuple[CustomerHistory, Customer]:
+        try:
+            h = item[0]  # type: ignore[index]
+            c = item[1]  # type: ignore[index]
+        except Exception as exc:
+            raise TypeError(
+                "expected (CustomerHistory, Customer) row from paginate()"
+            ) from exc
+        if not isinstance(h, CustomerHistory) or not isinstance(c, Customer):
+            raise TypeError(
+                "expected CustomerHistory and Customer in selected row"
+            )
+        return h, c
+
+    def _to_row(item: Any) -> AdminInboxItemRow:
+        h, c = _unwrap_history_customer_pair(item)
         return AdminInboxItemRow(
             history_ulid=h.ulid,
             entity_ulid=h.entity_ulid,

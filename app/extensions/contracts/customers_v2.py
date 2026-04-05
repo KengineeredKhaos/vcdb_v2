@@ -13,6 +13,11 @@ Published surface in this refit:
 - get_eligibility_snapshot(...)
 - get_assessment_snapshot(...)
 - append_history_entry(...)
+
+CustomerCuesDTO is the cross-slice decision packet. It should publish
+current, Customer-owned readiness truth directly rather than reconstructing
+older semantics from eligibility fields. Downstream slices such as Resources
+consume these cues without reaching into Customer internals.
 """
 
 from __future__ import annotations
@@ -67,11 +72,6 @@ def _as_contract_error(where: str, exc: Exception) -> ContractError:
     )
 
 
-# ---------------------------
-# Local helpers
-# ---------------------------
-
-
 def _require_text(value: str, *, field: str, where: str) -> str:
     out = str(value or "").strip()
     if not out:
@@ -89,12 +89,7 @@ def _is_veteran_verified(status: str | None) -> bool:
 
 
 def _is_homeless_verified(status: str | None) -> bool:
-    return str(status or "").strip().lower() == "verified"
-
-
-# ---------------------------
-# DTOs
-# ---------------------------
+    return str(status or "").strip().lower() == "unhoused"
 
 
 @dataclass(frozen=True)
@@ -122,14 +117,26 @@ class CustomerSummaryDTO:
 @dataclass(frozen=True)
 class CustomerCuesDTO:
     """
-    Canonical, PII-free, decision-ready cues for cross-slice gating.
+
+    Primary downstream matching signals are:
+    - eligibility_complete
+    - tierN_unlocked
+    - tierN_min
+
+    Advisory-only signals such as entity_package_incomplete remain present so
+    other consumers can surface them without re-reading Customer internals.
     """
 
     entity_ulid: str
     eligibility_complete: bool
+    entity_package_incomplete: bool
     is_veteran_verified: bool
     is_homeless_verified: bool
     veteran_method: str | None
+    housing_status: str
+    tier1_unlocked: bool
+    tier2_unlocked: bool
+    tier3_unlocked: bool
     tier1_min: int | None
     tier2_min: int | None
     tier3_min: int | None
@@ -237,10 +244,17 @@ def get_customer_cues(entity_ulid: str) -> CustomerCuesDTO:
         elig = cust_svc.get_customer_eligibility(ent)
         return CustomerCuesDTO(
             entity_ulid=ent,
-            eligibility_complete=_is_veteran_verified(elig.veteran_status),
+            eligibility_complete=bool(dash.eligibility_complete),
+            entity_package_incomplete=bool(dash.entity_package_incomplete),
             is_veteran_verified=_is_veteran_verified(elig.veteran_status),
-            is_homeless_verified=_is_homeless_verified(elig.housing_status),
+            is_homeless_verified=(
+                str(elig.housing_status or "").strip().lower() == "unhoused"
+            ),
             veteran_method=elig.veteran_method,
+            housing_status=elig.housing_status,
+            tier1_unlocked=bool(dash.tier1_unlocked),
+            tier2_unlocked=bool(dash.tier2_unlocked),
+            tier3_unlocked=bool(dash.tier3_unlocked),
             tier1_min=dash.tier1_min,
             tier2_min=dash.tier2_min,
             tier3_min=dash.tier3_min,

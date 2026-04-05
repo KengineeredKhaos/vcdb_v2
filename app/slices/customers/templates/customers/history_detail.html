@@ -19,6 +19,14 @@
     <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
       <a class="btn" href="{{ url_for('customers.customer_history_timeline_get', entity_ulid=entity_ulid) }}">Back to Timeline</a>
       <a class="btn" href="{{ url_for('customers.customer_overview_get', entity_ulid=entity_ulid) }}">Back to Overview</a>
+      {% if detail.kind == "referral.created" %}
+        {% set p = detail.parsed.payload %}
+        <a class="btn"
+           href="{{ url_for('customers.referral_outcome_new_get', entity_ulid=entity_ulid, history_ulid=detail.ulid) }}">Record Outcome</a>
+      {% elif detail.kind == "referral.outcome_recorded" %}
+        <a class="btn"
+           href="{{ url_for('customers.customer_referral_new_get', entity_ulid=entity_ulid) }}">Record New Referral</a>
+      {% endif %}
     </div>
   </div>
 </section>

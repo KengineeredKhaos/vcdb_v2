@@ -162,6 +162,18 @@ It must now be handled **slice by slice** so it can be:
 
 - verify Admin and Auditor separation where intended
 
+### As of March 31, Auth slice is hardened
+
+- username login
+
+- first-login forced password change
+
+- password persistence
+
+- old-password rejection
+
+- ledger attribution
+
 ---
 
 ## 2. Admin as Control Surface

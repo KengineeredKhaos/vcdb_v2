@@ -228,3 +228,16 @@ Each Governance policy JSON should carry the same required `meta` structure:
 Use this section to quickly drop new trip wires before they are organized.
 
 - *Empty for now.*
+
+---
+
+### Resources Runbook — Adding a New Capability Key
+
+A new Resource capability is not complete when it is added to `resources/taxonomy.py` alone.
+
+Capability taxonomy and customer-need matching are a paired maintenance task.
+
+`resources/taxonomy.py` defines what a provider can do.  
+`resources/matching_matrix.py` defines whether and how that capability participates in Customer → Resource matching.
+
+A capability added to taxonomy without an explicit matching decision is incomplete work and creates drift.

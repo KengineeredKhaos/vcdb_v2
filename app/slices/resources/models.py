@@ -22,7 +22,9 @@ Models:
     versioned JSON blob (booleans + notes) for a fixed section
     ('resource:capability:v1'). Services write here on capability upsert so we
     have an auditable record of what the org said it could do at a given time,
-    without leaking notes into search indexes or other slices.
+    without leaking notes into search indexes or other slices. ResourceHistory
+    remains Resource-owned private truth; it is not a second CustomerHistory
+    producer.
 * ResourceCapabilityIndex
     A materialized "current capabilities" index for fast search/filter. It
     stores only (resource_ulid, domain, key, active) — names/flags, no notes.
@@ -42,9 +44,10 @@ Ownership and boundaries:
   the Entity slice and sensitive notes in ResourceHistory; other slices should
   interact via services/contracts using ULIDs and capability keys, not by
   importing these models directly.
-* Governance defines capability taxonomies, allowed POC scopes/ranks, and MOU
-  semantics; Resources applies that policy when updating histories, indexes,
-  and POCs.
+* Resources owns its local service vocabulary (domains/keys), operational
+  readiness semantics, and POC ordering rules. Governance stays focused on
+  board-level policy, authorization, and records-retention decisions rather
+  than day-to-day service taxonomy.
 * Ledger and logging must continue to record only ULIDs and normalized keys;
   any detailed narrative about capabilities or MOUs lives in snapshot JSON or
   external documents, not in logs or the ledger.
