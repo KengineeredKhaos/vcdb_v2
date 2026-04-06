@@ -1,14 +1,32 @@
 # app/slices/logistics/routes.py
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
+from sqlalchemy import select
 
-from app.lib.request_ctx import get_actor_ulid
+from app.extensions import db
+from app.lib.request_ctx import ensure_request_id, get_actor_ulid
 
 from . import services as svc
 from .issuance_services import issue_inventory as issue_inventory_service
+from .models import Location
 
-bp = Blueprint("logistics", __name__, url_prefix="/logistics")
+bp = Blueprint(
+    "logistics",
+    __name__,
+    url_prefix="/logistics",
+    template_folder="templates",
+)
 
 
 def _ok(data=None, **extra):
@@ -19,13 +37,41 @@ def _err(msg, code=400):
     return jsonify({"ok": False, "error": str(msg)}), code
 
 
+def _location_rows() -> list[Location]:
+    return list(
+        db.session.execute(
+            select(Location).order_by(Location.code.asc())
+        ).scalars()
+    )
+
+
+def _cart_lines_from_form(line_count: int) -> list[dict[str, int | str]]:
+    lines: list[dict[str, int | str]] = []
+    for idx in range(1, line_count + 1):
+        sku_code = str(request.form.get(f"sku_{idx}") or "").strip()
+        qty_raw = str(request.form.get(f"qty_{idx}") or "0").strip()
+        try:
+            qty_each = int(qty_raw or 0)
+        except ValueError:
+            qty_each = 0
+        if sku_code and qty_each > 0:
+            lines.append({"sku_code": sku_code, "qty_each": qty_each})
+    return lines
+
+
+def _commit_or_rollback(data: dict | None = None):
+    db.session.commit()
+    return _ok(data)
+
+
 @bp.post("/locations")
 def ensure_location():
     try:
         p = request.get_json(force=True)
         ulid = svc.ensure_location(code=p["code"], name=p["name"])
-        return _ok({"location_ulid": ulid})
+        return _commit_or_rollback({"location_ulid": ulid})
     except Exception as e:
+        db.session.rollback()
         return _err(e)
 
 
@@ -43,8 +89,9 @@ def ensure_item():
             sku_bin_location=p.get("bin"),
             sku_nsx=p.get("nsx"),
         )
-        return _ok({"item_ulid": ulid})
+        return _commit_or_rollback({"item_ulid": ulid})
     except Exception as e:
+        db.session.rollback()
         return _err(e)
 
 
@@ -69,8 +116,9 @@ def receive():
             note=p.get("note"),
             actor_ulid=get_actor_ulid(),
         )
-        return _ok(out)
+        return _commit_or_rollback(out)
     except Exception as e:
+        db.session.rollback()
         return _err(e)
 
 
@@ -90,7 +138,6 @@ def issue():
             customer_ulid=p.get("customer_ulid"),
             sku_code=sku_code,
             qty_each=qty_each,
-            when_iso=p.get("when_iso"),
             project_ulid=p.get("project_ulid"),
             location_ulid=p.get("location_ulid"),
             batch_ulid=p.get("batch_ulid"),
@@ -102,10 +149,15 @@ def issue():
             note=p.get("note"),
         )
 
-        status = 200 if out.get("ok") else 400
-        return jsonify(out), status
+        if out.get("ok"):
+            db.session.commit()
+            return jsonify(out), 200
+
+        db.session.rollback()
+        return jsonify(out), 400
 
     except Exception as e:
+        db.session.rollback()
         return _err(e)
 
 
@@ -124,8 +176,9 @@ def transfer():
             actor_ulid=get_actor_ulid(),
             batch_ulid=p.get("batch_ulid"),
         )
-        return _ok(out)
+        return _commit_or_rollback(out)
     except Exception as e:
+        db.session.rollback()
         return _err(e)
 
 
@@ -148,8 +201,9 @@ def stock_rebuild():
         out = svc.rebuild_stock(
             item_ulid=p.get("item_ulid"), location_ulid=p.get("location_ulid")
         )
-        return _ok(out)
+        return _commit_or_rollback(out)
     except Exception as e:
+        db.session.rollback()
         return _err(e)
 
 
@@ -157,3 +211,86 @@ def stock_rebuild():
 def get_item(item_ulid: str):
     dto = svc.item_view(item_ulid)
     return _ok(dto) if dto else _err("not found", 404)
+
+
+@bp.get("/customers/<customer_ulid>/issue-cart")
+def customer_issue_cart_get(customer_ulid: str):
+    ensure_request_id()
+    preview = None
+    location_ulid = str(request.args.get("location_ulid") or "").strip()
+    if location_ulid:
+        from app.extensions.contracts import logistics_v2
+
+        preview = logistics_v2.preview_customer_issuance_cart(
+            customer_ulid=customer_ulid,
+            location_ulid=location_ulid,
+        )
+
+    return render_template(
+        "logistics/customer_issue_cart.html",
+        customer_ulid=customer_ulid,
+        locations=_location_rows(),
+        selected_location_ulid=location_ulid or None,
+        preview=preview,
+    )
+
+
+@bp.post("/customers/<customer_ulid>/issue-cart")
+def customer_issue_cart_post(customer_ulid: str):
+    actor_ulid = get_actor_ulid()
+    if not actor_ulid and current_app.config.get("AUTH_MODE") == "stub":
+        actor_ulid = (
+            str(current_app.config.get("DEV_ACTOR_ULID") or "").strip()
+            or None
+        )
+    if not actor_ulid:
+        abort(403)
+
+    location_ulid = str(request.form.get("location_ulid") or "").strip()
+    try:
+        line_count = int(request.form.get("line_count") or 0)
+    except ValueError:
+        line_count = 0
+
+    cart_lines = _cart_lines_from_form(line_count)
+    override_cadence = bool(request.form.get("override_cadence"))
+    override_reason = (
+        str(request.form.get("override_reason") or "").strip() or None
+    )
+    session_note = str(request.form.get("session_note") or "").strip() or None
+
+    try:
+        from app.extensions.contracts import logistics_v2
+
+        result = logistics_v2.commit_customer_issuance_cart(
+            customer_ulid=customer_ulid,
+            location_ulid=location_ulid,
+            cart_lines=cart_lines,
+            actor_ulid=actor_ulid,
+            request_id=ensure_request_id(),
+            session_note=session_note,
+            override_cadence=override_cadence,
+            override_reason=override_reason,
+        )
+        db.session.commit()
+        flash("Supplies issued and customer history updated.", "success")
+        return redirect(
+            url_for(
+                "customers.customer_history_detail_get",
+                entity_ulid=customer_ulid,
+                history_ulid=result["history_ulid"],
+            )
+        )
+    except Exception as exc:
+        db.session.rollback()
+        current_app.logger.exception("customer_issue_cart_post failed")
+        if current_app.debug:
+            raise
+        flash(str(exc), "error")
+        return redirect(
+            url_for(
+                "logistics.customer_issue_cart_get",
+                customer_ulid=customer_ulid,
+                location_ulid=location_ulid,
+            )
+        )

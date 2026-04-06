@@ -70,6 +70,7 @@ class DevConfig(BaseConfig):
     REMEMBER_COOKIE_NAME = "vcdb_dev_remember"
     ALLOW_HEADER_AUTH = True  # convenience; makes curl stubs easy
     AUTO_LOGIN_ADMIN = True
+    DEV_ACTOR_ULID = "01KN8N389YT7YZE09QQB8N29P2"
     AUDIT_LOG_LEVEL = "DEBUG"
     PERMISSIONS_MAP = {
         "governance:policy:edit": {"admin"},

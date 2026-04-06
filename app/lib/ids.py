@@ -21,10 +21,12 @@ or ad-hoc strings.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Final
 
 from ulid import ULID  # python-ulid
+
+from app.lib.chrono import ensure_aware_utc
 
 # -----------------
 # ULID generation
@@ -50,8 +52,7 @@ def _encode_crockford_base32(value: int, length: int) -> str:
 
 
 def _dt_to_ms(dt: datetime) -> int:
-    dt = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
-    return int(dt.timestamp() * 1000)
+    return int(ensure_aware_utc(dt).timestamp() * 1000)
 
 
 def ulid_min_for(dt: datetime) -> str:

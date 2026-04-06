@@ -19,7 +19,7 @@ from werkzeug.exceptions import HTTPException
 
 from app.cli import register_cli
 from app.extensions.errors import ContractError
-from app.lib.chrono import parse_iso8601, utcnow_aware
+from app.lib.chrono import parse_iso8601, utc_current_year, utcnow_aware
 from app.lib.logging import configure_logging
 
 from .extensions import csrf, init_extensions
@@ -248,7 +248,7 @@ def create_app(config_object="config.DevConfig"):
             # tweak if you prefer
 
         return {
-            "current_year": datetime.now(UTC).year,
+            "current_year": utc_current_year(),
             "has_endpoint": has_endpoint,
             "has_blueprint": has_blueprint,
             "user_is_admin": user_is_admin,

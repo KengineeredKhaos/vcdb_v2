@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import timedelta
 from socket import gethostname
 from typing import Protocol
 
 from sqlalchemy import delete, func, select
 
 from app.extensions import db
-from app.lib.chrono import now_iso8601_ms
+from app.lib.chrono import now_iso8601_ms, to_iso8601, utcnow_aware
 from app.lib.ids import new_ulid
 
 from .mapper import AdminInboxUpsertDTO
@@ -29,7 +30,8 @@ MAX_AUTOMATIC_ATTEMPTS = 2
 
 
 class CronRunner(Protocol):
-    def __call__(self, *, unit_key: str) -> str: ...
+    def __call__(self, *, unit_key: str) -> str:
+        ...
 
 
 @dataclass(frozen=True)
@@ -111,12 +113,17 @@ def _acquire_lock(
     owner_run_ulid: str,
     ttl_seconds: int,
 ) -> bool:
-    now_utc = _now()
+    now_dt = utcnow_aware()
+    now_utc = to_iso8601(now_dt)
+
     key = _lock_key(job_key, unit_key)
     _delete_expired_lock(key, now_utc)
+
     existing = db.session.get(CronLock, key)
     if existing is not None:
         return False
+
+    expires_utc = to_iso8601(now_dt + timedelta(seconds=int(ttl_seconds)))
 
     lock = CronLock(
         lock_key=key,
@@ -124,16 +131,8 @@ def _acquire_lock(
         unit_key=unit_key,
         owner_run_ulid=owner_run_ulid,
         acquired_at_utc=now_utc,
-        expires_at_utc=now_utc,
+        expires_at_utc=expires_utc,
     )
-    # Avoid chrono math assumptions in scaffold. If you already have a
-    # helper for adding seconds, swap it in here.
-    from datetime import UTC, datetime, timedelta
-
-    now_dt = datetime.now(UTC)
-    expires_dt = now_dt + timedelta(seconds=int(ttl_seconds))
-    lock.acquired_at_utc = now_dt.isoformat().replace("+00:00", "Z")
-    lock.expires_at_utc = expires_dt.isoformat().replace("+00:00", "Z")
     db.session.add(lock)
     db.session.flush()
     return True
@@ -141,7 +140,9 @@ def _acquire_lock(
 
 def _release_lock(job_key: str, unit_key: str) -> None:
     db.session.execute(
-        delete(CronLock).where(CronLock.lock_key == _lock_key(job_key, unit_key))
+        delete(CronLock).where(
+            CronLock.lock_key == _lock_key(job_key, unit_key)
+        )
     )
     db.session.flush()
 
@@ -248,7 +249,9 @@ def execute_job(
 
     last_result: CronExecutionResult | None = None
     try:
-        for attempt_no in range(latest_attempt + 1, MAX_AUTOMATIC_ATTEMPTS + 1):
+        for attempt_no in range(
+            latest_attempt + 1, MAX_AUTOMATIC_ATTEMPTS + 1
+        ):
             run = _create_run(
                 job_key=job.job_key,
                 unit_key=unit_key,

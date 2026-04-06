@@ -6,14 +6,14 @@
       "name": "Main Warehouse"
     },
     {
-      "code": "VAN-01",
+      "code": "MOBILE",
       "kind": "vehicle",
-      "name": "Outreach Van 1"
+      "name": "Mobile Outreach Unit"
     },
     {
-      "code": "SAT-NORTH",
+      "code": "SATELLITE_1",
       "kind": "satellite",
-      "name": "North Satellite Closet"
+      "name": "Satellite Closet 1"
     }
   ]
 }

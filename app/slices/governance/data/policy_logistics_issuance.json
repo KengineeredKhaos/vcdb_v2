@@ -5,7 +5,8 @@
     "notes": [
       "Governance controls cadence, qualifiers, and overrides only.",
       "SKU validation taxonomy belongs to Logistics slice.",
-      "Issuance class 'D' means Durable staff-issued and returned."
+      "Issuance class 'D' means Durable staff-issued and returned.",
+      "Cadence defaults to advisory unless a rule explicitly sets hard enforcement."
     ],
     "policy_key": "logistics_issuance",
     "schema_version": 1,
@@ -92,5 +93,12 @@
         }
       }
     ]
+  },
+  "issuance": {
+    "defaults": {
+      "cadence": {
+        "enforcement": "advisory"
+      }
+    }
   }
 }

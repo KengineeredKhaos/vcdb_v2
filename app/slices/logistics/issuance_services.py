@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from fnmatch import fnmatch
 from typing import Any
 
@@ -12,21 +12,29 @@ from sqlalchemy import func, select
 from app.extensions import db, event_bus
 from app.extensions.contracts.customers_v2 import (
     CustomerCuesDTO,
+    append_history_entry,
     get_customer_cues,
 )
 from app.extensions.policies import (
     load_policy_logistics_issuance,
 )
-from app.lib.chrono import as_naive_utc, now_iso8601_ms
+from app.lib.chrono import (
+    as_naive_utc,
+    parse_iso8601,
+    to_iso8601,
+    utcnow_aware,
+)
 from app.lib.ids import new_ulid
 from app.lib.jsonutil import stable_dumps
 
+from .history_blob import build_customer_history_blob
 from .models import (
     InventoryBatch,
     InventoryItem,
     InventoryMovement,
     InventoryStock,
     Issue,
+    Location,
 )
 from .qualifiers import evaluate as evaluate_qualifiers
 from .sku import classification_key_for, parse_sku, validate_sku
@@ -56,7 +64,7 @@ class IssueContext:
 
     customer_ulid: str | None
     sku_code: str | None
-    when_iso: str | None = None
+    as_of_dt: datetime | None = None
 
     # Optional task context (Scenario #3 durable goods)
     project_ulid: str | None = None
@@ -84,6 +92,25 @@ class IssueContext:
     qualifiers: dict[str, Any] = field(default_factory=dict)
     defaults_cadence: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def when_iso(self) -> str | None:
+        if self.as_of_dt is None:
+            return None
+        return to_iso8601(self.as_of_dt)
+
+    @when_iso.setter
+    def when_iso(self, value: str | datetime | None) -> None:
+        if value is None:
+            self.as_of_dt = None
+            return
+        if isinstance(value, datetime):
+            self.as_of_dt = value
+            return
+        if isinstance(value, str):
+            self.as_of_dt = parse_iso8601(value)
+            return
+        raise TypeError("when_iso must be str | datetime | None")
+
 
 @dataclass(frozen=True)
 class IssueDecision:
@@ -93,6 +120,9 @@ class IssueDecision:
     approver_required: str | None = None
     limit_window_label: str | None = None
     next_eligible_at_iso: str | None = None
+    cadence_enforcement: str | None = None
+    override_requested: bool = False
+    override_used: bool = False
 
 
 @dataclass(frozen=True)
@@ -119,6 +149,7 @@ def issue_inventory(
     customer_ulid: str | None,
     sku_code: str,
     qty_each: int = 1,
+    as_of_dt: datetime | None = None,
     when_iso: str | None = None,
     project_ulid: str | None = None,
     location_ulid: str | None = None,
@@ -135,10 +166,16 @@ def issue_inventory(
 
     Returns a plain dict suitable for JSON routes/CLI.
     """
+    effective_as_of_dt = (
+        as_of_dt
+        or (parse_iso8601(when_iso) if when_iso else None)
+        or utcnow_aware()
+    )
+
     ctx = IssueContext(
         customer_ulid=customer_ulid,
         sku_code=sku_code,
-        when_iso=when_iso or now_iso8601_ms(),
+        as_of_dt=effective_as_of_dt,
         project_ulid=project_ulid,
         location_ulid=location_ulid,
         batch_ulid=batch_ulid,
@@ -209,8 +246,8 @@ def decide_issue(ctx: IssueContext) -> IssueDecision:
     rules = sku_constraints.get("rules") or []
 
     # -------- derived fields --------
-    if ctx.when_iso is None:
-        ctx.when_iso = now_iso8601_ms()
+    if ctx.as_of_dt is None:
+        ctx.as_of_dt = utcnow_aware()
 
     sku_code = ctx.sku_code or ""
     if not sku_code:
@@ -307,10 +344,26 @@ def decide_issue(ctx: IssueContext) -> IssueDecision:
         if ok_cad:
             return _decision(True, "ok")
 
-        if ctx.override_cadence and "governor" in (
-            ctx.actor_domain_roles or []
-        ):
-            return _decision(True, "cadence_overridden")
+        enforcement = _cadence_enforcement({}, ctx=ctx)
+        if enforcement == "advisory":
+            if ctx.override_cadence:
+                return _decision(
+                    True,
+                    "cadence_overridden",
+                    limit_window_label=window_label,
+                    next_eligible_at_iso=next_eligible,
+                    cadence_enforcement=enforcement,
+                    override_requested=ctx.override_cadence,
+                    override_used=True,
+                )
+            return _decision(
+                False,
+                "cadence_advisory",
+                limit_window_label=window_label,
+                next_eligible_at_iso=next_eligible,
+                cadence_enforcement=enforcement,
+                override_requested=ctx.override_cadence,
+            )
 
         return _decision(
             False,
@@ -318,6 +371,8 @@ def decide_issue(ctx: IssueContext) -> IssueDecision:
             approver_required="governor",
             limit_window_label=window_label,
             next_eligible_at_iso=next_eligible,
+            cadence_enforcement=enforcement,
+            override_requested=ctx.override_cadence,
         )
 
     # -------- 5) matched rules → merged qualifiers then cadence --------
@@ -353,16 +408,325 @@ def decide_issue(ctx: IssueContext) -> IssueDecision:
     if ok_cad:
         return _decision(True, "ok")
 
-    if ctx.override_cadence and "governor" in (ctx.actor_domain_roles or []):
-        return _decision(True, "cadence_overridden")
+    enforcement = _cadence_enforcement(cadence_rule or {}, ctx=ctx)
+    if enforcement == "advisory":
+        if ctx.override_cadence:
+            return _decision(
+                True,
+                "cadence_overridden",
+                limit_window_label=window_label,
+                next_eligible_at_iso=next_eligible,
+                cadence_enforcement=enforcement,
+                override_requested=ctx.override_cadence,
+                override_used=True,
+            )
+        return _decision(
+            False,
+            "cadence_advisory",
+            limit_window_label=window_label,
+            next_eligible_at_iso=next_eligible,
+            cadence_enforcement=enforcement,
+            override_requested=ctx.override_cadence,
+        )
 
     return _decision(
         False,
         "cadence_limit",
-        approver_required="governor",
         limit_window_label=window_label,
         next_eligible_at_iso=next_eligible,
+        cadence_enforcement=enforcement,
+        override_requested=ctx.override_cadence,
     )
+
+
+def preview_customer_issuance_cart(
+    *,
+    customer_ulid: str,
+    location_ulid: str,
+    as_of_iso: str | None = None,
+) -> dict[str, Any]:
+    """Read-only preview surface for a small customer issuance cart."""
+    if not customer_ulid:
+        raise ValueError("customer_ulid is required")
+    if not location_ulid:
+        raise ValueError("location_ulid is required")
+
+    as_of_dt = parse_iso8601(as_of_iso) if as_of_iso else utcnow_aware()
+    cues = get_customer_cues(entity_ulid=customer_ulid)
+
+    location = db.session.execute(
+        select(Location).where(Location.ulid == location_ulid)
+    ).scalar_one_or_none()
+    if location is None:
+        raise LookupError("location not found")
+
+    rows = db.session.execute(
+        select(InventoryItem, InventoryStock)
+        .join(InventoryStock, InventoryStock.item_ulid == InventoryItem.ulid)
+        .where(InventoryStock.location_ulid == location_ulid)
+        .order_by(InventoryItem.name.asc(), InventoryItem.sku.asc())
+    ).all()
+
+    lines: list[dict[str, Any]] = []
+    eligible_count = 0
+    advisory_count = 0
+    blocked_count = 0
+
+    for item, stock in rows:
+        ctx = IssueContext(
+            customer_ulid=customer_ulid,
+            sku_code=item.sku,
+            as_of_dt=as_of_dt,
+            location_ulid=location_ulid,
+            customer_cues=cues,
+        )
+        decision = decide_issue(ctx)
+
+        if decision.allowed:
+            status = "eligible"
+            eligible_count += 1
+        elif decision.reason == "cadence_advisory":
+            status = "advisory_warn"
+            advisory_count += 1
+        else:
+            status = "blocked"
+            blocked_count += 1
+
+        lines.append(
+            {
+                "item_ulid": item.ulid,
+                "sku_code": item.sku,
+                "item_name": item.name,
+                "category": item.category,
+                "unit": item.unit,
+                "classification_key": classification_key_for(item.sku),
+                "available_qty": int(stock.quantity or 0),
+                "status": status,
+                "decision": asdict(decision),
+            }
+        )
+
+    return {
+        "customer_ulid": customer_ulid,
+        "location_ulid": location_ulid,
+        "location_code": location.code,
+        "location_name": location.name,
+        "as_of_iso": to_iso8601(as_of_dt),
+        "eligible_count": eligible_count,
+        "advisory_count": advisory_count,
+        "blocked_count": blocked_count,
+        "lines": lines,
+    }
+
+
+def commit_customer_issuance_cart(
+    *,
+    customer_ulid: str,
+    location_ulid: str,
+    cart_lines: list[dict[str, Any]],
+    actor_ulid: str,
+    request_id: str | None = None,
+    as_of_dt: datetime | None = None,
+    when_iso: str | None = None,
+    project_ulid: str | None = None,
+    session_note: str | None = None,
+    override_cadence: bool = False,
+    override_reason: str | None = None,
+) -> dict[str, Any]:
+    """Commit a small cart-style issuance session for one customer visit."""
+    if not customer_ulid:
+        raise ValueError("customer_ulid is required")
+    if not location_ulid:
+        raise ValueError("location_ulid is required")
+    if not actor_ulid:
+        raise ValueError("actor_ulid is required")
+
+    effective_as_of_dt = (
+        as_of_dt
+        or (parse_iso8601(when_iso) if when_iso else None)
+        or utcnow_aware()
+    )
+
+    aggregated: dict[str, int] = {}
+    for raw in cart_lines or []:
+        sku_code = str(raw.get("sku_code") or raw.get("sku") or "").strip()
+        qty_each = int(raw.get("qty_each") or raw.get("quantity") or 0)
+        if not sku_code or qty_each <= 0:
+            continue
+        aggregated[sku_code] = aggregated.get(sku_code, 0) + qty_each
+
+    if not aggregated:
+        raise ValueError("at least one cart line is required")
+
+    as_of_dt = effective_as_of_dt
+    as_of_iso = to_iso8601(as_of_dt)
+    req_id = request_id or new_ulid()
+    issuance_session_ulid = new_ulid()
+    cues = get_customer_cues(entity_ulid=customer_ulid)
+
+    planned: list[tuple[str, int, IssueDecision, InventoryItem]] = []
+    advisory_hits: list[str] = []
+
+    for sku_code, qty_each in aggregated.items():
+        item = db.session.execute(
+            select(InventoryItem).where(InventoryItem.sku == sku_code)
+        ).scalar_one_or_none()
+        if item is None:
+            raise LookupError(f"sku not found: {sku_code}")
+
+        ctx = IssueContext(
+            customer_ulid=customer_ulid,
+            sku_code=sku_code,
+            as_of_dt=as_of_dt,
+            project_ulid=project_ulid,
+            location_ulid=location_ulid,
+            actor_ulid=actor_ulid,
+            override_cadence=override_cadence,
+            customer_cues=cues,
+        )
+        decision = decide_issue(ctx)
+        if not decision.allowed:
+            if decision.reason == "cadence_advisory":
+                advisory_hits.append(sku_code)
+                continue
+            raise ValueError(f"{sku_code}: {decision.reason}")
+        if decision.override_used:
+            advisory_hits.append(sku_code)
+        planned.append((sku_code, qty_each, decision, item))
+
+    if advisory_hits and not override_cadence:
+        raise ValueError("advisory cadence warning requires session override")
+
+    if not planned:
+        raise ValueError("no cart lines could be issued")
+
+    if advisory_hits and not override_reason:
+        raise ValueError(
+            "override reason is required when advisory cadence is bypassed"
+        )
+
+    results: list[IssueResult] = []
+    issued_items: list[dict[str, Any]] = []
+    for sku_code, qty_each, decision, item in planned:
+        ctx = IssueContext(
+            customer_ulid=customer_ulid,
+            sku_code=sku_code,
+            as_of_dt=as_of_dt,
+            project_ulid=project_ulid,
+            location_ulid=location_ulid,
+            actor_ulid=actor_ulid,
+            override_cadence=override_cadence,
+            customer_cues=cues,
+        )
+        res = decide_and_issue_one(
+            ctx=ctx,
+            qty_each=qty_each,
+            decision=decision,
+            request_id=req_id,
+            reason=override_reason if decision.override_used else None,
+            note=session_note,
+        )
+        if not res.ok:
+            raise ValueError(f"{sku_code}: {res.reason}")
+        results.append(res)
+        issued_items.append(
+            {
+                "sku": sku_code,
+                "nomenclature": item.name,
+                "quantity": qty_each,
+                "classification_key": classification_key_for(sku_code),
+            }
+        )
+
+    if any(r.decision and r.decision.override_used for r in results):
+        event_bus.emit(
+            domain="logistics",
+            operation="cadence_override_used",
+            request_id=req_id,
+            actor_ulid=actor_ulid,
+            target_ulid=customer_ulid,
+            refs={
+                "issuance_session_ulid": issuance_session_ulid,
+                "location_ulid": location_ulid,
+                "sku_codes": [row["sku"] for row in issued_items],
+            },
+            meta={
+                "override_reason": override_reason,
+                "line_count": len(issued_items),
+            },
+            happened_at_utc=as_of_iso,
+        )
+
+    summary_names = ", ".join(row["nomenclature"] for row in issued_items[:3])
+    if len(issued_items) > 3:
+        summary_names += f" +{len(issued_items) - 3} more"
+
+    blob = build_customer_history_blob(
+        schema_name="logistics.issuance_summary",
+        schema_version=1,
+        title=(
+            f"Issued {issued_items[0]['nomenclature']}"
+            if len(issued_items) == 1
+            else f"Issued {len(issued_items)} supply lines"
+        ),
+        summary=(
+            f"Issued {summary_names}."
+            if not advisory_hits
+            else f"Issued {summary_names}; advisory cadence override used."
+        ),
+        source_slice="logistics",
+        happened_at_iso=as_of_iso,
+        severity="warn" if advisory_hits else "info",
+        public_tags=["issuance", "logistics"],
+        admin_tags=["cadence_override"] if advisory_hits else (),
+        source_ref_ulid=issuance_session_ulid,
+        created_by_actor_ulid=actor_ulid,
+        refs={
+            "issuance_session_ulid": issuance_session_ulid,
+            "location_ulid": location_ulid,
+            "line_count": len(issued_items),
+        },
+        payload={
+            "issuance_session_ulid": issuance_session_ulid,
+            "location_ulid": location_ulid,
+            "issue_ulids": [r.issue_ulid for r in results if r.issue_ulid],
+            "movement_ulids": [
+                r.movement_ulid for r in results if r.movement_ulid
+            ],
+            "items": issued_items,
+            "override_used": bool(advisory_hits),
+            "override_reason": override_reason if advisory_hits else None,
+            "note": session_note,
+        },
+    )
+    history_ulid = append_history_entry(
+        target_entity_ulid=customer_ulid,
+        kind="logistics_issuance",
+        blob_json=blob,
+        actor_ulid=actor_ulid,
+        request_id=req_id,
+    )
+
+    return {
+        "ok": True,
+        "issuance_session_ulid": issuance_session_ulid,
+        "request_id": req_id,
+        "customer_ulid": customer_ulid,
+        "location_ulid": location_ulid,
+        "history_ulid": history_ulid,
+        "override_used": bool(advisory_hits),
+        "lines": [
+            {
+                "issue_ulid": r.issue_ulid,
+                "movement_ulid": r.movement_ulid,
+                "item_ulid": r.item_ulid,
+                "batch_ulid": r.batch_ulid,
+                "qty_each": r.qty_each,
+                "decision": asdict(r.decision) if r.decision else None,
+            }
+            for r in results
+        ],
+    }
 
 
 def available_skus_for_customer(
@@ -376,13 +740,18 @@ def available_skus_for_customer(
     override_cadence: bool = False,
 ) -> list[str]:
     """
-    Read-only helper used by contracts/UI: return SKUs eligible *right now* for this customer.
+    Read-only helper used by contracts/UI: return SKUs eligible *right now*
+    for this customer.
 
     Notes:
       - This DOES evaluate cadence (so the picker won't offer blocked SKUs).
-      - If include_out_of_stock is False and location_ulid is provided, we require stock > 0 at that location.
+      - If include_out_of_stock is False and location_ulid is provided,
+        we require stock > 0 at that location.
     """
-    cues = get_customer_cues(customer_ulid=customer_ulid)
+    cues = get_customer_cues(entity_ulid=customer_ulid)
+    effective_as_of_dt = (
+        parse_iso8601(as_of_iso) if as_of_iso else utcnow_aware()
+    )
 
     q = select(InventoryItem.sku).distinct()
     if location_ulid and not include_out_of_stock:
@@ -399,7 +768,7 @@ def available_skus_for_customer(
         ctx = IssueContext(
             customer_ulid=customer_ulid,
             sku_code=sku,
-            when_iso=as_of_iso or now_iso8601_ms(),
+            as_of_dt=effective_as_of_dt,
             location_ulid=location_ulid,
             actor_ulid=actor_ulid,
             actor_domain_roles=actor_domain_roles or [],
@@ -444,7 +813,8 @@ def decide_and_issue_one(
             ok=False, reason="location_required", decision=decision
         )
 
-    as_of = ctx.when_iso or now_iso8601_ms()
+    as_of_dt = ctx.as_of_dt or utcnow_aware()
+    as_of_iso = to_iso8601(as_of_dt)
     req_id = request_id or new_ulid()
     ckey = ctx.classification_key or classification_key_for(sku_code)
 
@@ -487,7 +857,6 @@ def decide_and_issue_one(
     if batch is None or batch.quantity < qty_each:
         return IssueResult(ok=False, reason="out_of_stock", decision=decision)
 
-    # --- apply stock deltas ---
     batch.quantity -= qty_each
     stock.quantity -= qty_each
 
@@ -502,7 +871,7 @@ def decide_and_issue_one(
         kind="issue",
         quantity=qty_each,
         unit=item.unit or stock.unit or "each",
-        happened_at_utc=as_of,
+        happened_at_utc=as_of_iso,
         source_ref_ulid=None,
         target_ref_ulid=ctx.customer_ulid,
         created_by_actor=ctx.actor_ulid,
@@ -516,7 +885,7 @@ def decide_and_issue_one(
         classification_key=ckey,
         sku_code=sku_code,
         quantity=qty_each,
-        issued_at=as_of,
+        issued_at=as_of_iso,
         project_ulid=ctx.project_ulid,
         movement_ulid=movement_ulid,
         created_by_actor=ctx.actor_ulid,
@@ -537,7 +906,6 @@ def decide_and_issue_one(
 
     db.session.flush()
 
-    # Ledger slice write (event bus) — does NOT touch logistics tables.
     event_bus.emit(
         domain="logistics",
         operation="issue",
@@ -559,7 +927,7 @@ def decide_and_issue_one(
             "note": note,
             "reason": reason,
         },
-        happened_at_utc=as_of,
+        happened_at_utc=as_of_iso,
     )
 
     return IssueResult(
@@ -596,7 +964,7 @@ def _get_customer_cues(ctx: IssueContext) -> CustomerCuesDTO | None:
         return None
 
     try:
-        ctx.customer_cues = get_customer_cues(customer_ulid=ctx.customer_ulid)
+        ctx.customer_cues = get_customer_cues(entity_ulid=ctx.customer_ulid)
     except Exception:
         ctx.customer_cues = None
 
@@ -609,6 +977,13 @@ def _cadence_from(rule: dict, *, defaults_cadence: dict) -> dict:
     if isinstance(rc, dict):
         out.update({k: v for k, v in rc.items() if v is not None})
     return out
+
+
+def _cadence_enforcement(rule: dict, *, ctx: IssueContext) -> str:
+    cad = _cadence_from(
+        rule or {}, defaults_cadence=ctx.defaults_cadence or {}
+    )
+    return str(cad.get("enforcement") or "hard").strip().lower()
 
 
 def _apply_cadence(
@@ -625,13 +1000,14 @@ def _apply_cadence(
     if not period_days or not max_per:
         return True, label, None
 
-    as_of = ctx.when_iso or now_iso8601_ms()
-    as_of_dt = as_naive_utc(as_of)
-    window_start_dt = as_of_dt - timedelta(days=period_days)
+    as_of_dt = ctx.as_of_dt or utcnow_aware()
+    if not isinstance(as_of_dt, datetime):
+        raise TypeError("ctx.as_of_dt must be a datetime")
 
-    window_start_iso = (
-        window_start_dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z"
-    )
+    as_of_naive = as_naive_utc(as_of_dt)
+    as_of_iso = to_iso8601(as_of_dt)
+    window_start_dt = as_of_naive - timedelta(days=period_days)
+    window_start_iso = to_iso8601(window_start_dt)
 
     if not ctx.customer_ulid:
         return False, label, None
@@ -641,23 +1017,40 @@ def _apply_cadence(
             customer_ulid=ctx.customer_ulid,
             sku_code=ctx.sku_code,
             window_start_iso=window_start_iso,
-            as_of_iso=as_of,
+            as_of_iso=as_of_iso,
+        )
+        oldest_blocking = _nth_oldest_issue_at_in_window(
+            customer_ulid=ctx.customer_ulid,
+            sku_code=ctx.sku_code,
+            window_start_iso=window_start_iso,
+            as_of_iso=as_of_iso,
+            n=max_per,
         )
     else:
         count = _count_issues_in_window(
             customer_ulid=ctx.customer_ulid,
             classification_key=ctx.classification_key,
             window_start_iso=window_start_iso,
-            as_of_iso=as_of,
+            as_of_iso=as_of_iso,
+        )
+        oldest_blocking = _nth_oldest_issue_at_in_window(
+            customer_ulid=ctx.customer_ulid,
+            classification_key=ctx.classification_key,
+            window_start_iso=window_start_iso,
+            as_of_iso=as_of_iso,
+            n=max_per,
         )
 
     if count < max_per:
         return True, label, None
 
-    next_eligible_dt = window_start_dt + timedelta(days=period_days)
-    next_eligible_iso = (
-        next_eligible_dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z"
+    base_dt = (
+        as_naive_utc(parse_iso8601(oldest_blocking))
+        if oldest_blocking
+        else window_start_dt
     )
+    next_eligible_dt = base_dt + timedelta(days=period_days)
+    next_eligible_iso = to_iso8601(next_eligible_dt)
     return False, label, next_eligible_iso
 
 
@@ -727,6 +1120,9 @@ def _decision(
     approver_required: str | None = None,
     limit_window_label: str | None = None,
     next_eligible_at_iso: str | None = None,
+    cadence_enforcement: str | None = None,
+    override_requested: bool = False,
+    override_used: bool = False,
 ) -> IssueDecision:
     return IssueDecision(
         allowed=bool(ok),
@@ -734,6 +1130,9 @@ def _decision(
         approver_required=approver_required,
         limit_window_label=limit_window_label,
         next_eligible_at_iso=next_eligible_at_iso,
+        cadence_enforcement=cadence_enforcement,
+        override_requested=bool(override_requested),
+        override_used=bool(override_used),
     )
 
 

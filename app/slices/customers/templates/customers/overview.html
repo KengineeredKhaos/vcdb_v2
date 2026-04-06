@@ -19,6 +19,7 @@
       <a class="btn" href="{{ url_for('customers.customers_list_get') }}">Back to List</a>
       <a class="btn" href="{{ url_for('customers.customer_history_timeline_get', entity_ulid=entity_ulid) }}">History</a>
       <a class="btn" href="{{ url_for('customers.customer_provider_matches_get', entity_ulid=entity_ulid) }}">Find Providers</a>
+      <a class="btn" href="{{ url_for('logistics.customer_issue_cart_get', customer_ulid=entity_ulid) }}">Issue Supplies</a>
       <a class="btn" href="{{ url_for('customers.customer_referral_new_get', entity_ulid=entity_ulid) }}">Record Referral</a>
       <a class="btn" href="{{ url_for('customers.referral_outcome_new_get', entity_ulid=entity_ulid) }}">Record Outcome</a>
       <a class="btn" href="{{ url_for('customers.intake_start', entity_ulid=entity_ulid) }}">Resume Wizard</a>

@@ -26,11 +26,10 @@ import json
 import logging
 import os
 import shutil
-from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from app.lib.chrono import now_iso8601_ms
+from app.lib.chrono import now_iso8601_ms, utc_filename_stamp
 
 # ----- JSON line formatter --------------------------------------------------
 
@@ -96,7 +95,7 @@ def _archiving_rotating_handler(
 
     def namer(default_name: str) -> str:
         stem = Path(filename).stem  # "app"
-        ts = datetime.now(tz=UTC).strftime("%Y%m%d-%H%M%S")
+        ts = utc_filename_stamp()
         return f"{stem}-{ts}.log"  # basename; rotator will place it
 
     def rotator(source: str, dest: str) -> None:

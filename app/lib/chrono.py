@@ -6,28 +6,44 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 """
-Canonical helpers (final names & meanings)
+Canonical helpers (final names & meanings):
 
-utcnow_naive() → datetime (naive UTC). Use for DB default/onupdate.
-utcnow_aware() → datetime (aware UTC, tz=UTC). Use for math/comparisons.
-now_iso8601_ms() → str ISO-8601 with Z, milliseconds. Use for logs/JSON.
-ensure_aware_utc(dt) / as_naive_utc(dt) → normalize a dt either way.
-parse_iso8601(s) → parse ISO-8601 string → aware UTC datetime.
+utcnow_naive() for DB DateTime
+utcnow_naive() → datetime (naive UTC)
 
-We’ll keep aliases for legacy names so nothing explodes while you migrate:
+utcnow_aware() for comparisons/math
+utcnow_aware() → datetime (aware UTC, tz=UTC)
 
-utc_now → now_iso8601_ms (old “string now”)
-utcnow_aware → utcnow_aware
-utcnow_naive → utcnow_naive
-parse_iso8601 → parse_iso8601
+now_iso8601_ms() for string timestamps,logs & JSON
+now_iso8601_ms() → str (ISO-8601 with Z, milliseconds)
 
-These aliases live only in chrono.py.
-You can clean them out after you’ve flipped call sites.
+parse_iso8601() for inbound ISO strings
+parse_iso8601(s: str) parse ISO-8601 string (aware UTC datetime)
 
-Migration guide (quick and mechanical)
+ensure_aware_utc(dt) for normalization
+ensure_aware_utc(dt: datetime) -> datetime
+
+as_naive_utc(dt) for DB-safe conversion
+as_naive_utc(dt:datetime) → str (normalize a dt)
+
+to_iso8601(dt) for outbound ISO strings
+to_iso8601(dt: datetime) -> str
+
+Convenience helpers so callers stop inventing one-off formatting:
+
+utc_today() -> date
+utc_current_year() -> int
+utc_year_month() -> str (returning "YYYY-MM")
+utc_filename_stamp() -> str (returning "YYYYMMDD-HHMMSS")
+
+We will NOT keep aliases for legacy names just so nothing explodes.
+
+
+
+
 
 Search & replace by intent:
 DB model defaults/onupdate
@@ -107,15 +123,37 @@ def to_iso8601(dt: datetime) -> str:
     return z.isoformat().replace("+00:00", "Z")
 
 
-def add_years_utc(dt: datetime, years: int) -> datetime:
-    """Add years in UTC; Feb 29 → Feb 28 on non-leap years."""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    try:
-        return dt.replace(year=dt.year + years)
-    except ValueError:
-        # handle Feb 29 → Feb 28
-        return dt.replace(month=2, day=28, year=dt.year + years)
+# -----------------
+# Boring little helpers
+# ------------------
+"""
+Usage examples so the replacements stay mechanical:
+
+datetime.now(tz=UTC).date() → utc_today()
+datetime.now(UTC).year → utc_current_year()
+datetime.now(UTC).strftime("%Y-%m") → utc_year_month()
+datetime.now(tz=UTC).strftime("%Y%m%d-%H%M%S") → utc_filename_stamp()
+"""
+
+
+def utc_today() -> date:
+    """UTC calendar date for display/default buckets."""
+    return utcnow_aware().date()
+
+
+def utc_current_year() -> int:
+    """UTC year as an int."""
+    return utcnow_aware().year
+
+
+def utc_year_month() -> str:
+    """UTC year-month string like '2026-04'."""
+    return utcnow_aware().strftime("%Y-%m")
+
+
+def utc_filename_stamp() -> str:
+    """UTC timestamp for filenames like '20260405-103012'."""
+    return utcnow_aware().strftime("%Y%m%d-%H%M%S")
 
 
 __all__ = [
@@ -126,5 +164,8 @@ __all__ = [
     "parse_iso8601",
     "to_iso8601",
     "now_iso8601_ms",
-    "add_years_utc",
+    "utc_today",
+    "utc_current_year",
+    "utc_year_month",
+    "utc_filename_stamp",
 ]

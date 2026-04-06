@@ -1,0 +1,111 @@
+{% extends "layout/base.html" %}
+{% import "_macros.html" as macros %}
+
+{% block title %}Customer Logistics Cart{% endblock %}
+
+{% block content %}
+<section class="card" style="margin-top:18px;">
+  <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div>
+      <h1 style="margin:0 0 6px;">Issue Supplies</h1>
+      <div class="muted">Customer · <code>{{ customer_ulid }}</code></div>
+    </div>
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+      <a class="btn" href="{{ url_for('customers.customer_overview_get', entity_ulid=customer_ulid) }}">Back to Overview</a>
+      <a class="btn" href="{{ url_for('customers.customer_history_timeline_get', entity_ulid=customer_ulid) }}">History</a>
+    </div>
+  </div>
+</section>
+
+<form class="card" method="get" action="{{ url_for('logistics.customer_issue_cart_get', customer_ulid=customer_ulid) }}">
+  <label class="fld" style="display:block;">
+    <div class="lbl">Location</div>
+    <select name="location_ulid" required>
+      <option value="">(select)</option>
+      {% for loc in locations %}
+        <option value="{{ loc.ulid }}" {{ 'selected' if selected_location_ulid == loc.ulid else '' }}>{{ loc.code }} · {{ loc.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div style="margin-top:12px;">
+    <button class="btn" type="submit">Load Location Stock</button>
+  </div>
+</form>
+
+{% if preview %}
+<form class="card" method="post" action="{{ url_for('logistics.customer_issue_cart_post', customer_ulid=customer_ulid) }}">
+  {{ macros.csrf_field() }}
+  <input type="hidden" name="location_ulid" value="{{ preview.location_ulid }}">
+  <input type="hidden" name="line_count" value="{{ preview.lines|length }}">
+
+  <h2 style="margin-top:0;">{{ preview.location_code }} · {{ preview.location_name }}</h2>
+  <p class="muted">Eligible: {{ preview.eligible_count }} · Advisory: {{ preview.advisory_count }} · Blocked: {{ preview.blocked_count }}</p>
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>SKU</th>
+        <th>Item</th>
+        <th>Stock</th>
+        <th>Status</th>
+        <th>Cadence / reason</th>
+        <th>Qty</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in preview.lines %}
+        <tr>
+          <td>
+            <code>{{ line.sku_code }}</code>
+            <input type="hidden" name="sku_{{ loop.index }}" value="{{ line.sku_code }}">
+          </td>
+          <td>{{ line.item_name }}</td>
+          <td>{{ line.available_qty }}</td>
+          <td>
+            <code>{{ line.status }}</code>
+          </td>
+          <td>
+            {% set d = line.decision %}
+            <div><code>{{ d.reason }}</code></div>
+            {% if d.limit_window_label %}<div class="muted">{{ d.limit_window_label }}</div>{% endif %}
+            {% if d.next_eligible_at_iso %}<div class="muted">next: {{ d.next_eligible_at_iso }}</div>{% endif %}
+          </td>
+          <td>
+            {% if line.status == 'blocked' %}
+              —
+              <input type="hidden" name="qty_{{ loop.index }}" value="0">
+            {% else %}
+              <input type="number" name="qty_{{ loop.index }}" min="0" max="{{ line.available_qty }}" value="0" style="width:6rem;">
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <label class="fld" style="display:block; margin-top:12px;">
+    <div class="lbl">Session note</div>
+    <textarea name="session_note" rows="4" maxlength="4000"></textarea>
+    <div class="help">Optional narrative note for this customer visit.</div>
+  </label>
+
+  <label class="fld" style="display:block; margin-top:12px;">
+    <div class="lbl">Cadence advisory override</div>
+    <label style="display:flex; gap:.5rem; align-items:flex-start;">
+      <input type="checkbox" name="override_cadence" value="1">
+      <span>Acknowledge advisory cadence warning and proceed. This emits a separate searchable Ledger event for Admin follow-up.</span>
+    </label>
+  </label>
+
+  <label class="fld" style="display:block; margin-top:12px;">
+    <div class="lbl">Override reason</div>
+    <textarea name="override_reason" rows="3" maxlength="1000"></textarea>
+    <div class="help">Required only when advisory cadence is bypassed.</div>
+  </label>
+
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:12px;">
+    <button class="btn" type="submit">Commit Issuance Session</button>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

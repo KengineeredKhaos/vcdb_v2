@@ -52,8 +52,9 @@ from app.lib.utils import (
 from __future__ import annotations
 
 import re
-from datetime import UTC, date, datetime
 from email.utils import parseaddr
+
+from app.lib.chrono import utc_today
 
 # -----------------
 # Email Normailizer
@@ -196,7 +197,7 @@ def _parse_dob(value: str) -> date | None:
     except ValueError:
         return None
 
-    today = datetime.now(tz=UTC).date()
+    today = utc_today()
     if dt.year < _DOB_MIN_YEAR:
         return None
     if dt > today:

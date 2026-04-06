@@ -5,6 +5,7 @@ from datetime import UTC
 
 from flask import Blueprint, render_template, request
 
+from app.lib.chrono import utc_year_month
 from app.slices.finance.services_report import statement_of_activities as _soa
 
 bp = Blueprint("finance_reports", __name__, url_prefix="/finance/reports")
@@ -14,10 +15,7 @@ bp = Blueprint("finance_reports", __name__, url_prefix="/finance/reports")
 def activities_report():
     period = request.args.get("period")
     if not period:
-        # naive default: current YYYY-MM from UTC now
-        from datetime import datetime
-
-        period = datetime.now(UTC).strftime("%Y-%m")
+        period = utc_year_month()
 
     report = _soa(period)
     return render_template(

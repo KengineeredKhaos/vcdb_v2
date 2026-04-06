@@ -1231,6 +1231,7 @@ def dev_issuance_tripwires(
     import click
 
     from app.extensions.policies import load_governance_policy
+    from app.lib.chrono import now_iso8601_ms
     from app.lib.ids import new_ulid
     from app.slices.logistics.issuance_services import (
         decide_issue,
@@ -1318,7 +1319,7 @@ def dev_issuance_tripwires(
         )
 
     def _next_weekday_noon_utc(target_wd: int) -> str:
-        now = datetime.now(UTC)
+        now = now_iso8601_ms()
         days_ahead = (target_wd - now.weekday()) % 7
         if days_ahead == 0:
             days_ahead = 7

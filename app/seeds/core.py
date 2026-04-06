@@ -18,6 +18,7 @@ import random
 from dataclasses import dataclass
 
 from faker import Faker
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.extensions import db
@@ -48,6 +49,8 @@ except Exception:  # pragma: no cover
 from app.slices.customers.models import Customer, CustomerEligibility
 from app.slices.resources.models import Resource
 from app.slices.sponsors.models import Sponsor
+from app.slices.logistics.models import InventoryStock
+from app.slices.logistics.sku import parse_sku
 
 # -----------------
 # Faker Setup
@@ -83,6 +86,13 @@ class SeedSponsorResult:
 class SeedCustomerResult:
     customer_entity_ulid: str
     entity_ulid: str
+
+
+@dataclass(frozen=True)
+class SeedLogisticsResult:
+    location_count: int
+    sku_count: int
+    stocked_pairs_count: int
 
 
 # -----------------------------------------------------------------------------
@@ -517,6 +527,230 @@ def seed_org_poc_pair(
         )
         ulids.append(e_ulid)
     return ulids
+
+
+# -----------------------------------------------------------------------------
+# Logistics seed
+# -----------------------------------------------------------------------------
+_LOGISTICS_BASELINE_LOCATIONS = (
+    ("MAIN", "Main Warehouse"),
+    ("MOBILE", "Mobile Outreach Unit"),
+    ("SATELLITE_1", "Satellite Closet 1"),
+)
+
+_LOGISTICS_BASELINE_ITEMS = (
+    {
+        "category": "undergarments",
+        "name": "Socks — Small (White)",
+        "unit": "each",
+        "condition": "new",
+        "sku": "UW-SK-LC-S-WT-U-001",
+    },
+    {
+        "category": "undergarments",
+        "name": "Socks — Medium (White)",
+        "unit": "each",
+        "condition": "new",
+        "sku": "UW-SK-LC-M-WT-U-002",
+    },
+    {
+        "category": "undergarments",
+        "name": "Socks — Large (White)",
+        "unit": "each",
+        "condition": "new",
+        "sku": "UW-SK-LC-L-WT-U-003",
+    },
+    {
+        "category": "clothing",
+        "name": "Uniform Top — Medium (Black, Veteran)",
+        "unit": "each",
+        "condition": "new",
+        "sku": "UW-TP-LC-M-BK-V-001",
+    },
+    {
+        "category": "clothing",
+        "name": "Uniform Top — Large (Black, Veteran)",
+        "unit": "each",
+        "condition": "new",
+        "sku": "UW-TP-LC-L-BK-V-002",
+    },
+    {
+        "category": "clothing",
+        "name": "Uniform Bottom — Medium (Blue)",
+        "unit": "each",
+        "condition": "new",
+        "sku": "UW-BT-LC-M-BL-U-001",
+    },
+    {
+        "category": "clothing",
+        "name": "Uniform Bottom — Large (Blue)",
+        "unit": "each",
+        "condition": "new",
+        "sku": "UW-BT-LC-L-BL-U-002",
+    },
+    {
+        "category": "cold-weather",
+        "name": "Gloves — Medium (Black)",
+        "unit": "each",
+        "condition": "new",
+        "sku": "CW-GL-LC-M-BK-U-001",
+    },
+    {
+        "category": "cold-weather",
+        "name": "Winter Hat (Black)",
+        "unit": "each",
+        "condition": "new",
+        "sku": "CW-HT-LC-NA-BK-U-001",
+    },
+    {
+        "category": "camping",
+        "name": "Sleeping Bag (Green, Unhoused)",
+        "unit": "each",
+        "condition": "new",
+        "sku": "CG-SL-LC-NA-GN-H-001",
+    },
+    {
+        "category": "accouterments",
+        "name": "Hygiene Kit",
+        "unit": "kit",
+        "condition": "new",
+        "sku": "AC-KT-LC-NA-MX-U-001",
+    },
+    {
+        "category": "foodstuffs",
+        "name": "Meal Kit",
+        "unit": "kit",
+        "condition": "new",
+        "sku": "FD-KT-LC-NA-MX-U-001",
+    },
+)
+
+
+def _baseline_location_targets(
+    *,
+    rng: random.Random,
+    sku_codes: list[str],
+) -> dict[str, set[str]]:
+    placements = {sku: {"MAIN"} for sku in sku_codes}
+    mobile_codes: tuple[str, ...] = ("MOBILE", "SATELLITE_1")
+
+    for sku in sku_codes:
+        for code in mobile_codes:
+            if rng.random() < 0.55:
+                placements[sku].add(code)
+        if placements[sku] == {"MAIN"} and rng.random() < 0.60:
+            placements[sku].add(rng.choice(mobile_codes))
+
+    for code in mobile_codes:
+        while sum(code in rows for rows in placements.values()) < 5:
+            placements[rng.choice(sku_codes)].add(code)
+
+    return placements
+
+
+def _baseline_target_qty(
+    *,
+    rng: random.Random,
+    location_code: str,
+    unit: str,
+) -> int:
+    if unit == "kit":
+        ranges = {
+            "MAIN": (4, 10),
+            "MOBILE": (2, 6),
+            "SATELLITE_1": (1, 4),
+        }
+    else:
+        ranges = {
+            "MAIN": (8, 20),
+            "MOBILE": (3, 9),
+            "SATELLITE_1": (2, 8),
+        }
+    low, high = ranges[location_code]
+    return rng.randint(low, high)
+
+
+def seed_logistics_baseline(
+    *,
+    sess: Session | None = None,
+    random_seed: int = 1337,
+) -> SeedLogisticsResult:
+    """
+    Seed a small, customer-facing Logistics baseline.
+
+    The catalog is fixed for repeatability. Location placement and stock
+    targets are deterministic from random_seed so fresh rebuilds feel real
+    without drifting into a giant catalog.
+    """
+    sess = sess or db.session
+
+    # Late import keeps app boot resilient during slice refactors.
+    from app.slices.logistics import services as logi_svc
+
+    rng = random.Random(random_seed)
+    received_at_utc = now_iso8601_ms()
+
+    location_ulids: dict[str, str] = {}
+    for code, name in _LOGISTICS_BASELINE_LOCATIONS:
+        location_ulids[code] = logi_svc.ensure_location(
+            code=code,
+            name=name,
+        )
+
+    item_ulids: dict[str, str] = {}
+    for row in _LOGISTICS_BASELINE_ITEMS:
+        item_ulids[row["sku"]] = logi_svc.ensure_item(
+            category=row["category"],
+            name=row["name"],
+            unit=row["unit"],
+            condition=row["condition"],
+            sku=row["sku"],
+        )
+
+    sku_codes = [row["sku"] for row in _LOGISTICS_BASELINE_ITEMS]
+    placements = _baseline_location_targets(rng=rng, sku_codes=sku_codes)
+
+    stocked_pairs = 0
+    for row in _LOGISTICS_BASELINE_ITEMS:
+        sku = row["sku"]
+        parts = parse_sku(sku)
+        item_ulid = item_ulids[sku]
+
+        for location_code in sorted(placements[sku]):
+            location_ulid = location_ulids[location_code]
+            target_qty = _baseline_target_qty(
+                rng=rng,
+                location_code=location_code,
+                unit=row["unit"],
+            )
+            stock_row = sess.execute(
+                select(InventoryStock).where(
+                    InventoryStock.item_ulid == item_ulid,
+                    InventoryStock.location_ulid == location_ulid,
+                )
+            ).scalar_one_or_none()
+            current_qty = int(stock_row.quantity) if stock_row else 0
+            delta = target_qty - current_qty
+            if delta > 0:
+                logi_svc.receive_inventory(
+                    item_ulid=item_ulid,
+                    quantity=delta,
+                    unit=row["unit"],
+                    source=parts["src"],
+                    received_at_utc=received_at_utc,
+                    location_ulid=location_ulid,
+                    note="seed bootstrap baseline",
+                    actor_ulid=None,
+                    source_entity_ulid=None,
+                )
+            stocked_pairs += 1
+
+    sess.flush()
+    return SeedLogisticsResult(
+        location_count=len(_LOGISTICS_BASELINE_LOCATIONS),
+        sku_count=len(_LOGISTICS_BASELINE_ITEMS),
+        stocked_pairs_count=stocked_pairs,
+    )
 
 
 # -----------------------------------------------------------------------------

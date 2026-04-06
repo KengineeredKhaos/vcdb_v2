@@ -18,6 +18,7 @@ Bootstrap behavior:
     * Two POC people per org (Entity(person), role='civilian')
     * Link POCs via slice-owned POC link tables using slice services
     * Customers (Entity(person) + Customer + CustomerEligibility)
+    * Logistics baseline (MAIN, MOBILE, SATELLITE_1 + stocked SKUs)
 
 Operational guarantees:
 - Single transaction boundary: all writes are staged and committed once at the end.
@@ -169,11 +170,19 @@ def seed_bootstrap_impl(
             faker=faker,
         )
 
+    logistics = seed_core.seed_logistics_baseline(
+        sess=db.session,
+        random_seed=faker_seed,
+    )
+
     db.session.commit()
 
     click.echo(
         f"OK — bootstrap complete. (RBAC +{n_rbac}, Domain +{n_domain}, "
-        f"resources={resources}, sponsors={sponsors}, customers={customers})"
+        f"resources={resources}, sponsors={sponsors}, customers={customers}, "
+        f"logistics_locations={logistics.location_count}, "
+        f"logistics_skus={logistics.sku_count}, "
+        f"logistics_stock_pairs={logistics.stocked_pairs_count})"
     )
     return True
 
