@@ -1409,6 +1409,52 @@ def prepare_grant_report(
 
 
 # -----------------
+# Create Grant Award
+# services_grants
+# -----------------
+
+
+def create_grant_award(payload: dict[str, Any]) -> dict[str, Any]:
+    """
+    Contract seam for the richer grant-acceptance payload.
+
+    This keeps the original ``create_grant(...)`` wrapper intact while
+    giving Sponsors a contract-only way to create the newer Finance
+    ``Grant`` record using ``fund_code`` and the optional grant-specific
+    fields added during the hardening pass.
+    """
+    where = "finance_v2.create_grant_award"
+    try:
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be a dict")
+        from app.slices.finance import services_grants as svc
+
+        return svc.create_grant(payload)
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+# -----------------
+# Record Disbursement
+# services_grants
+# -----------------
+
+
+def record_disbursement(payload: dict[str, Any]) -> dict[str, Any]:
+    """Contract seam for Finance cash-out tracking."""
+    where = "finance_v2.record_disbursement"
+    try:
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be a dict")
+        from app.slices.finance import services_grants as svc
+
+        return svc.record_disbursement(payload)
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+
+# -----------------
 # Statement of Activities
 # services_report
 # -----------------

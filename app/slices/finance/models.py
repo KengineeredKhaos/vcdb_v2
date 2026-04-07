@@ -17,7 +17,72 @@ from app.lib.chrono import now_iso8601_ms
 from app.lib.models import ULIDPK, IsoTimestamps
 
 # -----------------
-# Reference tables
+# Canonical
+# Vocabularies
+# -----------------
+
+FUND_RESTRICTIONS = (
+    "unrestricted",
+    "temporarily_restricted",
+    "permanently_restricted",
+)
+
+ACCOUNT_TYPES = (
+    "asset",
+    "liability",
+    "net_assets",
+    "revenue",
+    "expense",
+)
+
+PERIOD_STATUSES = ("open", "soft_closed", "closed")
+
+RESERVE_STATUSES = ("active", "released", "void")
+ENCUMBRANCE_STATUSES = ("active", "relieved", "void")
+OPS_FLOAT_ACTIONS = ("allocate", "repay", "forgive")
+OPS_FLOAT_SUPPORT_MODES = ("seed", "backfill", "bridge")
+OPS_FLOAT_STATUSES = ("active", "void")
+
+GRANT_STATUSES = ("draft", "active", "closed", "terminated")
+GRANT_FUNDING_MODES = ("reimbursement", "advance")
+GRANT_REPORTING_FREQUENCIES = (
+    "monthly",
+    "quarterly",
+    "semiannual",
+    "annual",
+    "end_of_term",
+)
+
+REIMBURSEMENT_STATUSES = (
+    "draft",
+    "submitted",
+    "approved",
+    "denied",
+    "paid",
+    "closed",
+    "void",
+)
+
+REIMBURSEMENT_LINE_STATUSES = (
+    "included",
+    "approved",
+    "denied",
+    "paid",
+    "void",
+)
+
+DISBURSEMENT_STATUSES = ("recorded", "voided")
+DISBURSEMENT_METHODS = (
+    "check",
+    "ach",
+    "card",
+    "cash_external",
+    "other",
+)
+
+
+# -----------------
+# Reference Tables
 # -----------------
 
 
@@ -26,21 +91,20 @@ class Fund(db.Model, ULIDPK, IsoTimestamps):
 
     code: Mapped[str] = mapped_column(
         String(32), unique=True, index=True, nullable=False
-    )  # e.g., "unrestricted", "TEMP-GRANT25"
-
+    )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
-
     restriction: Mapped[str] = mapped_column(
-        String(16), nullable=False, index=True
-    )  # unrestricted|temp|perm
-
+        String(32), nullable=False, index=True
+    )
     active: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False, index=True
     )
 
     __table_args__ = (
         CheckConstraint(
-            "restriction in ('unrestricted','temp','perm')",
+            "restriction in "
+            "('unrestricted','temporarily_restricted',"
+            "'permanently_restricted')",
             name="ck_fund_restriction",
         ),
     )
@@ -51,14 +115,9 @@ class Account(db.Model, ULIDPK, IsoTimestamps):
 
     code: Mapped[str] = mapped_column(
         String(24), unique=True, index=True, nullable=False
-    )  # e.g., "1000", "4100"
-
+    )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
-
-    type: Mapped[str] = mapped_column(
-        String(16), nullable=False, index=True
-    )  # asset|liability|net_assets|revenue|expense
-
+    type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     active: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False, index=True
     )
@@ -71,34 +130,58 @@ class Account(db.Model, ULIDPK, IsoTimestamps):
     )
 
 
+class Period(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "finance_period"
+
+    period_key: Mapped[str] = mapped_column(
+        String(7), unique=True, index=True, nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, index=True, default="open"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('open','soft_closed','closed')",
+            name="ck_period_status",
+        ),
+    )
+
+
+# -----------------
+# Operational
+# Control States
+# -----------------
+
+
 class Reserve(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "finance_reserve"
 
     funding_demand_ulid: Mapped[str] = mapped_column(
         String(26), nullable=False, index=True
     )
-
     project_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True, index=True
     )
-
+    grant_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
     fund_code: Mapped[str] = mapped_column(
         String(32), nullable=False, index=True
     )
-
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, index=True, default="active"
-    )  # active|released|void
-
+    )
+    decision_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     source: Mapped[str] = mapped_column(
         String(32), nullable=False, index=True
     )
-
     source_ref_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True, index=True
     )
-
     memo: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
     __table_args__ = (
@@ -116,37 +199,31 @@ class Encumbrance(db.Model, ULIDPK, IsoTimestamps):
     funding_demand_ulid: Mapped[str] = mapped_column(
         String(26), nullable=False, index=True
     )
-
     project_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True, index=True
     )
-
+    grant_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
     fund_code: Mapped[str] = mapped_column(
         String(32), nullable=False, index=True
     )
-
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
-
     relieved_cents: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
     )
-
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, index=True, default="active"
-    )  # active|relieved|void
-
+    )
     decision_fingerprint: Mapped[str | None] = mapped_column(
         String(64), nullable=True, index=True
     )
-
     source: Mapped[str] = mapped_column(
         String(32), nullable=False, index=True
     )
-
     source_ref_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True, index=True
     )
-
     memo: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
     __table_args__ = (
@@ -163,57 +240,43 @@ class Encumbrance(db.Model, ULIDPK, IsoTimestamps):
     )
 
 
-
-
 class OpsFloat(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "finance_ops_float"
 
     action: Mapped[str] = mapped_column(
         String(16), nullable=False, index=True
-    )  # allocate|repay|forgive
-
+    )
     support_mode: Mapped[str] = mapped_column(
         String(16), nullable=False, index=True
-    )  # seed|backfill|bridge
-
+    )
     source_funding_demand_ulid: Mapped[str] = mapped_column(
         String(26), nullable=False, index=True
     )
-
     source_project_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True, index=True
     )
-
     dest_funding_demand_ulid: Mapped[str] = mapped_column(
         String(26), nullable=False, index=True
     )
-
     dest_project_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True, index=True
     )
-
     fund_code: Mapped[str] = mapped_column(
         String(32), nullable=False, index=True
     )
-
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
-
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, index=True, default="active"
-    )  # active|void
-
+    )
     parent_ops_float_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True, index=True
     )
-
     decision_fingerprint: Mapped[str | None] = mapped_column(
         String(64), nullable=True, index=True
     )
-
     source_ref_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True, index=True
     )
-
     memo: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
     __table_args__ = (
@@ -233,38 +296,8 @@ class OpsFloat(db.Model, ULIDPK, IsoTimestamps):
     )
 
 
-
-class FinanceProject(db.Model, ULIDPK, IsoTimestamps):
-    __tablename__ = "finance_project"
-
-    name: Mapped[str] = mapped_column(String(160), nullable=False)
-
-    active: Mapped[bool] = mapped_column(
-        Boolean, default=True, nullable=False, index=True
-    )
-
-
-class Period(db.Model, ULIDPK, IsoTimestamps):
-    __tablename__ = "finance_period"
-
-    period_key: Mapped[str] = mapped_column(
-        String(7), unique=True, index=True, nullable=False
-    )  # YYYY-MM
-
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, index=True, default="open"
-    )  # open|soft_closed|closed
-
-    __table_args__ = (
-        CheckConstraint(
-            "status in ('open','soft_closed','closed')",
-            name="ck_period_status",
-        ),
-    )
-
-
 # -----------------
-# Journal
+# Posted Money Spine
 # -----------------
 
 
@@ -273,47 +306,40 @@ class Journal(db.Model, ULIDPK, IsoTimestamps):
 
     source: Mapped[str] = mapped_column(
         String(32), nullable=False, index=True
-    )  # e.g., sponsors|resources|logistics
-
+    )
     funding_demand_ulid: Mapped[str] = mapped_column(
         String(26), nullable=False, index=True
     )
-
+    project_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+    grant_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
     external_ref_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True, index=True
     )
-
     currency: Mapped[str] = mapped_column(
         String(8), nullable=False, default="USD"
     )
-
     period_key: Mapped[str] = mapped_column(
         String(7), nullable=False, index=True
-    )  # YYYY-MM
-
+    )
     happened_at_utc: Mapped[str] = mapped_column(String(30), nullable=False)
-
     posted_at_utc: Mapped[str] = mapped_column(
         String(30), nullable=False, default=now_iso8601_ms
     )
-
     memo: Mapped[str | None] = mapped_column(String(160), nullable=True)
-
     created_by_actor: Mapped[str | None] = mapped_column(
         String(26), nullable=True
     )
 
-    lines: Mapped[list[JournalLine]] = relationship(
+    lines: Mapped[list["JournalLine"]] = relationship(
         "JournalLine",
         back_populates="journal",
         cascade="all, delete-orphan",
         order_by="JournalLine.seq",
     )
-
-
-# -----------------
-# JournalLine
-# -----------------
 
 
 class JournalLine(db.Model, ULIDPK):
@@ -325,36 +351,31 @@ class JournalLine(db.Model, ULIDPK):
         index=True,
         nullable=False,
     )
-
     funding_demand_ulid: Mapped[str] = mapped_column(
         String(26), nullable=False, index=True
     )
-
-    seq: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-
-    account_code: Mapped[str] = mapped_column(
-        String(24), nullable=False, index=True
-    )
-
-    fund_code: Mapped[str] = mapped_column(
-        String(32), nullable=False, index=True
-    )
-
     project_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True, index=True
     )
-
-    amount_cents: Mapped[int] = mapped_column(
-        Integer, nullable=False
-    )  # +debit / -credit
-
+    grant_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    account_code: Mapped[str] = mapped_column(
+        String(24), nullable=False, index=True
+    )
+    fund_code: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True
+    )
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     memo: Mapped[str | None] = mapped_column(String(160), nullable=True)
-
     period_key: Mapped[str] = mapped_column(
         String(7), nullable=False, index=True
-    )  # duplicate for fast rollups
+    )
 
-    journal: Mapped[Journal] = relationship("Journal", back_populates="lines")
+    journal: Mapped["Journal"] = relationship(
+        "Journal", back_populates="lines"
+    )
 
     __table_args__ = (
         CheckConstraint("amount_cents != 0", name="ck_line_nonzero"),
@@ -363,8 +384,8 @@ class JournalLine(db.Model, ULIDPK):
 
 
 # -----------------
-# Balances Projection
-# (rebuildable)
+# Rebuildable
+# Projections
 # -----------------
 
 
@@ -374,27 +395,21 @@ class BalanceMonthly(db.Model, ULIDPK):
     account_code: Mapped[str] = mapped_column(
         String(24), nullable=False, index=True
     )
-
     fund_code: Mapped[str] = mapped_column(
         String(32), nullable=False, index=True
     )
-
     project_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True, index=True
     )
-
     period_key: Mapped[str] = mapped_column(
         String(7), nullable=False, index=True
     )
-
     debits_cents: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
     )
-
     credits_cents: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
     )
-
     net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     __table_args__ = (
@@ -408,36 +423,18 @@ class BalanceMonthly(db.Model, ULIDPK):
     )
 
 
-# -----------------
-# Optional:
-# Statistical metrics
-# (non-monetary)
-# -----------------
-
-
 class StatMetric(db.Model, ULIDPK, IsoTimestamps):
     __tablename__ = "finance_stat_metric"
 
     period_key: Mapped[str] = mapped_column(
         String(7), nullable=False, index=True
     )
-
     metric_code: Mapped[str] = mapped_column(
         String(32), nullable=False, index=True
-    )  # e.g., STAT_FOOD_LBS
-
-    quantity: Mapped[int] = mapped_column(
-        Integer, nullable=False
-    )  # integers only
-
-    unit: Mapped[str] = mapped_column(
-        String(16), nullable=False
-    )  # lbs|kits|each
-
-    source: Mapped[str] = mapped_column(
-        String(32), nullable=False
-    )  # logistics|resources
-
+    )
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit: Mapped[str] = mapped_column(String(16), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
     source_ref_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True
     )
@@ -454,138 +451,322 @@ class StatMetric(db.Model, ULIDPK, IsoTimestamps):
 
 
 # -----------------
-# Grants &
-# Reimbursements
+# Grant Paperwork &
+# Accountability Tables
 # -----------------
 
 
 class Grant(db.Model, ULIDPK, IsoTimestamps):
-    """
-    Finance representation of a grant commitment from a sponsor.
-
-    This is a *program* or *award* level object:
-
-        - which fund the grant flows through
-        - which sponsor it comes from
-        - total award amount and match requirement
-        - term dates
-        - reporting cadence
-        - which expense categories are allowable
-
-    Journal entries still live in Journal / JournalLine; this table
-    only stores the “paperwork” and configuration for that grant.
-    """
-
     __tablename__ = "finance_grant"
 
-    fund_id: Mapped[str] = mapped_column(
-        String(26),
-        ForeignKey("finance_fund.ulid"),
-        nullable=False,
-        index=True,
+    fund_code: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True
     )
-
+    restriction_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True, default="unrestricted"
+    )
     sponsor_ulid: Mapped[str] = mapped_column(
-        String(26),
-        nullable=False,
-        index=True,
+        String(26), nullable=False, index=True
     )
-
+    project_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+    award_number: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    award_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    funding_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, index=True, default="reimbursement"
+    )
     amount_awarded_cents: Mapped[int] = mapped_column(Integer, nullable=False)
-
     match_required_cents: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
     )
-
-    # YYYY-MM-DD strings, consistent with other date-ish string fields
     start_on: Mapped[str] = mapped_column(String(10), nullable=False)
-
     end_on: Mapped[str] = mapped_column(String(10), nullable=False)
-
     reporting_frequency: Mapped[str] = mapped_column(
         String(16), nullable=False, index=True
-    )  # monthly|quarterly|semiannual|annual|end_of_term
-
-    # Stored as a comma-separated list, with helpers for a Python list
-    allowable_categories_raw: Mapped[str] = mapped_column(
+    )
+    program_income_allowed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    allowable_expense_kinds_raw: Mapped[str] = mapped_column(
         String(255), nullable=False, default=""
     )
-
-    active: Mapped[bool] = mapped_column(
-        Boolean, default=True, nullable=False, index=True
+    conditions_summary: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
     )
-
-    __table_args__ = (
-        CheckConstraint(
-            "reporting_frequency in "
-            "('monthly','quarterly','semiannual','annual','end_of_term')",
-            name="ck_grant_reporting_frequency",
-        ),
+    source_document_ref: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
     )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, index=True, default="draft"
+    )
+    notes: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    reimbursements: Mapped[list[Reimbursement]] = relationship(
+    reimbursements: Mapped[list["Reimbursement"]] = relationship(
         "Reimbursement",
         back_populates="grant",
         cascade="all, delete-orphan",
         order_by="Reimbursement.submitted_on",
     )
 
-    @property
-    def allowable_categories(self) -> list[str]:
-        if not self.allowable_categories_raw:
-            return []
-        return [c for c in self.allowable_categories_raw.split(",") if c]
+    __table_args__ = (
+        CheckConstraint(
+            "amount_awarded_cents >= 0",
+            name="ck_grant_award_nonneg",
+        ),
+        CheckConstraint(
+            "match_required_cents >= 0",
+            name="ck_grant_match_nonneg",
+        ),
+        CheckConstraint(
+            "restriction_type in "
+            "('unrestricted','temporarily_restricted',"
+            "'permanently_restricted')",
+            name="ck_grant_restriction_type",
+        ),
+        CheckConstraint(
+            "funding_mode in ('reimbursement','advance')",
+            name="ck_grant_funding_mode",
+        ),
+        CheckConstraint(
+            "reporting_frequency in "
+            "('monthly','quarterly','semiannual','annual','end_of_term')",
+            name="ck_grant_reporting_frequency",
+        ),
+        CheckConstraint(
+            "status in ('draft','active','closed','terminated')",
+            name="ck_grant_status",
+        ),
+        UniqueConstraint(
+            "sponsor_ulid",
+            "award_number",
+            name="uq_grant_sponsor_award_number",
+        ),
+    )
 
-    @allowable_categories.setter
-    def allowable_categories(self, categories: list[str]) -> None:
+    @property
+    def allowable_expense_kinds(self) -> list[str]:
+        if not self.allowable_expense_kinds_raw:
+            return []
+        return [
+            value
+            for value in self.allowable_expense_kinds_raw.split(",")
+            if value
+        ]
+
+    @allowable_expense_kinds.setter
+    def allowable_expense_kinds(self, values: list[str]) -> None:
         cleaned = sorted(
-            {c.strip() for c in categories or [] if c and c.strip()}
+            {
+                str(value).strip()
+                for value in values or []
+                if str(value).strip()
+            }
         )
-        self.allowable_categories_raw = ",".join(cleaned)
+        self.allowable_expense_kinds_raw = ",".join(cleaned)
 
 
 class Reimbursement(db.Model, ULIDPK, IsoTimestamps):
-    """
-    A reimbursement request submitted against a Grant.
-
-    This is *paperwork level*:
-
-        - which grant
-        - what period it covers
-        - how much we’re asking for
-        - current status in the reimbursement workflow
-    """
-
     __tablename__ = "finance_reimbursement"
 
-    grant_id: Mapped[str] = mapped_column(
+    grant_ulid: Mapped[str] = mapped_column(
         String(26),
         ForeignKey("finance_grant.ulid"),
         nullable=False,
         index=True,
     )
-
-    submitted_on: Mapped[str] = mapped_column(
-        String(10), nullable=False
-    )  # YYYY-MM-DD
-
+    project_ulid: Mapped[str] = mapped_column(
+        String(26), nullable=False, index=True
+    )
+    funding_demand_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+    claim_number: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     period_start: Mapped[str] = mapped_column(String(10), nullable=False)
-
     period_end: Mapped[str] = mapped_column(String(10), nullable=False)
-
-    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
-
+    submitted_on: Mapped[str | None] = mapped_column(
+        String(10), nullable=True
+    )
+    decided_on: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    received_on: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    claimed_amount_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    approved_amount_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    received_amount_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
     status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="submitted", index=True
-    )  # draft|submitted|approved|paid|void
+        String(16), nullable=False, default="draft", index=True
+    )
+    notes: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    grant: Mapped["Grant"] = relationship(
+        "Grant", back_populates="reimbursements"
+    )
+    lines: Mapped[list["ReimbursementLine"]] = relationship(
+        "ReimbursementLine",
+        back_populates="claim",
+        cascade="all, delete-orphan",
+        order_by="ReimbursementLine.created_at_utc",
+    )
 
     __table_args__ = (
         CheckConstraint(
-            "status in ('draft','submitted','approved','paid','void')",
+            "claimed_amount_cents >= 0",
+            name="ck_reimbursement_claimed_nonneg",
+        ),
+        CheckConstraint(
+            "approved_amount_cents >= 0",
+            name="ck_reimbursement_approved_nonneg",
+        ),
+        CheckConstraint(
+            "received_amount_cents >= 0",
+            name="ck_reimbursement_received_nonneg",
+        ),
+        CheckConstraint(
+            "approved_amount_cents <= claimed_amount_cents",
+            name="ck_reimbursement_approved_le_claimed",
+        ),
+        CheckConstraint(
+            "received_amount_cents <= approved_amount_cents",
+            name="ck_reimbursement_received_le_approved",
+        ),
+        CheckConstraint(
+            "status in "
+            "('draft','submitted','approved','denied','paid',"
+            "'closed','void')",
             name="ck_reimbursement_status",
+        ),
+        UniqueConstraint(
+            "grant_ulid",
+            "claim_number",
+            name="uq_reimbursement_grant_claim_number",
         ),
     )
 
-    grant: Mapped[Grant] = relationship(
-        "Grant", back_populates="reimbursements"
+
+class ReimbursementLine(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "finance_reimbursement_line"
+
+    claim_ulid: Mapped[str] = mapped_column(
+        String(26),
+        ForeignKey("finance_reimbursement.ulid"),
+        nullable=False,
+        index=True,
+    )
+    expense_journal_ulid: Mapped[str] = mapped_column(
+        String(26),
+        ForeignKey("finance_journal.ulid"),
+        nullable=False,
+        index=True,
+    )
+    claimed_amount_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    approved_amount_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    received_amount_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="included", index=True
+    )
+    notes: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    claim: Mapped["Reimbursement"] = relationship(
+        "Reimbursement", back_populates="lines"
+    )
+    expense_journal: Mapped["Journal"] = relationship("Journal")
+
+    __table_args__ = (
+        CheckConstraint(
+            "claimed_amount_cents >= 0",
+            name="ck_reimbursement_line_claimed_nonneg",
+        ),
+        CheckConstraint(
+            "approved_amount_cents >= 0",
+            name="ck_reimbursement_line_approved_nonneg",
+        ),
+        CheckConstraint(
+            "received_amount_cents >= 0",
+            name="ck_reimbursement_line_received_nonneg",
+        ),
+        CheckConstraint(
+            "approved_amount_cents <= claimed_amount_cents",
+            name="ck_reimbursement_line_approved_le_claimed",
+        ),
+        CheckConstraint(
+            "received_amount_cents <= approved_amount_cents",
+            name="ck_reimbursement_line_received_le_approved",
+        ),
+        CheckConstraint(
+            "status in ('included','approved','denied','paid','void')",
+            name="ck_reimbursement_line_status",
+        ),
+        UniqueConstraint(
+            "claim_ulid",
+            "expense_journal_ulid",
+            name="uq_reimbursement_line_claim_expense",
+        ),
+    )
+
+
+class Disbursement(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "finance_disbursement"
+
+    expense_journal_ulid: Mapped[str] = mapped_column(
+        String(26),
+        ForeignKey("finance_journal.ulid"),
+        nullable=False,
+        index=True,
+    )
+    grant_ulid: Mapped[str | None] = mapped_column(
+        String(26),
+        ForeignKey("finance_grant.ulid"),
+        nullable=True,
+        index=True,
+    )
+    project_ulid: Mapped[str] = mapped_column(
+        String(26), nullable=False, index=True
+    )
+    funding_demand_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    disbursed_on: Mapped[str] = mapped_column(String(10), nullable=False)
+    method: Mapped[str] = mapped_column(
+        String(16), nullable=False, index=True, default="other"
+    )
+    reference: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, index=True, default="recorded"
+    )
+    notes: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    expense_journal: Mapped["Journal"] = relationship("Journal")
+    grant: Mapped["Grant | None"] = relationship("Grant")
+
+    __table_args__ = (
+        CheckConstraint(
+            "amount_cents >= 0",
+            name="ck_disbursement_amount_nonneg",
+        ),
+        CheckConstraint(
+            "method in ('check','ach','card','cash_external','other')",
+            name="ck_disbursement_method",
+        ),
+        CheckConstraint(
+            "status in ('recorded','voided')",
+            name="ck_disbursement_status",
+        ),
     )

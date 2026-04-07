@@ -47,6 +47,7 @@ def reserve_funds(payload: dict, *, dry_run: bool = False) -> dict:
     r = Reserve(
         funding_demand_ulid=str(fd),
         project_ulid=payload.get("project_ulid"),
+        grant_ulid=payload.get("grant_ulid"),
         fund_code=str(fund_key),
         amount_cents=amount,
         status="active",
@@ -66,6 +67,7 @@ def reserve_funds(payload: dict, *, dry_run: bool = False) -> dict:
         refs={
             "funding_demand_ulid": str(fd),
             "project_ulid": payload.get("project_ulid"),
+            "grant_ulid": payload.get("grant_ulid"),
             "fund_key": str(fund_key),
             "amount_cents": amount,
             "source_ref_ulid": payload.get("source_ref_ulid"),
@@ -113,6 +115,7 @@ def encumber_funds(payload: dict, *, dry_run: bool = False) -> dict:
     e = Encumbrance(
         funding_demand_ulid=str(fd),
         project_ulid=payload.get("project_ulid"),
+        grant_ulid=payload.get("grant_ulid"),
         fund_code=str(fund_key),
         amount_cents=amount,
         relieved_cents=0,
@@ -134,6 +137,7 @@ def encumber_funds(payload: dict, *, dry_run: bool = False) -> dict:
         refs={
             "funding_demand_ulid": str(fd),
             "project_ulid": payload.get("project_ulid"),
+            "grant_ulid": payload.get("grant_ulid"),
             "fund_key": str(fund_key),
             "amount_cents": amount,
             "source_ref_ulid": payload.get("source_ref_ulid"),
@@ -171,6 +175,7 @@ def relieve_encumbrance(
         refs={
             "funding_demand_ulid": e.funding_demand_ulid,
             "project_ulid": e.project_ulid,
+            "grant_ulid": e.grant_ulid,
             "fund_key": e.fund_code,
             "amount_cents": amount_cents,
         },

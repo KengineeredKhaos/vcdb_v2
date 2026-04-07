@@ -75,6 +75,7 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
             "fund_code": str(fund_key),
             "funding_demand_ulid": str(funding_demand_ulid),
             "project_ulid": payload.get("project_ulid"),
+            "grant_ulid": payload.get("grant_ulid"),
             "amount_cents": amount,
             "memo": memo,
         },
@@ -83,6 +84,7 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
             "fund_code": str(fund_key),
             "funding_demand_ulid": str(funding_demand_ulid),
             "project_ulid": payload.get("project_ulid"),
+            "grant_ulid": payload.get("grant_ulid"),
             "amount_cents": -amount,
             "memo": memo,
         },
@@ -96,6 +98,8 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
         memo=memo,
         lines=lines,
         created_by_actor=created_by_actor,
+        project_ulid=payload.get("project_ulid"),
+        grant_ulid=payload.get("grant_ulid"),
     )
 
     # Optional extra semantic event (keeps UI/reporting glue easy)
@@ -112,6 +116,7 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
             "receipt_method": str(receipt_method),
             "amount_cents": amount,
             "project_ulid": payload.get("project_ulid"),
+            "grant_ulid": payload.get("grant_ulid"),
             "funding_demand_ulid": payload.get("funding_demand_ulid"),
             "payer_entity_ulid": payload.get("payer_entity_ulid"),
             "source_ref_ulid": source_ref_ulid,
@@ -188,6 +193,7 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
             "fund_code": str(fund_key),
             "funding_demand_ulid": str(funding_demand_ulid),
             "project_ulid": payload.get("project_ulid"),
+            "grant_ulid": payload.get("grant_ulid"),
             "amount_cents": amount,
             "memo": memo,
         },
@@ -196,6 +202,7 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
             "fund_code": str(fund_key),
             "funding_demand_ulid": str(funding_demand_ulid),
             "project_ulid": payload.get("project_ulid"),
+            "grant_ulid": payload.get("grant_ulid"),
             "amount_cents": -amount,
             "memo": memo,
         },
@@ -209,6 +216,8 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
         memo=memo,
         lines=lines,
         created_by_actor=created_by_actor,
+        project_ulid=payload.get("project_ulid"),
+        grant_ulid=payload.get("grant_ulid"),
     )
 
     enc_ulid = payload.get("encumbrance_ulid")
@@ -233,6 +242,7 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
             "payment_method": str(payment_method),
             "amount_cents": amount,
             "project_ulid": payload.get("project_ulid"),
+            "grant_ulid": payload.get("grant_ulid"),
             "funding_demand_ulid": payload.get("funding_demand_ulid"),
             "payee_entity_ulid": payload.get("payee_entity_ulid"),
             "source_ref_ulid": source_ref_ulid,

@@ -11,7 +11,6 @@ from app.lib.chrono import now_iso8601_ms
 from app.slices.finance.models import (
     Account,
     BalanceMonthly,
-    FinanceProject,
     Fund,
     Journal,
     JournalLine,
@@ -343,16 +342,20 @@ def ensure_fund(*, code: str, name: str, restriction: str) -> Fund:
 
     mapping = {
         "unrestricted": "unrestricted",
-        "temp": "temp",
-        "temporary": "temp",
-        "temporarily_restricted": "temp",
-        "perm": "perm",
-        "permanent": "perm",
-        "permanently_restricted": "perm",
+        "temp": "temporarily_restricted",
+        "temporary": "temporarily_restricted",
+        "temporarily_restricted": "temporarily_restricted",
+        "perm": "permanently_restricted",
+        "permanent": "permanently_restricted",
+        "permanently_restricted": "permanently_restricted",
     }
     restriction_norm = mapping.get(restriction_raw, restriction_raw)
 
-    if restriction_norm not in {"unrestricted", "temp", "perm"}:
+    if restriction_norm not in {
+        "unrestricted",
+        "temporarily_restricted",
+        "permanently_restricted",
+    }:
         raise ValueError(f"invalid restriction type: {restriction_raw}")
 
     row = db.session.execute(
@@ -372,10 +375,9 @@ def ensure_fund(*, code: str, name: str, restriction: str) -> Fund:
 
 
 def ensure_project(*, name: str) -> str:
-    p = FinanceProject(name=name, active=True)
-    db.session.add(p)
-    db.session.flush()
-    return p.ulid
+    raise NotImplementedError(
+        "FinanceProject has been removed; use Calendar project ULIDs."
+    )
 
 
 def _external_restriction_type(internal: str) -> str:
@@ -402,6 +404,8 @@ def post_journal(
     memo: str | None,
     lines: list[dict],
     created_by_actor: str | None,
+    project_ulid: str | None = None,
+    grant_ulid: str | None = None,
 ) -> str:
     """
     Write a balanced journal entry (header + lines) and update BalanceMonthly.
@@ -503,6 +507,8 @@ def post_journal(
     j = Journal(
         source=source,
         funding_demand_ulid=funding_demand_ulid,
+        project_ulid=project_ulid,
+        grant_ulid=grant_ulid,
         external_ref_ulid=external_ref_ulid,
         currency=currency,
         period_key=period_key,
@@ -533,7 +539,8 @@ def post_journal(
                 seq=seq,
                 account_code=line["account_code"],
                 fund_code=line["fund_code"],
-                project_ulid=line.get("project_ulid"),
+                project_ulid=line.get("project_ulid") or project_ulid,
+                grant_ulid=line.get("grant_ulid") or grant_ulid,
                 amount_cents=int(line["amount_cents"]),
                 memo=(line.get("memo") or None),
                 period_key=period_key,
@@ -556,6 +563,8 @@ def post_journal(
             "source": source,
             "external_ref_ulid": external_ref_ulid,
             "funding_demand_ulid": funding_demand_ulid,
+            "project_ulid": project_ulid,
+            "grant_ulid": grant_ulid,
             "line_count": len(lines),
             "fund_codes": sorted(fund_codes),
         },
@@ -596,6 +605,7 @@ def reverse_journal(
                 "account_code": orig_line.account_code,
                 "fund_code": orig_line.fund_code,
                 "project_ulid": orig_line.project_ulid,
+                "grant_ulid": orig_line.grant_ulid,
                 "amount_cents": -orig_line.amount_cents,  # reverse
                 "memo": f"Reversal of {j.ulid}",
             }
@@ -609,6 +619,8 @@ def reverse_journal(
         memo=f"Reversal of {j.ulid}",
         lines=lines,
         created_by_actor=created_by_actor,
+        project_ulid=j.project_ulid,
+        grant_ulid=j.grant_ulid,       
     )
 
 

@@ -1,8 +1,8 @@
 """empty message
 
-Revision ID: f4941ac9ef67
+Revision ID: fbc6a56bf7c0
 Revises: 
-Create Date: 2026-04-02 20:09:37.759783
+Create Date: 2026-04-06 09:16:59.403957
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'f4941ac9ef67'
+revision = 'fbc6a56bf7c0'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -219,6 +219,7 @@ def upgrade():
     op.create_table('finance_encumbrance',
     sa.Column('funding_demand_ulid', sa.String(length=26), nullable=False),
     sa.Column('project_ulid', sa.String(length=26), nullable=True),
+    sa.Column('grant_ulid', sa.String(length=26), nullable=True),
     sa.Column('fund_code', sa.String(length=32), nullable=False),
     sa.Column('amount_cents', sa.Integer(), nullable=False),
     sa.Column('relieved_cents', sa.Integer(), nullable=False),
@@ -240,6 +241,7 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_finance_encumbrance_decision_fingerprint'), ['decision_fingerprint'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_encumbrance_fund_code'), ['fund_code'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_encumbrance_funding_demand_ulid'), ['funding_demand_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_encumbrance_grant_ulid'), ['grant_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_encumbrance_project_ulid'), ['project_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_encumbrance_source'), ['source'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_encumbrance_source_ref_ulid'), ['source_ref_ulid'], unique=False)
@@ -248,12 +250,12 @@ def upgrade():
     op.create_table('finance_fund',
     sa.Column('code', sa.String(length=32), nullable=False),
     sa.Column('name', sa.String(length=120), nullable=False),
-    sa.Column('restriction', sa.String(length=16), nullable=False),
+    sa.Column('restriction', sa.String(length=32), nullable=False),
     sa.Column('active', sa.Boolean(), nullable=False),
     sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.CheckConstraint("restriction in ('unrestricted','temp','perm')", name='ck_fund_restriction'),
+    sa.CheckConstraint("restriction in ('unrestricted','temporarily_restricted','permanently_restricted')", name='ck_fund_restriction'),
     sa.PrimaryKeyConstraint('ulid')
     )
     with op.batch_alter_table('finance_fund', schema=None) as batch_op:
@@ -261,9 +263,44 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_finance_fund_code'), ['code'], unique=True)
         batch_op.create_index(batch_op.f('ix_finance_fund_restriction'), ['restriction'], unique=False)
 
+    op.create_table('finance_grant',
+    sa.Column('fund_code', sa.String(length=32), nullable=False),
+    sa.Column('sponsor_ulid', sa.String(length=26), nullable=False),
+    sa.Column('award_number', sa.String(length=64), nullable=True),
+    sa.Column('award_name', sa.String(length=160), nullable=False),
+    sa.Column('funding_mode', sa.String(length=16), nullable=False),
+    sa.Column('amount_awarded_cents', sa.Integer(), nullable=False),
+    sa.Column('match_required_cents', sa.Integer(), nullable=False),
+    sa.Column('start_on', sa.String(length=10), nullable=False),
+    sa.Column('end_on', sa.String(length=10), nullable=False),
+    sa.Column('reporting_frequency', sa.String(length=16), nullable=False),
+    sa.Column('allowable_expense_kinds_raw', sa.String(length=255), nullable=False),
+    sa.Column('status', sa.String(length=16), nullable=False),
+    sa.Column('notes', sa.String(length=255), nullable=True),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
+    sa.CheckConstraint("funding_mode in ('reimbursement','advance','mixed')", name='ck_grant_funding_mode'),
+    sa.CheckConstraint("reporting_frequency in ('monthly','quarterly','semiannual','annual','end_of_term')", name='ck_grant_reporting_frequency'),
+    sa.CheckConstraint("status in ('draft','active','closed','terminated')", name='ck_grant_status'),
+    sa.CheckConstraint('amount_awarded_cents >= 0', name='ck_grant_award_nonneg'),
+    sa.CheckConstraint('match_required_cents >= 0', name='ck_grant_match_nonneg'),
+    sa.PrimaryKeyConstraint('ulid'),
+    sa.UniqueConstraint('sponsor_ulid', 'award_number', name='uq_grant_sponsor_award_number')
+    )
+    with op.batch_alter_table('finance_grant', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_finance_grant_award_number'), ['award_number'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_grant_fund_code'), ['fund_code'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_grant_funding_mode'), ['funding_mode'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_grant_reporting_frequency'), ['reporting_frequency'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_grant_sponsor_ulid'), ['sponsor_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_grant_status'), ['status'], unique=False)
+
     op.create_table('finance_journal',
     sa.Column('source', sa.String(length=32), nullable=False),
     sa.Column('funding_demand_ulid', sa.String(length=26), nullable=False),
+    sa.Column('project_ulid', sa.String(length=26), nullable=True),
+    sa.Column('grant_ulid', sa.String(length=26), nullable=True),
     sa.Column('external_ref_ulid', sa.String(length=26), nullable=True),
     sa.Column('currency', sa.String(length=8), nullable=False),
     sa.Column('period_key', sa.String(length=7), nullable=False),
@@ -280,7 +317,9 @@ def upgrade():
     with op.batch_alter_table('finance_journal', schema=None) as batch_op:
         batch_op.create_index(batch_op.f('ix_finance_journal_external_ref_ulid'), ['external_ref_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_journal_funding_demand_ulid'), ['funding_demand_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_journal_grant_ulid'), ['grant_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_journal_period_key'), ['period_key'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_journal_project_ulid'), ['project_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_journal_source'), ['source'], unique=False)
 
     op.create_table('finance_ops_float',
@@ -332,24 +371,14 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_finance_period_period_key'), ['period_key'], unique=True)
         batch_op.create_index(batch_op.f('ix_finance_period_status'), ['status'], unique=False)
 
-    op.create_table('finance_project',
-    sa.Column('name', sa.String(length=160), nullable=False),
-    sa.Column('active', sa.Boolean(), nullable=False),
-    sa.Column('ulid', sa.String(length=26), nullable=False),
-    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
-    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.CheckConstraint('length(ulid) = 26', name='ck_ulid_len_26'),
-    sa.PrimaryKeyConstraint('ulid')
-    )
-    with op.batch_alter_table('finance_project', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_finance_project_active'), ['active'], unique=False)
-
     op.create_table('finance_reserve',
     sa.Column('funding_demand_ulid', sa.String(length=26), nullable=False),
     sa.Column('project_ulid', sa.String(length=26), nullable=True),
+    sa.Column('grant_ulid', sa.String(length=26), nullable=True),
     sa.Column('fund_code', sa.String(length=32), nullable=False),
     sa.Column('amount_cents', sa.Integer(), nullable=False),
     sa.Column('status', sa.String(length=16), nullable=False),
+    sa.Column('decision_fingerprint', sa.String(length=64), nullable=True),
     sa.Column('source', sa.String(length=32), nullable=False),
     sa.Column('source_ref_ulid', sa.String(length=26), nullable=True),
     sa.Column('memo', sa.String(length=160), nullable=True),
@@ -361,8 +390,10 @@ def upgrade():
     sa.PrimaryKeyConstraint('ulid')
     )
     with op.batch_alter_table('finance_reserve', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_finance_reserve_decision_fingerprint'), ['decision_fingerprint'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_reserve_fund_code'), ['fund_code'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_reserve_funding_demand_ulid'), ['funding_demand_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_reserve_grant_ulid'), ['grant_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_reserve_project_ulid'), ['project_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_reserve_source'), ['source'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_reserve_source_ref_ulid'), ['source_ref_ulid'], unique=False)
@@ -680,36 +711,44 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_entity_role_entity_ulid'), ['entity_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_entity_role_role'), ['role'], unique=False)
 
-    op.create_table('finance_grant',
-    sa.Column('fund_id', sa.String(length=26), nullable=False),
-    sa.Column('sponsor_ulid', sa.String(length=26), nullable=False),
-    sa.Column('amount_awarded_cents', sa.Integer(), nullable=False),
-    sa.Column('match_required_cents', sa.Integer(), nullable=False),
-    sa.Column('start_on', sa.String(length=10), nullable=False),
-    sa.Column('end_on', sa.String(length=10), nullable=False),
-    sa.Column('reporting_frequency', sa.String(length=16), nullable=False),
-    sa.Column('allowable_categories_raw', sa.String(length=255), nullable=False),
-    sa.Column('active', sa.Boolean(), nullable=False),
+    op.create_table('finance_disbursement',
+    sa.Column('expense_journal_ulid', sa.String(length=26), nullable=False),
+    sa.Column('grant_ulid', sa.String(length=26), nullable=True),
+    sa.Column('project_ulid', sa.String(length=26), nullable=False),
+    sa.Column('funding_demand_ulid', sa.String(length=26), nullable=True),
+    sa.Column('amount_cents', sa.Integer(), nullable=False),
+    sa.Column('disbursed_on', sa.String(length=10), nullable=False),
+    sa.Column('method', sa.String(length=16), nullable=False),
+    sa.Column('reference', sa.String(length=64), nullable=True),
+    sa.Column('status', sa.String(length=16), nullable=False),
+    sa.Column('notes', sa.String(length=255), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.CheckConstraint("reporting_frequency in ('monthly','quarterly','semiannual','annual','end_of_term')", name='ck_grant_reporting_frequency'),
-    sa.ForeignKeyConstraint(['fund_id'], ['finance_fund.ulid'], ),
+    sa.CheckConstraint("method in ('check','ach','card','cash_external','other')", name='ck_disbursement_method'),
+    sa.CheckConstraint("status in ('recorded','voided')", name='ck_disbursement_status'),
+    sa.CheckConstraint('amount_cents >= 0', name='ck_disbursement_amount_nonneg'),
+    sa.ForeignKeyConstraint(['expense_journal_ulid'], ['finance_journal.ulid'], ),
+    sa.ForeignKeyConstraint(['grant_ulid'], ['finance_grant.ulid'], ),
     sa.PrimaryKeyConstraint('ulid')
     )
-    with op.batch_alter_table('finance_grant', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_finance_grant_active'), ['active'], unique=False)
-        batch_op.create_index(batch_op.f('ix_finance_grant_fund_id'), ['fund_id'], unique=False)
-        batch_op.create_index(batch_op.f('ix_finance_grant_reporting_frequency'), ['reporting_frequency'], unique=False)
-        batch_op.create_index(batch_op.f('ix_finance_grant_sponsor_ulid'), ['sponsor_ulid'], unique=False)
+    with op.batch_alter_table('finance_disbursement', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_finance_disbursement_expense_journal_ulid'), ['expense_journal_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_disbursement_funding_demand_ulid'), ['funding_demand_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_disbursement_grant_ulid'), ['grant_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_disbursement_method'), ['method'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_disbursement_project_ulid'), ['project_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_disbursement_reference'), ['reference'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_disbursement_status'), ['status'], unique=False)
 
     op.create_table('finance_journal_line',
     sa.Column('journal_ulid', sa.String(length=26), nullable=False),
     sa.Column('funding_demand_ulid', sa.String(length=26), nullable=False),
+    sa.Column('project_ulid', sa.String(length=26), nullable=True),
+    sa.Column('grant_ulid', sa.String(length=26), nullable=True),
     sa.Column('seq', sa.Integer(), nullable=False),
     sa.Column('account_code', sa.String(length=24), nullable=False),
     sa.Column('fund_code', sa.String(length=32), nullable=False),
-    sa.Column('project_ulid', sa.String(length=26), nullable=True),
     sa.Column('amount_cents', sa.Integer(), nullable=False),
     sa.Column('memo', sa.String(length=160), nullable=True),
     sa.Column('period_key', sa.String(length=7), nullable=False),
@@ -723,9 +762,45 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_finance_journal_line_account_code'), ['account_code'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_journal_line_fund_code'), ['fund_code'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_journal_line_funding_demand_ulid'), ['funding_demand_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_journal_line_grant_ulid'), ['grant_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_journal_line_journal_ulid'), ['journal_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_journal_line_period_key'), ['period_key'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_journal_line_project_ulid'), ['project_ulid'], unique=False)
+
+    op.create_table('finance_reimbursement',
+    sa.Column('grant_ulid', sa.String(length=26), nullable=False),
+    sa.Column('project_ulid', sa.String(length=26), nullable=False),
+    sa.Column('funding_demand_ulid', sa.String(length=26), nullable=True),
+    sa.Column('claim_number', sa.String(length=64), nullable=True),
+    sa.Column('period_start', sa.String(length=10), nullable=False),
+    sa.Column('period_end', sa.String(length=10), nullable=False),
+    sa.Column('submitted_on', sa.String(length=10), nullable=True),
+    sa.Column('decided_on', sa.String(length=10), nullable=True),
+    sa.Column('received_on', sa.String(length=10), nullable=True),
+    sa.Column('claimed_amount_cents', sa.Integer(), nullable=False),
+    sa.Column('approved_amount_cents', sa.Integer(), nullable=False),
+    sa.Column('received_amount_cents', sa.Integer(), nullable=False),
+    sa.Column('status', sa.String(length=16), nullable=False),
+    sa.Column('notes', sa.String(length=255), nullable=True),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
+    sa.CheckConstraint("status in ('draft','submitted','approved','denied','paid','closed','void')", name='ck_reimbursement_status'),
+    sa.CheckConstraint('approved_amount_cents <= claimed_amount_cents', name='ck_reimbursement_approved_le_claimed'),
+    sa.CheckConstraint('approved_amount_cents >= 0', name='ck_reimbursement_approved_nonneg'),
+    sa.CheckConstraint('claimed_amount_cents >= 0', name='ck_reimbursement_claimed_nonneg'),
+    sa.CheckConstraint('received_amount_cents <= approved_amount_cents', name='ck_reimbursement_received_le_approved'),
+    sa.CheckConstraint('received_amount_cents >= 0', name='ck_reimbursement_received_nonneg'),
+    sa.ForeignKeyConstraint(['grant_ulid'], ['finance_grant.ulid'], ),
+    sa.PrimaryKeyConstraint('ulid'),
+    sa.UniqueConstraint('grant_ulid', 'claim_number', name='uq_reimbursement_grant_claim_number')
+    )
+    with op.batch_alter_table('finance_reimbursement', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_finance_reimbursement_claim_number'), ['claim_number'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_reimbursement_funding_demand_ulid'), ['funding_demand_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_reimbursement_grant_ulid'), ['grant_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_reimbursement_project_ulid'), ['project_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_reimbursement_status'), ['status'], unique=False)
 
     op.create_table('logi_batch',
     sa.Column('item_ulid', sa.String(length=26), nullable=False),
@@ -858,7 +933,7 @@ def upgrade():
     sa.Column('schema_name', sa.String(length=64), nullable=True),
     sa.Column('schema_version', sa.Integer(), nullable=True),
     sa.Column('title', sa.String(length=140), nullable=True),
-    sa.Column('summary', sa.String(length=320), nullable=True),
+    sa.Column('summary', sa.String(length=512), nullable=True),
     sa.Column('severity', sa.String(length=12), nullable=False),
     sa.Column('public_tags_csv', sa.String(length=240), nullable=True),
     sa.Column('has_admin_tags', sa.Boolean(), nullable=False),
@@ -893,23 +968,32 @@ def upgrade():
     sa.ForeignKeyConstraint(['entity_ulid'], ['customer_customer.entity_ulid'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('entity_ulid')
     )
-    op.create_table('finance_reimbursement',
-    sa.Column('grant_id', sa.String(length=26), nullable=False),
-    sa.Column('submitted_on', sa.String(length=10), nullable=False),
-    sa.Column('period_start', sa.String(length=10), nullable=False),
-    sa.Column('period_end', sa.String(length=10), nullable=False),
-    sa.Column('amount_cents', sa.Integer(), nullable=False),
+    op.create_table('finance_reimbursement_line',
+    sa.Column('claim_ulid', sa.String(length=26), nullable=False),
+    sa.Column('expense_journal_ulid', sa.String(length=26), nullable=False),
+    sa.Column('claimed_amount_cents', sa.Integer(), nullable=False),
+    sa.Column('approved_amount_cents', sa.Integer(), nullable=False),
+    sa.Column('received_amount_cents', sa.Integer(), nullable=False),
     sa.Column('status', sa.String(length=16), nullable=False),
+    sa.Column('notes', sa.String(length=255), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
     sa.Column('created_at_utc', sa.String(length=30), nullable=False),
     sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
-    sa.CheckConstraint("status in ('draft','submitted','approved','paid','void')", name='ck_reimbursement_status'),
-    sa.ForeignKeyConstraint(['grant_id'], ['finance_grant.ulid'], ),
-    sa.PrimaryKeyConstraint('ulid')
+    sa.CheckConstraint("status in ('included','approved','denied','paid','void')", name='ck_reimbursement_line_status'),
+    sa.CheckConstraint('approved_amount_cents <= claimed_amount_cents', name='ck_reimbursement_line_approved_le_claimed'),
+    sa.CheckConstraint('approved_amount_cents >= 0', name='ck_reimbursement_line_approved_nonneg'),
+    sa.CheckConstraint('claimed_amount_cents >= 0', name='ck_reimbursement_line_claimed_nonneg'),
+    sa.CheckConstraint('received_amount_cents <= approved_amount_cents', name='ck_reimbursement_line_received_le_approved'),
+    sa.CheckConstraint('received_amount_cents >= 0', name='ck_reimbursement_line_received_nonneg'),
+    sa.ForeignKeyConstraint(['claim_ulid'], ['finance_reimbursement.ulid'], ),
+    sa.ForeignKeyConstraint(['expense_journal_ulid'], ['finance_journal.ulid'], ),
+    sa.PrimaryKeyConstraint('ulid'),
+    sa.UniqueConstraint('claim_ulid', 'expense_journal_ulid', name='uq_reimbursement_line_claim_expense')
     )
-    with op.batch_alter_table('finance_reimbursement', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_finance_reimbursement_grant_id'), ['grant_id'], unique=False)
-        batch_op.create_index(batch_op.f('ix_finance_reimbursement_status'), ['status'], unique=False)
+    with op.batch_alter_table('finance_reimbursement_line', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_finance_reimbursement_line_claim_ulid'), ['claim_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_reimbursement_line_expense_journal_ulid'), ['expense_journal_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_reimbursement_line_status'), ['status'], unique=False)
 
     op.create_table('funding_demand',
     sa.Column('project_ulid', sa.String(length=26), nullable=True),
@@ -1471,11 +1555,12 @@ def downgrade():
         batch_op.drop_index('ix_funding_demand_project_status')
 
     op.drop_table('funding_demand')
-    with op.batch_alter_table('finance_reimbursement', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_finance_reimbursement_status'))
-        batch_op.drop_index(batch_op.f('ix_finance_reimbursement_grant_id'))
+    with op.batch_alter_table('finance_reimbursement_line', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_finance_reimbursement_line_status'))
+        batch_op.drop_index(batch_op.f('ix_finance_reimbursement_line_expense_journal_ulid'))
+        batch_op.drop_index(batch_op.f('ix_finance_reimbursement_line_claim_ulid'))
 
-    op.drop_table('finance_reimbursement')
+    op.drop_table('finance_reimbursement_line')
     op.drop_table('customer_profile')
     with op.batch_alter_table('customer_history', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_customer_history_source_slice'))
@@ -1530,22 +1615,34 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_logi_batch_item_ulid'))
 
     op.drop_table('logi_batch')
+    with op.batch_alter_table('finance_reimbursement', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_finance_reimbursement_status'))
+        batch_op.drop_index(batch_op.f('ix_finance_reimbursement_project_ulid'))
+        batch_op.drop_index(batch_op.f('ix_finance_reimbursement_grant_ulid'))
+        batch_op.drop_index(batch_op.f('ix_finance_reimbursement_funding_demand_ulid'))
+        batch_op.drop_index(batch_op.f('ix_finance_reimbursement_claim_number'))
+
+    op.drop_table('finance_reimbursement')
     with op.batch_alter_table('finance_journal_line', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_finance_journal_line_project_ulid'))
         batch_op.drop_index(batch_op.f('ix_finance_journal_line_period_key'))
         batch_op.drop_index(batch_op.f('ix_finance_journal_line_journal_ulid'))
+        batch_op.drop_index(batch_op.f('ix_finance_journal_line_grant_ulid'))
         batch_op.drop_index(batch_op.f('ix_finance_journal_line_funding_demand_ulid'))
         batch_op.drop_index(batch_op.f('ix_finance_journal_line_fund_code'))
         batch_op.drop_index(batch_op.f('ix_finance_journal_line_account_code'))
 
     op.drop_table('finance_journal_line')
-    with op.batch_alter_table('finance_grant', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_finance_grant_sponsor_ulid'))
-        batch_op.drop_index(batch_op.f('ix_finance_grant_reporting_frequency'))
-        batch_op.drop_index(batch_op.f('ix_finance_grant_fund_id'))
-        batch_op.drop_index(batch_op.f('ix_finance_grant_active'))
+    with op.batch_alter_table('finance_disbursement', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_finance_disbursement_status'))
+        batch_op.drop_index(batch_op.f('ix_finance_disbursement_reference'))
+        batch_op.drop_index(batch_op.f('ix_finance_disbursement_project_ulid'))
+        batch_op.drop_index(batch_op.f('ix_finance_disbursement_method'))
+        batch_op.drop_index(batch_op.f('ix_finance_disbursement_grant_ulid'))
+        batch_op.drop_index(batch_op.f('ix_finance_disbursement_funding_demand_ulid'))
+        batch_op.drop_index(batch_op.f('ix_finance_disbursement_expense_journal_ulid'))
 
-    op.drop_table('finance_grant')
+    op.drop_table('finance_disbursement')
     with op.batch_alter_table('entity_role', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_entity_role_role'))
         batch_op.drop_index(batch_op.f('ix_entity_role_entity_ulid'))
@@ -1647,14 +1744,12 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_finance_reserve_source_ref_ulid'))
         batch_op.drop_index(batch_op.f('ix_finance_reserve_source'))
         batch_op.drop_index(batch_op.f('ix_finance_reserve_project_ulid'))
+        batch_op.drop_index(batch_op.f('ix_finance_reserve_grant_ulid'))
         batch_op.drop_index(batch_op.f('ix_finance_reserve_funding_demand_ulid'))
         batch_op.drop_index(batch_op.f('ix_finance_reserve_fund_code'))
+        batch_op.drop_index(batch_op.f('ix_finance_reserve_decision_fingerprint'))
 
     op.drop_table('finance_reserve')
-    with op.batch_alter_table('finance_project', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_finance_project_active'))
-
-    op.drop_table('finance_project')
     with op.batch_alter_table('finance_period', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_finance_period_status'))
         batch_op.drop_index(batch_op.f('ix_finance_period_period_key'))
@@ -1676,11 +1771,22 @@ def downgrade():
     op.drop_table('finance_ops_float')
     with op.batch_alter_table('finance_journal', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_finance_journal_source'))
+        batch_op.drop_index(batch_op.f('ix_finance_journal_project_ulid'))
         batch_op.drop_index(batch_op.f('ix_finance_journal_period_key'))
+        batch_op.drop_index(batch_op.f('ix_finance_journal_grant_ulid'))
         batch_op.drop_index(batch_op.f('ix_finance_journal_funding_demand_ulid'))
         batch_op.drop_index(batch_op.f('ix_finance_journal_external_ref_ulid'))
 
     op.drop_table('finance_journal')
+    with op.batch_alter_table('finance_grant', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_finance_grant_status'))
+        batch_op.drop_index(batch_op.f('ix_finance_grant_sponsor_ulid'))
+        batch_op.drop_index(batch_op.f('ix_finance_grant_reporting_frequency'))
+        batch_op.drop_index(batch_op.f('ix_finance_grant_funding_mode'))
+        batch_op.drop_index(batch_op.f('ix_finance_grant_fund_code'))
+        batch_op.drop_index(batch_op.f('ix_finance_grant_award_number'))
+
+    op.drop_table('finance_grant')
     with op.batch_alter_table('finance_fund', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_finance_fund_restriction'))
         batch_op.drop_index(batch_op.f('ix_finance_fund_code'))
@@ -1692,6 +1798,7 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_finance_encumbrance_source_ref_ulid'))
         batch_op.drop_index(batch_op.f('ix_finance_encumbrance_source'))
         batch_op.drop_index(batch_op.f('ix_finance_encumbrance_project_ulid'))
+        batch_op.drop_index(batch_op.f('ix_finance_encumbrance_grant_ulid'))
         batch_op.drop_index(batch_op.f('ix_finance_encumbrance_funding_demand_ulid'))
         batch_op.drop_index(batch_op.f('ix_finance_encumbrance_fund_code'))
         batch_op.drop_index(batch_op.f('ix_finance_encumbrance_decision_fingerprint'))
