@@ -25,7 +25,7 @@
       "label": "Permanently Restricted"
     }
   },
-  "fund_keys": {
+  "fund_codes": {
     "general_unrestricted": {
       "label": "General Unrestricted",
       "archetype": "unrestricted",

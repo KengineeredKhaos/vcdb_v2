@@ -40,15 +40,15 @@ def _check_finance_taxonomy() -> tuple[list[str], list[str]]:
 
     pol = load_policy_finance_taxonomy()
 
-    fund_keys = pol.get("fund_keys") or {}
+    fund_codes = pol.get("fund_codes") or {}
     restriction_keys = pol.get("restriction_keys") or {}
     income_kinds = pol.get("income_kinds") or {}
     expense_kinds = pol.get("expense_kinds") or {}
     spending_classes = pol.get("spending_classes") or {}
 
-    if not isinstance(fund_keys, dict) or not fund_keys:
+    if not isinstance(fund_codes, dict) or not fund_codes:
         raise PolicyError(
-            "finance_taxonomy.fund_keys must be a non-empty object"
+            "finance_taxonomy.fund_codes must be a non-empty object"
         )
     if not isinstance(restriction_keys, dict) or not restriction_keys:
         raise PolicyError(
@@ -69,29 +69,29 @@ def _check_finance_taxonomy() -> tuple[list[str], list[str]]:
 
     infos.append(
         "finance taxonomy: "
-        f"fund_keys={len(fund_keys)} "
+        f"fund_codes={len(fund_codes)} "
         f"restriction_keys={len(restriction_keys)} "
         f"income_kinds={len(income_kinds)} "
         f"expense_kinds={len(expense_kinds)} "
         f"spending_classes={len(spending_classes)}"
     )
 
-    for fund_key, spec in fund_keys.items():
+    for fund_code, spec in fund_codes.items():
         if not isinstance(spec, dict):
             raise PolicyError(
-                f"finance_taxonomy.fund_keys.{fund_key} must be an object"
+                f"finance_taxonomy.fund_codes.{fund_code} must be an object"
             )
         label = str(spec.get("label") or "").strip()
         if not label:
             raise PolicyError(
-                f"finance_taxonomy.fund_keys.{fund_key}.label is required"
+                f"finance_taxonomy.fund_codes.{fund_code}.label is required"
             )
 
         drk = spec.get("default_restriction_keys") or []
         if not isinstance(drk, list):
             raise PolicyError(
-                "finance_taxonomy.fund_keys."
-                f"{fund_key}.default_restriction_keys must be a list"
+                "finance_taxonomy.fund_codes."
+                f"{fund_code}.default_restriction_keys must be a list"
             )
 
         unknown = [
@@ -99,8 +99,8 @@ def _check_finance_taxonomy() -> tuple[list[str], list[str]]:
         ]
         if unknown:
             raise PolicyError(
-                "finance_taxonomy.fund_keys."
-                f"{fund_key}.default_restriction_keys has unknown keys: "
+                "finance_taxonomy.fund_codes."
+                f"{fund_code}.default_restriction_keys has unknown keys: "
                 f"{unknown}"
             )
 
@@ -114,7 +114,7 @@ def _check_finance_controls() -> tuple[list[str], list[str]]:
     pol = load_policy_finance_controls()
     tx = load_policy_finance_taxonomy()
 
-    fund_keys = _as_key_set(tx.get("fund_keys"))
+    fund_codes = _as_key_set(tx.get("fund_codes"))
     approval_rules = pol.get("approval_rules") or []
     budget_periods = pol.get("budget_periods") or []
     budget_caps = pol.get("budget_caps") or []
@@ -157,11 +157,11 @@ def _check_finance_controls() -> tuple[list[str], list[str]]:
                 f"finance_controls approval rule {rid} match must be an object"
             )
 
-        for key in _as_list_of_str(match.get("selected_fund_keys_any")):
-            if key not in fund_keys:
+        for key in _as_list_of_str(match.get("selected_fund_codes_any")):
+            if key not in fund_codes:
                 raise PolicyError(
                     f"finance_controls approval rule {rid} references "
-                    f"unknown fund_key: {key}"
+                    f"unknown fund_code: {key}"
                 )
 
     infos.append(
@@ -182,7 +182,7 @@ def _check_finance_selectors() -> tuple[list[str], list[str]]:
     tx = load_policy_finance_taxonomy()
     sc = load_policy_funding_source_controls()
 
-    fund_keys = _as_key_set(tx.get("fund_keys"))
+    fund_codes = _as_key_set(tx.get("fund_codes"))
     restriction_keys = _as_key_set(tx.get("restriction_keys"))
     income_kinds = _as_key_set(tx.get("income_kinds"))
     expense_kinds = _as_key_set(tx.get("expense_kinds"))
@@ -209,18 +209,18 @@ def _check_finance_selectors() -> tuple[list[str], list[str]]:
             raise PolicyError(f"finance_selectors duplicate rule id: {rid}")
         seen_ids.add(rid)
 
-        for key in _as_list_of_str(rule.get("allow_fund_keys")):
-            if key not in fund_keys:
+        for key in _as_list_of_str(rule.get("allow_fund_codes")):
+            if key not in fund_codes:
                 raise PolicyError(
                     f"finance_selectors rule {rid} references unknown "
-                    f"fund_key: {key}"
+                    f"fund_code: {key}"
                 )
 
-        for key in _as_list_of_str(rule.get("prefer_fund_keys")):
-            if key not in fund_keys:
+        for key in _as_list_of_str(rule.get("prefer_fund_codes")):
+            if key not in fund_codes:
                 raise PolicyError(
                     f"finance_selectors rule {rid} references unknown "
-                    f"fund_key: {key}"
+                    f"fund_code: {key}"
                 )
 
         match = rule.get("match") or {}

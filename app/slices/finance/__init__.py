@@ -15,11 +15,6 @@ Debits/credits, funds, projects, periods.
 This is where post_journal, reverse_journal, log_donation, log_expense, etc.
 live.
 
-Funds & budgets – define “buckets” and budget envelopes:
-Fund records and codes.
-Transfer rules between funds/projects.
-Budgets by fund/project/period.
-
 Grants & reimbursements – this pot of money came from Sponsor X with rules Y:
 Grant record.
 Reimbursement lifecycle (submitted → approved → disbursed).
@@ -48,8 +43,8 @@ It is responsible for:
 Finance does **not** decide policy (budgets, priorities, restrictions) and it
 does **not** own projects or tasks. Those belong to:
 
-* Governance: policy, fund archetypes, journal flags, budgets
-* Calendar: projects, tasks, “who is spending for what”
+* Governance: policy, finance semantics, restrictions, selectors
+* Calendar: projects, tasks, and all funding demands / spend context
 * Sponsors: who gave what, and under what sponsorship program
 
 Finance’s job is to record what *actually happened* in a clean, consistent way.

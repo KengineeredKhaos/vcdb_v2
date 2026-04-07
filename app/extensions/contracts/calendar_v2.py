@@ -135,7 +135,7 @@ class FundingDemandDTO:
     status: str
     goal_cents: int
     deadline_date: str | None
-    eligible_fund_keys: tuple[str, ...]
+    eligible_fund_codes: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -175,7 +175,7 @@ class FundingDemandPlanningSnapshotDTO:
 @dataclass(frozen=True)
 class FundingDemandPolicySnapshotDTO:
     decision_fingerprint: str
-    eligible_fund_keys: tuple[str, ...]
+    eligible_fund_codes: tuple[str, ...]
     default_restriction_keys: tuple[str, ...]
     source_profile_summary: FundingSourceProfileSummaryDTO
 
@@ -204,7 +204,7 @@ class FundingDemandContextDTO:
 class OpsFloatAllocationRequestDTO:
     source_funding_demand_ulid: str
     dest_funding_demand_ulid: str
-    fund_key: str
+    fund_code: str
     amount_cents: int
     support_mode: str
     memo: str | None = None
@@ -222,7 +222,7 @@ class OpsFloatAllocationDTO:
     dest_funding_demand_ulid: str
     source_project_ulid: str | None
     dest_project_ulid: str | None
-    fund_key: str
+    fund_code: str
     amount_cents: int
     support_mode: str
     ops_float_ulid: str
@@ -254,7 +254,7 @@ class OpsFloatSettlementDTO:
     source_project_ulid: str | None
     dest_funding_demand_ulid: str
     dest_project_ulid: str | None
-    fund_key: str
+    fund_code: str
     amount_cents: int
     decision_fingerprint: str | None
     flags: tuple[str, ...] = ()
@@ -264,7 +264,7 @@ class OpsFloatSettlementDTO:
 class ProjectEncumbranceRequestDTO:
     funding_demand_ulid: str
     amount_cents: int
-    fund_key: str
+    fund_code: str
     expense_kind: str
     happened_at_utc: str
     source_ref_ulid: str | None = None
@@ -280,7 +280,7 @@ class ProjectEncumbranceRequestDTO:
 class ProjectEncumbranceDTO:
     funding_demand_ulid: str
     project_ulid: str | None
-    fund_key: str
+    fund_code: str
     amount_cents: int
     encumbrance_ulid: str
     decision_fingerprint: str
@@ -419,7 +419,7 @@ def _load_provider(where: str):
 
     Expected keys:
       funding_demand_ulid, project_ulid, title, status, goal_cents,
-      deadline_date, eligible_fund_keys
+      deadline_date, eligible_fund_codes
     """
     try:
         mod = importlib.import_module("app.slices.calendar.services_funding")
@@ -448,7 +448,7 @@ def get_funding_demand(funding_demand_ulid: str) -> FundingDemandDTO:
         provider = _load_provider(where)
         raw = provider(funding_demand_ulid)
 
-        eligible = tuple(raw.get("eligible_fund_keys") or ())
+        eligible = tuple(raw.get("eligible_fund_codes") or ())
         return FundingDemandDTO(
             funding_demand_ulid=str(raw["funding_demand_ulid"]),
             project_ulid=str(raw["project_ulid"]),
@@ -456,7 +456,7 @@ def get_funding_demand(funding_demand_ulid: str) -> FundingDemandDTO:
             status=str(raw.get("status") or "unknown"),
             goal_cents=int(raw.get("goal_cents") or 0),
             deadline_date=raw.get("deadline_date"),
-            eligible_fund_keys=eligible,
+            eligible_fund_codes=eligible,
         )
     except Exception as exc:  # noqa: BLE001
         raise _as_contract_error(where, exc) from exc
@@ -505,9 +505,9 @@ def get_funding_demand_context(
             ),
             policy=FundingDemandPolicySnapshotDTO(
                 decision_fingerprint=str(policy_raw["decision_fingerprint"]),
-                eligible_fund_keys=_require_str_tuple(
-                    "policy.eligible_fund_keys",
-                    policy_raw.get("eligible_fund_keys"),
+                eligible_fund_codes=_require_str_tuple(
+                    "policy.eligible_fund_codes",
+                    policy_raw.get("eligible_fund_codes"),
                 ),
                 default_restriction_keys=_require_str_tuple(
                     "policy.default_restriction_keys",
@@ -569,7 +569,7 @@ def encumber_project_funds(
             req.funding_demand_ulid,
         )
         amount_cents = _require_int_gt("amount_cents", req.amount_cents)
-        fund_key = _require_str("fund_key", req.fund_key)
+        fund_code = _require_str("fund_code", req.fund_code)
         expense_kind = _require_str("expense_kind", req.expense_kind)
         happened_at_utc = _require_str(
             "happened_at_utc",
@@ -597,7 +597,7 @@ def encumber_project_funds(
         out = fn(
             funding_demand_ulid=funding_demand_ulid,
             amount_cents=amount_cents,
-            fund_key=fund_key,
+            fund_code=fund_code,
             expense_kind=expense_kind,
             happened_at_utc=happened_at_utc,
             source_ref_ulid=source_ref_ulid,
@@ -611,7 +611,7 @@ def encumber_project_funds(
         return ProjectEncumbranceDTO(
             funding_demand_ulid=out.funding_demand_ulid,
             project_ulid=out.project_ulid,
-            fund_key=out.fund_key,
+            fund_code=out.fund_code,
             amount_cents=out.amount_cents,
             encumbrance_ulid=out.encumbrance_ulid,
             decision_fingerprint=out.decision_fingerprint,
@@ -709,7 +709,7 @@ def list_published_funding_demands(
         out: list[FundingDemandDTO] = []
 
         for raw in raw_rows:
-            eligible = tuple(raw.get("eligible_fund_keys") or ())
+            eligible = tuple(raw.get("eligible_fund_codes") or ())
             out.append(
                 FundingDemandDTO(
                     funding_demand_ulid=str(raw["funding_demand_ulid"]),
@@ -718,7 +718,7 @@ def list_published_funding_demands(
                     status=str(raw.get("status") or "unknown"),
                     goal_cents=int(raw.get("goal_cents") or 0),
                     deadline_date=raw.get("deadline_date"),
-                    eligible_fund_keys=eligible,
+                    eligible_fund_codes=eligible,
                 )
             )
         return tuple(out)
@@ -739,7 +739,7 @@ def allocate_ops_float_to_project(
             "dest_funding_demand_ulid",
             req.dest_funding_demand_ulid,
         )
-        fund_key = _require_str("fund_key", req.fund_key)
+        fund_code = _require_str("fund_code", req.fund_code)
         amount_cents = _require_int_gt("amount_cents", req.amount_cents)
         support_mode = _require_str("support_mode", req.support_mode)
         source_ref_ulid = _optional_ulid(
@@ -764,7 +764,7 @@ def allocate_ops_float_to_project(
         out = fn(
             source_funding_demand_ulid=source_funding_demand_ulid,
             dest_funding_demand_ulid=dest_funding_demand_ulid,
-            fund_key=fund_key,
+            fund_code=fund_code,
             amount_cents=amount_cents,
             support_mode=support_mode,
             memo=req.memo,
@@ -780,7 +780,7 @@ def allocate_ops_float_to_project(
             dest_funding_demand_ulid=out.dest_funding_demand_ulid,
             source_project_ulid=out.source_project_ulid,
             dest_project_ulid=out.dest_project_ulid,
-            fund_key=out.fund_key,
+            fund_code=out.fund_code,
             amount_cents=out.amount_cents,
             support_mode=out.support_mode,
             ops_float_ulid=out.ops_float_ulid,
@@ -841,7 +841,7 @@ def repay_ops_float_to_operations(
             source_project_ulid=out.source_project_ulid,
             dest_funding_demand_ulid=out.dest_funding_demand_ulid,
             dest_project_ulid=out.dest_project_ulid,
-            fund_key=out.fund_key,
+            fund_code=out.fund_code,
             amount_cents=out.amount_cents,
             decision_fingerprint=out.decision_fingerprint,
             flags=out.flags,
@@ -872,7 +872,7 @@ def forgive_ops_float_shortfall(
             source_project_ulid=out.source_project_ulid,
             dest_funding_demand_ulid=out.dest_funding_demand_ulid,
             dest_project_ulid=out.dest_project_ulid,
-            fund_key=out.fund_key,
+            fund_code=out.fund_code,
             amount_cents=out.amount_cents,
             decision_fingerprint=out.decision_fingerprint,
             flags=out.flags,
@@ -1148,8 +1148,8 @@ def list_cultivation_outcomes_for_sponsor(
         )
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
-        
-        
+
+
 def list_cultivation_outcomes_for_demand(
     *,
     funding_demand_ulid: str,
@@ -1182,9 +1182,7 @@ def list_cultivation_outcomes_for_demand(
                 done_at_utc=row.get("done_at_utc"),
                 funding_demand_ulid=row.get("funding_demand_ulid"),
                 outcome_note=row.get("outcome_note"),
-                follow_up_recommended=bool(
-                    row.get("follow_up_recommended")
-                ),
+                follow_up_recommended=bool(row.get("follow_up_recommended")),
                 off_cadence_follow_up_signal=bool(
                     row.get("off_cadence_follow_up_signal")
                 ),

@@ -7,7 +7,7 @@
   "required": [
     "meta",
     "fund_archetypes",
-    "fund_keys",
+    "fund_codes",
     "restriction_keys",
     "income_kinds",
     "expense_kinds",
@@ -20,7 +20,7 @@
       "propertyNames": { "$ref": "#/$defs/semantic_key" },
       "additionalProperties": { "$ref": "#/$defs/labeled_def" }
     },
-    "fund_keys": {
+    "fund_codes": {
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/semantic_key" },
       "additionalProperties": { "$ref": "#/$defs/fund_def" }

@@ -34,7 +34,7 @@ class FundingOpportunityView:
     status: str
     goal_cents: int
     deadline_date: str | None
-    eligible_fund_keys: tuple[str, ...]
+    eligible_fund_codes: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -85,7 +85,7 @@ class OpportunitySourceProfileView:
 @dataclass(frozen=True)
 class OpportunityPolicyView:
     decision_fingerprint: str
-    eligible_fund_keys: tuple[str, ...]
+    eligible_fund_codes: tuple[str, ...]
     default_restriction_keys: tuple[str, ...]
     source_profile_summary: OpportunitySourceProfileView
 
@@ -150,7 +150,7 @@ class FundingRealizationDefaultsView:
     amount_cents: int
     source_profile_key: str
     ops_support_planned: bool
-    eligible_fund_keys: tuple[str, ...]
+    eligible_fund_codes: tuple[str, ...]
     default_restriction_keys: tuple[str, ...]
     recommended_income_kind: str | None
     reserve_on_receive_expected: bool | None
@@ -218,7 +218,7 @@ def calendar_demand_to_opportunity_view(dto) -> FundingOpportunityView:
         status=dto.status,
         goal_cents=int(dto.goal_cents or 0),
         deadline_date=dto.deadline_date,
-        eligible_fund_keys=tuple(dto.eligible_fund_keys or ()),
+        eligible_fund_codes=tuple(dto.eligible_fund_codes or ()),
     )
 
 
@@ -373,7 +373,9 @@ def funding_context_to_detail_view(
         ),
         policy=OpportunityPolicyView(
             decision_fingerprint=context.policy.decision_fingerprint,
-            eligible_fund_keys=tuple(context.policy.eligible_fund_keys or ()),
+            eligible_fund_codes=tuple(
+                context.policy.eligible_fund_codes or ()
+            ),
             default_restriction_keys=tuple(
                 context.policy.default_restriction_keys or ()
             ),
@@ -439,7 +441,7 @@ def funding_context_to_realization_defaults(
         amount_cents=int(amount_cents or 0),
         source_profile_key=context.planning.source_profile_key,
         ops_support_planned=context.planning.ops_support_planned,
-        eligible_fund_keys=tuple(context.policy.eligible_fund_keys or ()),
+        eligible_fund_codes=tuple(context.policy.eligible_fund_codes or ()),
         default_restriction_keys=tuple(
             context.policy.default_restriction_keys or ()
         ),

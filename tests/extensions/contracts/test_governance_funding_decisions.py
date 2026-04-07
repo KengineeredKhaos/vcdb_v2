@@ -8,7 +8,7 @@ from app.extensions.contracts import governance_v2
 def test_finance_taxonomy_contract_returns_values():
     tx = governance_v2.get_finance_taxonomy()
 
-    assert tx.fund_keys
+    assert tx.fund_codes
     assert tx.restriction_keys
     assert tx.income_kinds
     assert tx.expense_kinds
@@ -24,9 +24,9 @@ def test_preview_funding_decision_uses_source_profile_selectors():
         spending_class="basic_needs",
         source_profile_key="welcome_home_reimbursement_bridgeable",
         restriction_keys=(),
-        demand_eligible_fund_keys=(),
+        demand_eligible_fund_codes=(),
         tag_any=("welcome_home_kit",),
-        selected_fund_key=None,
+        selected_fund_code=None,
         actor_rbac_roles=(),
         actor_domain_roles=(),
     )
@@ -34,8 +34,8 @@ def test_preview_funding_decision_uses_source_profile_selectors():
     out = governance_v2.preview_funding_decision(req)
 
     assert out.allowed is True
-    assert out.eligible_fund_keys
-    assert out.eligible_fund_keys[0] == "welcome_home_reimbursement"
+    assert out.eligible_fund_codes
+    assert out.eligible_fund_codes[0] == "welcome_home_reimbursement"
     assert out.decision_fingerprint
 
 
@@ -49,9 +49,9 @@ def test_preview_funding_decision_fingerprint_is_stable():
         income_kind=None,
         expense_kind=None,
         restriction_keys=(),
-        demand_eligible_fund_keys=(),
+        demand_eligible_fund_codes=(),
         tag_any=(),
-        selected_fund_key=None,
+        selected_fund_code=None,
         actor_rbac_roles=(),
         actor_domain_roles=(),
     )
@@ -66,7 +66,7 @@ def test_preview_ops_float_seed_requires_governor():
     req = governance_v2.OpsFloatDecisionRequestDTO(
         support_mode="seed",
         amount_cents=5000,
-        fund_key="general_unrestricted",
+        fund_code="general_unrestricted",
         source_funding_demand_ulid="01TESTOPSDEMAND00000000000001",
         source_project_ulid="01TESTOPSPROJ00000000000001",
         dest_funding_demand_ulid="01TESTPROJDEMAND000000000001",
@@ -79,14 +79,14 @@ def test_preview_ops_float_seed_requires_governor():
 
     assert out.allowed is True
     assert "governor" in out.required_approvals
-    assert out.selected_fund_key == "general_unrestricted"
+    assert out.selected_fund_code == "general_unrestricted"
 
 
 def test_preview_ops_float_bridge_is_auto_allowed():
     req = governance_v2.OpsFloatDecisionRequestDTO(
         support_mode="bridge",
         amount_cents=3000,
-        fund_key="general_unrestricted",
+        fund_code="general_unrestricted",
         source_funding_demand_ulid="01TESTOPSDEMAND00000000000002",
         source_project_ulid="01TESTOPSPROJ00000000000002",
         dest_funding_demand_ulid="01TESTPROJDEMAND000000000002",

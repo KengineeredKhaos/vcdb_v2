@@ -374,10 +374,6 @@ def ensure_fund(*, code: str, name: str, restriction: str) -> Fund:
     return row
 
 
-def ensure_project(*, name: str) -> str:
-    raise NotImplementedError(
-        "FinanceProject has been removed; use Calendar project ULIDs."
-    )
 
 
 def _external_restriction_type(internal: str) -> str:

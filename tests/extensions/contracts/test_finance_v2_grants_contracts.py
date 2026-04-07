@@ -108,6 +108,11 @@ def test_record_disbursement_writes_cash_out_row(app, ulid):
             ],
         )
 
+        before_count = (
+            db.session.execute(select(Disbursement)).scalars().all()
+        )
+        before_n = len(before_count)
+
         out = finance_v2.record_disbursement(
             {
                 "expense_journal_ulid": expense_journal_ulid,
@@ -132,8 +137,8 @@ def test_record_disbursement_writes_cash_out_row(app, ulid):
         assert row.amount_cents == 1500
         assert row.method == "check"
 
-        all_rows = db.session.execute(select(Disbursement)).scalars().all()
-        assert len(all_rows) == 1
+        after_n = db.session.execute(select(Disbursement)).scalars().all()
+        assert len(after_n) == before_n + 1
 
 
 def test_record_disbursement_rejects_missing_journal(app, ulid):

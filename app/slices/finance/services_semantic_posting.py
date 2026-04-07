@@ -18,7 +18,7 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
     Finance semantic income posting.
 
     Required:
-      amount_cents (>0), happened_at_utc, fund_key, fund_label,
+      amount_cents (>0), happened_at_utc, fund_code, fund_label,
       fund_restriction_type, income_kind, receipt_method, source
 
     Optional:
@@ -29,9 +29,9 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
     if amount <= 0:
         raise ValueError("amount_cents must be > 0")
 
-    fund_key = payload.get("fund_key")
-    if not fund_key:
-        raise ValueError("fund_key required")
+    fund_code = payload.get("fund_code")
+    if not fund_code:
+        raise ValueError("fund_code required")
 
     happened_at_utc = payload.get("happened_at_utc")
     if not happened_at_utc:
@@ -51,10 +51,12 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
     if not funding_demand_ulid:
         raise ValueError("funding_demand_ulid required")
 
-    fund_label = payload.get("fund_label") or str(fund_key)
+    fund_label = payload.get("fund_label") or str(fund_code)
     fund_restr = payload.get("fund_restriction_type") or "unrestricted"
     ensure_fund(
-        code=str(fund_key), name=str(fund_label), restriction=fund_restr
+        code=str(fund_code),
+        name=str(fund_label),
+        restriction=fund_restr,
     )
 
     debit_acct, credit_acct = select_income_account_codes(
@@ -72,7 +74,7 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
     lines = [
         {
             "account_code": debit_acct,
-            "fund_code": str(fund_key),
+            "fund_code": str(fund_code),
             "funding_demand_ulid": str(funding_demand_ulid),
             "project_ulid": payload.get("project_ulid"),
             "grant_ulid": payload.get("grant_ulid"),
@@ -81,7 +83,7 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
         },
         {
             "account_code": credit_acct,
-            "fund_code": str(fund_key),
+            "fund_code": str(fund_code),
             "funding_demand_ulid": str(funding_demand_ulid),
             "project_ulid": payload.get("project_ulid"),
             "grant_ulid": payload.get("grant_ulid"),
@@ -111,7 +113,7 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
         target_ulid=journal_ulid,
         happened_at_utc=now_iso8601_ms(),
         refs={
-            "fund_key": str(fund_key),
+            "fund_code": str(fund_code),
             "income_kind": str(income_kind),
             "receipt_method": str(receipt_method),
             "amount_cents": amount,
@@ -126,6 +128,7 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
 
     return {
         "id": journal_ulid,
+        "fund_code": str(fund_code),
         "amount_cents": amount,
         "flags": ["posted"],
     }
@@ -136,7 +139,7 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
     Finance semantic expense posting.
 
     Required:
-      amount_cents (>0), happened_at_utc, fund_key, fund_label,
+      amount_cents (>0), happened_at_utc, fund_code, fund_label,
       fund_restriction_type, expense_kind, payment_method, source
 
     Optional:
@@ -147,9 +150,9 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
     if amount <= 0:
         raise ValueError("amount_cents must be > 0")
 
-    fund_key = payload.get("fund_key")
-    if not fund_key:
-        raise ValueError("fund_key required")
+    fund_code = payload.get("fund_code")
+    if not fund_code:
+        raise ValueError("fund_code required")
 
     happened_at_utc = payload.get("happened_at_utc")
     if not happened_at_utc:
@@ -169,10 +172,12 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
     if not funding_demand_ulid:
         raise ValueError("funding_demand_ulid required")
 
-    fund_label = payload.get("fund_label") or str(fund_key)
+    fund_label = payload.get("fund_label") or str(fund_code)
     fund_restr = payload.get("fund_restriction_type") or "unrestricted"
     ensure_fund(
-        code=str(fund_key), name=str(fund_label), restriction=fund_restr
+        code=str(fund_code),
+        name=str(fund_label),
+        restriction=fund_restr,
     )
 
     debit_acct, credit_acct = select_expense_account_codes(
@@ -190,7 +195,7 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
     lines = [
         {
             "account_code": debit_acct,
-            "fund_code": str(fund_key),
+            "fund_code": str(fund_code),
             "funding_demand_ulid": str(funding_demand_ulid),
             "project_ulid": payload.get("project_ulid"),
             "grant_ulid": payload.get("grant_ulid"),
@@ -199,7 +204,7 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
         },
         {
             "account_code": credit_acct,
-            "fund_code": str(fund_key),
+            "fund_code": str(fund_code),
             "funding_demand_ulid": str(funding_demand_ulid),
             "project_ulid": payload.get("project_ulid"),
             "grant_ulid": payload.get("grant_ulid"),
@@ -237,7 +242,7 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
         target_ulid=journal_ulid,
         happened_at_utc=now_iso8601_ms(),
         refs={
-            "fund_key": str(fund_key),
+            "fund_code": str(fund_code),
             "expense_kind": str(expense_kind),
             "payment_method": str(payment_method),
             "amount_cents": amount,
@@ -253,6 +258,7 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
 
     return {
         "id": journal_ulid,
+        "fund_code": str(fund_code),
         "amount_cents": amount,
         "flags": ["posted"],
     }

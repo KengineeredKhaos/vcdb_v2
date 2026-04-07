@@ -133,7 +133,7 @@
       ],
       "properties": {
         "cap_key": { "type": "string", "minLength": 1 },
-        "fund_key": { "$ref": "#/$defs/semantic_key" },
+        "fund_code": { "$ref": "#/$defs/semantic_key" },
         "spending_class": { "$ref": "#/$defs/semantic_key" },
         "period_key": { "type": "string", "minLength": 1 },
         "project_tag": { "type": "string", "minLength": 1 },
@@ -158,7 +158,7 @@
           "type": "integer",
           "minimum": 0
         },
-        "selected_fund_keys_any": {
+        "selected_fund_codes_any": {
           "type": "array",
           "items": { "$ref": "#/$defs/semantic_key" },
           "uniqueItems": true

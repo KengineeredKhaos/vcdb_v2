@@ -366,7 +366,7 @@ class FundingDemand(db.Model, ULIDPK, IsoTimestamps):
         nullable=True,
     )
 
-    eligible_fund_keys_json: Mapped[list[str] | None] = mapped_column(
+    eligible_fund_codes_json: Mapped[list[str] | None] = mapped_column(
         JSON,
         nullable=True,
     )

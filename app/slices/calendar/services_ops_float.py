@@ -34,7 +34,7 @@ def allocate_ops_float_to_project(
     *,
     source_funding_demand_ulid: str,
     dest_funding_demand_ulid: str,
-    fund_key: str,
+    fund_code: str,
     amount_cents: int,
     support_mode: str,
     memo: str | None = None,
@@ -49,8 +49,8 @@ def allocate_ops_float_to_project(
         raise ValueError("support_mode must be seed|backfill|bridge")
     if amount_cents <= 0:
         raise ValueError("amount_cents must be > 0")
-    if not fund_key:
-        raise ValueError("fund_key required")
+    if not fund_code:
+        raise ValueError("fund_code required")
     if source_funding_demand_ulid == dest_funding_demand_ulid:
         raise ValueError("source and destination funding demand must differ")
 
@@ -65,8 +65,8 @@ def allocate_ops_float_to_project(
         raise ValueError(
             "destination funding demand is not available for ops float"
         )
-    if dest.eligible_fund_keys_json and fund_key not in tuple(
-        dest.eligible_fund_keys_json or ()
+    if dest.eligible_fund_codes_json and fund_code not in tuple(
+        dest.eligible_fund_codes_json or ()
     ):
         raise ValueError("selected fund is not eligible for destination")
     if not dest.spending_class:
@@ -76,14 +76,16 @@ def allocate_ops_float_to_project(
         governance_v2.OpsFloatDecisionRequestDTO(
             support_mode=support_mode,
             amount_cents=amount_cents,
-            fund_key=fund_key,
+            fund_code=fund_code,
             source_funding_demand_ulid=source.ulid,
             source_project_ulid=source.project_ulid,
             dest_funding_demand_ulid=dest.ulid,
             dest_project_ulid=dest.project_ulid,
             spending_class=dest.spending_class,
             tag_any=tuple(dest.tag_any_json or ()),
-            dest_eligible_fund_keys=tuple(dest.eligible_fund_keys_json or ()),
+            dest_eligible_fund_codes=tuple(
+                dest.eligible_fund_codes_json or ()
+            ),
             actor_rbac_roles=actor_rbac_roles,
             actor_domain_roles=actor_domain_roles,
         )
@@ -109,7 +111,7 @@ def allocate_ops_float_to_project(
             source_project_ulid=source.project_ulid,
             dest_funding_demand_ulid=dest.ulid,
             dest_project_ulid=dest.project_ulid,
-            fund_key=fund_key,
+            fund_code=fund_code,
             amount_cents=amount_cents,
             support_mode=support_mode,
             decision_fingerprint=preview.decision_fingerprint,
@@ -141,7 +143,7 @@ def allocate_ops_float_to_project(
             "dest_funding_demand_ulid": dest.ulid,
             "dest_project_ulid": dest.project_ulid,
             "ops_float_ulid": out.id,
-            "fund_key": fund_key,
+            "fund_code": fund_code,
             "support_mode": support_mode,
             "decision_fingerprint": preview.decision_fingerprint,
         },
@@ -153,7 +155,7 @@ def allocate_ops_float_to_project(
         dest_funding_demand_ulid=dest.ulid,
         source_project_ulid=source.project_ulid,
         dest_project_ulid=dest.project_ulid,
-        fund_key=fund_key,
+        fund_code=fund_code,
         amount_cents=amount_cents,
         support_mode=support_mode,
         ops_float_ulid=out.id,
@@ -202,8 +204,8 @@ def repay_ops_float_to_operations(
 
     money = finance_v2.get_funding_demand_money_view(dest.ulid)
     direct_available = _bucket_amount(
-        money.reserved_by_fund, parent.fund_key
-    ) - _bucket_amount(money.encumbered_by_fund, parent.fund_key)
+        money.reserved_by_fund, parent.fund_code
+    ) - _bucket_amount(money.encumbered_by_fund, parent.fund_code)
     if amount_cents > direct_available:
         raise ValueError("ops float repayment exceeds direct available funds")
 
@@ -212,14 +214,16 @@ def repay_ops_float_to_operations(
             action="repay",
             support_mode=parent.support_mode,
             amount_cents=amount_cents,
-            fund_key=parent.fund_key,
+            fund_code=parent.fund_code,
             source_funding_demand_ulid=source.ulid,
             source_project_ulid=source.project_ulid,
             dest_funding_demand_ulid=dest.ulid,
             dest_project_ulid=dest.project_ulid,
             spending_class=dest.spending_class,
             tag_any=tuple(dest.tag_any_json or ()),
-            dest_eligible_fund_keys=tuple(dest.eligible_fund_keys_json or ()),
+            dest_eligible_fund_codes=tuple(
+                dest.eligible_fund_codes_json or ()
+            ),
             actor_rbac_roles=actor_rbac_roles,
             actor_domain_roles=actor_domain_roles,
         )
@@ -265,7 +269,7 @@ def repay_ops_float_to_operations(
             "dest_funding_demand_ulid": dest.ulid,
             "dest_project_ulid": dest.project_ulid,
             "ops_float_ulid": out.id,
-            "fund_key": parent.fund_key,
+            "fund_code": parent.fund_code,
             "support_mode": parent.support_mode,
             "decision_fingerprint": preview.decision_fingerprint,
         },
@@ -280,7 +284,7 @@ def repay_ops_float_to_operations(
         source_project_ulid=source.project_ulid,
         dest_funding_demand_ulid=dest.ulid,
         dest_project_ulid=dest.project_ulid,
-        fund_key=parent.fund_key,
+        fund_code=parent.fund_code,
         amount_cents=amount_cents,
         decision_fingerprint=preview.decision_fingerprint,
         flags=tuple(out.flags or ()),
@@ -322,14 +326,16 @@ def forgive_ops_float_shortfall(
             action="forgive",
             support_mode=parent.support_mode,
             amount_cents=amount_cents,
-            fund_key=parent.fund_key,
+            fund_code=parent.fund_code,
             source_funding_demand_ulid=source.ulid,
             source_project_ulid=source.project_ulid,
             dest_funding_demand_ulid=dest.ulid,
             dest_project_ulid=dest.project_ulid,
             spending_class=dest.spending_class,
             tag_any=tuple(dest.tag_any_json or ()),
-            dest_eligible_fund_keys=tuple(dest.eligible_fund_keys_json or ()),
+            dest_eligible_fund_codes=tuple(
+                dest.eligible_fund_codes_json or ()
+            ),
             actor_rbac_roles=actor_rbac_roles,
             actor_domain_roles=actor_domain_roles,
         )
@@ -375,7 +381,7 @@ def forgive_ops_float_shortfall(
             "dest_funding_demand_ulid": dest.ulid,
             "dest_project_ulid": dest.project_ulid,
             "ops_float_ulid": out.id,
-            "fund_key": parent.fund_key,
+            "fund_code": parent.fund_code,
             "support_mode": parent.support_mode,
             "decision_fingerprint": preview.decision_fingerprint,
         },
@@ -390,7 +396,7 @@ def forgive_ops_float_shortfall(
         source_project_ulid=source.project_ulid,
         dest_funding_demand_ulid=dest.ulid,
         dest_project_ulid=dest.project_ulid,
-        fund_key=parent.fund_key,
+        fund_code=parent.fund_code,
         amount_cents=amount_cents,
         decision_fingerprint=preview.decision_fingerprint,
         flags=tuple(out.flags or ()),

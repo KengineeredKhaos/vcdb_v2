@@ -187,9 +187,9 @@ def _build_funding_decision_request(
     income_kind: str | None = None,
     expense_kind: str | None = None,
     restriction_keys: tuple[str, ...] = (),
-    demand_eligible_fund_keys: tuple[str, ...] = (),
+    demand_eligible_fund_codes: tuple[str, ...] = (),
     tag_any: tuple[str, ...] = (),
-    selected_fund_key: str | None = None,
+    selected_fund_code: str | None = None,
     actor_rbac_roles: tuple[str, ...] = (),
     actor_domain_roles: tuple[str, ...] = (),
 ) -> gov.FundingDecisionRequestDTO:
@@ -207,9 +207,9 @@ def _build_funding_decision_request(
         expense_kind=expense_kind,
         source_profile_key=hints.source_profile_key,
         restriction_keys=tuple(restriction_keys or ()),
-        demand_eligible_fund_keys=tuple(demand_eligible_fund_keys or ()),
+        demand_eligible_fund_codes=tuple(demand_eligible_fund_codes or ()),
         tag_any=tuple(tag_any or ()),
-        selected_fund_key=selected_fund_key,
+        selected_fund_code=selected_fund_code,
         ops_support_planned=hints.ops_support_planned,
         actor_rbac_roles=tuple(actor_rbac_roles or ()),
         actor_domain_roles=tuple(actor_domain_roles or ()),
@@ -298,9 +298,9 @@ def _build_policy_snapshot(
         income_kind=None,
         expense_kind=None,
         restriction_keys=(),
-        demand_eligible_fund_keys=(),
+        demand_eligible_fund_codes=(),
         tag_any=planning_snapshot.tag_any,
-        selected_fund_key=None,
+        selected_fund_code=None,
         actor_rbac_roles=(),
         actor_domain_roles=(),
     )
@@ -316,7 +316,7 @@ def _build_policy_snapshot(
 
     snapshot = FundingDemandPolicySnapshotView(
         decision_fingerprint=str(preview.decision_fingerprint or "").strip(),
-        eligible_fund_keys=_normalize_str_tuple(preview.eligible_fund_keys),
+        eligible_fund_codes=_normalize_str_tuple(preview.eligible_fund_codes),
         default_restriction_keys=default_restriction_keys,
         source_profile_summary=source_summary,
     )
@@ -452,8 +452,8 @@ def _validate_funding_demand_context(
 
     if not context.policy.decision_fingerprint:
         raise ValueError("policy snapshot missing decision_fingerprint")
-    if not context.policy.eligible_fund_keys:
-        raise ValueError("policy snapshot missing eligible_fund_keys")
+    if not context.policy.eligible_fund_codes:
+        raise ValueError("policy snapshot missing eligible_fund_codes")
     if not context.policy.source_profile_summary.key:
         raise ValueError("policy snapshot missing source_profile_summary")
 
@@ -529,7 +529,7 @@ def create_funding_demand(
         goal_cents=goal_cents,
         deadline_date=deadline_date,
         spending_class=spending_class or None,
-        eligible_fund_keys_json=[],
+        eligible_fund_codes_json=[],
         tag_any_json=_normalize_tags(tag_any),
         published_at_utc=None,
         closed_at_utc=None,
@@ -553,7 +553,7 @@ def create_funding_demand(
                 "goal_cents",
                 "deadline_date",
                 "spending_class",
-                "eligible_fund_keys_json",
+                "eligible_fund_codes_json",
                 "tag_any_json",
                 "published_at_utc",
                 "closed_at_utc",
@@ -670,7 +670,7 @@ def publish_funding_demand(
     )
     _validate_funding_demand_context(context)
 
-    row.eligible_fund_keys_json = list(policy_snapshot.eligible_fund_keys)
+    row.eligible_fund_codes_json = list(policy_snapshot.eligible_fund_codes)
     row.status = "published"
     row.published_at_utc = published_at_utc
     row.published_context_json = funding_demand_context_to_json_dict(context)
@@ -691,7 +691,7 @@ def publish_funding_demand(
         changed={
             "fields": [
                 "status",
-                "eligible_fund_keys_json",
+                "eligible_fund_codes_json",
                 "published_at_utc",
                 "published_context_json",
             ]
@@ -772,7 +772,7 @@ def list_published_funding_demands(
                 "status": item.status,
                 "goal_cents": item.goal_cents,
                 "deadline_date": item.deadline_date,
-                "eligible_fund_keys": list(item.eligible_fund_keys),
+                "eligible_fund_codes": list(item.eligible_fund_codes),
             }
         )
     return out

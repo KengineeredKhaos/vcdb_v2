@@ -116,7 +116,7 @@ def _realize_into_demand(funding_demand_ulid: str, amount_cents: int) -> str:
             intent_ulid=intent.ulid,
             amount_cents=amount_cents,
             happened_at_utc="2026-03-16T18:00:00Z",
-            fund_key="general_unrestricted",
+            fund_code="general_unrestricted",
             income_kind=tx.income_kinds[0].key,
             receipt_method="bank",
             reserve_on_receive=True,
@@ -150,7 +150,7 @@ def test_ops_float_seed_requires_governor(app, monkeypatch):
                 calendar_v2.OpsFloatAllocationRequestDTO(
                     source_funding_demand_ulid=ops_fd,
                     dest_funding_demand_ulid=proj_fd,
-                    fund_key="general_unrestricted",
+                    fund_code="general_unrestricted",
                     amount_cents=5000,
                     support_mode="seed",
                     request_id="req-ops-float-seed-denied",
@@ -183,7 +183,7 @@ def test_ops_float_seed_allocation_enables_project_encumber(app, monkeypatch):
             calendar_v2.OpsFloatAllocationRequestDTO(
                 source_funding_demand_ulid=ops_fd,
                 dest_funding_demand_ulid=proj_fd,
-                fund_key="general_unrestricted",
+                fund_code="general_unrestricted",
                 amount_cents=5000,
                 support_mode="seed",
                 actor_domain_roles=("governor",),
@@ -203,7 +203,7 @@ def test_ops_float_seed_allocation_enables_project_encumber(app, monkeypatch):
             calendar_v2.ProjectEncumbranceRequestDTO(
                 funding_demand_ulid=proj_fd,
                 amount_cents=4000,
-                fund_key="general_unrestricted",
+                fund_code="general_unrestricted",
                 expense_kind=tx.expense_kinds[0].key,
                 happened_at_utc="2026-03-16T19:00:00Z",
                 request_id="req-ops-float-encumber",
@@ -242,7 +242,7 @@ def test_ops_float_bridge_is_auto_allowed(app, monkeypatch):
             calendar_v2.OpsFloatAllocationRequestDTO(
                 source_funding_demand_ulid=ops_fd,
                 dest_funding_demand_ulid=proj_fd,
-                fund_key="general_unrestricted",
+                fund_code="general_unrestricted",
                 amount_cents=3000,
                 support_mode="bridge",
                 request_id="req-ops-float-bridge-ok",
@@ -277,7 +277,7 @@ def test_ops_float_repay_reduces_open_balance(app, monkeypatch):
             calendar_v2.OpsFloatAllocationRequestDTO(
                 source_funding_demand_ulid=ops_fd,
                 dest_funding_demand_ulid=proj_fd,
-                fund_key="general_unrestricted",
+                fund_code="general_unrestricted",
                 amount_cents=5000,
                 support_mode="bridge",
                 request_id="req-ops-float-repay-alloc",
@@ -331,7 +331,7 @@ def test_ops_float_forgive_requires_closed_project_and_governor(
             calendar_v2.OpsFloatAllocationRequestDTO(
                 source_funding_demand_ulid=ops_fd,
                 dest_funding_demand_ulid=proj_fd,
-                fund_key="general_unrestricted",
+                fund_code="general_unrestricted",
                 amount_cents=4000,
                 support_mode="seed",
                 actor_domain_roles=("governor",),

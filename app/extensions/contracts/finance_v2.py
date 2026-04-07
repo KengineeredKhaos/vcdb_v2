@@ -127,7 +127,7 @@ class IncomePostRequestDTO:
     amount_cents: int
     happened_at_utc: str
 
-    fund_key: str
+    fund_code: str
     fund_label: str
     fund_restriction_type: str  # unrestricted|temporarily_restricted|...
 
@@ -153,7 +153,7 @@ class ExpensePostRequestDTO:
     amount_cents: int
     happened_at_utc: str
 
-    fund_key: str
+    fund_code: str
     fund_label: str
     fund_restriction_type: str
 
@@ -185,7 +185,7 @@ class PostedDTO:
 @dataclass(frozen=True)
 class ReserveRequestDTO:
     funding_demand_ulid: str
-    fund_key: str
+    fund_code: str
     amount_cents: int
     source: str
 
@@ -202,7 +202,7 @@ class ReserveRequestDTO:
 @dataclass(frozen=True)
 class EncumbranceRequestDTO:
     funding_demand_ulid: str
-    fund_key: str
+    fund_code: str
     amount_cents: int
     source: str
 
@@ -221,7 +221,7 @@ class EncumbranceRequestDTO:
 class OpsFloatRequestDTO:
     source_funding_demand_ulid: str
     dest_funding_demand_ulid: str
-    fund_key: str
+    fund_code: str
     amount_cents: int
     support_mode: str
 
@@ -265,7 +265,7 @@ class OpsFloatViewDTO:
     source_project_ulid: str | None
     dest_funding_demand_ulid: str
     dest_project_ulid: str | None
-    fund_key: str
+    fund_code: str
     amount_cents: int
     open_cents: int
     status: str
@@ -279,7 +279,7 @@ class EncumbranceViewDTO:
     encumbrance_ulid: str
     funding_demand_ulid: str
     project_ulid: str | None
-    fund_key: str
+    fund_code: str
     amount_cents: int
     relieved_cents: int
     open_cents: int
@@ -307,7 +307,7 @@ def _load_provider(where: str):
       funding_demand_ulid
       received_cents, reserved_cents, encumbered_cents, spent_cents
       received_by_fund, reserved_by_fund, encumbered_by_fund:
-          list[{"key": fund_key, "amount_cents": int}, ...]
+          list[{"key": fund_code, "amount_cents": int}, ...]
       spent_by_expense_kind:
           list[{"key": expense_kind, "amount_cents": int}, ...]
       income_by_income_kind:
@@ -413,7 +413,7 @@ def get_encumbrance(encumbrance_ulid: str) -> EncumbranceViewDTO:
             encumbrance_ulid=str(raw["encumbrance_ulid"]),
             funding_demand_ulid=str(raw["funding_demand_ulid"]),
             project_ulid=raw.get("project_ulid"),
-            fund_key=str(raw["fund_key"]),
+            fund_code=str(raw["fund_code"]),
             amount_cents=int(raw.get("amount_cents") or 0),
             relieved_cents=int(raw.get("relieved_cents") or 0),
             open_cents=int(raw.get("open_cents") or 0),
@@ -432,7 +432,7 @@ def post_income(req: IncomePostRequestDTO) -> PostedDTO:
             {
                 "amount_cents": req.amount_cents,
                 "happened_at_utc": req.happened_at_utc,
-                "fund_key": req.fund_key,
+                "fund_code": req.fund_code,
                 "fund_label": req.fund_label,
                 "fund_restriction_type": req.fund_restriction_type,
                 "income_kind": req.income_kind,
@@ -464,7 +464,7 @@ def post_expense(req: ExpensePostRequestDTO) -> PostedDTO:
             {
                 "amount_cents": req.amount_cents,
                 "happened_at_utc": req.happened_at_utc,
-                "fund_key": req.fund_key,
+                "fund_code": req.fund_code,
                 "fund_label": req.fund_label,
                 "fund_restriction_type": req.fund_restriction_type,
                 "expense_kind": req.expense_kind,
@@ -496,7 +496,7 @@ def reserve_funds(req: ReserveRequestDTO) -> PostedDTO:
         out = _reserve_funds(
             {
                 "funding_demand_ulid": req.funding_demand_ulid,
-                "fund_key": req.fund_key,
+                "fund_code": req.fund_code,
                 "amount_cents": req.amount_cents,
                 "source": req.source,
                 "fund_label": req.fund_label,
@@ -524,7 +524,7 @@ def encumber_funds(req: EncumbranceRequestDTO) -> PostedDTO:
         out = _encumber_funds(
             {
                 "funding_demand_ulid": req.funding_demand_ulid,
-                "fund_key": req.fund_key,
+                "fund_code": req.fund_code,
                 "amount_cents": req.amount_cents,
                 "source": req.source,
                 "fund_label": req.fund_label,
@@ -556,7 +556,7 @@ def allocate_ops_float(req: OpsFloatRequestDTO) -> PostedDTO:
                 "source_project_ulid": req.source_project_ulid,
                 "dest_funding_demand_ulid": req.dest_funding_demand_ulid,
                 "dest_project_ulid": req.dest_project_ulid,
-                "fund_key": req.fund_key,
+                "fund_code": req.fund_code,
                 "amount_cents": req.amount_cents,
                 "support_mode": req.support_mode,
                 "decision_fingerprint": req.decision_fingerprint,
@@ -644,7 +644,6 @@ def get_ops_float_summary(
         raise _as_contract_error(where, exc) from exc
 
 
-
 def get_ops_float(ops_float_ulid: str) -> OpsFloatViewDTO:
     where = "finance_v2.get_ops_float"
     try:
@@ -653,13 +652,11 @@ def get_ops_float(ops_float_ulid: str) -> OpsFloatViewDTO:
             ops_float_ulid=str(raw["ops_float_ulid"]),
             action=str(raw["action"]),
             support_mode=str(raw["support_mode"]),
-            source_funding_demand_ulid=str(
-                raw["source_funding_demand_ulid"]
-            ),
+            source_funding_demand_ulid=str(raw["source_funding_demand_ulid"]),
             source_project_ulid=raw.get("source_project_ulid"),
             dest_funding_demand_ulid=str(raw["dest_funding_demand_ulid"]),
             dest_project_ulid=raw.get("dest_project_ulid"),
-            fund_key=str(raw["fund_key"]),
+            fund_code=str(raw["fund_code"]),
             amount_cents=int(raw["amount_cents"]),
             open_cents=int(raw["open_cents"]),
             status=str(raw["status"]),
@@ -668,7 +665,9 @@ def get_ops_float(ops_float_ulid: str) -> OpsFloatViewDTO:
             source_ref_ulid=raw.get("source_ref_ulid"),
         )
     except Exception as exc:
-        raise _as_contract_error(where, exc) from exc# -----------------
+        raise _as_contract_error(where, exc) from exc  # -----------------
+
+
 # Old Paradigm
 # below this line
 # -----------------
@@ -1037,126 +1036,6 @@ def record_receipt(payload: dict) -> ReceiptDTO:
 
 
 # -----------------
-# Create Fund
-# services_funds
-# -----------------
-
-
-def create_fund(
-    *,
-    code: str,
-    name: str,
-    archetype_key: str,
-    restriction_type: str,
-    starts_on: str | None = None,
-    expires_on: str | None = None,
-    actor_ulid: str,
-    request_id: str,
-) -> FundDTO:
-    """
-    Create a new fund bucket.
-
-    Thin contract wrapper; see
-    app.slices.finance.services_funds.create_fund for details.
-    """
-    where = "finance_v2.create_fund"
-    try:
-        code = _require_str("code", code)
-        name = _require_str("name", name)
-        archetype_key = _require_str("archetype_key", archetype_key)
-        restriction_type = _require_str("restriction_type", restriction_type)
-        actor_ulid = _require_ulid("actor_ulid", actor_ulid)
-        request_id = _require_str("request_id", request_id)
-
-        from app.slices.finance import services_funds as svc
-
-        payload: dict = {
-            "code": code,
-            "name": name,
-            "archetype_key": archetype_key,
-            "restriction_type": restriction_type,
-            "starts_on": starts_on,
-            "expires_on": expires_on,
-            "actor_ulid": actor_ulid,
-            "request_id": request_id,
-        }
-        return svc.create_fund(payload)
-
-    except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
-
-
-# -----------------
-# Transfer
-# services_funds
-# -----------------
-
-
-def transfer(payload: dict) -> dict:
-    from app.slices.finance.services_funds import transfer as _svc_transfer
-
-    return _svc_transfer(payload)
-
-
-# -----------------
-# Set Budget
-# services_funds
-# -----------------
-def set_budget(payload: dict) -> BudgetDTO:
-    from app.slices.finance.services_funds import (
-        set_budget as _svc_set_budget,
-    )
-
-    return _svc_set_budget(payload)
-
-
-# -----------------
-# Get Fund Summary
-# services_funds
-# -----------------
-
-
-def get_fund_summary(*, fund_ulid: str) -> FundDTO:
-    """
-    Contract entry point: fetch a summary for a single Fund.
-
-    - Validates fund_ulid shape (26-char ULID).
-    - Delegates to finance.services_funds.get_fund_summary.
-    - Normalises any errors into ContractError via _as_contract_error().
-    """
-    where = "finance_v2.get_fund_summary"
-    try:
-        fund_ulid = _require_ulid("fund_ulid", fund_ulid)
-
-        from app.slices.finance import services_funds as svc
-
-        return svc.get_fund_summary(fund_ulid)
-    except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
-
-
-def list_funds(*, include_inactive: bool = False) -> list[FundDTO]:
-    """
-    Contract entry point: list all funds with their current balances.
-
-    - Performs light argument normalisation.
-    - Delegates to finance.services_funds.list_funds_with_balances.
-    - Normalises any errors into ContractError via _as_contract_error().
-    """
-    where = "finance_v2.list_funds"
-    try:
-        include_inactive = bool(include_inactive)
-
-        from app.slices.finance import services_funds as svc
-
-        return svc.list_funds_with_balances(
-            include_inactive=include_inactive,
-        )
-    except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
-
-
-# -----------------
 # Create Grant
 # services_grants
 # -----------------
@@ -1451,7 +1330,6 @@ def record_disbursement(payload: dict[str, Any]) -> dict[str, Any]:
         return svc.record_disbursement(payload)
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
-
 
 
 # -----------------

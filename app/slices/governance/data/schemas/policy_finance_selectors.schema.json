@@ -148,7 +148,7 @@
         "rule_id",
         "priority",
         "match",
-        "allow_fund_keys"
+        "allow_fund_codes"
       ],
       "properties": {
         "rule_id": {
@@ -160,13 +160,13 @@
           "minimum": 0
         },
         "match": { "$ref": "#/$defs/selector_match" },
-        "allow_fund_keys": {
+        "allow_fund_codes": {
           "type": "array",
           "items": { "$ref": "#/$defs/semantic_key" },
           "minItems": 1,
           "uniqueItems": true
         },
-        "prefer_fund_keys": {
+        "prefer_fund_codes": {
           "type": "array",
           "items": { "$ref": "#/$defs/semantic_key" },
           "uniqueItems": true

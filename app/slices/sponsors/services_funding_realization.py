@@ -34,7 +34,7 @@ class FundingRealizationResult:
     project_ulid: str | None
 
     amount_cents: int
-    fund_key: str
+    fund_code: str
 
     journal_ulid: str
     reserve_ulid: str | None
@@ -119,7 +119,7 @@ def realize_funding_intent(
     intent_ulid: str,
     amount_cents: int,
     happened_at_utc: str,
-    fund_key: str,
+    fund_code: str,
     income_kind: str | None,
     receipt_method: str,
     reserve_on_receive: bool | None = None,
@@ -134,8 +134,8 @@ def realize_funding_intent(
         raise ValueError("amount_cents must be > 0")
     if not happened_at_utc:
         raise ValueError("happened_at_utc required")
-    if not fund_key:
-        raise ValueError("fund_key required")
+    if not fund_code:
+        raise ValueError("fund_code required")
     if not receipt_method:
         raise ValueError("receipt_method required")
 
@@ -164,9 +164,9 @@ def realize_funding_intent(
         defaults=defaults,
     )
 
-    fund_meta = governance_v2.get_fund_key(fund_key)
+    fund_meta = governance_v2.get_fund_code(fund_code)
     restriction_keys = governance_v2.apply_fund_defaults(
-        fund_key=fund_key,
+        fund_code=fund_code,
         restriction_keys=defaults.default_restriction_keys,
     )
     restriction_keys = _merge_restriction_keys(
@@ -175,10 +175,10 @@ def realize_funding_intent(
     )
 
     sem = governance_v2.validate_semantic_keys(
-        fund_key=fund_key,
+        fund_code=fund_code,
         restriction_keys=restriction_keys,
         income_kind=income_kind,
-        demand_eligible_fund_keys=defaults.eligible_fund_keys,
+        demand_eligible_fund_codes=defaults.eligible_fund_codes,
     )
     if not sem.ok:
         raise ValueError("; ".join(sem.errors) or "invalid semantics")
@@ -195,8 +195,8 @@ def realize_funding_intent(
             tag_any=defaults.tag_any,
             restriction_keys=restriction_keys,
             ops_support_planned=defaults.ops_support_planned,
-            demand_eligible_fund_keys=defaults.eligible_fund_keys,
-            selected_fund_key=fund_key,
+            demand_eligible_fund_codes=defaults.eligible_fund_codes,
+            selected_fund_code=fund_code,
             actor_rbac_roles=actor_rbac_roles,
             actor_domain_roles=actor_domain_roles,
         )
@@ -222,7 +222,7 @@ def realize_funding_intent(
         finance_v2.IncomePostRequestDTO(
             amount_cents=amount_cents,
             happened_at_utc=happened_at_utc,
-            fund_key=fund_key,
+            fund_code=fund_code,
             fund_label=fund_meta.label,
             fund_restriction_type=fund_restriction_type,
             income_kind=income_kind,
@@ -244,7 +244,7 @@ def realize_funding_intent(
         reserve_post = finance_v2.reserve_funds(
             finance_v2.ReserveRequestDTO(
                 funding_demand_ulid=defaults.funding_demand_ulid,
-                fund_key=fund_key,
+                fund_code=fund_code,
                 amount_cents=amount_cents,
                 source="sponsors",
                 fund_label=fund_meta.label,
@@ -269,7 +269,7 @@ def realize_funding_intent(
             funding_demand_ulid=defaults.funding_demand_ulid,
             project_ulid=defaults.project_ulid,
             amount_cents=amount_cents,
-            fund_key=fund_key,
+            fund_code=fund_code,
             journal_ulid=income_post.id,
             reserve_ulid=None if reserve_post is None else reserve_post.id,
             status=intent_row.status,
@@ -295,7 +295,7 @@ def realize_funding_intent(
             "reserve_ulid": (
                 None if reserve_post is None else reserve_post.id
             ),
-            "fund_key": fund_key,
+            "fund_code": fund_code,
             "decision_fingerprint": preview.decision_fingerprint,
         },
         changed={"fields": ["status"]},
@@ -315,7 +315,7 @@ def realize_funding_intent(
         funding_demand_ulid=defaults.funding_demand_ulid,
         project_ulid=defaults.project_ulid,
         amount_cents=amount_cents,
-        fund_key=fund_key,
+        fund_code=fund_code,
         journal_ulid=income_post.id,
         reserve_ulid=None if reserve_post is None else reserve_post.id,
         status=intent_row.status,

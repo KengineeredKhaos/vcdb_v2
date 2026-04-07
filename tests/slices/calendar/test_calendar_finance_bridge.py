@@ -50,10 +50,10 @@ def _default_publishable_hints(monkeypatch):
     _patch_publishable_hints(monkeypatch)
 
 
-def _pick_approval_free_fund(eligible_fund_keys: tuple[str, ...]) -> str:
-    if "general_unrestricted" in eligible_fund_keys:
+def _pick_approval_free_fund(eligible_fund_codes: tuple[str, ...]) -> str:
+    if "general_unrestricted" in eligible_fund_codes:
         return "general_unrestricted"
-    return eligible_fund_keys[0]
+    return eligible_fund_codes[0]
 
 
 def _derive_restriction_type(
@@ -81,13 +81,13 @@ def _derive_restriction_type(
 def _seed_reserve_for_fund(
     *,
     funding_demand_ulid: str,
-    fund_key: str,
+    fund_code: str,
     amount_cents: int,
 ) -> None:
     demand = calendar_v2.get_funding_demand(funding_demand_ulid)
-    fund_meta = governance_v2.get_fund_key(fund_key)
+    fund_meta = governance_v2.get_fund_code(fund_code)
     restriction_keys = governance_v2.apply_fund_defaults(
-        fund_key=fund_key,
+        fund_code=fund_code,
         restriction_keys=(),
     )
     fund_restriction_type = _derive_restriction_type(
@@ -98,7 +98,7 @@ def _seed_reserve_for_fund(
     finance_v2.reserve_funds(
         finance_v2.ReserveRequestDTO(
             funding_demand_ulid=funding_demand_ulid,
-            fund_key=fund_key,
+            fund_code=fund_code,
             amount_cents=amount_cents,
             source="tests",
             fund_label=fund_meta.label,
@@ -177,8 +177,8 @@ def _create_realized_demand() -> tuple[str, str]:
 
     tx = governance_v2.get_finance_taxonomy()
     income_kind = tx.income_kinds[0].key
-    fund_key = _pick_approval_free_fund(
-        calendar_v2.get_funding_demand(demand.ulid).eligible_fund_keys
+    fund_code = _pick_approval_free_fund(
+        calendar_v2.get_funding_demand(demand.ulid).eligible_fund_codes
     )
 
     sponsors_v2.realize_funding_intent(
@@ -186,7 +186,7 @@ def _create_realized_demand() -> tuple[str, str]:
             intent_ulid=intent.ulid,
             amount_cents=12000,
             happened_at_utc="2026-03-16T10:00:00Z",
-            fund_key=fund_key,
+            fund_code=fund_code,
             income_kind=income_kind,
             receipt_method="bank",
             reserve_on_receive=True,
@@ -194,13 +194,13 @@ def _create_realized_demand() -> tuple[str, str]:
         )
     )
     db.session.flush()
-    return demand.ulid, fund_key
+    return demand.ulid, fund_code
 
 
 def test_encumber_project_funds_happy_path(app, monkeypatch):
     with app.app_context():
         ensure_default_accounts()
-        demand_ulid, fund_key = _create_realized_demand()
+        demand_ulid, fund_code = _create_realized_demand()
         tx = governance_v2.get_finance_taxonomy()
         expense_kind = tx.expense_kinds[12].key
 
@@ -208,7 +208,7 @@ def test_encumber_project_funds_happy_path(app, monkeypatch):
             calendar_v2.ProjectEncumbranceRequestDTO(
                 funding_demand_ulid=demand_ulid,
                 amount_cents=8000,
-                fund_key=fund_key,
+                fund_code=fund_code,
                 expense_kind=expense_kind,
                 happened_at_utc="2026-03-16T11:00:00Z",
                 request_id="req-encumber-1",
@@ -248,7 +248,7 @@ def test_encumber_project_funds_happy_path(app, monkeypatch):
 def test_spend_project_funds_happy_path(app):
     with app.app_context():
         ensure_default_accounts()
-        demand_ulid, fund_key = _create_realized_demand()
+        demand_ulid, fund_code = _create_realized_demand()
         tx = governance_v2.get_finance_taxonomy()
         expense_kind = tx.expense_kinds[0].key
 
@@ -256,7 +256,7 @@ def test_spend_project_funds_happy_path(app):
             calendar_v2.ProjectEncumbranceRequestDTO(
                 funding_demand_ulid=demand_ulid,
                 amount_cents=8000,
-                fund_key=fund_key,
+                fund_code=fund_code,
                 expense_kind=expense_kind,
                 happened_at_utc="2026-03-16T11:30:00Z",
                 request_id="req-encumber-2",
@@ -309,7 +309,7 @@ def test_spend_project_funds_happy_path(app):
 def test_encumber_rejects_when_over_reserved(app):
     with app.app_context():
         ensure_default_accounts()
-        demand_ulid, fund_key = _create_realized_demand()
+        demand_ulid, fund_code = _create_realized_demand()
         tx = governance_v2.get_finance_taxonomy()
         expense_kind = tx.expense_kinds[0].key
 
@@ -318,7 +318,7 @@ def test_encumber_rejects_when_over_reserved(app):
                 calendar_v2.ProjectEncumbranceRequestDTO(
                     funding_demand_ulid=demand_ulid,
                     amount_cents=13000,
-                    fund_key=fund_key,
+                    fund_code=fund_code,
                     expense_kind=expense_kind,
                     happened_at_utc="2026-03-16T13:00:00Z",
                     request_id="req-encumber-over",
@@ -331,7 +331,7 @@ def test_encumber_rejects_when_over_reserved(app):
 def test_spend_rejects_when_over_open_encumbrance(app):
     with app.app_context():
         ensure_default_accounts()
-        demand_ulid, fund_key = _create_realized_demand()
+        demand_ulid, fund_code = _create_realized_demand()
         tx = governance_v2.get_finance_taxonomy()
         expense_kind = tx.expense_kinds[0].key
 
@@ -339,7 +339,7 @@ def test_spend_rejects_when_over_open_encumbrance(app):
             calendar_v2.ProjectEncumbranceRequestDTO(
                 funding_demand_ulid=demand_ulid,
                 amount_cents=4000,
-                fund_key=fund_key,
+                fund_code=fund_code,
                 expense_kind=expense_kind,
                 happened_at_utc="2026-03-16T11:45:00Z",
                 request_id="req-encumber-3",
@@ -379,7 +379,7 @@ def test_encumber_rejects_when_selected_fund_requires_approval(
 
         demand = calendar_v2.get_funding_demand(demand_ulid)
         restricted = None
-        for key in demand.eligible_fund_keys:
+        for key in demand.eligible_fund_codes:
             if key == "general_restricted":
                 restricted = key
                 break
@@ -389,7 +389,7 @@ def test_encumber_rejects_when_selected_fund_requires_approval(
 
         _seed_reserve_for_fund(
             funding_demand_ulid=demand_ulid,
-            fund_key=restricted,
+            fund_code=restricted,
             amount_cents=12000,
         )
 
@@ -398,7 +398,7 @@ def test_encumber_rejects_when_selected_fund_requires_approval(
                 calendar_v2.ProjectEncumbranceRequestDTO(
                     funding_demand_ulid=demand_ulid,
                     amount_cents=8000,
-                    fund_key=restricted,
+                    fund_code=restricted,
                     expense_kind=expense_kind,
                     happened_at_utc="2026-03-16T15:00:00Z",
                     request_id="req-encumber-restricted",
@@ -433,7 +433,7 @@ def test_encumber_project_funds_forwards_source_profile_hint(
 
     with app.app_context():
         ensure_default_accounts()
-        demand_ulid, fund_key = _create_realized_demand()
+        demand_ulid, fund_code = _create_realized_demand()
         tx = governance_v2.get_finance_taxonomy()
         expense_kind = tx.expense_kinds[0].key
 
@@ -452,7 +452,7 @@ def test_encumber_project_funds_forwards_source_profile_hint(
             calendar_v2.ProjectEncumbranceRequestDTO(
                 funding_demand_ulid=demand_ulid,
                 amount_cents=4000,
-                fund_key=fund_key,
+                fund_code=fund_code,
                 expense_kind=expense_kind,
                 happened_at_utc="2026-03-16T20:00:00Z",
                 request_id="req-encumber-source-profile",

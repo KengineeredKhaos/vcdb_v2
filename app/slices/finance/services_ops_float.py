@@ -41,13 +41,13 @@ def _open_amount(parent_ulid: str) -> int:
 def _source_available_cents(
     *,
     funding_demand_ulid: str,
-    fund_key: str,
+    fund_code: str,
 ) -> int:
     reserve_total = 0
     for row in _active_rows(
         select(Reserve).where(
             Reserve.funding_demand_ulid == funding_demand_ulid,
-            Reserve.fund_code == fund_key,
+            Reserve.fund_code == fund_code,
             Reserve.status == "active",
         )
     ):
@@ -57,7 +57,7 @@ def _source_available_cents(
     for row in _active_rows(
         select(Encumbrance).where(
             Encumbrance.funding_demand_ulid == funding_demand_ulid,
-            Encumbrance.fund_code == fund_key,
+            Encumbrance.fund_code == fund_code,
             Encumbrance.status == "active",
         )
     ):
@@ -70,7 +70,7 @@ def _source_available_cents(
     for row in _active_rows(
         select(OpsFloat).where(
             OpsFloat.source_funding_demand_ulid == funding_demand_ulid,
-            OpsFloat.fund_code == fund_key,
+            OpsFloat.fund_code == fund_code,
             OpsFloat.action == "allocate",
             OpsFloat.status == "active",
         )
@@ -83,7 +83,7 @@ def _source_available_cents(
 def allocate_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
     source_fd = payload.get("source_funding_demand_ulid")
     dest_fd = payload.get("dest_funding_demand_ulid")
-    fund_key = payload.get("fund_key")
+    fund_code = payload.get("fund_code")
     support_mode = payload.get("support_mode")
     amount = int(payload.get("amount_cents") or 0)
     actor_ulid = payload.get("actor_ulid")
@@ -95,8 +95,8 @@ def allocate_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
         raise ValueError("dest_funding_demand_ulid required")
     if source_fd == dest_fd:
         raise ValueError("source and destination funding demand must differ")
-    if not fund_key:
-        raise ValueError("fund_key required")
+    if not fund_code:
+        raise ValueError("fund_code required")
     if support_mode not in _VALID_MODES:
         raise ValueError("support_mode must be seed|backfill|bridge")
     if amount <= 0:
@@ -104,7 +104,7 @@ def allocate_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
 
     available = _source_available_cents(
         funding_demand_ulid=str(source_fd),
-        fund_key=str(fund_key),
+        fund_code=str(fund_code),
     )
     if amount > available:
         raise ValueError("ops float exceeds source available funds")
@@ -112,7 +112,7 @@ def allocate_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
     if dry_run:
         return {
             "id": "DRY-RUN",
-            "fund_key": str(fund_key),
+            "fund_code": str(fund_code),
             "amount_cents": amount,
             "support_mode": str(support_mode),
         }
@@ -124,7 +124,7 @@ def allocate_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
         source_project_ulid=payload.get("source_project_ulid"),
         dest_funding_demand_ulid=str(dest_fd),
         dest_project_ulid=payload.get("dest_project_ulid"),
-        fund_code=str(fund_key),
+        fund_code=str(fund_code),
         amount_cents=amount,
         status="active",
         decision_fingerprint=payload.get("decision_fingerprint"),
@@ -146,7 +146,7 @@ def allocate_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
             "source_project_ulid": row.source_project_ulid,
             "dest_funding_demand_ulid": row.dest_funding_demand_ulid,
             "dest_project_ulid": row.dest_project_ulid,
-            "fund_key": row.fund_code,
+            "fund_code": row.fund_code,
             "support_mode": row.support_mode,
             "amount_cents": row.amount_cents,
             "decision_fingerprint": row.decision_fingerprint,
@@ -155,7 +155,7 @@ def allocate_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
     )
     return {
         "id": row.ulid,
-        "fund_key": row.fund_code,
+        "fund_code": row.fund_code,
         "amount_cents": row.amount_cents,
         "support_mode": row.support_mode,
     }
@@ -185,7 +185,7 @@ def repay_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
     if dry_run:
         return {
             "id": "DRY-RUN",
-            "fund_key": parent.fund_code,
+            "fund_code": parent.fund_code,
             "amount_cents": amount,
             "support_mode": parent.support_mode,
         }
@@ -218,7 +218,7 @@ def repay_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
             "parent_ops_float_ulid": parent.ulid,
             "source_funding_demand_ulid": row.source_funding_demand_ulid,
             "dest_funding_demand_ulid": row.dest_funding_demand_ulid,
-            "fund_key": row.fund_code,
+            "fund_code": row.fund_code,
             "support_mode": row.support_mode,
             "amount_cents": row.amount_cents,
         },
@@ -226,7 +226,7 @@ def repay_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
     )
     return {
         "id": row.ulid,
-        "fund_key": row.fund_code,
+        "fund_code": row.fund_code,
         "amount_cents": row.amount_cents,
         "support_mode": row.support_mode,
     }
@@ -256,7 +256,7 @@ def forgive_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
     if dry_run:
         return {
             "id": "DRY-RUN",
-            "fund_key": parent.fund_code,
+            "fund_code": parent.fund_code,
             "amount_cents": amount,
             "support_mode": parent.support_mode,
         }
@@ -289,7 +289,7 @@ def forgive_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
             "parent_ops_float_ulid": parent.ulid,
             "source_funding_demand_ulid": row.source_funding_demand_ulid,
             "dest_funding_demand_ulid": row.dest_funding_demand_ulid,
-            "fund_key": row.fund_code,
+            "fund_code": row.fund_code,
             "support_mode": row.support_mode,
             "amount_cents": row.amount_cents,
         },
@@ -297,7 +297,7 @@ def forgive_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
     )
     return {
         "id": row.ulid,
-        "fund_key": row.fund_code,
+        "fund_code": row.fund_code,
         "amount_cents": row.amount_cents,
         "support_mode": row.support_mode,
     }
@@ -363,7 +363,7 @@ def get_ops_float(ops_float_ulid: str) -> dict[str, object]:
         "source_project_ulid": row.source_project_ulid,
         "dest_funding_demand_ulid": row.dest_funding_demand_ulid,
         "dest_project_ulid": row.dest_project_ulid,
-        "fund_key": row.fund_code,
+        "fund_code": row.fund_code,
         "amount_cents": int(row.amount_cents or 0),
         "open_cents": int(open_cents),
         "status": row.status,

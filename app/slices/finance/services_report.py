@@ -1,3 +1,5 @@
+# app/slices/finance/services_report.py
+
 from __future__ import annotations
 
 from calendar import monthrange
@@ -5,8 +7,13 @@ from calendar import monthrange
 from sqlalchemy import text
 
 from app.extensions import db
-
-
+"""
+# NOTE: This is intentionally written using SQL text for portability.
+# Project truth belongs to Calendar; Finance report rollups therefore group on
+# finance_journal_line.project_ulid directly and do not depend on a local
+# finance_project shadow table.
+# Revenue accounts assumed to start with '4', expense with '5'/'6'.
+"""
 def _period_meta(period: object) -> dict[str, object]:
     if hasattr(period, "key"):
         return {
@@ -74,6 +81,10 @@ def statement_of_activities(period: str) -> dict[str, object]:
         .all()
     )
 
+    # Aggregate by project using the journal line project ULID directly.
+    # Calendar owns project identity; Finance must not collapse multiple
+    # real project ULIDs into one '(unassigned)' bucket merely because a
+    # local shadow row is absent.
     q_proj = text(
         """
         SELECT

@@ -120,7 +120,7 @@ def test_realize_funding_intent_posts_income_and_reserve(app):
         assert demand.pledged_cents == 12000
 
         funding_demand = calendar_v2.get_funding_demand(demand_ulid)
-        assert funding_demand.eligible_fund_keys
+        assert funding_demand.eligible_fund_codes
 
         income_kind = "donation"
 
@@ -132,25 +132,25 @@ def test_realize_funding_intent_posts_income_and_reserve(app):
                 project_ulid=funding_demand.project_ulid,
                 income_kind=income_kind,
                 restriction_keys=(),
-                demand_eligible_fund_keys=tuple(
-                    funding_demand.eligible_fund_keys
+                demand_eligible_fund_codes=tuple(
+                    funding_demand.eligible_fund_codes
                 ),
-                selected_fund_key=None,
+                selected_fund_code=None,
                 actor_rbac_roles=(),
                 actor_domain_roles=(),
             )
         )
 
         assert preview.allowed
-        assert preview.eligible_fund_keys
-        fund_key = preview.eligible_fund_keys[0]
+        assert preview.eligible_fund_codes
+        fund_code = preview.eligible_fund_codes[0]
 
         out = sponsors_v2.realize_funding_intent(
             sponsors_v2.FundingRealizationRequestDTO(
                 intent_ulid=intent.ulid,
                 amount_cents=12000,
                 happened_at_utc="2026-03-15T14:00:00Z",
-                fund_key=fund_key,
+                fund_code=fund_code,
                 income_kind=income_kind,
                 receipt_method="bank",
                 reserve_on_receive=True,
@@ -220,7 +220,7 @@ def test_realize_funding_intent_rejects_non_committed(app):
                     intent_ulid=intent.ulid,
                     amount_cents=5000,
                     happened_at_utc="2026-03-15T15:00:00Z",
-                    fund_key=funding_demand.eligible_fund_keys[0],
+                    fund_code=funding_demand.eligible_fund_codes[0],
                     income_kind=tx.income_kinds[0].key,
                     receipt_method="bank",
                     request_id="req-realize-draft",

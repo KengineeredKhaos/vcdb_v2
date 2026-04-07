@@ -26,7 +26,7 @@ class FundKeyDTO:
 class FinanceTaxonomy:
     version: int
 
-    fund_keys: tuple[FundKeyDTO, ...]
+    fund_codes: tuple[FundKeyDTO, ...]
     restriction_keys: tuple[KeyLabelDTO, ...]
     income_kinds: tuple[KeyLabelDTO, ...]
     expense_kinds: tuple[KeyLabelDTO, ...]
@@ -54,13 +54,13 @@ def normalize_restriction_keys(
 
 def apply_fund_defaults(
     *,
-    fund_key: str,
+    fund_code: str,
     restriction_keys: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
     """
     Returns restriction_keys + fund default restrictions (deduped, sorted).
     """
-    fk = get_fund_key(fund_key)
+    fk = get_fund_code(fund_code)
     merged = set(normalize_restriction_keys(restriction_keys))
     merged |= set(fk.default_restriction_keys)
     return tuple(sorted(merged))
@@ -82,7 +82,7 @@ def get_finance_taxonomy() -> FinanceTaxonomy:
     raw = load_policy_finance_taxonomy()
 
     funds: list[FundKeyDTO] = []
-    for k, v in (raw.get("fund_keys") or {}).items():
+    for k, v in (raw.get("fund_codes") or {}).items():
         funds.append(
             FundKeyDTO(
                 key=str(k),
@@ -97,7 +97,7 @@ def get_finance_taxonomy() -> FinanceTaxonomy:
 
     return FinanceTaxonomy(
         version=int(raw.get("version") or 0),
-        fund_keys=tuple(funds),
+        fund_codes=tuple(funds),
         restriction_keys=_sorted_keylabels(raw.get("restriction_keys") or {}),
         income_kinds=_sorted_keylabels(raw.get("income_kinds") or {}),
         expense_kinds=_sorted_keylabels(raw.get("expense_kinds") or {}),
@@ -109,15 +109,15 @@ def _get_map(raw: dict[str, Any], group: str) -> dict[str, Any]:
     return raw.get(group) or {}
 
 
-def get_fund_key(fund_key: str) -> FundKeyDTO:
+def get_fund_code(fund_code: str) -> FundKeyDTO:
     raw = load_policy_finance_taxonomy()
-    funds = _get_map(raw, "fund_keys")
-    if fund_key not in funds:
-        raise LookupError(f"unknown fund_key: {fund_key}")
-    v = funds[fund_key] or {}
+    funds = _get_map(raw, "fund_codes")
+    if fund_code not in funds:
+        raise LookupError(f"unknown fund_code: {fund_code}")
+    v = funds[fund_code] or {}
     return FundKeyDTO(
-        key=str(fund_key),
-        label=str(v.get("label") or fund_key),
+        key=str(fund_code),
+        label=str(v.get("label") or fund_code),
         archetype=str(v.get("archetype") or "unrestricted"),
         default_restriction_keys=tuple(
             v.get("default_restriction_keys") or ()
@@ -140,12 +140,12 @@ def get_taxonomy_label(group: str, key: str) -> KeyLabelDTO:
 
 def validate_semantic_keys(
     *,
-    fund_key: str | None = None,
+    fund_code: str | None = None,
     restriction_keys: tuple[str, ...] = (),
     income_kind: str | None = None,
     expense_kind: str | None = None,
     spending_classes: str | None = None,
-    demand_eligible_fund_keys: tuple[str, ...] = (),
+    demand_eligible_fund_codes: tuple[str, ...] = (),
 ) -> SemanticValidationResult:
     raw = load_policy_finance_taxonomy()
 
@@ -171,15 +171,15 @@ def validate_semantic_keys(
                 errors.append(f"unknown {label}: {value}")
                 unknown_keys.append(value)
 
-    _check_one("fund_keys", fund_key, "fund_key")
+    _check_one("fund_codes", fund_code, "fund_code")
     _check_many("restriction_keys", restriction_keys, "restriction_key")
     _check_one("income_kinds", income_kind, "income_kind")
     _check_one("expense_kinds", expense_kind, "expense_kind")
     _check_one("spending_classes", spending_classes, "spending_classes")
     _check_many(
-        "fund_keys",
-        demand_eligible_fund_keys,
-        "demand_eligible_fund_key",
+        "fund_codes",
+        demand_eligible_fund_codes,
+        "demand_eligible_fund_code",
     )
 
     return SemanticValidationResult(

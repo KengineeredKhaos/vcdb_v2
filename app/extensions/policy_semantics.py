@@ -371,15 +371,15 @@ def check_finance_taxonomy_policy() -> list[str]:
     pol = load_policy_finance_taxonomy()
     msgs: list[str] = []
 
-    fund_keys = pol.get("fund_keys") or {}
+    fund_codes = pol.get("fund_codes") or {}
     restriction_keys = pol.get("restriction_keys") or {}
     income_kinds = pol.get("income_kinds") or {}
     expense_kinds = pol.get("expense_kinds") or {}
     spending_classes = pol.get("spending_classes") or {}
 
-    if not isinstance(fund_keys, dict) or not fund_keys:
+    if not isinstance(fund_codes, dict) or not fund_codes:
         raise PolicyError(
-            "finance_taxonomy.fund_keys must be a non-empty object"
+            "finance_taxonomy.fund_codes must be a non-empty object"
         )
 
     if not isinstance(restriction_keys, dict) or not restriction_keys:
@@ -404,7 +404,7 @@ def check_finance_taxonomy_policy() -> list[str]:
 
     msgs.append(
         "finance taxonomy: "
-        f"fund_keys={len(fund_keys)} "
+        f"fund_codes={len(fund_codes)} "
         f"restriction_keys={len(restriction_keys)} "
         f"income_kinds={len(income_kinds)} "
         f"expense_kinds={len(expense_kinds)} "
@@ -665,19 +665,19 @@ def list_fund_archetypes() -> list[dict]:
     Legacy alias.
 
     The old finance taxonomy exposed fund_archetypes as a list.
-    The new taxonomy exposes fund_keys as an object keyed by fund key.
+    The new taxonomy exposes fund_codes as an object keyed by fund key.
 
     Return a normalized list of dicts so older callers can survive
     during migration.
     """
     pol = load_policy_finance_taxonomy()
-    fund_keys = pol.get("fund_keys") or {}
+    fund_codes = pol.get("fund_codes") or {}
 
-    if not isinstance(fund_keys, dict):
+    if not isinstance(fund_codes, dict):
         return []
 
     out: list[dict] = []
-    for key, spec in fund_keys.items():
+    for key, spec in fund_codes.items():
         spec = spec or {}
         out.append(
             {

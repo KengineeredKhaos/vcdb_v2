@@ -50,7 +50,7 @@ class OpsFloatDTO:
     source_project_ulid: str | None
     dest_funding_demand_ulid: str
     dest_project_ulid: str | None
-    fund_key: str
+    fund_code: str
     amount_cents: int
     status: str
     parent_ops_float_ulid: str | None

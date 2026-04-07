@@ -103,7 +103,7 @@ def test_get_funding_opportunity_uses_context_packet(app, monkeypatch):
         assert detail.planning.project_title == "Context Project"
         assert detail.planning.source_profile_key
         assert detail.workflow.allowed_realization_modes
-        assert detail.policy.eligible_fund_keys
+        assert detail.policy.eligible_fund_codes
         assert detail.totals.pledged_cents == 9000
         assert detail.money.received_cents == 0
         assert detail.money.remaining_goal_cents == 17500
@@ -142,14 +142,14 @@ def test_realize_funding_intent_defaults_from_context(app, monkeypatch):
         db.session.flush()
 
         detail = get_funding_opportunity(demand_ulid)
-        fund_key = detail.policy.eligible_fund_keys[0]
+        fund_code = detail.policy.eligible_fund_codes[0]
 
         out = sponsors_v2.realize_funding_intent(
             sponsors_v2.FundingRealizationRequestDTO(
                 intent_ulid=intent.ulid,
                 amount_cents=17500,
                 happened_at_utc="2026-03-20T10:00:00Z",
-                fund_key=fund_key,
+                fund_code=fund_code,
                 receipt_method="bank",
                 request_id="req-realize-defaults",
             )
@@ -194,14 +194,14 @@ def test_realize_funding_intent_skips_reserve_when_context_expects_false(
 
         detail = get_funding_opportunity(demand_ulid)
         assert detail.workflow.reserve_on_receive_expected is False
-        fund_key = detail.policy.eligible_fund_keys[0]
+        fund_code = detail.policy.eligible_fund_codes[0]
 
         out = sponsors_v2.realize_funding_intent(
             sponsors_v2.FundingRealizationRequestDTO(
                 intent_ulid=intent.ulid,
                 amount_cents=17500,
                 happened_at_utc="2026-03-20T10:00:00Z",
-                fund_key=fund_key,
+                fund_code=fund_code,
                 receipt_method="bank",
                 request_id="req-realize-no-reserve",
             )
@@ -247,14 +247,14 @@ def test_realize_funding_intent_explicit_reserve_override_wins(
 
         detail = get_funding_opportunity(demand_ulid)
         assert detail.workflow.reserve_on_receive_expected is False
-        fund_key = detail.policy.eligible_fund_keys[0]
+        fund_code = detail.policy.eligible_fund_codes[0]
 
         out = sponsors_v2.realize_funding_intent(
             sponsors_v2.FundingRealizationRequestDTO(
                 intent_ulid=intent.ulid,
                 amount_cents=17500,
                 happened_at_utc="2026-03-20T10:00:00Z",
-                fund_key=fund_key,
+                fund_code=fund_code,
                 receipt_method="bank",
                 reserve_on_receive=True,
                 request_id="req-realize-force-reserve",
@@ -282,7 +282,7 @@ def test_realize_funding_intent_merges_context_and_fund_defaults(
 
     captured: dict[str, object] = {}
 
-    def fake_apply_fund_defaults(*, fund_key: str, restriction_keys):
+    def fake_apply_fund_defaults(*, fund_code: str, restriction_keys):
         captured["apply_in"] = tuple(restriction_keys or ())
         return ("temporarily_restricted",)
 
@@ -302,17 +302,17 @@ def test_realize_funding_intent_merges_context_and_fund_defaults(
         )
         return governance_v2.FundingDecisionDTO(
             allowed=True,
-            eligible_fund_keys=(req.selected_fund_key or "",),
-            selected_fund_key=req.selected_fund_key,
+            eligible_fund_codes=(req.selected_fund_code or "",),
+            selected_fund_code=req.selected_fund_code,
             required_approvals=(),
             reason_codes=(),
             matched_rule_ids=(),
             decision_fingerprint="fp-merged",
         )
 
-    def fake_get_fund_key(fund_key: str):
+    def fake_get_fund_code(fund_code: str):
         return governance_v2.FundKeyDTO(
-            key=fund_key,
+            key=fund_code,
             label="Test Fund",
             archetype="temporarily_restricted",
             default_restriction_keys=("temporarily_restricted",),
@@ -352,7 +352,7 @@ def test_realize_funding_intent_merges_context_and_fund_defaults(
         db.session.flush()
 
         detail = get_funding_opportunity(demand_ulid)
-        fund_key = detail.policy.eligible_fund_keys[0]
+        fund_code = detail.policy.eligible_fund_codes[0]
 
         monkeypatch.setattr(
             governance_v2, "apply_fund_defaults", fake_apply_fund_defaults
@@ -365,7 +365,9 @@ def test_realize_funding_intent_merges_context_and_fund_defaults(
         monkeypatch.setattr(
             governance_v2, "preview_funding_decision", fake_preview
         )
-        monkeypatch.setattr(governance_v2, "get_fund_key", fake_get_fund_key)
+        monkeypatch.setattr(
+            governance_v2, "get_fund_code", fake_get_fund_code
+        )
         monkeypatch.setattr(finance_v2, "post_income", fake_post_income)
         monkeypatch.setattr(finance_v2, "reserve_funds", fake_reserve_funds)
 
@@ -374,7 +376,7 @@ def test_realize_funding_intent_merges_context_and_fund_defaults(
                 intent_ulid=intent.ulid,
                 amount_cents=17500,
                 happened_at_utc="2026-03-20T10:00:00Z",
-                fund_key=fund_key,
+                fund_code=fund_code,
                 receipt_method="bank",
                 request_id="req-realize-merge",
             )

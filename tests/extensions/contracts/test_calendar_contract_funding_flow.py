@@ -8,11 +8,11 @@ from app.extensions.contracts import calendar_v2
 from app.extensions.errors import ContractError
 
 
-def test_encumber_project_funds_rejects_blank_fund_key():
+def test_encumber_project_funds_rejects_blank_fund_code():
     req = calendar_v2.ProjectEncumbranceRequestDTO(
         funding_demand_ulid="01TESTTESTTESTTESTTESTTEST",
         amount_cents=1000,
-        fund_key="",
+        fund_code="",
         expense_kind="event_expense",
         happened_at_utc="2026-03-20T12:00:00Z",
     )
@@ -25,7 +25,7 @@ def test_allocate_ops_float_rejects_zero_amount():
     req = calendar_v2.OpsFloatAllocationRequestDTO(
         source_funding_demand_ulid="01TESTTESTTESTTESTTESTTEST",
         dest_funding_demand_ulid="01TESTTESTTESTTESTTESTTST1",
-        fund_key="general_unrestricted",
+        fund_code="general_unrestricted",
         amount_cents=0,
         support_mode="seed",
     )

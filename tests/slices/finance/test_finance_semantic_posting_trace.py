@@ -14,8 +14,8 @@ def test_post_income_writes_funding_demand_trace(app, ulid):
         ensure_default_accounts()
 
         tx = governance_v2.get_finance_taxonomy()
-        fund_key = tx.fund_keys[0].key
-        fund_label = tx.fund_keys[0].label
+        fund_code = tx.fund_codes[0].key
+        fund_label = tx.fund_codes[0].label
         income_kind = tx.income_kinds[0].key
 
         funding_demand_ulid = ulid()
@@ -25,7 +25,7 @@ def test_post_income_writes_funding_demand_trace(app, ulid):
             finance_v2.IncomePostRequestDTO(
                 amount_cents=2500,
                 happened_at_utc="2026-03-15T12:00:00Z",
-                fund_key=fund_key,
+                fund_code=fund_code,
                 fund_label=fund_label,
                 fund_restriction_type="unrestricted",
                 income_kind=income_kind,

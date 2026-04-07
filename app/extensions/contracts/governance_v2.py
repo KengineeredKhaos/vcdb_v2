@@ -38,7 +38,7 @@ from app.slices.governance.services_finance_taxonomy import (
     get_finance_taxonomy as _get_finance_taxonomy,
 )
 from app.slices.governance.services_finance_taxonomy import (
-    get_fund_key as _get_fund_key,
+    get_fund_code as _get_fund_code,
 )
 from app.slices.governance.services_finance_taxonomy import (
     get_taxonomy_label as _get_taxonomy_label,
@@ -205,10 +205,10 @@ class FundingDecisionDTO:
     allowed: bool
 
     # Ordered, preferred-to-least list of eligible fund keys
-    eligible_fund_keys: tuple[str, ...] = ()
+    eligible_fund_codes: tuple[str, ...] = ()
 
-    # If caller already picked a fund_key, Governance can confirm it
-    selected_fund_key: str | None = None
+    # If caller already picked a fund_code, Governance can confirm it
+    selected_fund_code: str | None = None
 
     # Approval requirements (role names, e.g. treasurer)
     required_approvals: tuple[str, ...] = ()
@@ -242,11 +242,11 @@ class FundingDecisionRequestDTO:
 
     # Optional constraints/hints from callers
     ops_support_planned: bool | None = None
-    demand_eligible_fund_keys: tuple[str, ...] = ()
+    demand_eligible_fund_codes: tuple[str, ...] = ()
     tag_any: tuple[str, ...] = ()
 
     # Optional: caller picks one; Governance confirms eligibility + approvals
-    selected_fund_key: str | None = None
+    selected_fund_code: str | None = None
 
     # Actor roles for authority checks
     actor_rbac_roles: tuple[str, ...] = ()
@@ -257,7 +257,7 @@ class FundingDecisionRequestDTO:
 class OpsFloatDecisionRequestDTO:
     support_mode: str
     amount_cents: int
-    fund_key: str
+    fund_code: str
     source_funding_demand_ulid: str
     source_project_ulid: str | None
     dest_funding_demand_ulid: str
@@ -265,7 +265,7 @@ class OpsFloatDecisionRequestDTO:
     action: str = "allocate"
     spending_class: str | None = None
     tag_any: tuple[str, ...] = ()
-    dest_eligible_fund_keys: tuple[str, ...] = ()
+    dest_eligible_fund_codes: tuple[str, ...] = ()
     ops_support_planned: bool | None = None
     actor_rbac_roles: tuple[str, ...] = ()
     actor_domain_roles: tuple[str, ...] = ()
@@ -288,7 +288,7 @@ class FundKeyDTO:
 @dataclass(frozen=True)
 class FinanceTaxonomyDTO:
     version: int
-    fund_keys: tuple[FundKeyDTO, ...]
+    fund_codes: tuple[FundKeyDTO, ...]
     restriction_keys: tuple[KeyLabelDTO, ...]
     income_kinds: tuple[KeyLabelDTO, ...]
     expense_kinds: tuple[KeyLabelDTO, ...]
@@ -486,7 +486,7 @@ Calendar: build a Funding Demand form
 
 Populate dropdowns:
 
-gov.get_finance_taxonomy().fund_keys
+gov.get_finance_taxonomy().fund_codes
 
 gov.get_finance_taxonomy().spending_classes
 
@@ -496,7 +496,7 @@ gov.validate_semantic_keys(...)
 
 When selecting a fund:
 
-show defaults: gov.apply_fund_defaults(fund_key=..., restriction_keys=...)
+show defaults: gov.apply_fund_defaults(fund_code=..., restriction_keys=...)
 
 Sponsors: donation intake form
 
@@ -508,7 +508,7 @@ Validate on submit.
 
 Finance: posting
 
-Finance consumes the semantic keys (kinds/fund_key/restrictions)
+Finance consumes the semantic keys (kinds/fund_code/restrictions)
 
 Finance does not call Governance at post time except perhaps to validate keys
 (optional).
@@ -522,9 +522,9 @@ def preview_funding_decision(
     Read-only governance decision preview.
 
     Intended usage pattern:
-      1) Call WITHOUT selected_fund_key to get eligible_fund_keys.
-      2) Caller chooses selected_fund_key.
-      3) Call WITH selected_fund_key to get approvals/deny + fingerprint.
+      1) Call WITHOUT selected_fund_code to get eligible_fund_codes.
+      2) Caller chooses selected_fund_code.
+      3) Call WITH selected_fund_code to get approvals/deny + fingerprint.
 
     Governance emits no Ledger events here. Caller can store decision_fingerprint
     as a "decision ref" for later encumber/spend calls into Finance.
@@ -542,9 +542,9 @@ def preview_funding_decision(
             "source_profile_key": req.source_profile_key,
             "restriction_keys": req.restriction_keys,
             "ops_support_planned": req.ops_support_planned,
-            "demand_eligible_fund_keys": req.demand_eligible_fund_keys,
+            "demand_eligible_fund_codes": req.demand_eligible_fund_codes,
             "tag_any": req.tag_any,
-            "selected_fund_key": req.selected_fund_key,
+            "selected_fund_code": req.selected_fund_code,
             "actor_rbac_roles": req.actor_rbac_roles,
             "actor_domain_roles": req.actor_domain_roles,
         }
@@ -553,8 +553,10 @@ def preview_funding_decision(
 
         return FundingDecisionDTO(
             allowed=bool(raw_out.get("allowed")),
-            eligible_fund_keys=tuple(raw_out.get("eligible_fund_keys") or ()),
-            selected_fund_key=raw_out.get("selected_fund_key"),
+            eligible_fund_codes=tuple(
+                raw_out.get("eligible_fund_codes") or ()
+            ),
+            selected_fund_code=raw_out.get("selected_fund_code"),
             required_approvals=tuple(raw_out.get("required_approvals") or ()),
             reason_codes=tuple(raw_out.get("reason_codes") or ()),
             matched_rule_ids=tuple(raw_out.get("matched_rule_ids") or ()),
@@ -576,7 +578,7 @@ def get_finance_taxonomy() -> FinanceTaxonomyDTO:
         t = _get_finance_taxonomy()
         return FinanceTaxonomyDTO(
             version=t.version,
-            fund_keys=t.fund_keys,
+            fund_codes=t.fund_codes,
             restriction_keys=t.restriction_keys,
             income_kinds=t.income_kinds,
             expense_kinds=t.expense_kinds,
@@ -586,10 +588,10 @@ def get_finance_taxonomy() -> FinanceTaxonomyDTO:
         raise _as_contract_error(where, exc) from exc
 
 
-def get_fund_key(fund_key: str) -> FundKeyDTO:
-    where = "governance_v2.get_fund_key"
+def get_fund_code(fund_code: str) -> FundKeyDTO:
+    where = "governance_v2.get_fund_code"
     try:
-        x = _get_fund_key(fund_key)
+        x = _get_fund_code(fund_code)
         return FundKeyDTO(
             key=x.key,
             label=x.label,
@@ -611,22 +613,22 @@ def get_taxonomy_label(group: str, key: str) -> KeyLabelDTO:
 
 def validate_semantic_keys(
     *,
-    fund_key: str | None = None,
+    fund_code: str | None = None,
     restriction_keys: tuple[str, ...] = (),
     income_kind: str | None = None,
     expense_kind: str | None = None,
     spending_class: str | None = None,
-    demand_eligible_fund_keys: tuple[str, ...] = (),
+    demand_eligible_fund_codes: tuple[str, ...] = (),
 ) -> SemanticValidationResultDTO:
     where = "governance_v2.validate_semantic_keys"
     try:
         r = _validate_semantic_keys(
-            fund_key=fund_key,
+            fund_code=fund_code,
             restriction_keys=restriction_keys,
             income_kind=income_kind,
             expense_kind=expense_kind,
             spending_classes=spending_class,
-            demand_eligible_fund_keys=demand_eligible_fund_keys,
+            demand_eligible_fund_codes=demand_eligible_fund_codes,
         )
         return SemanticValidationResultDTO(
             ok=r.ok,
@@ -649,13 +651,13 @@ def normalize_restriction_keys(
 
 def apply_fund_defaults(
     *,
-    fund_key: str,
+    fund_code: str,
     restriction_keys: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
     where = "governance_v2.apply_fund_defaults"
     try:
         return _apply_fund_defaults(
-            fund_key=fund_key,
+            fund_code=fund_code,
             restriction_keys=restriction_keys,
         )
     except Exception as exc:  # noqa: BLE001
@@ -1715,14 +1717,14 @@ def preview_ops_float(
             "action": req.action,
             "support_mode": req.support_mode,
             "amount_cents": req.amount_cents,
-            "fund_key": req.fund_key,
+            "fund_code": req.fund_code,
             "source_funding_demand_ulid": req.source_funding_demand_ulid,
             "source_project_ulid": req.source_project_ulid,
             "dest_funding_demand_ulid": req.dest_funding_demand_ulid,
             "dest_project_ulid": req.dest_project_ulid,
             "spending_class": req.spending_class,
             "tag_any": req.tag_any,
-            "dest_eligible_fund_keys": req.dest_eligible_fund_keys,
+            "dest_eligible_fund_codes": req.dest_eligible_fund_codes,
             "ops_support_planned": req.ops_support_planned,
             "actor_rbac_roles": req.actor_rbac_roles,
             "actor_domain_roles": req.actor_domain_roles,
@@ -1730,8 +1732,10 @@ def preview_ops_float(
         raw_out = svc_preview_ops_float(raw_req)
         return FundingDecisionDTO(
             allowed=bool(raw_out["allowed"]),
-            eligible_fund_keys=tuple(raw_out.get("eligible_fund_keys") or ()),
-            selected_fund_key=raw_out.get("selected_fund_key"),
+            eligible_fund_codes=tuple(
+                raw_out.get("eligible_fund_codes") or ()
+            ),
+            selected_fund_code=raw_out.get("selected_fund_code"),
             required_approvals=tuple(raw_out.get("required_approvals") or ()),
             reason_codes=tuple(raw_out.get("reason_codes") or ()),
             matched_rule_ids=tuple(raw_out.get("matched_rule_ids") or ()),

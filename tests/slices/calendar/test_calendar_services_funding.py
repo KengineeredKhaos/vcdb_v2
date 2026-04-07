@@ -83,7 +83,7 @@ def test_create_publish_unpublish_funding_demand(app):
 
         assert row.status == "published"
         assert row.published_at_utc is not None
-        assert isinstance(row.eligible_fund_keys_json, list)
+        assert isinstance(row.eligible_fund_codes_json, list)
 
         row = unpublish_funding_demand(
             row.ulid,
@@ -112,7 +112,7 @@ def test_publish_funding_demand_forwards_source_profile_hint(
     def fake_preview(req):
         captured["source_profile_key"] = req.source_profile_key
         return SimpleNamespace(
-            eligible_fund_keys=("general_unrestricted",),
+            eligible_fund_codes=("general_unrestricted",),
             decision_fingerprint="fp-publish",
             required_approvals=(),
         )
@@ -161,7 +161,7 @@ def test_encumber_project_funds_uses_encumber_op(app, monkeypatch):
 
     class DummyPreview:
         allowed = True
-        eligible_fund_keys = ("general_unrestricted",)
+        eligible_fund_codes = ("general_unrestricted",)
         required_approvals = ()
         reason_codes = ()
         matched_rule_ids = ()
@@ -191,7 +191,7 @@ def test_preview_funding_decision_forwards_ops_support_planned(
         captured["ops_support_planned"] = raw_req.get("ops_support_planned")
         return {
             "allowed": True,
-            "eligible_fund_keys": ["general_unrestricted"],
+            "eligible_fund_codes": ["general_unrestricted"],
             "required_approvals": [],
             "reason_codes": [],
             "matched_rule_ids": [],
@@ -268,7 +268,7 @@ def test_publish_funding_demand_writes_published_context_json(app):
             row.published_context_json["planning"]["project_title"]
             == "Snapshot Project"
         )
-        assert row.published_context_json["policy"]["eligible_fund_keys"]
+        assert row.published_context_json["policy"]["eligible_fund_codes"]
         assert row.published_context_json["workflow"][
             "allowed_realization_modes"
         ]
@@ -353,5 +353,5 @@ def test_get_funding_demand_context_returns_snapshot(app):
         assert ctx.schema_version == 1
         assert ctx.demand.funding_demand_ulid == row.ulid
         assert ctx.planning.project_title == "Contract Context"
-        assert ctx.policy.eligible_fund_keys
+        assert ctx.policy.eligible_fund_codes
         assert ctx.workflow.allowed_realization_modes

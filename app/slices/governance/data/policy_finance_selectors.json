@@ -27,10 +27,10 @@
           "mission_local_veterans_cash"
         ]
       },
-      "allow_fund_keys": [
+      "allow_fund_codes": [
         "general_restricted"
       ],
-      "prefer_fund_keys": [
+      "prefer_fund_codes": [
         "general_restricted"
       ]
     },
@@ -54,11 +54,11 @@
           "welcome_home_kit"
         ]
       },
-      "allow_fund_keys": [
+      "allow_fund_codes": [
         "welcome_home_reimbursement",
         "general_unrestricted"
       ],
-      "prefer_fund_keys": [
+      "prefer_fund_codes": [
         "welcome_home_reimbursement"
       ]
     },
@@ -76,10 +76,10 @@
           "restricted_project_grant_return_unused"
         ]
       },
-      "allow_fund_keys": [
+      "allow_fund_codes": [
         "general_restricted"
       ],
-      "prefer_fund_keys": [
+      "prefer_fund_codes": [
         "general_restricted"
       ]
     },
@@ -94,11 +94,11 @@
           "inkind_project_offset"
         ]
       },
-      "allow_fund_keys": [
+      "allow_fund_codes": [
         "general_restricted",
         "general_unrestricted"
       ],
-      "prefer_fund_keys": [
+      "prefer_fund_codes": [
         "general_restricted"
       ]
     },
@@ -115,10 +115,10 @@
           "operations_support"
         ]
       },
-      "allow_fund_keys": [
+      "allow_fund_codes": [
         "general_unrestricted"
       ],
-      "prefer_fund_keys": [
+      "prefer_fund_codes": [
         "general_unrestricted"
       ]
     },
@@ -133,10 +133,10 @@
           "spend"
         ]
       },
-      "allow_fund_keys": [
+      "allow_fund_codes": [
         "general_unrestricted"
       ],
-      "prefer_fund_keys": [
+      "prefer_fund_codes": [
         "general_unrestricted"
       ]
     }

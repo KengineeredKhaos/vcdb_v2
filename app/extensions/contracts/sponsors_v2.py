@@ -65,7 +65,7 @@ class FundingRealizationRequestDTO:
     intent_ulid: str
     amount_cents: int
     happened_at_utc: str
-    fund_key: str
+    fund_code: str
     receipt_method: str
 
     income_kind: str | None = None
@@ -86,7 +86,7 @@ class FundingRealizationDTO:
     project_ulid: str | None
 
     amount_cents: int
-    fund_key: str
+    fund_code: str
 
     journal_ulid: str
     reserve_ulid: str | None
@@ -94,6 +94,7 @@ class FundingRealizationDTO:
     status: str
     decision_fingerprint: str
     flags: tuple[str, ...] = ()
+
 
 # -----------------
 # New Paradigm
@@ -170,7 +171,6 @@ def get_funding_intent_totals(
         raise _as_contract_error(where, exc) from exc
 
 
-
 def realize_funding_intent(
     req: FundingRealizationRequestDTO,
 ) -> FundingRealizationDTO:
@@ -180,7 +180,7 @@ def realize_funding_intent(
             intent_ulid=req.intent_ulid,
             amount_cents=req.amount_cents,
             happened_at_utc=req.happened_at_utc,
-            fund_key=req.fund_key,
+            fund_code=req.fund_code,
             income_kind=req.income_kind,
             receipt_method=req.receipt_method,
             reserve_on_receive=req.reserve_on_receive,
@@ -197,7 +197,7 @@ def realize_funding_intent(
             funding_demand_ulid=out.funding_demand_ulid,
             project_ulid=out.project_ulid,
             amount_cents=out.amount_cents,
-            fund_key=out.fund_key,
+            fund_code=out.fund_code,
             journal_ulid=out.journal_ulid,
             reserve_ulid=out.reserve_ulid,
             status=out.status,

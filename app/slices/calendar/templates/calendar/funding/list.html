@@ -66,7 +66,7 @@
           <td>{{ row.status }}</td>
           <td>{{ row.goal_cents }}</td>
           <td>{{ row.deadline_date or "" }}</td>
-          <td>{{ row.eligible_fund_keys | join(", ") }}</td>
+          <td>{{ row.eligible_fund_codes | join(", ") }}</td>
           <td>
             <a href="{{ url_for('calendar.funding_demand_detail', ulid=row.funding_demand_ulid) }}">
               View

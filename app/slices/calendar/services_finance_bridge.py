@@ -54,7 +54,7 @@ def encumber_project_funds(
     *,
     funding_demand_ulid: str,
     amount_cents: int,
-    fund_key: str,
+    fund_code: str,
     expense_kind: str,
     happened_at_utc: str,
     source_ref_ulid: str | None = None,
@@ -67,8 +67,8 @@ def encumber_project_funds(
 ) -> ProjectEncumbranceResult:
     if amount_cents <= 0:
         raise ValueError("amount_cents must be > 0")
-    if not fund_key:
-        raise ValueError("fund_key required")
+    if not fund_code:
+        raise ValueError("fund_code required")
     if not expense_kind:
         raise ValueError("expense_kind required")
     if not happened_at_utc:
@@ -86,24 +86,24 @@ def encumber_project_funds(
     money = finance_v2.get_funding_demand_money_view(row.ulid)
     ops_float = finance_v2.get_ops_float_summary(row.ulid)
     available_reserved = (
-        _bucket_amount(money.reserved_by_fund, fund_key)
-        + _bucket_amount(ops_float.incoming_open_by_fund, fund_key)
-        - _bucket_amount(money.encumbered_by_fund, fund_key)
+        _bucket_amount(money.reserved_by_fund, fund_code)
+        + _bucket_amount(ops_float.incoming_open_by_fund, fund_code)
+        - _bucket_amount(money.encumbered_by_fund, fund_code)
     )
     if amount_cents > available_reserved:
         raise ValueError("encumbrance exceeds available reserved funds")
 
-    fund_meta = governance_v2.get_fund_key(fund_key)
+    fund_meta = governance_v2.get_fund_code(fund_code)
     restriction_keys = governance_v2.apply_fund_defaults(
-        fund_key=fund_key,
+        fund_code=fund_code,
         restriction_keys=(),
     )
     sem = governance_v2.validate_semantic_keys(
-        fund_key=fund_key,
+        fund_code=fund_code,
         restriction_keys=restriction_keys,
         expense_kind=expense_kind,
         spending_class=row.spending_class,
-        demand_eligible_fund_keys=tuple(row.eligible_fund_keys_json or ()),
+        demand_eligible_fund_codes=tuple(row.eligible_fund_codes_json or ()),
     )
     if not sem.ok:
         raise ValueError("; ".join(sem.errors) or "invalid semantics")
@@ -118,11 +118,11 @@ def encumber_project_funds(
             spending_class=row.spending_class,
             expense_kind=expense_kind,
             restriction_keys=restriction_keys,
-            demand_eligible_fund_keys=tuple(
-                row.eligible_fund_keys_json or ()
+            demand_eligible_fund_codes=tuple(
+                row.eligible_fund_codes_json or ()
             ),
             tag_any=tuple(row.tag_any_json or ()),
-            selected_fund_key=fund_key,
+            selected_fund_code=fund_code,
             actor_rbac_roles=actor_rbac_roles,
             actor_domain_roles=actor_domain_roles,
         )
@@ -146,7 +146,7 @@ def encumber_project_funds(
     out = finance_v2.encumber_funds(
         finance_v2.EncumbranceRequestDTO(
             funding_demand_ulid=row.ulid,
-            fund_key=fund_key,
+            fund_code=fund_code,
             amount_cents=amount_cents,
             source="calendar",
             fund_label=fund_meta.label,
@@ -178,7 +178,7 @@ def encumber_project_funds(
             "project_ulid": row.project_ulid,
             "funding_demand_ulid": row.ulid,
             "encumbrance_ulid": out.id,
-            "fund_key": fund_key,
+            "fund_code": fund_code,
             "decision_fingerprint": preview.decision_fingerprint,
         },
         changed={"fields": ["status"]} if new_status != old_status else None,
@@ -187,7 +187,7 @@ def encumber_project_funds(
     return ProjectEncumbranceResult(
         funding_demand_ulid=row.ulid,
         project_ulid=row.project_ulid,
-        fund_key=fund_key,
+        fund_code=fund_code,
         amount_cents=amount_cents,
         encumbrance_ulid=out.id,
         decision_fingerprint=preview.decision_fingerprint,
@@ -238,17 +238,17 @@ def spend_project_funds(
     if not row.spending_class:
         raise ValueError("funding demand spending_class required")
 
-    fund_meta = governance_v2.get_fund_key(enc.fund_key)
+    fund_meta = governance_v2.get_fund_code(enc.fund_code)
     restriction_keys = governance_v2.apply_fund_defaults(
-        fund_key=enc.fund_key,
+        fund_code=enc.fund_code,
         restriction_keys=(),
     )
     sem = governance_v2.validate_semantic_keys(
-        fund_key=enc.fund_key,
+        fund_code=enc.fund_code,
         restriction_keys=restriction_keys,
         expense_kind=expense_kind,
         spending_class=row.spending_class,
-        demand_eligible_fund_keys=tuple(row.eligible_fund_keys_json or ()),
+        demand_eligible_fund_codes=tuple(row.eligible_fund_codes_json or ()),
     )
     if not sem.ok:
         raise ValueError("; ".join(sem.errors) or "invalid semantics")
@@ -263,11 +263,11 @@ def spend_project_funds(
             spending_class=row.spending_class,
             expense_kind=expense_kind,
             restriction_keys=restriction_keys,
-            demand_eligible_fund_keys=tuple(
-                row.eligible_fund_keys_json or ()
+            demand_eligible_fund_codes=tuple(
+                row.eligible_fund_codes_json or ()
             ),
             tag_any=tuple(row.tag_any_json or ()),
-            selected_fund_key=enc.fund_key,
+            selected_fund_code=enc.fund_code,
             actor_rbac_roles=actor_rbac_roles,
             actor_domain_roles=actor_domain_roles,
         )
@@ -292,7 +292,7 @@ def spend_project_funds(
         finance_v2.ExpensePostRequestDTO(
             amount_cents=amount_cents,
             happened_at_utc=happened_at_utc,
-            fund_key=enc.fund_key,
+            fund_code=enc.fund_code,
             fund_label=fund_meta.label,
             fund_restriction_type=fund_restriction_type,
             expense_kind=expense_kind,
@@ -330,7 +330,7 @@ def spend_project_funds(
             "funding_demand_ulid": row.ulid,
             "encumbrance_ulid": enc.encumbrance_ulid,
             "journal_ulid": out.id,
-            "fund_key": enc.fund_key,
+            "fund_code": enc.fund_code,
             "decision_fingerprint": preview.decision_fingerprint,
         },
         changed={"fields": ["status"]} if new_status != old_status else None,

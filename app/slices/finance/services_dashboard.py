@@ -68,12 +68,12 @@ def get_funding_demand_money_view(
         if refs.get("funding_demand_ulid") != funding_demand_ulid:
             continue
         amount = int(refs.get("amount_cents") or 0)
-        fund_key = str(refs.get("fund_key") or "")
+        fund_code = str(refs.get("fund_code") or "")
         income_kind = str(refs.get("income_kind") or "")
 
         received_cents += amount
-        if fund_key:
-            received_by_fund[fund_key] += amount
+        if fund_code:
+            received_by_fund[fund_code] += amount
         if income_kind:
             income_by_income_kind[income_kind] += amount
         if row.target_ulid:
@@ -163,7 +163,7 @@ def get_encumbrance_view(encumbrance_ulid: str) -> dict[str, object]:
         "encumbrance_ulid": row.ulid,
         "funding_demand_ulid": row.funding_demand_ulid,
         "project_ulid": row.project_ulid,
-        "fund_key": row.fund_code,
+        "fund_code": row.fund_code,
         "amount_cents": int(row.amount_cents or 0),
         "relieved_cents": int(row.relieved_cents or 0),
         "open_cents": open_cents,

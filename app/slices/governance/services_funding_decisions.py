@@ -93,12 +93,12 @@ def _load_policy_doc(policy_key: str) -> dict[str, Any]:
 def _taxonomy_fund_map() -> dict[str, _FundKey]:
     tx = load_policy_finance_taxonomy()
     out: dict[str, _FundKey] = {}
-    fund_keys = tx.get("fund_keys") or {}
+    fund_codes = tx.get("fund_codes") or {}
 
-    if not isinstance(fund_keys, dict):
-        raise ValueError("finance_taxonomy.fund_keys must be an object")
+    if not isinstance(fund_codes, dict):
+        raise ValueError("finance_taxonomy.fund_codes must be an object")
 
-    for key, spec in fund_keys.items():
+    for key, spec in fund_codes.items():
         spec = spec or {}
         out[str(key)] = _FundKey(
             key=str(key),
@@ -209,13 +209,13 @@ def _normalize_req(raw_req: dict[str, Any]) -> dict[str, Any]:
             else None
         ),
         "restriction_keys": _as_tuple_str(raw_req.get("restriction_keys")),
-        "demand_eligible_fund_keys": _as_tuple_str(
-            raw_req.get("demand_eligible_fund_keys")
+        "demand_eligible_fund_codes": _as_tuple_str(
+            raw_req.get("demand_eligible_fund_codes")
         ),
         "tag_any": _as_tuple_str(raw_req.get("tag_any")),
-        "selected_fund_key": (
-            str(raw_req["selected_fund_key"]).strip()
-            if raw_req.get("selected_fund_key")
+        "selected_fund_code": (
+            str(raw_req["selected_fund_code"]).strip()
+            if raw_req.get("selected_fund_code")
             else None
         ),
         "ops_support_planned": ops_support_planned,
@@ -241,9 +241,9 @@ def _normalize_ops_float_req(raw_req: dict[str, Any]) -> dict[str, Any]:
     if amount_cents < 0:
         raise ValueError("amount_cents must be >= 0")
 
-    fund_key = str(raw_req.get("fund_key") or "").strip()
-    if not fund_key:
-        raise ValueError("fund_key is required")
+    fund_code = str(raw_req.get("fund_code") or "").strip()
+    if not fund_code:
+        raise ValueError("fund_code is required")
 
     ops_support_planned = raw_req.get("ops_support_planned")
     if ops_support_planned is not None and not isinstance(
@@ -255,7 +255,7 @@ def _normalize_ops_float_req(raw_req: dict[str, Any]) -> dict[str, Any]:
         "action": action,
         "support_mode": support_mode,
         "amount_cents": amount_cents,
-        "fund_key": fund_key,
+        "fund_code": fund_code,
         "source_funding_demand_ulid": raw_req.get(
             "source_funding_demand_ulid"
         ),
@@ -264,8 +264,8 @@ def _normalize_ops_float_req(raw_req: dict[str, Any]) -> dict[str, Any]:
         "dest_project_ulid": raw_req.get("dest_project_ulid"),
         "spending_class": raw_req.get("spending_class"),
         "tag_any": _as_tuple_str(raw_req.get("tag_any")),
-        "dest_eligible_fund_keys": _as_tuple_str(
-            raw_req.get("dest_eligible_fund_keys")
+        "dest_eligible_fund_codes": _as_tuple_str(
+            raw_req.get("dest_eligible_fund_codes")
         ),
         "ops_support_planned": ops_support_planned,
         "actor_rbac_roles": _as_tuple_str(raw_req.get("actor_rbac_roles")),
@@ -369,7 +369,7 @@ def _order_funds(
     return tuple(ordered)
 
 
-def _eligible_fund_keys(
+def _eligible_fund_codes(
     req: dict[str, Any],
     selectors: dict[str, Any],
     fund_map: dict[str, _FundKey],
@@ -393,15 +393,15 @@ def _eligible_fund_keys(
         matched_rule_ids.append(rule_id)
         reason_codes.append(f"selector_rule:{rule_id}")
 
-        for fund_key in _as_tuple_str(rule.get("allow_fund_keys")):
-            if fund_key in fund_map:
-                eligible.add(fund_key)
+        for fund_code in _as_tuple_str(rule.get("allow_fund_codes")):
+            if fund_code in fund_map:
+                eligible.add(fund_code)
 
-        for fund_key in _as_tuple_str(rule.get("prefer_fund_keys")):
-            if fund_key in fund_map and fund_key not in preferred:
-                preferred.append(fund_key)
+        for fund_code in _as_tuple_str(rule.get("prefer_fund_codes")):
+            if fund_code in fund_map and fund_code not in preferred:
+                preferred.append(fund_code)
 
-    caller_hint = set(req["demand_eligible_fund_keys"])
+    caller_hint = set(req["demand_eligible_fund_codes"])
     if caller_hint:
         eligible = (
             eligible.intersection(caller_hint) if eligible else caller_hint
@@ -424,7 +424,7 @@ def _approval_requirements(
     reason_codes: list[str] = []
     matched_rule_ids: list[str] = []
 
-    selected_fund_key = req.get("selected_fund_key")
+    selected_fund_code = req.get("selected_fund_code")
     approval_posture = profile.approval_posture if profile else None
 
     rules = sorted(
@@ -442,8 +442,8 @@ def _approval_requirements(
         if amount_gt is not None and req["amount_cents"] <= int(amount_gt):
             continue
 
-        fund_scope = set(_as_tuple_str(match.get("selected_fund_keys_any")))
-        if fund_scope and selected_fund_key not in fund_scope:
+        fund_scope = set(_as_tuple_str(match.get("selected_fund_codes_any")))
+        if fund_scope and selected_fund_code not in fund_scope:
             continue
 
         posture_scope = set(_as_tuple_str(match.get("approval_posture_any")))
@@ -508,17 +508,17 @@ def preview_funding_decision(raw_req: dict[str, Any]) -> dict[str, Any]:
     fund_map = _taxonomy_fund_map()
 
     (
-        eligible_fund_keys,
+        eligible_fund_codes,
         selector_reasons,
         selector_rule_ids,
-    ) = _eligible_fund_keys(
+    ) = _eligible_fund_codes(
         req,
         selectors,
         fund_map,
         profile,
     )
 
-    allowed = bool(eligible_fund_keys)
+    allowed = bool(eligible_fund_codes)
     reason_codes = list(selector_reasons)
     matched_rule_ids = list(selector_rule_ids)
 
@@ -529,11 +529,11 @@ def preview_funding_decision(raw_req: dict[str, Any]) -> dict[str, Any]:
         allowed = False
         reason_codes.append(reason)
 
-    selected_fund_key = req["selected_fund_key"]
+    selected_fund_code = req["selected_fund_code"]
     required_approvals: tuple[str, ...] = ()
 
-    if selected_fund_key:
-        if selected_fund_key not in eligible_fund_keys:
+    if selected_fund_code:
+        if selected_fund_code not in eligible_fund_codes:
             allowed = False
             reason_codes.append("selected_fund_not_eligible")
         else:
@@ -555,8 +555,8 @@ def preview_funding_decision(raw_req: dict[str, Any]) -> dict[str, Any]:
         "req": req,
         "source_profile_key": profile.key if profile else None,
         "allowed": allowed,
-        "eligible_fund_keys": eligible_fund_keys,
-        "selected_fund_key": selected_fund_key,
+        "eligible_fund_codes": eligible_fund_codes,
+        "selected_fund_code": selected_fund_code,
         "required_approvals": required_approvals,
         "reason_codes": tuple(reason_codes),
         "matched_rule_ids": tuple(matched_rule_ids),
@@ -568,8 +568,8 @@ def preview_funding_decision(raw_req: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "allowed": allowed,
-        "eligible_fund_keys": eligible_fund_keys,
-        "selected_fund_key": selected_fund_key,
+        "eligible_fund_codes": eligible_fund_codes,
+        "selected_fund_code": selected_fund_code,
         "required_approvals": required_approvals,
         "reason_codes": tuple(reason_codes),
         "matched_rule_ids": tuple(matched_rule_ids),
@@ -581,8 +581,8 @@ def preview_ops_float(raw_req: dict[str, Any]) -> dict[str, Any]:
     req = _normalize_ops_float_req(raw_req)
     fund_map = _taxonomy_fund_map()
 
-    if req["fund_key"] not in fund_map:
-        raise ValueError(f"unknown fund_key: {req['fund_key']}")
+    if req["fund_code"] not in fund_map:
+        raise ValueError(f"unknown fund_code: {req['fund_code']}")
 
     profile_key = _OPS_PROFILE_BY_MODE[req["support_mode"]]
     profile = _get_source_profile_or_raise(profile_key)
@@ -599,19 +599,19 @@ def preview_ops_float(raw_req: dict[str, Any]) -> dict[str, Any]:
         "expense_kind": None,
         "source_profile_key": profile_key,
         "restriction_keys": (),
-        "demand_eligible_fund_keys": req["dest_eligible_fund_keys"],
+        "demand_eligible_fund_codes": req["dest_eligible_fund_codes"],
         "tag_any": req["tag_any"],
-        "selected_fund_key": req["fund_key"],
+        "selected_fund_code": req["fund_code"],
         "ops_support_planned": req["ops_support_planned"],
         "actor_rbac_roles": req["actor_rbac_roles"],
         "actor_domain_roles": req["actor_domain_roles"],
     }
 
     (
-        eligible_fund_keys,
+        eligible_fund_codes,
         selector_reasons,
         selector_rule_ids,
-    ) = _eligible_fund_keys(
+    ) = _eligible_fund_codes(
         generic_req,
         selectors,
         fund_map,
@@ -627,7 +627,7 @@ def preview_ops_float(raw_req: dict[str, Any]) -> dict[str, Any]:
     ]
     matched_rule_ids = list(selector_rule_ids)
 
-    if req["fund_key"] not in eligible_fund_keys:
+    if req["fund_code"] not in eligible_fund_codes:
         allowed = False
         reason_codes.append("selected_fund_not_eligible_for_destination")
     else:
@@ -669,8 +669,8 @@ def preview_ops_float(raw_req: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "allowed": allowed,
-        "eligible_fund_keys": eligible_fund_keys,
-        "selected_fund_key": req["fund_key"],
+        "eligible_fund_codes": eligible_fund_codes,
+        "selected_fund_code": req["fund_code"],
         "required_approvals": tuple(required_approvals),
         "reason_codes": tuple(reason_codes),
         "matched_rule_ids": tuple(matched_rule_ids),

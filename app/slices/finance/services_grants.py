@@ -759,10 +759,56 @@ def prepare_grant_report(payload: dict[str, Any]) -> dict[str, Any]:
             "outstanding_cents": max(approved_cents - received_cents, 0),
             "claim_ulids": sorted(claim_ulids),
         },
-        "trace": {
+        "traceability": {
             "grant_ulid": grant.ulid,
             "fund_code": grant.fund_code,
             "fund_id": getattr(fund, "ulid", None),
             "project_ulid": grant.project_ulid,
+            "income_journal_ulids": sorted(
+                {
+                    row.journal_ulid
+                    for row, _journal in db.session.execute(
+                        select(JournalLine, Journal)
+                        .join(Journal, Journal.ulid == JournalLine.journal_ulid)
+                        .where(JournalLine.grant_ulid == grant.ulid)
+                        .where(Journal.happened_at_utc >= period_start)
+                        .where(Journal.happened_at_utc <= f"{period_end}T23:59:59Z")
+                    ).all()
+                    if row.account_code.startswith(("4",))
+                }
+            ),
+            "expense_journal_ulids": sorted(
+                {
+                    row.journal_ulid
+                    for row, _journal in db.session.execute(
+                        select(JournalLine, Journal)
+                        .join(Journal, Journal.ulid == JournalLine.journal_ulid)
+                        .where(JournalLine.grant_ulid == grant.ulid)
+                        .where(Journal.happened_at_utc >= period_start)
+                        .where(Journal.happened_at_utc <= f"{period_end}T23:59:59Z")
+                    ).all()
+                    if row.account_code.startswith(("5", "6"))
+                }
+            ),
+            "reserve_ulids": sorted(
+                row.ulid
+                for row in db.session.execute(
+                    select(Reserve).where(Reserve.grant_ulid == grant.ulid)
+                ).scalars()
+            ),
+            "encumbrance_ulids": sorted(
+                row.ulid
+                for row in db.session.execute(
+                    select(Encumbrance).where(Encumbrance.grant_ulid == grant.ulid)
+                ).scalars()
+                if row.status != "void"
+            ),
+            "disbursement_ulids": sorted(
+                row.ulid
+                for row in db.session.execute(
+                    select(Disbursement).where(Disbursement.grant_ulid == grant.ulid)
+                ).scalars()
+                if row.status == "recorded"
+            ),
         },
     }
