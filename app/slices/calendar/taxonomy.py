@@ -3,12 +3,60 @@ from __future__ import annotations
 from typing import Final
 
 # -----------------
+# Project-specific
+# Taxonomy
+# -----------------
+"""
+The implied transition rules:
+
+Draft side
+draft → ready_for_review
+ready_for_review → governance_review_pending
+governance_review_pending → returned_for_revision
+governance_review_pending → approved_for_publish
+returned_for_revision → draft or directly back to ready_for_review
+
+Published demand side
+published → funding_in_progress
+funding_in_progress → funded
+funding_in_progress → executing
+funded → executing
+executing → closed
+
+Operators do not mark "funded”.
+Calendar determines "funded" based on recognized support coverage.
+"""
+
+PROJECT_STATUSES: Final[tuple[str, ...]] = (
+    "draft_planning",
+    "tasking_in_progress",
+    "budget_under_development",
+    "budget_ready",
+    "execution_underway",
+    "closeout_pending",
+    "closed",
+)
+
+DEMAND_DRAFT_STATUSES: Final[tuple[str, ...]] = (
+    "draft",
+    "ready_for_review",
+    "governance_review_pending",
+    "returned_for_revision",
+    "approved_for_publish",
+)
+
+# -----------------
+# Task-specific
+# Taxonomy
+# -----------------
+
+
+# -----------------
 # Funding demand &
 # OpsFloat taxonomy
 # -----------------
 
 FUNDING_DEMAND_STATUSES: Final[tuple[str, ...]] = (
-    "draft",
     "published",
     "funding_in_progress",
     "funded",
@@ -16,7 +64,7 @@ FUNDING_DEMAND_STATUSES: Final[tuple[str, ...]] = (
     "closed",
 )
 
-# Compatibility hold-over only.
+# Compatibility hold-over only. This is Scaffolding-only.
 # Do not expand this unless Calendar still has an active consumer that
 # truly needs it. Governance now owns the canonical source semantics.
 PROJECT_FUNDING_SOURCE_KINDS: Final[tuple[str, ...]] = (

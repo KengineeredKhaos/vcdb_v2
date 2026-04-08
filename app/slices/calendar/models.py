@@ -1,4 +1,16 @@
 # app/slices/calendar/models.py
+"""
+Project → Tasks → Budget Snapshot/Lines → Demand Draft →
+FundingDemand
+
+And each layer now owns one honest truth:
+
+Task = work to be performed
+BudgetLine = expected cost component
+BudgetSnapshot = stable cost picture at a point in time
+DemandDraft = pre-publish ask under Calendar/Governance review
+FundingDemand = published execution-facing demand
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -10,6 +22,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -169,6 +182,19 @@ class Project(db.Model, ULIDPK, IsoTimestamps):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    budget_snapshots: Mapped[list[ProjectBudgetSnapshot]] = relationship(
+        "ProjectBudgetSnapshot",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    demand_drafts: Mapped[list[DemandDraft]] = relationship(
+        "DemandDraft",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     __table_args__ = (
         Index("ix_project_title", "project_title"),
@@ -229,6 +255,11 @@ class Task(db.Model, ULIDPK, IsoTimestamps):
 
     status: Mapped[str] = mapped_column(
         String(24), nullable=False, default="open"
+    )
+    budget_lines: Mapped[list[ProjectBudgetLine]] = relationship(
+        "ProjectBudgetLine",
+        back_populates="task",
+        passive_deletes=True,
     )
 
     __table_args__ = (
@@ -390,10 +421,16 @@ class FundingDemand(db.Model, ULIDPK, IsoTimestamps):
         JSON, nullable=True
     )
 
-    project = relationship(
-        "Project",
-        back_populates="funding_demands",
-        foreign_keys=[project_ulid],
+    origin_draft_ulid: Mapped[str | None] = ULIDFK(
+        "demand_draft",
+        nullable=True,
+        ondelete="RESTRICT",
+    )
+
+    origin_draft: Mapped[DemandDraft | None] = relationship(
+        "DemandDraft",
+        back_populates="published_funding_demand",
+        foreign_keys=[origin_draft_ulid],
     )
 
     __table_args__ = (
@@ -404,6 +441,422 @@ class FundingDemand(db.Model, ULIDPK, IsoTimestamps):
         CheckConstraint(
             "status IN ('draft','published','funding_in_progress','funded','executing','closed')",
             name="ck_funding_demand_status",
+        ),
+        UniqueConstraint(
+            "origin_draft_ulid",
+            name="uq_funding_demand_origin_draft",
+        ),
+    )
+
+
+class ProjectBudgetSnapshot(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "project_budget_snapshot"
+
+    project_ulid: Mapped[str] = ULIDFK(
+        "project_project",
+        nullable=False,
+        ondelete="CASCADE",
+    )
+
+    project: Mapped[Project] = relationship(
+        "Project",
+        back_populates="budget_snapshots",
+        passive_deletes=True,
+    )
+
+    snapshot_label: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default="working budget",
+    )
+
+    scope_summary: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    gross_cost_cents: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    expected_offset_cents: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    net_need_cents: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    assumptions_note: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    based_on_snapshot_ulid: Mapped[str | None] = ULIDFK(
+        "project_budget_snapshot",
+        nullable=True,
+        ondelete="SET NULL",
+    )
+
+    is_current: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    is_locked: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    locked_at_utc: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    lines: Mapped[list[ProjectBudgetLine]] = relationship(
+        "ProjectBudgetLine",
+        back_populates="budget_snapshot",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    demand_drafts: Mapped[list[DemandDraft]] = relationship(
+        "DemandDraft",
+        back_populates="budget_snapshot",
+        passive_deletes=True,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(ulid) = 26",
+            name="ck_budget_snapshot_ulid_len_26",
+        ),
+        CheckConstraint(
+            "gross_cost_cents >= 0",
+            name="ck_budget_snapshot_gross_nonneg",
+        ),
+        CheckConstraint(
+            "expected_offset_cents >= 0",
+            name="ck_budget_snapshot_offset_nonneg",
+        ),
+        CheckConstraint(
+            "net_need_cents >= 0",
+            name="ck_budget_snapshot_need_nonneg",
+        ),
+        CheckConstraint(
+            "gross_cost_cents >= expected_offset_cents",
+            name="ck_budget_snapshot_offset_le_gross",
+        ),
+        CheckConstraint(
+            "net_need_cents = gross_cost_cents - expected_offset_cents",
+            name="ck_budget_snapshot_net_matches_parts",
+        ),
+        Index(
+            "ix_budget_snapshot_project",
+            "project_ulid",
+        ),
+        Index(
+            "ix_budget_snapshot_project_current",
+            "project_ulid",
+            "is_current",
+        ),
+        Index(
+            "ix_budget_snapshot_project_locked",
+            "project_ulid",
+            "is_locked",
+        ),
+    )
+
+
+class ProjectBudgetLine(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "project_budget_line"
+
+    budget_snapshot_ulid: Mapped[str] = ULIDFK(
+        "project_budget_snapshot",
+        nullable=False,
+        ondelete="CASCADE",
+    )
+
+    budget_snapshot: Mapped[ProjectBudgetSnapshot] = relationship(
+        "ProjectBudgetSnapshot",
+        back_populates="lines",
+        passive_deletes=True,
+    )
+
+    task_ulid: Mapped[str | None] = ULIDFK(
+        "project_task",
+        nullable=True,
+        ondelete="SET NULL",
+    )
+
+    task: Mapped[Task | None] = relationship(
+        "Task",
+        back_populates="budget_lines",
+        passive_deletes=True,
+    )
+
+    line_kind: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="materials",
+    )
+
+    label: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default="unnamed budget line",
+    )
+
+    detail: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    basis_qty: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    basis_unit: Mapped[str | None] = mapped_column(
+        String(24),
+        nullable=True,
+    )
+
+    unit_cost_cents: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    estimated_total_cents: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    is_offset: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    offset_kind: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+    )
+
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    copied_from_line_ulid: Mapped[str | None] = ULIDFK(
+        "project_budget_line",
+        nullable=True,
+        ondelete="SET NULL",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(ulid) = 26",
+            name="ck_budget_line_ulid_len_26",
+        ),
+        CheckConstraint(
+            "basis_qty IS NULL OR basis_qty >= 0",
+            name="ck_budget_line_qty_nonneg",
+        ),
+        CheckConstraint(
+            "unit_cost_cents IS NULL OR unit_cost_cents >= 0",
+            name="ck_budget_line_unit_cost_nonneg",
+        ),
+        CheckConstraint(
+            "estimated_total_cents >= 0",
+            name="ck_budget_line_total_nonneg",
+        ),
+        CheckConstraint(
+            "sort_order >= 0",
+            name="ck_budget_line_sort_nonneg",
+        ),
+        CheckConstraint(
+            "("
+            "is_offset = 0 AND offset_kind IS NULL"
+            ") OR ("
+            "is_offset = 1 AND offset_kind IS NOT NULL"
+            ")",
+            name="ck_budget_line_offset_kind_consistent",
+        ),
+        Index(
+            "ix_budget_line_snapshot",
+            "budget_snapshot_ulid",
+        ),
+        Index(
+            "ix_budget_line_task",
+            "task_ulid",
+        ),
+        Index(
+            "ix_budget_line_kind",
+            "line_kind",
+        ),
+        Index(
+            "ix_budget_line_snapshot_sort",
+            "budget_snapshot_ulid",
+            "sort_order",
+        ),
+    )
+
+
+class DemandDraft(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "demand_draft"
+
+    project_ulid: Mapped[str] = ULIDFK(
+        "project_project",
+        nullable=False,
+        ondelete="CASCADE",
+    )
+
+    project: Mapped[Project] = relationship(
+        "Project",
+        back_populates="demand_drafts",
+        passive_deletes=True,
+    )
+
+    budget_snapshot_ulid: Mapped[str] = ULIDFK(
+        "project_budget_snapshot",
+        nullable=False,
+        ondelete="RESTRICT",
+    )
+
+    budget_snapshot: Mapped[ProjectBudgetSnapshot] = relationship(
+        "ProjectBudgetSnapshot",
+        back_populates="demand_drafts",
+        passive_deletes=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="draft",
+        index=True,
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(120),
+        nullable=False,
+        default="unnamed demand draft",
+    )
+
+    summary: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    scope_summary: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    requested_amount_cents: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    deadline_date: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    spending_class_candidate: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+    )
+
+    source_profile_key: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+    )
+
+    ops_support_planned: Mapped[bool | None] = mapped_column(
+        Boolean,
+        nullable=True,
+    )
+
+    tag_any_json: Mapped[list[str] | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    governance_note: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    approved_semantics_json: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True
+    )
+
+    ready_for_review_at_utc: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    review_decided_at_utc: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    approved_for_publish_at_utc: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    promoted_at_utc: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    published_funding_demand: Mapped[FundingDemand | None] = relationship(
+        "FundingDemand",
+        back_populates="origin_draft",
+        uselist=False,
+        passive_deletes=True,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(ulid) = 26",
+            name="ck_demand_draft_ulid_len_26",
+        ),
+        CheckConstraint(
+            "requested_amount_cents >= 0",
+            name="ck_demand_draft_amount_nonneg",
+        ),
+        CheckConstraint(
+            "status IN ("
+            "'draft',"
+            "'ready_for_review',"
+            "'governance_review_pending',"
+            "'returned_for_revision',"
+            "'approved_for_publish'"
+            ")",
+            name="ck_demand_draft_status",
+        ),
+        Index(
+            "ix_demand_draft_project_status",
+            "project_ulid",
+            "status",
+        ),
+        Index(
+            "ix_demand_draft_snapshot",
+            "budget_snapshot_ulid",
         ),
     )
 
