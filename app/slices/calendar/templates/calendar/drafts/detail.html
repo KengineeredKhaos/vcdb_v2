@@ -1,0 +1,87 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>{{ draft.title }}</h1>
+<p>
+  <a href="{{ url_for('calendar.project_budget_workspace', project_ulid=project.ulid, snapshot_ulid=draft.budget_snapshot_ulid) }}">
+    Back to budget workspace
+  </a>
+</p>
+
+<table>
+  <tr><th>Draft ULID</th><td>{{ draft.ulid }}</td></tr>
+  <tr><th>Project</th><td>{{ project.project_title }} ({{ project.ulid }})</td></tr>
+  <tr><th>Status</th><td>{{ draft.status }}</td></tr>
+  <tr><th>Snapshot</th><td>{{ draft.budget_snapshot_ulid }}</td></tr>
+  <tr><th>Requested</th><td>{{ draft.requested_amount_cents }}</td></tr>
+  <tr><th>Deadline</th><td>{{ draft.deadline_date or "" }}</td></tr>
+  <tr><th>Spending class</th><td>{{ draft.spending_class_candidate or "" }}</td></tr>
+  <tr><th>Source profile</th><td>{{ draft.source_profile_key or "" }}</td></tr>
+  <tr><th>Ops support planned</th><td>{{ "yes" if draft.ops_support_planned else "no" }}</td></tr>
+  <tr><th>Tags</th><td>{{ draft.tag_any | join(", ") }}</td></tr>
+  <tr><th>Governance note</th><td>{{ draft.governance_note or "" }}</td></tr>
+</table>
+
+{% if draft.status in ["draft", "returned_for_revision"] %}
+  <h2>Edit draft</h2>
+  <form method="post"
+        action="{{ url_for('calendar.demand_draft_update', draft_ulid=draft.ulid) }}">
+    {{ edit_form.hidden_tag() }}
+    <div>{{ edit_form.title.label }} {{ edit_form.title() }}</div>
+    <div>{{ edit_form.summary.label }} {{ edit_form.summary(rows=3) }}</div>
+    <div>{{ edit_form.scope_summary.label }} {{ edit_form.scope_summary() }}</div>
+    <div>{{ edit_form.requested_amount_cents.label }} {{ edit_form.requested_amount_cents() }}</div>
+    <div>{{ edit_form.deadline_date.label }} {{ edit_form.deadline_date() }}</div>
+    <div>{{ edit_form.spending_class_candidate.label }} {{ edit_form.spending_class_candidate() }}</div>
+    <div>{{ edit_form.source_profile_key.label }} {{ edit_form.source_profile_key() }}</div>
+    <div>{{ edit_form.ops_support_planned.label }} {{ edit_form.ops_support_planned() }}</div>
+    <div>{{ edit_form.tag_any.label }} {{ edit_form.tag_any() }}</div>
+    <div>{{ edit_form.governance_note.label }} {{ edit_form.governance_note(rows=3) }}</div>
+    <button type="submit">Save draft</button>
+  </form>
+  <form method="post"
+        action="{{ url_for('calendar.demand_draft_mark_ready', draft_ulid=draft.ulid) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">Mark ready for review</button>
+  </form>
+{% endif %}
+
+{% if draft.status == "ready_for_review" %}
+  <form method="post"
+        action="{{ url_for('calendar.demand_draft_submit', draft_ulid=draft.ulid) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">Submit for Governance review</button>
+  </form>
+{% endif %}
+
+{% if draft.status == "governance_review_pending" %}
+  <h2>Return for revision</h2>
+  <form method="post"
+        action="{{ url_for('calendar.demand_draft_return', draft_ulid=draft.ulid) }}">
+    {{ return_form.hidden_tag() }}
+    <div>{{ return_form.note.label }} {{ return_form.note(rows=3) }}</div>
+    <button type="submit">Return for revision</button>
+  </form>
+
+  <h2>Approve for publish</h2>
+  <form method="post"
+        action="{{ url_for('calendar.demand_draft_approve', draft_ulid=draft.ulid) }}">
+    {{ approve_form.hidden_tag() }}
+    <div>{{ approve_form.spending_class.label }} {{ approve_form.spending_class() }}</div>
+    <div>{{ approve_form.source_profile_key.label }} {{ approve_form.source_profile_key() }}</div>
+    <div>{{ approve_form.eligible_fund_codes.label }} {{ approve_form.eligible_fund_codes() }}</div>
+    <div>{{ approve_form.default_restriction_keys.label }} {{ approve_form.default_restriction_keys() }}</div>
+    <div>{{ approve_form.tag_any.label }} {{ approve_form.tag_any() }}</div>
+    <button type="submit">Approve for publish</button>
+  </form>
+{% endif %}
+
+{% if draft.status == "approved_for_publish" %}
+  <form method="post"
+        action="{{ url_for('calendar.demand_draft_promote', draft_ulid=draft.ulid) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">Promote to published funding demand</button>
+  </form>
+{% endif %}
+{% endblock %}

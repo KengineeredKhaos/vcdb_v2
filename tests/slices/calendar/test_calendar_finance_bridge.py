@@ -1,5 +1,3 @@
-# tests/slices/calendar/test_calendar_finance_bridge.py
-
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -8,17 +6,8 @@ import pytest
 from sqlalchemy import select
 
 from app.extensions import db
-from app.extensions.contracts import (
-    calendar_v2,
-    finance_v2,
-    governance_v2,
-    sponsors_v2,
-)
-from app.slices.calendar.models import FundingDemand, Project
-from app.slices.calendar.services_funding import (
-    create_funding_demand,
-    publish_funding_demand,
-)
+from app.extensions.contracts import calendar_v2, finance_v2, governance_v2
+from app.slices.calendar.models import FundingDemand
 from app.slices.entity.models import Entity, EntityOrg
 from app.slices.finance.models import Encumbrance, Journal
 from app.slices.finance.services_journal import ensure_default_accounts
@@ -27,27 +16,9 @@ from app.slices.sponsors.models import Sponsor
 from app.slices.sponsors.services_funding import create_funding_intent
 
 
-def _patch_publishable_hints(
-    monkeypatch,
-    *,
-    source_profile_key="mission_local_veterans_cash",
-    ops_support_planned=False,
-):
-    from app.slices.calendar import services_funding as svc
-
-    monkeypatch.setattr(
-        svc,
-        "_project_policy_hints",
-        lambda project_ulid: svc.ProjectPolicyHints(
-            source_profile_key=source_profile_key,
-            ops_support_planned=ops_support_planned,
-        ),
-    )
-
-
-@pytest.fixture(autouse=True)
-def _default_publishable_hints(monkeypatch):
-    _patch_publishable_hints(monkeypatch)
+# -----------------
+# Local test helpers
+# -----------------
 
 
 def _pick_approval_free_fund(eligible_fund_codes: tuple[str, ...]) -> str:
@@ -76,6 +47,178 @@ def _derive_restriction_type(
     }:
         return "temporarily_restricted"
     return "unrestricted"
+
+
+def _create_sponsor(name: str) -> Sponsor:
+    entity = Entity(kind="org")
+    db.session.add(entity)
+    db.session.flush()
+
+    db.session.add(
+        EntityOrg(
+            entity_ulid=entity.ulid,
+            legal_name=name,
+        )
+    )
+    sponsor = Sponsor(entity_ulid=entity.ulid)
+    db.session.add(sponsor)
+    db.session.flush()
+    return sponsor
+
+
+def _create_published_demand(
+    *,
+    amount_cents: int = 12000,
+    demand_title: str = "Bridge Demand",
+    source_profile_key: str = "ops_bridge_preapproved",
+    eligible_fund_codes: tuple[str, ...] = ("general_unrestricted",),
+) -> tuple[str, str]:
+    from app.slices.calendar.services_budget import (
+        add_budget_line,
+        create_working_snapshot,
+        lock_snapshot,
+    )
+    from app.slices.calendar.services_drafts import (
+        approve_draft_for_publish,
+        create_draft_from_snapshot,
+        mark_draft_ready_for_review,
+        promote_draft_to_funding_demand,
+        submit_draft_for_governance_review,
+    )
+    from app.slices.calendar.models import Project
+
+    project = Project(
+        project_title="Calendar Finance Bridge",
+        status="draft_planning",
+        funding_profile_key=source_profile_key,
+    )
+    db.session.add(project)
+    db.session.flush()
+
+    actor_ulid = project.ulid
+
+    snap = create_working_snapshot(
+        project_ulid=project.ulid,
+        actor_ulid=actor_ulid,
+        snapshot_label="Working Budget",
+        scope_summary="Full project scope",
+    )
+    add_budget_line(
+        snapshot_ulid=snap["ulid"],
+        actor_ulid=actor_ulid,
+        label="Estimated project cost",
+        line_kind="materials",
+        estimated_total_cents=amount_cents,
+    )
+    locked = lock_snapshot(
+        snapshot_ulid=snap["ulid"],
+        actor_ulid=actor_ulid,
+    )
+
+    draft = create_draft_from_snapshot(
+        project_ulid=project.ulid,
+        snapshot_ulid=locked["ulid"],
+        actor_ulid=actor_ulid,
+        title=demand_title,
+        summary=demand_title,
+        scope_summary="Full project scope",
+        requested_amount_cents=amount_cents,
+        spending_class_candidate="basic_needs",
+        source_profile_key=source_profile_key,
+        tag_any="",
+    )
+    mark_draft_ready_for_review(
+        draft_ulid=draft["ulid"],
+        actor_ulid=actor_ulid,
+    )
+    submit_draft_for_governance_review(
+        draft_ulid=draft["ulid"],
+        actor_ulid=actor_ulid,
+    )
+    approve_draft_for_publish(
+        draft_ulid=draft["ulid"],
+        actor_ulid=actor_ulid,
+        approved_semantics={
+            "spending_class": "basic_needs",
+            "source_profile_key": source_profile_key,
+            "eligible_fund_codes": list(eligible_fund_codes),
+            "default_restriction_keys": [],
+            "tag_any": [],
+        },
+    )
+    promoted = promote_draft_to_funding_demand(
+        draft_ulid=draft["ulid"],
+        actor_ulid=actor_ulid,
+    )
+    db.session.flush()
+
+    funding = promoted["funding_demand"]
+    demand_ulid = funding.get("funding_demand_ulid") or funding.get("ulid")
+    assert demand_ulid
+    return project.ulid, demand_ulid
+
+
+def _realize_funding_into_demand(
+    *,
+    funding_demand_ulid: str,
+    amount_cents: int,
+    fund_code: str,
+) -> None:
+    sponsor = _create_sponsor("Bridge Sponsor")
+    intent = create_funding_intent(
+        {
+            "sponsor_entity_ulid": sponsor.entity_ulid,
+            "funding_demand_ulid": funding_demand_ulid,
+            "intent_kind": "donation",
+            "amount_cents": amount_cents,
+            "status": "committed",
+            "note": "bridge receipt",
+        },
+        actor_ulid=None,
+        request_id="req-intent-bridge",
+    )
+    db.session.flush()
+
+    tx = governance_v2.get_finance_taxonomy()
+    income_kind = tx.income_kinds[0].key
+
+    from app.extensions.contracts import sponsors_v2
+
+    sponsors_v2.realize_funding_intent(
+        sponsors_v2.FundingRealizationRequestDTO(
+            intent_ulid=intent.ulid,
+            amount_cents=amount_cents,
+            happened_at_utc="2026-03-16T10:00:00Z",
+            fund_code=fund_code,
+            income_kind=income_kind,
+            receipt_method="bank",
+            reserve_on_receive=True,
+            request_id="req-realize-bridge",
+        )
+    )
+    db.session.flush()
+
+
+def _create_realized_demand(
+    *,
+    eligible_fund_codes: tuple[str, ...] = ("general_unrestricted",),
+    source_profile_key: str = "ops_bridge_preapproved",
+) -> tuple[str, str, str]:
+    project_ulid, demand_ulid = _create_published_demand(
+        amount_cents=12000,
+        demand_title="Bridge Demand",
+        source_profile_key=source_profile_key,
+        eligible_fund_codes=eligible_fund_codes,
+    )
+
+    demand = calendar_v2.get_funding_demand(demand_ulid)
+    fund_code = _pick_approval_free_fund(demand.eligible_fund_codes)
+    _realize_funding_into_demand(
+        funding_demand_ulid=demand_ulid,
+        amount_cents=12000,
+        fund_code=fund_code,
+    )
+    return project_ulid, demand_ulid, fund_code
 
 
 def _seed_reserve_for_fund(
@@ -114,93 +257,15 @@ def _seed_reserve_for_fund(
     db.session.flush()
 
 
-def _create_sponsor(name: str) -> Sponsor:
-    entity = Entity(kind="org")
-    db.session.add(entity)
-    db.session.flush()
-
-    db.session.add(
-        EntityOrg(
-            entity_ulid=entity.ulid,
-            legal_name=name,
-        )
-    )
-    sponsor = Sponsor(entity_ulid=entity.ulid)
-    db.session.add(sponsor)
-    db.session.flush()
-    return sponsor
+# -----------------
+# Tests
+# -----------------
 
 
-def _create_realized_demand() -> tuple[str, str]:
-    project = Project(
-        project_title="Calendar Finance Bridge",
-        status="planned",
-    )
-    db.session.add(project)
-    db.session.flush()
-
-    demand = create_funding_demand(
-        {
-            "project_ulid": project.ulid,
-            "title": "Bridge Demand",
-            "goal_cents": 12000,
-            "deadline_date": "2026-03-31",
-            "spending_class": "admin",
-            "tag_any": "",
-        },
-        actor_ulid=None,
-        request_id="req-demand-create-2",
-    )
-    db.session.flush()
-
-    demand = publish_funding_demand(
-        demand.ulid,
-        actor_ulid=None,
-        request_id="req-demand-publish-2",
-    )
-    db.session.flush()
-
-    sponsor = _create_sponsor("Bridge Sponsor")
-    intent = create_funding_intent(
-        {
-            "sponsor_entity_ulid": sponsor.entity_ulid,
-            "funding_demand_ulid": demand.ulid,
-            "intent_kind": "donation",
-            "amount_cents": 12000,
-            "status": "committed",
-            "note": "bridge receipt",
-        },
-        actor_ulid=None,
-        request_id="req-intent-bridge",
-    )
-    db.session.flush()
-
-    tx = governance_v2.get_finance_taxonomy()
-    income_kind = tx.income_kinds[0].key
-    fund_code = _pick_approval_free_fund(
-        calendar_v2.get_funding_demand(demand.ulid).eligible_fund_codes
-    )
-
-    sponsors_v2.realize_funding_intent(
-        sponsors_v2.FundingRealizationRequestDTO(
-            intent_ulid=intent.ulid,
-            amount_cents=12000,
-            happened_at_utc="2026-03-16T10:00:00Z",
-            fund_code=fund_code,
-            income_kind=income_kind,
-            receipt_method="bank",
-            reserve_on_receive=True,
-            request_id="req-realize-bridge",
-        )
-    )
-    db.session.flush()
-    return demand.ulid, fund_code
-
-
-def test_encumber_project_funds_happy_path(app, monkeypatch):
+def test_encumber_project_funds_happy_path(app):
     with app.app_context():
         ensure_default_accounts()
-        demand_ulid, fund_code = _create_realized_demand()
+        _project_ulid, demand_ulid, fund_code = _create_realized_demand()
         tx = governance_v2.get_finance_taxonomy()
         expense_kind = tx.expense_kinds[12].key
 
@@ -248,7 +313,7 @@ def test_encumber_project_funds_happy_path(app, monkeypatch):
 def test_spend_project_funds_happy_path(app):
     with app.app_context():
         ensure_default_accounts()
-        demand_ulid, fund_code = _create_realized_demand()
+        _project_ulid, demand_ulid, fund_code = _create_realized_demand()
         tx = governance_v2.get_finance_taxonomy()
         expense_kind = tx.expense_kinds[0].key
 
@@ -309,7 +374,7 @@ def test_spend_project_funds_happy_path(app):
 def test_encumber_rejects_when_over_reserved(app):
     with app.app_context():
         ensure_default_accounts()
-        demand_ulid, fund_code = _create_realized_demand()
+        _project_ulid, demand_ulid, fund_code = _create_realized_demand()
         tx = governance_v2.get_finance_taxonomy()
         expense_kind = tx.expense_kinds[0].key
 
@@ -331,7 +396,7 @@ def test_encumber_rejects_when_over_reserved(app):
 def test_spend_rejects_when_over_open_encumbrance(app):
     with app.app_context():
         ensure_default_accounts()
-        demand_ulid, fund_code = _create_realized_demand()
+        _project_ulid, demand_ulid, fund_code = _create_realized_demand()
         tx = governance_v2.get_finance_taxonomy()
         expense_kind = tx.expense_kinds[0].key
 
@@ -363,17 +428,19 @@ def test_spend_rejects_when_over_open_encumbrance(app):
 
 
 def test_encumber_rejects_when_selected_fund_requires_approval(
-    app, monkeypatch
+    app,
+    monkeypatch,
 ):
     with app.app_context():
         ensure_default_accounts()
-        _patch_publishable_hints(
-            monkeypatch,
-            source_profile_key="restricted_project_grant_return_unused",
-            ops_support_planned=False,
-        )
 
-        demand_ulid, _ = _create_realized_demand()
+        _project_ulid, demand_ulid, _fund_code = _create_realized_demand(
+            eligible_fund_codes=(
+                "general_unrestricted",
+                "general_restricted",
+            ),
+            source_profile_key="restricted_project_grant_return_unused",
+        )
         tx = governance_v2.get_finance_taxonomy()
         expense_kind = tx.expense_kinds[0].key
 
@@ -410,17 +477,10 @@ def test_encumber_rejects_when_selected_fund_requires_approval(
 
 
 def test_encumber_project_funds_forwards_source_profile_hint(
-    app, monkeypatch
+    app,
+    monkeypatch,
 ):
-    from app.slices.calendar import services_funding as funding_svc
-
     captured: dict[str, object] = {}
-
-    def fake_hints(project_ulid: str):
-        return funding_svc.ProjectPolicyHints(
-            source_profile_key="restricted_project_grant_return_unused",
-            ops_support_planned=False,
-        )
 
     def fake_preview(req):
         captured["source_profile_key"] = req.source_profile_key
@@ -433,15 +493,12 @@ def test_encumber_project_funds_forwards_source_profile_hint(
 
     with app.app_context():
         ensure_default_accounts()
-        demand_ulid, fund_code = _create_realized_demand()
+        _project_ulid, demand_ulid, fund_code = _create_realized_demand(
+            source_profile_key="restricted_project_grant_return_unused",
+        )
         tx = governance_v2.get_finance_taxonomy()
         expense_kind = tx.expense_kinds[0].key
 
-        monkeypatch.setattr(
-            funding_svc,
-            "_project_policy_hints",
-            fake_hints,
-        )
         monkeypatch.setattr(
             governance_v2,
             "preview_funding_decision",

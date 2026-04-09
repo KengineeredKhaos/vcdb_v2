@@ -1,38 +1,24 @@
-# app/slices/calendar/services_finance_bridge.py
-
 from __future__ import annotations
 
-from dataclasses import dataclass
+"""Calendar -> Finance bridge using canonical published demand context."""
 
 from app.extensions import db, event_bus
 from app.extensions.contracts import finance_v2, governance_v2
 from app.lib.chrono import now_iso8601_ms
-from app.slices.calendar.mapper import (
-    ProjectEncumbranceResult,
-    ProjectSpendResult,
-)
-from app.slices.calendar.models import FundingDemand
+from app.slices.calendar.mapper import ProjectEncumbranceResult, ProjectSpendResult
 from app.slices.calendar.services_funding import (
-    _build_funding_decision_request,
+    _build_funding_decision_request_from_context,
     _get_demand_or_raise,
+    get_funding_demand_context,
 )
 
 _TEMP_KEYS = {"temp", "temporary", "temporarily_restricted"}
 _PERM_KEYS = {"perm", "permanent", "permanently_restricted"}
-_ENCUMBER_OK = {
-    "published",
-    "funding_in_progress",
-    "funded",
-    "executing",
-}
+_ENCUMBER_OK = {"published", "funding_in_progress", "funded", "executing"}
 _SPEND_OK = {"funding_in_progress", "funded", "executing"}
 
 
-def _derive_restriction_type(
-    *,
-    restriction_keys: tuple[str, ...],
-    archetype: str,
-) -> str:
+def _derive_restriction_type(*, restriction_keys: tuple[str, ...], archetype: str) -> str:
     keys = {str(k).strip().lower() for k in restriction_keys}
     archetype_norm = (archetype or "").strip().lower()
 
@@ -43,11 +29,38 @@ def _derive_restriction_type(
     return "unrestricted"
 
 
+
 def _bucket_amount(rows, key: str) -> int:
     for row in rows or ():
         if row.key == key:
             return int(row.amount_cents or 0)
     return 0
+
+
+
+def _tupleish(value) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, (list, tuple)):
+        return tuple(str(x).strip() for x in value if str(x).strip())
+    text = str(value).strip()
+    return (text,) if text else ()
+
+
+
+def _context_semantics(funding_demand_ulid: str) -> dict[str, object]:
+    payload = get_funding_demand_context(funding_demand_ulid)
+    planning = dict(payload.get("planning") or {})
+    policy = dict(payload.get("policy") or {})
+    return {
+        "spending_class": planning.get("spending_class"),
+        "tag_any": _tupleish(policy.get("approved_tag_any") or planning.get("tag_any")),
+        "eligible_fund_codes": _tupleish(policy.get("eligible_fund_codes")),
+        "default_restriction_keys": _tupleish(policy.get("default_restriction_keys")),
+        "source_profile_key": planning.get("source_profile_key"),
+        "ops_support_planned": planning.get("ops_support_planned"),
+    }
+
 
 
 def encumber_project_funds(
@@ -77,11 +90,13 @@ def encumber_project_funds(
     row = _get_demand_or_raise(funding_demand_ulid)
     if row.status not in _ENCUMBER_OK:
         raise ValueError(
-            "funding demand must be published, funding_in_progress, "
-            "funded, or executing"
+            "funding demand must be published, funding_in_progress, funded, or executing"
         )
-    if not row.spending_class:
-        raise ValueError("funding demand spending_class required")
+
+    ctx = _context_semantics(row.ulid)
+    spending_class = str(ctx["spending_class"] or "").strip()
+    if not spending_class:
+        raise ValueError("published demand context missing spending_class")
 
     money = finance_v2.get_funding_demand_money_view(row.ulid)
     ops_float = finance_v2.get_ops_float_summary(row.ulid)
@@ -96,49 +111,41 @@ def encumber_project_funds(
     fund_meta = governance_v2.get_fund_code(fund_code)
     restriction_keys = governance_v2.apply_fund_defaults(
         fund_code=fund_code,
-        restriction_keys=(),
+        restriction_keys=tuple(ctx["default_restriction_keys"] or ()),
     )
     sem = governance_v2.validate_semantic_keys(
         fund_code=fund_code,
         restriction_keys=restriction_keys,
         expense_kind=expense_kind,
-        spending_class=row.spending_class,
-        demand_eligible_fund_codes=tuple(row.eligible_fund_codes_json or ()),
+        spending_class=spending_class,
+        demand_eligible_fund_codes=tuple(ctx["eligible_fund_codes"] or ()),
     )
     if not sem.ok:
         raise ValueError("; ".join(sem.errors) or "invalid semantics")
 
     preview = governance_v2.preview_funding_decision(
-        _build_funding_decision_request(
+        _build_funding_decision_request_from_context(
             row=row,
             op="encumber",
             amount_cents=amount_cents,
             funding_demand_ulid=row.ulid,
             project_ulid=row.project_ulid,
-            spending_class=row.spending_class,
             expense_kind=expense_kind,
-            restriction_keys=restriction_keys,
-            demand_eligible_fund_codes=tuple(
-                row.eligible_fund_codes_json or ()
-            ),
-            tag_any=tuple(row.tag_any_json or ()),
+            restriction_keys=tuple(restriction_keys or ()),
             selected_fund_code=fund_code,
             actor_rbac_roles=actor_rbac_roles,
             actor_domain_roles=actor_domain_roles,
         )
     )
     if not preview.allowed:
-        raise PermissionError(
-            "; ".join(preview.reason_codes) or "encumber denied"
-        )
+        raise PermissionError("; ".join(preview.reason_codes) or "encumber denied")
     if preview.required_approvals:
         raise PermissionError(
-            "encumber requires approvals: "
-            + ", ".join(preview.required_approvals)
+            "encumber requires approvals: " + ", ".join(preview.required_approvals)
         )
 
     fund_restriction_type = _derive_restriction_type(
-        restriction_keys=restriction_keys,
+        restriction_keys=tuple(restriction_keys or ()),
         archetype=fund_meta.archetype,
     )
     memo_txt = memo or f"encumber:{expense_kind}"
@@ -196,6 +203,7 @@ def encumber_project_funds(
     )
 
 
+
 def spend_project_funds(
     *,
     encumbrance_ulid: str,
@@ -232,58 +240,52 @@ def spend_project_funds(
     row = _get_demand_or_raise(enc.funding_demand_ulid)
     if row.status not in _SPEND_OK:
         raise ValueError(
-            "funding demand must be funding_in_progress, funded, "
-            "or executing"
+            "funding demand must be funding_in_progress, funded, or executing"
         )
-    if not row.spending_class:
-        raise ValueError("funding demand spending_class required")
+
+    ctx = _context_semantics(row.ulid)
+    spending_class = str(ctx["spending_class"] or "").strip()
+    if not spending_class:
+        raise ValueError("published demand context missing spending_class")
 
     fund_meta = governance_v2.get_fund_code(enc.fund_code)
     restriction_keys = governance_v2.apply_fund_defaults(
         fund_code=enc.fund_code,
-        restriction_keys=(),
+        restriction_keys=tuple(ctx["default_restriction_keys"] or ()),
     )
     sem = governance_v2.validate_semantic_keys(
         fund_code=enc.fund_code,
         restriction_keys=restriction_keys,
         expense_kind=expense_kind,
-        spending_class=row.spending_class,
-        demand_eligible_fund_codes=tuple(row.eligible_fund_codes_json or ()),
+        spending_class=spending_class,
+        demand_eligible_fund_codes=tuple(ctx["eligible_fund_codes"] or ()),
     )
     if not sem.ok:
         raise ValueError("; ".join(sem.errors) or "invalid semantics")
 
     preview = governance_v2.preview_funding_decision(
-        _build_funding_decision_request(
+        _build_funding_decision_request_from_context(
             row=row,
             op="spend",
             amount_cents=amount_cents,
             funding_demand_ulid=row.ulid,
             project_ulid=row.project_ulid,
-            spending_class=row.spending_class,
             expense_kind=expense_kind,
-            restriction_keys=restriction_keys,
-            demand_eligible_fund_codes=tuple(
-                row.eligible_fund_codes_json or ()
-            ),
-            tag_any=tuple(row.tag_any_json or ()),
+            restriction_keys=tuple(restriction_keys or ()),
             selected_fund_code=enc.fund_code,
             actor_rbac_roles=actor_rbac_roles,
             actor_domain_roles=actor_domain_roles,
         )
     )
     if not preview.allowed:
-        raise PermissionError(
-            "; ".join(preview.reason_codes) or "spend denied"
-        )
+        raise PermissionError("; ".join(preview.reason_codes) or "spend denied")
     if preview.required_approvals:
         raise PermissionError(
-            "spend requires approvals: "
-            + ", ".join(preview.required_approvals)
+            "spend requires approvals: " + ", ".join(preview.required_approvals)
         )
 
     fund_restriction_type = _derive_restriction_type(
-        restriction_keys=restriction_keys,
+        restriction_keys=tuple(restriction_keys or ()),
         archetype=fund_meta.archetype,
     )
     memo_txt = memo or f"expense:{expense_kind}"
@@ -311,7 +313,6 @@ def spend_project_funds(
     )
 
     old_status = row.status
-
     new_status = row.status
     if not dry_run and row.status != "executing":
         row.status = "executing"

@@ -1,70 +1,78 @@
 # app/slices/calendar/services_funding.py
 
+"""Calendar funding read-side + canonical published-context helpers.
+
+This module is intentionally read-side only.
+Direct FundingDemand draft/publish mutators are retired.
+The canonical downstream package is the frozen published_context_json
+written at DemandDraft promotion time.
+"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
 
-from app.extensions import db, event_bus
+from app.extensions import db
 from app.extensions.contracts import governance_v2 as gov
-from app.lib.chrono import now_iso8601_ms
 
 from .mapper import (
-    FundingDemandContextView,
-    FundingDemandPlanningSnapshotView,
-    FundingDemandPolicySnapshotView,
-    FundingDemandPublishedSnapshotView,
-    FundingDemandWorkflowCuesView,
     FundingSourceProfileSummaryView,
-    funding_demand_context_to_json_dict,
     funding_demand_to_contract_dto,
     funding_demand_to_list_item,
     funding_demand_to_view,
 )
 from .models import FundingDemand, Project
-from .taxonomy import FUNDING_DEMAND_STATUSES
-
-_ALLOWED_STATUS = set(FUNDING_DEMAND_STATUSES)
 
 
-@dataclass(frozen=True)
-class ProjectPolicyHints:
-    source_profile_key: str | None = None
-    ops_support_planned: bool | None = None
+def _clean_text(
+    value: str | None, *, default: str | None = None
+) -> str | None:
+    text = str(value or "").strip()
+    if text:
+        return text
+    return default
 
 
-_EMPTY_POLICY_HINTS = ProjectPolicyHints()
-
-
-# -----------------
-# Validate & Normalize
-# Helpers
-# -----------------
-
-
-def _normalize_tags(raw: str | None) -> list[str]:
-    if not raw:
+def _normalize_str_list(
+    raw: list[str] | tuple[str, ...] | str | None
+) -> list[str]:
+    if raw is None:
         return []
+    if isinstance(raw, str):
+        items = [x.strip() for x in raw.split(",")]
+    else:
+        items = [str(x).strip() for x in raw]
+
     out: list[str] = []
     seen: set[str] = set()
-
-    for part in raw.split(","):
-        tag = part.strip()
-        if not tag:
+    for item in items:
+        if not item or item in seen:
             continue
-        if tag in seen:
-            continue
-        seen.add(tag)
-        out.append(tag)
+        seen.add(item)
+        out.append(item)
     return out
 
 
-def _require_status(status: str) -> str:
-    if status not in _ALLOWED_STATUS:
-        raise ValueError(f"invalid funding demand status: {status}")
-    return status
+def _normalize_str_tuple(
+    raw: list[str] | tuple[str, ...] | str | None,
+) -> tuple[str, ...]:
+    return tuple(_normalize_str_list(raw))
+
+
+def _merge_str_tuples(
+    *values: tuple[str, ...] | list[str] | str | None
+) -> tuple[str, ...]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        for item in _normalize_str_list(value):
+            if item in seen:
+                continue
+            seen.add(item)
+            out.append(item)
+    return tuple(out)
 
 
 def _get_project_or_raise(project_ulid: str) -> Project:
@@ -76,97 +84,6 @@ def _get_project_or_raise(project_ulid: str) -> Project:
     return row
 
 
-def _row_field(row: object, key: str) -> Any:
-    if isinstance(row, dict):
-        return row.get(key)
-    return getattr(row, key, None)
-
-
-def _load_project_funding_plan_rows(project_ulid: str) -> list[object]:
-    try:
-        from app.slices.calendar import services as calendar_services
-
-        list_fn = getattr(
-            calendar_services,
-            "list_funding_plans_for_project",
-            None,
-        )
-        if list_fn is None:
-            return []
-        rows = list_fn(project_ulid) or []
-        return list(rows)
-    except Exception:
-        return []
-
-
-def _derive_project_policy_hints(rows: list[object]) -> ProjectPolicyHints:
-    profile_keys: set[str] = set()
-    ops_support_planned: bool | None = None
-
-    for row in rows:
-        profile_key = _row_field(row, "source_profile_key")
-        if profile_key:
-            profile_keys.add(str(profile_key).strip())
-
-        planned = _row_field(row, "ops_support_planned")
-        if isinstance(planned, bool):
-            if ops_support_planned is None:
-                ops_support_planned = planned
-            else:
-                ops_support_planned = ops_support_planned or planned
-
-    source_profile_key = None
-    if len(profile_keys) == 1:
-        source_profile_key = next(iter(profile_keys))
-
-    return ProjectPolicyHints(
-        source_profile_key=source_profile_key,
-        ops_support_planned=ops_support_planned,
-    )
-
-
-def _normalize_str_list(raw: list[str] | tuple[str, ...] | None) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-    for item in raw or ():
-        val = str(item).strip()
-        if not val or val in seen:
-            continue
-        seen.add(val)
-        out.append(val)
-    return out
-
-
-def _normalize_str_tuple(
-    raw: list[str] | tuple[str, ...] | None,
-) -> tuple[str, ...]:
-    return tuple(_normalize_str_list(raw))
-
-
-# -----------------
-# Internal Functions
-# -----------------
-
-
-def _project_policy_hints(project_ulid: str | None) -> ProjectPolicyHints:
-    """
-    Return Calendar-owned policy cues for a project.
-
-    Calendar derives these cues from its Funding Plan rows and passes
-    them to Governance as advisory preview inputs. Governance remains
-    the authority for semantic validation, selector behavior, and
-    authorization.
-    """
-    if not project_ulid:
-        return _EMPTY_POLICY_HINTS
-
-    rows = _load_project_funding_plan_rows(project_ulid)
-    if not rows:
-        return _EMPTY_POLICY_HINTS
-
-    return _derive_project_policy_hints(rows)
-
-
 def _get_demand_or_raise(funding_demand_ulid: str) -> FundingDemand:
     row = db.session.execute(
         select(FundingDemand).where(FundingDemand.ulid == funding_demand_ulid)
@@ -176,157 +93,45 @@ def _get_demand_or_raise(funding_demand_ulid: str) -> FundingDemand:
     return row
 
 
-def _build_funding_decision_request(
-    *,
-    row: FundingDemand,
-    op: str,
-    amount_cents: int,
-    funding_demand_ulid: str,
-    project_ulid: str | None,
-    spending_class: str | None,
-    income_kind: str | None = None,
-    expense_kind: str | None = None,
-    restriction_keys: tuple[str, ...] = (),
-    demand_eligible_fund_codes: tuple[str, ...] = (),
-    tag_any: tuple[str, ...] = (),
-    selected_fund_code: str | None = None,
-    actor_rbac_roles: tuple[str, ...] = (),
-    actor_domain_roles: tuple[str, ...] = (),
-) -> gov.FundingDecisionRequestDTO:
-    effective_project_ulid = project_ulid or row.project_ulid
-    effective_spending_class = spending_class or row.spending_class
-    hints = _project_policy_hints(effective_project_ulid)
-
-    return gov.FundingDecisionRequestDTO(
-        op=op,
-        amount_cents=int(amount_cents),
-        funding_demand_ulid=funding_demand_ulid,
-        project_ulid=effective_project_ulid,
-        spending_class=effective_spending_class,
-        income_kind=income_kind,
-        expense_kind=expense_kind,
-        source_profile_key=hints.source_profile_key,
-        restriction_keys=tuple(restriction_keys or ()),
-        demand_eligible_fund_codes=tuple(demand_eligible_fund_codes or ()),
-        tag_any=tuple(tag_any or ()),
-        selected_fund_code=selected_fund_code,
-        ops_support_planned=hints.ops_support_planned,
-        actor_rbac_roles=tuple(actor_rbac_roles or ()),
-        actor_domain_roles=tuple(actor_domain_roles or ()),
-    )
+def _summary_get(obj, attr: str, default=None):
+    if isinstance(obj, dict):
+        return obj.get(attr, default)
+    return getattr(obj, attr, default)
 
 
-def _project_choices() -> list[tuple[str, str]]:
-    rows = db.session.execute(
-        select(Project).order_by(Project.project_title.asc())
-    ).scalars()
-    return [(r.ulid, r.project_title) for r in rows]
-
-
-def _build_source_profile_summary(
+def _build_source_profile_summary_view(
     *,
     source_profile_key: str | None,
 ) -> FundingSourceProfileSummaryView:
     if not source_profile_key:
-        raise ValueError("source_profile_key is required for publish context")
+        raise ValueError(
+            "source_profile_key is required for published context"
+        )
 
-    dto = gov.get_funding_source_profile_summary(source_profile_key)
+    dto = gov.get_funding_source_profile_summary(str(source_profile_key))
 
     return FundingSourceProfileSummaryView(
-        key=dto.key,
-        source_kind=dto.source_kind,
-        support_mode=dto.support_mode,
-        approval_posture=dto.approval_posture,
-        default_restriction_keys=tuple(dto.default_restriction_keys),
-        bridge_allowed=bool(dto.bridge_allowed),
-        repayment_expectation=str(dto.repayment_expectation),
-        forgiveness_rule=str(dto.forgiveness_rule),
-        auto_ops_bridge_on_publish=bool(dto.auto_ops_bridge_on_publish),
+        key=_summary_get(dto, "key", str(source_profile_key)),
+        source_kind=_summary_get(dto, "source_kind", ""),
+        support_mode=_summary_get(dto, "support_mode", ""),
+        approval_posture=_summary_get(dto, "approval_posture", ""),
+        default_restriction_keys=tuple(
+            _summary_get(dto, "default_restriction_keys", ()) or ()
+        ),
+        bridge_allowed=bool(_summary_get(dto, "bridge_allowed", False)),
+        repayment_expectation=str(
+            _summary_get(dto, "repayment_expectation", "") or ""
+        ).strip(),
+        forgiveness_rule=str(
+            _summary_get(dto, "forgiveness_rule", "") or ""
+        ).strip(),
+        auto_ops_bridge_on_publish=bool(
+            _summary_get(dto, "auto_ops_bridge_on_publish", False)
+        ),
     )
 
 
-def _build_demand_snapshot(
-    row: FundingDemand,
-    *,
-    published_at_utc: str,
-) -> FundingDemandPublishedSnapshotView:
-    if not row.project_ulid:
-        raise ValueError("funding demand must have project_ulid")
-    return FundingDemandPublishedSnapshotView(
-        funding_demand_ulid=row.ulid,
-        project_ulid=row.project_ulid,
-        title=str(row.title or "").strip(),
-        status="published",
-        goal_cents=int(row.goal_cents or 0),
-        deadline_date=row.deadline_date,
-        published_at_utc=published_at_utc,
-    )
-
-
-def _build_planning_snapshot(
-    row: FundingDemand,
-    project: Project,
-) -> FundingDemandPlanningSnapshotView:
-    hints = _project_policy_hints(row.project_ulid)
-
-    spending_class = str(row.spending_class or "").strip()
-    if not spending_class:
-        raise ValueError("spending_class is required before publish")
-
-    return FundingDemandPlanningSnapshotView(
-        project_title=str(project.project_title or "").strip(),
-        spending_class=spending_class,
-        tag_any=tuple(_normalize_str_list(row.tag_any_json or [])),
-        source_profile_key=hints.source_profile_key,
-        ops_support_planned=hints.ops_support_planned,
-        planning_basis="funding_plan_rows",
-    )
-
-
-def _build_policy_snapshot(
-    row: FundingDemand,
-    *,
-    planning_snapshot: FundingDemandPlanningSnapshotView,
-) -> tuple[FundingDemandPolicySnapshotView, gov.FundingDecisionPreviewDTO,]:
-    preview_req = _build_funding_decision_request(
-        row=row,
-        op="encumber",
-        amount_cents=int(row.goal_cents or 0),
-        funding_demand_ulid=row.ulid,
-        project_ulid=row.project_ulid,
-        spending_class=planning_snapshot.spending_class,
-        income_kind=None,
-        expense_kind=None,
-        restriction_keys=(),
-        demand_eligible_fund_codes=(),
-        tag_any=planning_snapshot.tag_any,
-        selected_fund_code=None,
-        actor_rbac_roles=(),
-        actor_domain_roles=(),
-    )
-    preview = gov.preview_funding_decision(preview_req)
-
-    source_summary = _build_source_profile_summary(
-        source_profile_key=planning_snapshot.source_profile_key,
-    )
-
-    default_restriction_keys = _normalize_str_tuple(
-        source_summary.default_restriction_keys
-    )
-
-    snapshot = FundingDemandPolicySnapshotView(
-        decision_fingerprint=str(preview.decision_fingerprint or "").strip(),
-        eligible_fund_codes=_normalize_str_tuple(preview.eligible_fund_codes),
-        default_restriction_keys=default_restriction_keys,
-        source_profile_summary=source_summary,
-    )
-    return snapshot, preview
-
-
-def _derive_receive_posture(
-    source_kind: str,
-    support_mode: str,
-) -> str:
+def _derive_receive_posture(source_kind: str, support_mode: str) -> str:
     if source_kind == "cash_support" and support_mode in {
         "direct_cash",
         "restricted_grant_cash",
@@ -345,30 +150,22 @@ def _derive_receive_posture(
         return "ops_backfill"
     if source_kind == "operations_support" and support_mode == "ops_bridge":
         return "ops_bridge"
-    raise ValueError(
-        f"unsupported source posture: {source_kind}/{support_mode}"
-    )
+    return "direct_support"
 
 
-def _build_workflow_cues(
-    planning_snapshot: FundingDemandPlanningSnapshotView,
-    policy_snapshot: FundingDemandPolicySnapshotView,
-) -> FundingDemandWorkflowCuesView:
-    summary = policy_snapshot.source_profile_summary
+def _derive_workflow_from_profile(
+    summary: FundingSourceProfileSummaryView,
+) -> dict[str, Any]:
     receive_posture = _derive_receive_posture(
         summary.source_kind,
         summary.support_mode,
     )
-
     reimbursement_expected = bool(
         summary.source_kind == "reimbursement_support"
         or summary.support_mode == "reimbursement_promise"
         or summary.repayment_expectation == "reimbursement_expected"
     )
-
     bridge_support_possible = bool(summary.bridge_allowed)
-    if summary.support_mode == "ops_bridge" and not bridge_support_possible:
-        raise ValueError("ops_bridge profile must allow bridge support")
 
     if receive_posture == "direct_support":
         reserve_on_receive_expected = True
@@ -377,97 +174,308 @@ def _build_workflow_cues(
             if summary.support_mode == "restricted_grant_cash"
             else "donation"
         )
-        allowed_realization_modes = ("donation", "pledge")
+        allowed_realization_modes = ["donation", "pledge"]
     elif receive_posture == "reimbursement_expected":
         reserve_on_receive_expected = False
         recommended_income_kind = "reimbursement"
-        allowed_realization_modes = (
-            "pledge",
-            "reimbursement_receipt",
-        )
+        allowed_realization_modes = ["pledge", "reimbursement_receipt"]
     elif receive_posture == "in_kind_offset":
         reserve_on_receive_expected = False
         recommended_income_kind = "inkind"
-        allowed_realization_modes = ("donation",)
+        allowed_realization_modes = ["donation"]
     elif receive_posture in {"ops_seed", "ops_backfill"}:
         reserve_on_receive_expected = False
         recommended_income_kind = "other"
-        allowed_realization_modes = ("pledge",)
+        allowed_realization_modes = ["pledge"]
     elif receive_posture == "ops_bridge":
         reserve_on_receive_expected = False
         recommended_income_kind = "other"
-        allowed_realization_modes = (
-            "pledge",
-            "reimbursement_receipt",
-        )
+        allowed_realization_modes = ["pledge", "reimbursement_receipt"]
     else:
-        raise ValueError(f"unsupported receive_posture: {receive_posture}")
+        reserve_on_receive_expected = False
+        recommended_income_kind = None
+        allowed_realization_modes = []
 
-    return FundingDemandWorkflowCuesView(
-        receive_posture=receive_posture,
-        reserve_on_receive_expected=reserve_on_receive_expected,
-        reimbursement_expected=reimbursement_expected,
-        bridge_support_possible=bridge_support_possible,
-        return_unused_posture=str(summary.forgiveness_rule or "").strip(),
-        recommended_income_kind=recommended_income_kind,
-        allowed_realization_modes=allowed_realization_modes,
-    )
+    return {
+        "receive_posture": receive_posture,
+        "reserve_on_receive_expected": reserve_on_receive_expected,
+        "reimbursement_expected": reimbursement_expected,
+        "bridge_support_possible": bridge_support_possible,
+        "return_unused_posture": str(summary.forgiveness_rule or "").strip()
+        or None,
+        "recommended_income_kind": recommended_income_kind,
+        "allowed_realization_modes": allowed_realization_modes,
+    }
 
 
-def _assemble_funding_demand_context(
+def build_canonical_published_context_payload(
     *,
-    demand_snapshot: FundingDemandPublishedSnapshotView,
-    planning_snapshot: FundingDemandPlanningSnapshotView,
-    policy_snapshot: FundingDemandPolicySnapshotView,
-    workflow_cues: FundingDemandWorkflowCuesView,
-) -> FundingDemandContextView:
-    return FundingDemandContextView(
-        schema_version=1,
-        demand=demand_snapshot,
-        planning=planning_snapshot,
-        policy=policy_snapshot,
-        workflow=workflow_cues,
+    funding_demand_ulid: str,
+    project_ulid: str,
+    project_title: str | None,
+    title: str,
+    status: str,
+    goal_cents: int,
+    deadline_date: str | None,
+    published_at_utc: str,
+    demand_draft_ulid: str | None,
+    budget_snapshot_ulid: str | None,
+    summary: str | None,
+    scope_summary: str | None,
+    source_profile_key: str | None,
+    ops_support_planned: bool | None,
+    spending_class: str | None,
+    tag_any: list[str] | tuple[str, ...] | str | None,
+    eligible_fund_codes: list[str] | tuple[str, ...] | str | None,
+    default_restriction_keys: list[str] | tuple[str, ...] | str | None,
+    decision_fingerprint: str | None = None,
+    approved_tag_any: list[str] | tuple[str, ...] | str | None = None,
+) -> dict[str, Any]:
+    source_summary = _build_source_profile_summary_view(
+        source_profile_key=source_profile_key,
+    )
+    workflow = _derive_workflow_from_profile(source_summary)
+
+    approved_tags = _merge_str_tuples(approved_tag_any, tag_any)
+    eligible_codes = _normalize_str_tuple(eligible_fund_codes)
+    default_restrictions = _merge_str_tuples(
+        default_restriction_keys,
+        source_summary.default_restriction_keys,
     )
 
+    return {
+        "schema_version": 1,
+        "demand": {
+            "funding_demand_ulid": funding_demand_ulid,
+            "project_ulid": project_ulid,
+            "title": str(title or "").strip(),
+            "status": str(status or "").strip(),
+            "goal_cents": int(goal_cents or 0),
+            "deadline_date": _clean_text(deadline_date),
+            "published_at_utc": str(published_at_utc or "").strip(),
+        },
+        "origin": {
+            "demand_draft_ulid": _clean_text(demand_draft_ulid),
+            "budget_snapshot_ulid": _clean_text(budget_snapshot_ulid),
+            "project_ulid": project_ulid,
+        },
+        "planning": {
+            "project_title": _clean_text(project_title, default="") or "",
+            "summary": _clean_text(summary),
+            "scope_summary": _clean_text(scope_summary),
+            "spending_class": _clean_text(spending_class, default="") or "",
+            "tag_any": list(_normalize_str_tuple(tag_any)),
+            "source_profile_key": _clean_text(source_profile_key),
+            "ops_support_planned": ops_support_planned,
+            "planning_basis": "budget_snapshot",
+        },
+        "policy": {
+            "decision_fingerprint": str(decision_fingerprint or "").strip(),
+            "eligible_fund_codes": list(eligible_codes),
+            "default_restriction_keys": list(default_restrictions),
+            "approved_tag_any": list(approved_tags),
+            "source_profile_summary": {
+                "key": source_summary.key,
+                "source_kind": source_summary.source_kind,
+                "support_mode": source_summary.support_mode,
+                "approval_posture": source_summary.approval_posture,
+                "default_restriction_keys": list(
+                    source_summary.default_restriction_keys
+                ),
+                "bridge_allowed": source_summary.bridge_allowed,
+                "repayment_expectation": source_summary.repayment_expectation,
+                "forgiveness_rule": source_summary.forgiveness_rule,
+                "auto_ops_bridge_on_publish": source_summary.auto_ops_bridge_on_publish,
+            },
+        },
+        "workflow": workflow,
+    }
 
-def _validate_funding_demand_context(
-    context: FundingDemandContextView,
-) -> None:
-    if context.schema_version != 1:
-        raise ValueError("unsupported funding demand context schema_version")
 
-    if not context.demand.funding_demand_ulid:
-        raise ValueError("demand snapshot missing funding_demand_ulid")
-    if not context.demand.project_ulid:
-        raise ValueError("demand snapshot missing project_ulid")
-    if not context.demand.title:
-        raise ValueError("demand snapshot missing title")
-    if not context.demand.published_at_utc:
-        raise ValueError("demand snapshot missing published_at_utc")
+def _canonicalize_published_context(row: FundingDemand) -> dict[str, Any]:
+    payload = row.published_context_json or {}
+    if not isinstance(payload, dict):
+        raise ValueError("published_context_json must be an object")
 
-    if not context.planning.project_title:
-        raise ValueError("planning snapshot missing project_title")
-    if not context.planning.spending_class:
-        raise ValueError("planning snapshot missing spending_class")
+    demand = dict(payload.get("demand") or {})
+    origin = dict(payload.get("origin") or {})
+    planning = dict(payload.get("planning") or {})
+    policy = dict(payload.get("policy") or {})
+    workflow = dict(payload.get("workflow") or {})
 
-    if not context.policy.decision_fingerprint:
-        raise ValueError("policy snapshot missing decision_fingerprint")
-    if not context.policy.eligible_fund_codes:
-        raise ValueError("policy snapshot missing eligible_fund_codes")
-    if not context.policy.source_profile_summary.key:
-        raise ValueError("policy snapshot missing source_profile_summary")
+    project = getattr(row, "project", None)
+    project_title = planning.get("project_title")
+    if not project_title and project is not None:
+        project_title = getattr(project, "project_title", None)
 
-    if not context.workflow.allowed_realization_modes:
-        raise ValueError("workflow snapshot missing realization modes")
+    source_profile_key = (
+        planning.get("source_profile_key")
+        or policy.get("source_profile_key")
+        or (dict(policy.get("source_profile_summary") or {})).get("key")
+        or getattr(project, "funding_profile_key", None)
+    )
+
+    if not source_profile_key:
+        raise ValueError(
+            "published demand context missing source_profile_key"
+        )
+
+    source_summary = _build_source_profile_summary_view(
+        source_profile_key=source_profile_key,
+    )
+    source_summary_json = dict(policy.get("source_profile_summary") or {})
+    if not source_summary_json:
+        source_summary_json = {
+            "key": source_summary.key,
+            "source_kind": source_summary.source_kind,
+            "support_mode": source_summary.support_mode,
+            "approval_posture": source_summary.approval_posture,
+            "default_restriction_keys": list(
+                source_summary.default_restriction_keys
+            ),
+            "bridge_allowed": source_summary.bridge_allowed,
+            "repayment_expectation": source_summary.repayment_expectation,
+            "forgiveness_rule": source_summary.forgiveness_rule,
+            "auto_ops_bridge_on_publish": source_summary.auto_ops_bridge_on_publish,
+        }
+
+    if not workflow:
+        workflow = _derive_workflow_from_profile(source_summary)
+
+    return {
+        "schema_version": int(payload.get("schema_version") or 1),
+        "demand": {
+            "funding_demand_ulid": demand.get("funding_demand_ulid")
+            or row.ulid,
+            "project_ulid": demand.get("project_ulid") or row.project_ulid,
+            "title": demand.get("title") or str(row.title or "").strip(),
+            "status": demand.get("status") or str(row.status or "").strip(),
+            "goal_cents": int(
+                demand.get("goal_cents") or row.goal_cents or 0
+            ),
+            "deadline_date": demand.get("deadline_date") or row.deadline_date,
+            "published_at_utc": (
+                demand.get("published_at_utc") or row.published_at_utc
+            ),
+        },
+        "origin": {
+            "demand_draft_ulid": origin.get("demand_draft_ulid")
+            or getattr(row, "origin_draft_ulid", None),
+            "budget_snapshot_ulid": origin.get("budget_snapshot_ulid"),
+            "project_ulid": origin.get("project_ulid") or row.project_ulid,
+        },
+        "planning": {
+            "project_title": _clean_text(project_title, default="") or "",
+            "summary": planning.get("summary"),
+            "scope_summary": planning.get("scope_summary"),
+            "spending_class": planning.get("spending_class")
+            or row.spending_class
+            or "",
+            "tag_any": list(
+                _merge_str_tuples(planning.get("tag_any"), row.tag_any_json)
+            ),
+            "source_profile_key": _clean_text(source_profile_key),
+            "ops_support_planned": planning.get("ops_support_planned"),
+            "planning_basis": planning.get("planning_basis")
+            or "budget_snapshot",
+        },
+        "policy": {
+            "decision_fingerprint": str(
+                policy.get("decision_fingerprint") or ""
+            ).strip(),
+            "eligible_fund_codes": list(
+                _merge_str_tuples(
+                    policy.get("eligible_fund_codes"),
+                    row.eligible_fund_codes_json,
+                )
+            ),
+            "default_restriction_keys": list(
+                _merge_str_tuples(
+                    policy.get("default_restriction_keys"),
+                    source_summary.default_restriction_keys,
+                )
+            ),
+            "approved_tag_any": list(
+                _merge_str_tuples(
+                    policy.get("approved_tag_any"),
+                    planning.get("tag_any"),
+                    row.tag_any_json,
+                )
+            ),
+            "source_profile_summary": source_summary_json,
+        },
+        "workflow": {
+            "receive_posture": workflow.get("receive_posture"),
+            "reserve_on_receive_expected": workflow.get(
+                "reserve_on_receive_expected"
+            ),
+            "reimbursement_expected": workflow.get("reimbursement_expected"),
+            "bridge_support_possible": workflow.get(
+                "bridge_support_possible"
+            ),
+            "return_unused_posture": workflow.get("return_unused_posture"),
+            "recommended_income_kind": workflow.get(
+                "recommended_income_kind"
+            ),
+            "allowed_realization_modes": list(
+                _normalize_str_tuple(
+                    workflow.get("allowed_realization_modes")
+                )
+            ),
+        },
+    }
 
 
-# -----------------
-# Time to make the donuts
-# -----------------
+def _build_funding_decision_request_from_context(
+    *,
+    row: FundingDemand,
+    op: str,
+    amount_cents: int,
+    funding_demand_ulid: str,
+    project_ulid: str | None,
+    expense_kind: str | None = None,
+    income_kind: str | None = None,
+    restriction_keys: tuple[str, ...] = (),
+    selected_fund_code: str | None = None,
+    actor_rbac_roles: tuple[str, ...] = (),
+    actor_domain_roles: tuple[str, ...] = (),
+) -> gov.FundingDecisionRequestDTO:
+    context = _canonicalize_published_context(row)
+    planning = dict(context["planning"])
+    policy = dict(context["policy"])
+
+    return gov.FundingDecisionRequestDTO(
+        op=op,
+        amount_cents=int(amount_cents),
+        funding_demand_ulid=funding_demand_ulid,
+        project_ulid=project_ulid or row.project_ulid,
+        spending_class=_clean_text(planning.get("spending_class")),
+        income_kind=_clean_text(income_kind),
+        expense_kind=_clean_text(expense_kind),
+        source_profile_key=_clean_text(planning.get("source_profile_key")),
+        restriction_keys=_merge_str_tuples(
+            restriction_keys,
+            policy.get("default_restriction_keys"),
+        ),
+        ops_support_planned=planning.get("ops_support_planned"),
+        demand_eligible_fund_codes=_normalize_str_tuple(
+            policy.get("eligible_fund_codes")
+        ),
+        tag_any=_merge_str_tuples(
+            policy.get("approved_tag_any"),
+            planning.get("tag_any"),
+        ),
+        selected_fund_code=_clean_text(selected_fund_code),
+        actor_rbac_roles=tuple(actor_rbac_roles or ()),
+        actor_domain_roles=tuple(actor_domain_roles or ()),
+    )
 
 
 def list_projects_for_form() -> list[tuple[str, str]]:
-    return _project_choices()
+    rows = db.session.execute(
+        select(Project).order_by(Project.project_title.asc())
+    ).scalars()
+    return [(r.ulid, r.project_title) for r in rows]
 
 
 def get_spending_class_choices() -> list[tuple[str, str]]:
@@ -476,259 +484,11 @@ def get_spending_class_choices() -> list[tuple[str, str]]:
     return [("", "— Select —"), *[(v.key, v.label) for v in vals]]
 
 
-def get_funding_demand_context(
-    funding_demand_ulid: str,
-) -> dict[str, object]:
+def get_funding_demand_context(funding_demand_ulid: str) -> dict[str, object]:
     row = _get_demand_or_raise(funding_demand_ulid)
     if not row.published_context_json:
         raise ValueError("funding demand has no published context")
-    payload = row.published_context_json
-    if not isinstance(payload, dict):
-        raise ValueError("published_context_json must be an object")
-    return payload
-
-
-def create_funding_demand(
-    payload: dict[str, Any],
-    *,
-    actor_ulid: str | None,
-    request_id: str | None,
-) -> FundingDemand:
-    project_ulid = str(payload.get("project_ulid") or "").strip()
-    title = str(payload.get("title") or "").strip()
-    goal_cents = int(payload.get("goal_cents") or 0)
-    deadline_date = payload.get("deadline_date")
-    spending_class = payload.get("spending_class")
-    tag_any = payload.get("tag_any")
-
-    if not project_ulid:
-        raise ValueError("project_ulid is required")
-    if not title:
-        raise ValueError("title is required")
-    if goal_cents < 0:
-        raise ValueError("goal_cents must be >= 0")
-
-    _get_project_or_raise(project_ulid)
-
-    if spending_class:
-        res = gov.validate_semantic_keys(
-            spending_class=spending_class,
-        )
-        if not res.ok:
-            raise ValueError(
-                "; ".join(res.errors) or "invalid spending_class"
-            )
-
-    if hasattr(deadline_date, "isoformat"):
-        deadline_date = deadline_date.isoformat()
-
-    row = FundingDemand(
-        project_ulid=project_ulid,
-        title=title,
-        status="draft",
-        goal_cents=goal_cents,
-        deadline_date=deadline_date,
-        spending_class=spending_class or None,
-        eligible_fund_codes_json=[],
-        tag_any_json=_normalize_tags(tag_any),
-        published_at_utc=None,
-        closed_at_utc=None,
-    )
-    db.session.add(row)
-    db.session.flush()
-
-    event_bus.emit(
-        domain="calendar",
-        operation="funding_demand_created",
-        actor_ulid=actor_ulid,
-        target_ulid=row.ulid,
-        request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
-        refs={"project_ulid": row.project_ulid},
-        changed={
-            "fields": [
-                "project_ulid",
-                "title",
-                "status",
-                "goal_cents",
-                "deadline_date",
-                "spending_class",
-                "eligible_fund_codes_json",
-                "tag_any_json",
-                "published_at_utc",
-                "closed_at_utc",
-            ]
-        },
-    )
-    return row
-
-
-def update_funding_demand(
-    funding_demand_ulid: str,
-    payload: dict[str, Any],
-    *,
-    actor_ulid: str | None,
-    request_id: str | None,
-) -> FundingDemand:
-    row = _get_demand_or_raise(funding_demand_ulid)
-
-    project_ulid = str(payload.get("project_ulid") or "").strip()
-    title = str(payload.get("title") or "").strip()
-    goal_cents = int(payload.get("goal_cents") or 0)
-    deadline_date = payload.get("deadline_date")
-    spending_class = payload.get("spending_class")
-    tag_any = payload.get("tag_any")
-
-    if not project_ulid:
-        raise ValueError("project_ulid is required")
-    if not title:
-        raise ValueError("title is required")
-    if goal_cents < 0:
-        raise ValueError("goal_cents must be >= 0")
-
-    _get_project_or_raise(project_ulid)
-
-    if spending_class:
-        res = gov.validate_semantic_keys(
-            spending_class=spending_class,
-        )
-        if not res.ok:
-            raise ValueError(
-                "; ".join(res.errors) or "invalid spending_class"
-            )
-
-    if hasattr(deadline_date, "isoformat"):
-        deadline_date = deadline_date.isoformat()
-
-    row.project_ulid = project_ulid
-    row.title = title
-    row.goal_cents = goal_cents
-    row.deadline_date = deadline_date
-    row.spending_class = spending_class or None
-    row.tag_any_json = _normalize_tags(tag_any)
-
-    db.session.flush()
-
-    event_bus.emit(
-        domain="calendar",
-        operation="funding_demand_updated",
-        actor_ulid=actor_ulid,
-        target_ulid=row.ulid,
-        request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
-        refs={"project_ulid": row.project_ulid},
-        changed={
-            "fields": [
-                "project_ulid",
-                "title",
-                "goal_cents",
-                "deadline_date",
-                "spending_class",
-                "tag_any_json",
-            ]
-        },
-    )
-    return row
-
-
-def publish_funding_demand(
-    funding_demand_ulid: str,
-    *,
-    actor_ulid: str | None,
-    request_id: str | None,
-) -> FundingDemand:
-    row = _get_demand_or_raise(funding_demand_ulid)
-
-    if row.status == "closed":
-        raise ValueError("cannot publish a closed funding demand")
-    if not row.project_ulid:
-        raise ValueError("funding demand must have project_ulid")
-    if not row.spending_class:
-        raise ValueError("spending_class is required before publish")
-
-    project = _get_project_or_raise(row.project_ulid)
-    published_at_utc = now_iso8601_ms()
-
-    demand_snapshot = _build_demand_snapshot(
-        row,
-        published_at_utc=published_at_utc,
-    )
-    planning_snapshot = _build_planning_snapshot(row, project)
-    policy_snapshot, preview = _build_policy_snapshot(
-        row,
-        planning_snapshot=planning_snapshot,
-    )
-    workflow_cues = _build_workflow_cues(
-        planning_snapshot,
-        policy_snapshot,
-    )
-    context = _assemble_funding_demand_context(
-        demand_snapshot=demand_snapshot,
-        planning_snapshot=planning_snapshot,
-        policy_snapshot=policy_snapshot,
-        workflow_cues=workflow_cues,
-    )
-    _validate_funding_demand_context(context)
-
-    row.eligible_fund_codes_json = list(policy_snapshot.eligible_fund_codes)
-    row.status = "published"
-    row.published_at_utc = published_at_utc
-    row.published_context_json = funding_demand_context_to_json_dict(context)
-
-    db.session.flush()
-
-    event_bus.emit(
-        domain="calendar",
-        operation="funding_demand_published",
-        actor_ulid=actor_ulid,
-        target_ulid=row.ulid,
-        request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
-        refs={
-            "project_ulid": row.project_ulid,
-            "decision_fingerprint": policy_snapshot.decision_fingerprint,
-        },
-        changed={
-            "fields": [
-                "status",
-                "eligible_fund_codes_json",
-                "published_at_utc",
-                "published_context_json",
-            ]
-        },
-        meta={
-            "required_approvals": list(preview.required_approvals),
-        },
-    )
-    return row
-
-
-def unpublish_funding_demand(
-    funding_demand_ulid: str,
-    *,
-    actor_ulid: str | None,
-    request_id: str | None,
-) -> FundingDemand:
-    row = _get_demand_or_raise(funding_demand_ulid)
-    if row.status == "closed":
-        raise ValueError("cannot unpublish a closed funding demand")
-
-    row.status = "draft"
-    row.published_at_utc = None
-
-    db.session.flush()
-
-    event_bus.emit(
-        domain="calendar",
-        operation="funding_demand_unpublished",
-        actor_ulid=actor_ulid,
-        target_ulid=row.ulid,
-        request_id=request_id,
-        happened_at_utc=now_iso8601_ms(),
-        refs={"project_ulid": row.project_ulid},
-        changed={"fields": ["status", "published_at_utc"]},
-    )
-    return row
+    return _canonicalize_published_context(row)
 
 
 def get_funding_demand(funding_demand_ulid: str) -> dict[str, object]:
@@ -736,91 +496,74 @@ def get_funding_demand(funding_demand_ulid: str) -> dict[str, object]:
     return funding_demand_to_contract_dto(row)
 
 
-def get_funding_demand_view(
-    funding_demand_ulid: str,
-):
+def get_funding_demand_view(funding_demand_ulid: str):
     row = _get_demand_or_raise(funding_demand_ulid)
     return funding_demand_to_view(row)
+
+
+def list_funding_demands() -> list[object]:
+    rows = db.session.execute(
+        select(FundingDemand).order_by(FundingDemand.created_at_utc.desc())
+    ).scalars()
+    return [funding_demand_to_list_item(r) for r in rows]
 
 
 def list_published_funding_demands(
     *,
     project_ulid: str | None = None,
-    status: str = "published",
-) -> list[dict[str, object]]:
-    _require_status(status)
-
-    stmt = select(FundingDemand).where(FundingDemand.status == status)
-    if project_ulid:
-        stmt = stmt.where(FundingDemand.project_ulid == project_ulid)
-
-    rows = db.session.execute(
-        stmt.order_by(
-            FundingDemand.deadline_date.asc(), FundingDemand.title.asc()
-        )
-    ).scalars()
-
-    out: list[dict[str, object]] = []
-    for row in rows:
-        item = funding_demand_to_list_item(row)
-        out.append(
-            {
-                "funding_demand_ulid": item.funding_demand_ulid,
-                "project_ulid": item.project_ulid,
-                "project_title": item.project_title,
-                "title": item.title,
-                "status": item.status,
-                "goal_cents": item.goal_cents,
-                "deadline_date": item.deadline_date,
-                "eligible_fund_codes": list(item.eligible_fund_codes),
-            }
-        )
-    return out
-
-
-def list_funding_demands(
-    *,
-    project_ulid: str | None = None,
-    status: str | None = None,
-) -> list:
-    stmt = select(FundingDemand)
-
-    if project_ulid:
-        stmt = stmt.where(FundingDemand.project_ulid == project_ulid)
-
-    if status:
-        _require_status(status)
-        stmt = stmt.where(FundingDemand.status == status)
-
-    rows = db.session.execute(
-        stmt.order_by(
-            FundingDemand.deadline_date.asc(),
+) -> list[object]:
+    stmt = (
+        select(FundingDemand)
+        .where(FundingDemand.status != "draft")
+        .order_by(
+            FundingDemand.published_at_utc.desc(),
             FundingDemand.created_at_utc.desc(),
-            FundingDemand.title.asc(),
         )
-    ).scalars()
+    )
+    if project_ulid:
+        stmt = stmt.where(FundingDemand.project_ulid == project_ulid)
 
+    rows = db.session.execute(stmt).scalars().all()
     return [funding_demand_to_list_item(row) for row in rows]
 
 
-def list_funding_demands_view(
-    *,
-    project_ulid: str | None = None,
-    status: str | None = None,
-) -> list:
-    return list_funding_demands(
-        project_ulid=project_ulid,
-        status=status,
+def create_funding_demand(*args, **kwargs):
+    raise RuntimeError(
+        "Direct FundingDemand creation is retired. "
+        "Use services_drafts.create_draft_from_snapshot(...) "
+        "and promote_draft_to_funding_demand(...)."
     )
 
 
-def get_funding_demand_status_choices() -> list[tuple[str, str]]:
-    return [
-        ("", "All statuses"),
-        ("draft", "draft"),
-        ("published", "published"),
-        ("funding_in_progress", "funding_in_progress"),
-        ("funded", "funded"),
-        ("executing", "executing"),
-        ("closed", "closed"),
-    ]
+def update_funding_demand(*args, **kwargs):
+    raise RuntimeError(
+        "Direct FundingDemand editing is retired. Edit the DemandDraft instead."
+    )
+
+
+def publish_funding_demand(*args, **kwargs):
+    raise RuntimeError(
+        "Direct FundingDemand publish is retired. "
+        "Approve and promote a DemandDraft instead."
+    )
+
+
+def unpublish_funding_demand(*args, **kwargs):
+    raise RuntimeError(
+        "Direct FundingDemand unpublish is retired. "
+        "Published demands are not reverted to draft."
+    )
+
+
+__all__ = [
+    "_build_funding_decision_request_from_context",
+    "_get_demand_or_raise",
+    "build_canonical_published_context_payload",
+    "get_funding_demand",
+    "get_funding_demand_context",
+    "get_funding_demand_view",
+    "get_spending_class_choices",
+    "list_funding_demands",
+    "list_projects_for_form",
+    "list_published_funding_demands",
+]

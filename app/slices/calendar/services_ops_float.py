@@ -1,13 +1,13 @@
-# app/slices/calendar/services_ops_float.py
-
 from __future__ import annotations
+
+"""Calendar ops-float services using canonical published demand context."""
 
 from app.extensions import db, event_bus
 from app.extensions.contracts import finance_v2, governance_v2
 from app.lib.chrono import now_iso8601_ms
 
 from .mapper import OpsFloatAllocationResult, OpsFloatSettlementResult
-from .services_funding import _get_demand_or_raise
+from .services_funding import _get_demand_or_raise, get_funding_demand_context
 from .taxonomy import OPS_FLOAT_SUPPORT_MODES
 
 _SOURCE_OK = {"published", "funding_in_progress", "funded", "executing"}
@@ -16,10 +16,7 @@ _REPAY_OK = {"funding_in_progress", "funded", "executing", "closed"}
 _FORGIVE_OK = {"closed"}
 
 
-# -----------------
-# Authority Override
-# helper
-# -----------------
+
 def _has_required_approvals(
     required_approvals: tuple[str, ...] | list[str],
     *,
@@ -28,6 +25,30 @@ def _has_required_approvals(
 ) -> bool:
     held = set(actor_rbac_roles or ()) | set(actor_domain_roles or ())
     return all(req in held for req in (required_approvals or ()))
+
+
+
+def _tupleish(value) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, (list, tuple)):
+        return tuple(str(x).strip() for x in value if str(x).strip())
+    text = str(value).strip()
+    return (text,) if text else ()
+
+
+
+def _dest_context(funding_demand_ulid: str) -> dict[str, object]:
+    payload = get_funding_demand_context(funding_demand_ulid)
+    planning = dict(payload.get("planning") or {})
+    policy = dict(payload.get("policy") or {})
+    return {
+        "spending_class": planning.get("spending_class"),
+        "tag_any": _tupleish(policy.get("approved_tag_any") or planning.get("tag_any")),
+        "eligible_fund_codes": _tupleish(policy.get("eligible_fund_codes")),
+        "ops_support_planned": planning.get("ops_support_planned"),
+    }
+
 
 
 def allocate_ops_float_to_project(
@@ -45,32 +66,35 @@ def allocate_ops_float_to_project(
     request_id: str | None,
     dry_run: bool = False,
 ) -> OpsFloatAllocationResult:
-    if support_mode not in OPS_FLOAT_SUPPORT_MODES:
-        raise ValueError("support_mode must be seed|backfill|bridge")
+    if not source_funding_demand_ulid:
+        raise ValueError("source_funding_demand_ulid required")
+    if not dest_funding_demand_ulid:
+        raise ValueError("dest_funding_demand_ulid required")
+    if source_funding_demand_ulid == dest_funding_demand_ulid:
+        raise ValueError("source and destination funding demands must differ")
     if amount_cents <= 0:
         raise ValueError("amount_cents must be > 0")
     if not fund_code:
         raise ValueError("fund_code required")
-    if source_funding_demand_ulid == dest_funding_demand_ulid:
-        raise ValueError("source and destination funding demand must differ")
+    if support_mode not in set(OPS_FLOAT_SUPPORT_MODES):
+        raise ValueError(f"invalid ops float support_mode: {support_mode}")
 
     source = _get_demand_or_raise(source_funding_demand_ulid)
     dest = _get_demand_or_raise(dest_funding_demand_ulid)
-
     if source.status not in _SOURCE_OK:
-        raise ValueError(
-            "source funding demand is not available for ops float"
-        )
+        raise ValueError("source funding demand is not available for ops float")
     if dest.status not in _DEST_OK:
         raise ValueError(
             "destination funding demand is not available for ops float"
         )
-    if dest.eligible_fund_codes_json and fund_code not in tuple(
-        dest.eligible_fund_codes_json or ()
+
+    ctx = _dest_context(dest.ulid)
+    if ctx["eligible_fund_codes"] and fund_code not in tuple(
+        ctx["eligible_fund_codes"] or ()
     ):
         raise ValueError("selected fund is not eligible for destination")
-    if not dest.spending_class:
-        raise ValueError("destination funding demand spending_class required")
+    if not str(ctx["spending_class"] or "").strip():
+        raise ValueError("destination published demand context missing spending_class")
 
     preview = governance_v2.preview_ops_float(
         governance_v2.OpsFloatDecisionRequestDTO(
@@ -81,19 +105,16 @@ def allocate_ops_float_to_project(
             source_project_ulid=source.project_ulid,
             dest_funding_demand_ulid=dest.ulid,
             dest_project_ulid=dest.project_ulid,
-            spending_class=dest.spending_class,
-            tag_any=tuple(dest.tag_any_json or ()),
-            dest_eligible_fund_codes=tuple(
-                dest.eligible_fund_codes_json or ()
-            ),
+            spending_class=str(ctx["spending_class"] or "").strip() or None,
+            tag_any=tuple(ctx["tag_any"] or ()),
+            dest_eligible_fund_codes=tuple(ctx["eligible_fund_codes"] or ()),
+            ops_support_planned=ctx["ops_support_planned"],
             actor_rbac_roles=actor_rbac_roles,
             actor_domain_roles=actor_domain_roles,
         )
     )
     if not preview.allowed:
-        raise PermissionError(
-            "; ".join(preview.reason_codes) or "ops float denied"
-        )
+        raise PermissionError("; ".join(preview.reason_codes) or "ops float denied")
 
     if preview.required_approvals and not _has_required_approvals(
         preview.required_approvals,
@@ -101,8 +122,7 @@ def allocate_ops_float_to_project(
         actor_domain_roles=actor_domain_roles,
     ):
         raise PermissionError(
-            "ops float requires approvals: "
-            + ", ".join(preview.required_approvals)
+            "ops float requires approvals: " + ", ".join(preview.required_approvals)
         )
 
     out = finance_v2.allocate_ops_float(
@@ -165,11 +185,13 @@ def allocate_ops_float_to_project(
     )
 
 
+
 def _bucket_amount(rows, key: str) -> int:
     for row in rows or ():
         if row.key == key:
             return int(row.amount_cents or 0)
     return 0
+
 
 
 def repay_ops_float_to_operations(
@@ -209,6 +231,7 @@ def repay_ops_float_to_operations(
     if amount_cents > direct_available:
         raise ValueError("ops float repayment exceeds direct available funds")
 
+    ctx = _dest_context(dest.ulid)
     preview = governance_v2.preview_ops_float(
         governance_v2.OpsFloatDecisionRequestDTO(
             action="repay",
@@ -219,19 +242,16 @@ def repay_ops_float_to_operations(
             source_project_ulid=source.project_ulid,
             dest_funding_demand_ulid=dest.ulid,
             dest_project_ulid=dest.project_ulid,
-            spending_class=dest.spending_class,
-            tag_any=tuple(dest.tag_any_json or ()),
-            dest_eligible_fund_codes=tuple(
-                dest.eligible_fund_codes_json or ()
-            ),
+            spending_class=str(ctx["spending_class"] or "").strip() or None,
+            tag_any=tuple(ctx["tag_any"] or ()),
+            dest_eligible_fund_codes=tuple(ctx["eligible_fund_codes"] or ()),
+            ops_support_planned=ctx["ops_support_planned"],
             actor_rbac_roles=actor_rbac_roles,
             actor_domain_roles=actor_domain_roles,
         )
     )
     if not preview.allowed:
-        raise PermissionError(
-            "; ".join(preview.reason_codes) or "ops float denied"
-        )
+        raise PermissionError("; ".join(preview.reason_codes) or "ops float denied")
 
     if preview.required_approvals and not _has_required_approvals(
         preview.required_approvals,
@@ -239,8 +259,7 @@ def repay_ops_float_to_operations(
         actor_domain_roles=actor_domain_roles,
     ):
         raise PermissionError(
-            "ops float requires approvals: "
-            + ", ".join(preview.required_approvals)
+            "ops float requires approvals: " + ", ".join(preview.required_approvals)
         )
 
     out = finance_v2.repay_ops_float(
@@ -291,6 +310,7 @@ def repay_ops_float_to_operations(
     )
 
 
+
 def forgive_ops_float_shortfall(
     *,
     parent_ops_float_ulid: str,
@@ -321,6 +341,7 @@ def forgive_ops_float_shortfall(
             "destination funding demand must be closed for forgiveness"
         )
 
+    ctx = _dest_context(dest.ulid)
     preview = governance_v2.preview_ops_float(
         governance_v2.OpsFloatDecisionRequestDTO(
             action="forgive",
@@ -331,19 +352,16 @@ def forgive_ops_float_shortfall(
             source_project_ulid=source.project_ulid,
             dest_funding_demand_ulid=dest.ulid,
             dest_project_ulid=dest.project_ulid,
-            spending_class=dest.spending_class,
-            tag_any=tuple(dest.tag_any_json or ()),
-            dest_eligible_fund_codes=tuple(
-                dest.eligible_fund_codes_json or ()
-            ),
+            spending_class=str(ctx["spending_class"] or "").strip() or None,
+            tag_any=tuple(ctx["tag_any"] or ()),
+            dest_eligible_fund_codes=tuple(ctx["eligible_fund_codes"] or ()),
+            ops_support_planned=ctx["ops_support_planned"],
             actor_rbac_roles=actor_rbac_roles,
             actor_domain_roles=actor_domain_roles,
         )
     )
     if not preview.allowed:
-        raise PermissionError(
-            "; ".join(preview.reason_codes) or "ops float denied"
-        )
+        raise PermissionError("; ".join(preview.reason_codes) or "ops float denied")
 
     if preview.required_approvals and not _has_required_approvals(
         preview.required_approvals,
@@ -351,8 +369,7 @@ def forgive_ops_float_shortfall(
         actor_domain_roles=actor_domain_roles,
     ):
         raise PermissionError(
-            "ops float requires approvals: "
-            + ", ".join(preview.required_approvals)
+            "ops float requires approvals: " + ", ".join(preview.required_approvals)
         )
 
     out = finance_v2.forgive_ops_float(

@@ -1,0 +1,155 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>Budget Workspace</h1>
+<p><strong>Project:</strong> {{ project.project_title }} ({{ project.ulid }})</p>
+<p><strong>Status:</strong> {{ project.status }}</p>
+
+<h2>Create working snapshot</h2>
+<form method="post"
+      action="{{ url_for('calendar.budget_snapshot_create', project_ulid=project.ulid) }}">
+  {{ snapshot_form.hidden_tag() }}
+  <div>{{ snapshot_form.snapshot_label.label }} {{ snapshot_form.snapshot_label() }}</div>
+  <div>{{ snapshot_form.scope_summary.label }} {{ snapshot_form.scope_summary() }}</div>
+  <div>{{ snapshot_form.assumptions_note.label }} {{ snapshot_form.assumptions_note(rows=3) }}</div>
+  <button type="submit">Create snapshot</button>
+</form>
+
+<h2>Snapshots</h2>
+{% if snapshots %}
+  <table>
+    <tr>
+      <th>Label</th>
+      <th>Gross</th>
+      <th>Offsets</th>
+      <th>Net need</th>
+      <th>Current</th>
+      <th>Locked</th>
+      <th>Actions</th>
+    </tr>
+    {% for row in snapshots %}
+      <tr>
+        <td>
+          <a href="{{ url_for('calendar.project_budget_workspace', project_ulid=project.ulid, snapshot_ulid=row.ulid) }}">{{ row.snapshot_label }}</a>
+        </td>
+        <td>{{ row.gross_cost_cents }}</td>
+        <td>{{ row.expected_offset_cents }}</td>
+        <td>{{ row.net_need_cents }}</td>
+        <td>{{ "yes" if row.is_current else "" }}</td>
+        <td>{{ "yes" if row.is_locked else "" }}</td>
+        <td>
+          <form method="post"
+                action="{{ url_for('calendar.budget_snapshot_set_current', project_ulid=project.ulid, snapshot_ulid=row.ulid) }}"
+                style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit">Set current</button>
+          </form>
+          <form method="post"
+                action="{{ url_for('calendar.budget_snapshot_clone', project_ulid=project.ulid, snapshot_ulid=row.ulid) }}"
+                style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit">Clone</button>
+          </form>
+          {% if not row.is_locked %}
+            <form method="post"
+                  action="{{ url_for('calendar.budget_snapshot_lock', project_ulid=project.ulid, snapshot_ulid=row.ulid) }}"
+                  style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit">Lock</button>
+            </form>
+          {% endif %}
+          {% if row.is_locked %}
+            <a href="{{ url_for('calendar.demand_draft_new', project_ulid=project.ulid, snapshot_ulid=row.ulid) }}">New draft</a>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+  </table>
+{% else %}
+  <p>No budget snapshots yet.</p>
+{% endif %}
+
+{% if snapshot %}
+  <h2>Current snapshot: {{ snapshot.snapshot_label }}</h2>
+  <p>Gross: {{ snapshot.gross_cost_cents }} · Offsets: {{ snapshot.expected_offset_cents }} · Net need: {{ snapshot.net_need_cents }}</p>
+  <p>Locked: {{ "yes" if snapshot.is_locked else "no" }}</p>
+
+  <h3>{% if edit_line %}Edit budget line{% else %}Add budget line{% endif %}</h3>
+  <form method="post"
+        action="{% if edit_line %}{{ url_for('calendar.budget_line_update', project_ulid=project.ulid, line_ulid=edit_line.ulid) }}{% else %}{{ url_for('calendar.budget_line_create', project_ulid=project.ulid, snapshot_ulid=snapshot.ulid) }}{% endif %}">
+    {{ line_form.hidden_tag() }}
+    <div>{{ line_form.task_ulid.label }} {{ line_form.task_ulid() }}</div>
+    <div>{{ line_form.line_kind.label }} {{ line_form.line_kind() }}</div>
+    <div>{{ line_form.label.label }} {{ line_form.label() }}</div>
+    <div>{{ line_form.detail.label }} {{ line_form.detail() }}</div>
+    <div>{{ line_form.basis_qty.label }} {{ line_form.basis_qty() }}</div>
+    <div>{{ line_form.basis_unit.label }} {{ line_form.basis_unit() }}</div>
+    <div>{{ line_form.unit_cost_cents.label }} {{ line_form.unit_cost_cents() }}</div>
+    <div>{{ line_form.estimated_total_cents.label }} {{ line_form.estimated_total_cents() }}</div>
+    <div>{{ line_form.is_offset.label }} {{ line_form.is_offset() }}</div>
+    <div>{{ line_form.offset_kind.label }} {{ line_form.offset_kind() }}</div>
+    <div>{{ line_form.sort_order.label }} {{ line_form.sort_order() }}</div>
+    <button type="submit">{% if edit_line %}Save changes{% else %}Add line{% endif %}</button>
+    {% if edit_line %}
+      <a href="{{ url_for('calendar.project_budget_workspace', project_ulid=project.ulid, snapshot_ulid=snapshot.ulid) }}">Cancel</a>
+    {% endif %}
+  </form>
+
+  <h3>Budget lines</h3>
+  {% if lines %}
+    <table>
+      <tr>
+        <th>Kind</th>
+        <th>Label</th>
+        <th>Task</th>
+        <th>Total</th>
+        <th>Offset</th>
+        <th>Actions</th>
+      </tr>
+      {% for row in lines %}
+        <tr>
+          <td>{{ row.line_kind }}</td>
+          <td>{{ row.label }}</td>
+          <td>{{ row.task_ulid or "project-common" }}</td>
+          <td>{{ row.estimated_total_cents }}</td>
+          <td>{{ row.offset_kind or "" }}</td>
+          <td>
+            <a href="{{ url_for('calendar.project_budget_workspace', project_ulid=project.ulid, snapshot_ulid=snapshot.ulid, edit_line_ulid=row.ulid) }}">Edit</a>
+            <form method="post"
+                  action="{{ url_for('calendar.budget_line_delete', project_ulid=project.ulid, line_ulid=row.ulid) }}"
+                  style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p>No budget lines yet.</p>
+  {% endif %}
+{% endif %}
+
+<h2>Demand drafts</h2>
+{% if drafts %}
+  <table>
+    <tr>
+      <th>Title</th>
+      <th>Status</th>
+      <th>Requested</th>
+      <th>Snapshot</th>
+    </tr>
+    {% for row in drafts %}
+      <tr>
+        <td><a href="{{ url_for('calendar.demand_draft_detail', draft_ulid=row.ulid) }}">{{ row.title }}</a></td>
+        <td>{{ row.status }}</td>
+        <td>{{ row.requested_amount_cents }}</td>
+        <td>{{ row.budget_snapshot_ulid }}</td>
+      </tr>
+    {% endfor %}
+  </table>
+{% else %}
+  <p>No demand drafts yet.</p>
+{% endif %}
+{% endblock %}

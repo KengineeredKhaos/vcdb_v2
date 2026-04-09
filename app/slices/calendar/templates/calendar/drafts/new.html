@@ -1,0 +1,28 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>New Demand Draft</h1>
+<p><strong>Project:</strong> {{ project.project_title }} ({{ project.ulid }})</p>
+<p>
+  <a href="{{ url_for('calendar.project_budget_workspace', project_ulid=project.ulid, snapshot_ulid=form.snapshot_ulid.data) }}">
+    Back to budget workspace
+  </a>
+</p>
+
+<form method="post"
+      action="{{ url_for('calendar.demand_draft_create', project_ulid=project.ulid) }}">
+  {{ form.hidden_tag() }}
+  <div>{{ form.title.label }} {{ form.title() }}</div>
+  <div>{{ form.summary.label }} {{ form.summary(rows=3) }}</div>
+  <div>{{ form.scope_summary.label }} {{ form.scope_summary() }}</div>
+  <div>{{ form.requested_amount_cents.label }} {{ form.requested_amount_cents() }}</div>
+  <div>{{ form.deadline_date.label }} {{ form.deadline_date() }}</div>
+  <div>{{ form.spending_class_candidate.label }} {{ form.spending_class_candidate() }}</div>
+  <div>{{ form.source_profile_key.label }} {{ form.source_profile_key() }}</div>
+  <div>{{ form.ops_support_planned.label }} {{ form.ops_support_planned() }}</div>
+  <div>{{ form.tag_any.label }} {{ form.tag_any() }}</div>
+  <div>{{ form.governance_note.label }} {{ form.governance_note(rows=3) }}</div>
+  <button type="submit">Create demand draft</button>
+</form>
+{% endblock %}

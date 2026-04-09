@@ -12,37 +12,22 @@ from app.extensions.contracts import (
     sponsors_v2,
 )
 from app.slices.calendar.models import FundingDemand, Project
-from app.slices.calendar.services_funding import (
-    create_funding_demand,
-    publish_funding_demand,
+from app.slices.calendar.services_budget import (
+    add_budget_line,
+    create_working_snapshot,
+    lock_snapshot,
+)
+from app.slices.calendar.services_drafts import (
+    approve_draft_for_publish,
+    create_draft_from_snapshot,
+    mark_draft_ready_for_review,
+    promote_draft_to_funding_demand,
+    submit_draft_for_governance_review,
 )
 from app.slices.entity.models import Entity, EntityOrg
 from app.slices.finance.services_journal import ensure_default_accounts
 from app.slices.sponsors.models import Sponsor
 from app.slices.sponsors.services_funding import create_funding_intent
-
-
-def _patch_publishable_hints(
-    monkeypatch,
-    *,
-    source_profile_key="restricted_project_grant_return_unused",
-    ops_support_planned=False,
-):
-    from app.slices.calendar import services_funding as svc
-
-    monkeypatch.setattr(
-        svc,
-        "_project_policy_hints",
-        lambda project_ulid: svc.ProjectPolicyHints(
-            source_profile_key=source_profile_key,
-            ops_support_planned=ops_support_planned,
-        ),
-    )
-
-
-@pytest.fixture(autouse=True)
-def _default_publishable_hints(monkeypatch):
-    _patch_publishable_hints(monkeypatch)
 
 
 def _create_sponsor(name: str) -> Sponsor:
@@ -65,33 +50,81 @@ def _create_published_demand(
     *,
     project_title: str,
     demand_title: str,
-    spending_class: str = "admin",
+    spending_class: str = "basic_needs",
     goal_cents: int = 12000,
+    source_profile_key: str = "ops_bridge_preapproved",
+    ops_support_planned: bool = True,
+    eligible_fund_codes: tuple[str, ...] = ("general_unrestricted",),
+    default_restriction_keys: tuple[str, ...] = (),
+    tag_any: tuple[str, ...] = (),
 ) -> str:
-    project = Project(project_title=project_title, status="planned")
+    project = Project(
+        project_title=project_title,
+        status="draft_planning",
+        funding_profile_key=source_profile_key,
+    )
     db.session.add(project)
     db.session.flush()
 
-    row = create_funding_demand(
-        {
-            "project_ulid": project.ulid,
-            "title": demand_title,
-            "goal_cents": goal_cents,
-            "deadline_date": "2026-12-31",
+    snap = create_working_snapshot(
+        project_ulid=project.ulid,
+        actor_ulid=project.ulid,
+        snapshot_label="Ops Float Basis",
+        scope_summary="Full project scope",
+    )
+    add_budget_line(
+        snapshot_ulid=snap["ulid"],
+        actor_ulid=project.ulid,
+        label="Initial project budget",
+        line_kind="materials",
+        estimated_total_cents=goal_cents,
+    )
+    lock_snapshot(
+        snapshot_ulid=snap["ulid"],
+        actor_ulid=project.ulid,
+    )
+
+    draft = create_draft_from_snapshot(
+        project_ulid=project.ulid,
+        snapshot_ulid=snap["ulid"],
+        actor_ulid=project.ulid,
+        title=demand_title,
+        summary=f"{demand_title} funding demand",
+        scope_summary="Full project scope",
+        requested_amount_cents=goal_cents,
+        spending_class_candidate=spending_class,
+        source_profile_key=source_profile_key,
+        ops_support_planned=ops_support_planned,
+        tag_any=",".join(tag_any),
+    )
+
+    mark_draft_ready_for_review(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+    )
+    submit_draft_for_governance_review(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+    )
+    approve_draft_for_publish(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+        approved_semantics={
             "spending_class": spending_class,
-            "tag_any": "",
+            "source_profile_key": source_profile_key,
+            "eligible_fund_codes": list(eligible_fund_codes),
+            "default_restriction_keys": list(default_restriction_keys),
+            "tag_any": list(tag_any),
         },
-        actor_ulid=None,
-        request_id=f"req-{project_title}-create",
+    )
+    promoted = promote_draft_to_funding_demand(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
     )
     db.session.flush()
-    row = publish_funding_demand(
-        row.ulid,
-        actor_ulid=None,
-        request_id=f"req-{project_title}-publish",
-    )
-    db.session.flush()
-    return row.ulid
+
+    funding = promoted["funding_demand"]
+    return funding.get("funding_demand_ulid") or funding["ulid"]
 
 
 def _realize_into_demand(funding_demand_ulid: str, amount_cents: int) -> str:
@@ -127,7 +160,7 @@ def _realize_into_demand(funding_demand_ulid: str, amount_cents: int) -> str:
     return out.journal_ulid
 
 
-def test_ops_float_seed_requires_governor(app, monkeypatch):
+def test_ops_float_seed_requires_governor(app):
     with app.app_context():
         ensure_default_accounts()
         ops_fd = _create_published_demand(
@@ -135,14 +168,13 @@ def test_ops_float_seed_requires_governor(app, monkeypatch):
             demand_title="General Operations 2026",
         )
         _realize_into_demand(ops_fd, 12000)
-        _patch_publishable_hints(
-            monkeypatch,
-            source_profile_key="ops_seed_board_motion",
-            ops_support_planned=True,
-        )
+
         proj_fd = _create_published_demand(
-            project_title="Stand Down",
-            demand_title="Stand Down 2026",
+            project_title="Elks Welcome Home",
+            demand_title="Elks WHK Reimbursement Project",
+            spending_class="basic_needs",
+            source_profile_key="ops_bridge_preapproved",
+            ops_support_planned=True,
         )
 
         with pytest.raises(Exception) as exc:
@@ -161,7 +193,7 @@ def test_ops_float_seed_requires_governor(app, monkeypatch):
         assert "approval" in msg or "permission" in msg
 
 
-def test_ops_float_seed_allocation_enables_project_encumber(app, monkeypatch):
+def test_ops_float_seed_allocation_enables_project_encumber(app):
     with app.app_context():
         ensure_default_accounts()
         ops_fd = _create_published_demand(
@@ -169,14 +201,13 @@ def test_ops_float_seed_allocation_enables_project_encumber(app, monkeypatch):
             demand_title="General Operations 2026",
         )
         _realize_into_demand(ops_fd, 12000)
-        _patch_publishable_hints(
-            monkeypatch,
-            source_profile_key="ops_seed_board_motion",
-            ops_support_planned=True,
-        )
+
         proj_fd = _create_published_demand(
-            project_title="Welcome Home Kits",
-            demand_title="Welcome Home Kit Project",
+            project_title="Elks Welcome Home",
+            demand_title="Elks WHK Reimbursement Project",
+            spending_class="basic_needs",
+            source_profile_key="ops_bridge_preapproved",
+            ops_support_planned=True,
         )
 
         alloc = calendar_v2.allocate_ops_float_to_project(
@@ -219,7 +250,7 @@ def test_ops_float_seed_allocation_enables_project_encumber(app, monkeypatch):
         assert demand.status == "funding_in_progress"
 
 
-def test_ops_float_bridge_is_auto_allowed(app, monkeypatch):
+def test_ops_float_bridge_is_auto_allowed(app):
     with app.app_context():
         ensure_default_accounts()
         ops_fd = _create_published_demand(
@@ -227,15 +258,13 @@ def test_ops_float_bridge_is_auto_allowed(app, monkeypatch):
             demand_title="General Operations 2026",
         )
         _realize_into_demand(ops_fd, 12000)
-        _patch_publishable_hints(
-            monkeypatch,
-            source_profile_key="ops_bridge_preapproved",
-            ops_support_planned=True,
-        )
+
         proj_fd = _create_published_demand(
             project_title="Elks Welcome Home",
             demand_title="Elks WHK Reimbursement Project",
             spending_class="basic_needs",
+            source_profile_key="ops_bridge_preapproved",
+            ops_support_planned=True,
         )
 
         out = calendar_v2.allocate_ops_float_to_project(
@@ -255,7 +284,7 @@ def test_ops_float_bridge_is_auto_allowed(app, monkeypatch):
         assert summary.incoming_open_cents == 3000
 
 
-def test_ops_float_repay_reduces_open_balance(app, monkeypatch):
+def test_ops_float_repay_reduces_open_balance(app):
     with app.app_context():
         ensure_default_accounts()
         ops_fd = _create_published_demand(
@@ -263,11 +292,7 @@ def test_ops_float_repay_reduces_open_balance(app, monkeypatch):
             demand_title="General Operations 2026",
         )
         _realize_into_demand(ops_fd, 12000)
-        _patch_publishable_hints(
-            monkeypatch,
-            source_profile_key="welcome_home_reimbursement_bridgeable",
-            ops_support_planned=True,
-        )
+
         proj_fd = _create_published_demand(
             project_title="Bridge Reimbursement",
             demand_title="Bridge Reimbursement Project",
@@ -307,9 +332,7 @@ def test_ops_float_repay_reduces_open_balance(app, monkeypatch):
         assert summary_src.outgoing_open_cents == 3000
 
 
-def test_ops_float_forgive_requires_closed_project_and_governor(
-    app, monkeypatch
-):
+def test_ops_float_forgive_requires_closed_project_and_governor(app):
     with app.app_context():
         ensure_default_accounts()
         ops_fd = _create_published_demand(
@@ -317,14 +340,13 @@ def test_ops_float_forgive_requires_closed_project_and_governor(
             demand_title="General Operations 2026",
         )
         _realize_into_demand(ops_fd, 12000)
-        _patch_publishable_hints(
-            monkeypatch,
-            source_profile_key="ops_seed_board_motion",
-            ops_support_planned=True,
-        )
+
         proj_fd = _create_published_demand(
-            project_title="Unreimbursed Shortfall",
-            demand_title="Unreimbursed Shortfall Project",
+            project_title="Elks Welcome Home",
+            demand_title="Elks WHK Reimbursement Project",
+            spending_class="basic_needs",
+            source_profile_key="ops_bridge_preapproved",
+            ops_support_planned=True,
         )
 
         alloc = calendar_v2.allocate_ops_float_to_project(

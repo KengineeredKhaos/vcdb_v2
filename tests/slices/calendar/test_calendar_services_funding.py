@@ -1,357 +1,219 @@
-# tests/slices/calendar/test_calendar_services_funding.py
-
 from __future__ import annotations
-
-from dataclasses import asdict, dataclass
-from types import SimpleNamespace
 
 import pytest
 
 from app.extensions import db
-from app.extensions.contracts import calendar_v2
-from app.slices.calendar.models import Project
+from app.slices.calendar.models import FundingDemand, Project
+from app.slices.calendar.services_budget import (
+    add_budget_line,
+    create_working_snapshot,
+    lock_snapshot,
+)
+from app.slices.calendar.services_drafts import (
+    approve_draft_for_publish,
+    create_draft_from_snapshot,
+    mark_draft_ready_for_review,
+    promote_draft_to_funding_demand,
+    submit_draft_for_governance_review,
+)
 from app.slices.calendar.services_funding import (
-    create_funding_demand,
+    get_funding_demand,
+    get_funding_demand_context,
+    get_funding_demand_view,
     get_spending_class_choices,
-    publish_funding_demand,
-    unpublish_funding_demand,
+    list_published_funding_demands,
 )
 
 
-@dataclass(frozen=True)
-class ProjectPolicyHints:
-    source_profile_key: str | None = None
-    ops_support_planned: bool | None = None
+def _make_project(*, title: str = "Funding Services Project") -> Project:
+    row = Project(
+        project_title=title,
+        status="draft_planning",
+        funding_profile_key="ops_bridge_preapproved",
+    )
+    db.session.add(row)
+    db.session.flush()
+    return row
 
 
-def _patch_publishable_hints(
-    monkeypatch,
-    *,
-    source_profile_key="restricted_project_grant_return_unused",
-    ops_support_planned=False,
+def _create_published_demand(
+    *, title: str = "Welcome Home Ask", amount_cents: int = 12000
 ):
-    from app.slices.calendar import services_funding as svc
+    project = _make_project(title="Published Demand Project")
+    actor_ulid = project.ulid
 
-    monkeypatch.setattr(
-        svc,
-        "_project_policy_hints",
-        lambda project_ulid: svc.ProjectPolicyHints(
-            source_profile_key=source_profile_key,
-            ops_support_planned=ops_support_planned,
-        ),
+    snapshot = create_working_snapshot(
+        project_ulid=project.ulid,
+        actor_ulid=actor_ulid,
+        snapshot_label="Working Budget",
+        scope_summary="Full project scope",
+    )
+    add_budget_line(
+        snapshot_ulid=snapshot["ulid"],
+        actor_ulid=actor_ulid,
+        label="Estimated project cost",
+        line_kind="materials",
+        estimated_total_cents=amount_cents,
+    )
+    snapshot = lock_snapshot(
+        snapshot_ulid=snapshot["ulid"],
+        actor_ulid=actor_ulid,
     )
 
-
-@pytest.fixture(autouse=True)
-def _default_publishable_hints(monkeypatch):
-    _patch_publishable_hints(monkeypatch)
-
-
-def test_create_publish_unpublish_funding_demand(app):
-    with app.app_context():
-        project = Project(
-            project_title="Test Project",
-            status="planned",
-        )
-        db.session.add(project)
-        db.session.commit()
-
-        row = create_funding_demand(
-            {
-                "project_ulid": project.ulid,
-                "title": "Kitchen starter kit",
-                "goal_cents": 12000,
-                "deadline_date": "2026-03-31",
-                "spending_class": "admin",
-                "tag_any": "",
-            },
-            actor_ulid=None,
-            request_id="req-test-1",
-        )
-        db.session.commit()
-
-        assert row.status == "draft"
-        assert row.goal_cents == 12000
-        assert row.project_ulid == project.ulid
-
-        row = publish_funding_demand(
-            row.ulid,
-            actor_ulid=None,
-            request_id="req-test-2",
-        )
-        db.session.commit()
-
-        assert row.status == "published"
-        assert row.published_at_utc is not None
-        assert isinstance(row.eligible_fund_codes_json, list)
-
-        row = unpublish_funding_demand(
-            row.ulid,
-            actor_ulid=None,
-            request_id="req-test-3",
-        )
-        db.session.commit()
-
-        assert row.status == "draft"
-        assert row.published_at_utc is None
-
-
-def test_publish_funding_demand_forwards_source_profile_hint(
-    app, monkeypatch
-):
-    from app.slices.calendar import services_funding as svc
-
-    captured: dict[str, object] = {}
-
-    def fake_hints(project_ulid: str):
-        return svc.ProjectPolicyHints(
-            source_profile_key="welcome_home_reimbursement_bridgeable",
-            ops_support_planned=True,
-        )
-
-    def fake_preview(req):
-        captured["source_profile_key"] = req.source_profile_key
-        return SimpleNamespace(
-            eligible_fund_codes=("general_unrestricted",),
-            decision_fingerprint="fp-publish",
-            required_approvals=(),
-        )
-
-    with app.app_context():
-        project = Project(
-            project_title="Hinted Publish Project",
-            status="planned",
-        )
-        db.session.add(project)
-        db.session.commit()
-
-        row = create_funding_demand(
-            {
-                "project_ulid": project.ulid,
-                "title": "Hinted Demand",
-                "goal_cents": 9000,
-                "deadline_date": "2026-03-31",
-                "spending_class": "basic_needs",
-                "tag_any": "welcome_home_kit",
-            },
-            actor_ulid=None,
-            request_id="req-hinted-publish-create",
-        )
-        db.session.commit()
-
-        monkeypatch.setattr(svc, "_project_policy_hints", fake_hints)
-        monkeypatch.setattr(svc.gov, "preview_funding_decision", fake_preview)
-
-        publish_funding_demand(
-            row.ulid,
-            actor_ulid=None,
-            request_id="req-hinted-publish",
-        )
-
-        assert (
-            captured["source_profile_key"]
-            == "welcome_home_reimbursement_bridgeable"
-        )
-
-
-def test_encumber_project_funds_uses_encumber_op(app, monkeypatch):
-    from app.slices.calendar import services_finance_bridge as svc
-
-    captured: dict[str, object] = {}
-
-    class DummyPreview:
-        allowed = True
-        eligible_fund_codes = ("general_unrestricted",)
-        required_approvals = ()
-        reason_codes = ()
-        matched_rule_ids = ()
-        decision_fingerprint = "fp-test"
-
-    def fake_preview(req):
-        captured["op"] = req.op
-        return DummyPreview()
-
-    monkeypatch.setattr(
-        svc.governance_v2,
-        "preview_funding_decision",
-        fake_preview,
-    )
-
-    # patch downstream side effects as needed here
-
-
-def test_preview_funding_decision_forwards_ops_support_planned(
-    app, monkeypatch
-):
-    from app.extensions.contracts import governance_v2 as gov
-
-    captured: dict[str, object] = {}
-
-    def fake_preview(raw_req: dict[str, object]) -> dict[str, object]:
-        captured["ops_support_planned"] = raw_req.get("ops_support_planned")
-        return {
-            "allowed": True,
-            "eligible_fund_codes": ["general_unrestricted"],
-            "required_approvals": [],
-            "reason_codes": [],
-            "matched_rule_ids": [],
-            "decision_fingerprint": "fp-test",
-        }
-
-    monkeypatch.setattr(
-        gov,
-        "svc_preview_funding_decision",
-        fake_preview,
-    )
-
-    req = gov.FundingDecisionRequestDTO(
-        op="encumber",
-        amount_cents=1000,
-        funding_demand_ulid="01TESTTESTTESTTESTTESTTEST",
-        project_ulid="01TESTTESTTESTTESTTESTTEST",
-        spending_class="events",
-        expense_kind="event_expense",
+    draft = create_draft_from_snapshot(
+        project_ulid=project.ulid,
+        snapshot_ulid=snapshot["ulid"],
+        actor_ulid=actor_ulid,
+        title=title,
+        summary=title,
+        scope_summary="Full project scope",
+        requested_amount_cents=amount_cents,
+        spending_class_candidate="basic_needs",
         source_profile_key="ops_bridge_preapproved",
-        ops_support_planned=True,
+        tag_any="welcome_home_kit",
     )
+    draft = mark_draft_ready_for_review(
+        draft_ulid=draft["ulid"],
+        actor_ulid=actor_ulid,
+    )
+    draft = submit_draft_for_governance_review(
+        draft_ulid=draft["ulid"],
+        actor_ulid=actor_ulid,
+    )
+    draft = approve_draft_for_publish(
+        draft_ulid=draft["ulid"],
+        actor_ulid=actor_ulid,
+        approved_semantics={
+            "spending_class": "basic_needs",
+            "source_profile_key": "ops_bridge_preapproved",
+            "eligible_fund_codes": ["general_unrestricted"],
+            "default_restriction_keys": [],
+            "tag_any": ["welcome_home_kit"],
+        },
+    )
+    promoted = promote_draft_to_funding_demand(
+        draft_ulid=draft["ulid"],
+        actor_ulid=actor_ulid,
+    )
+    db.session.flush()
+    return {
+        "project": project,
+        "snapshot": snapshot,
+        "draft": draft,
+        "funding": promoted["funding_demand"],
+    }
 
-    gov.preview_funding_decision(req)
 
-    assert captured["ops_support_planned"] is True
-
-
-def test_get_spending_class_choices_uses_key_and_label(app):
+def test_get_spending_class_choices_includes_select_and_real_values(app):
     with app.app_context():
         choices = get_spending_class_choices()
-        assert choices[0] == ("", "— Select —")
-        assert all(
-            isinstance(v[0], str) and isinstance(v[1], str)
-            for v in choices[1:]
-        )
-        assert any(value == "events" for value, _label in choices[1:])
+
+    assert choices
+    assert choices[0] == ("", "— Select —")
+    keys = {key for key, _label in choices[1:]}
+    assert "basic_needs" in keys
 
 
-def test_publish_funding_demand_writes_published_context_json(app):
+def test_get_funding_demand_context_returns_snapshot_from_new_pipeline(app):
     with app.app_context():
-        project = Project(project_title="Snapshot Project", status="planned")
-        db.session.add(project)
-        db.session.commit()
+        built = _create_published_demand(amount_cents=12000)
+        project = built["project"]
+        snapshot = built["snapshot"]
+        funding = built["funding"]
+        funding_ulid = funding["funding_demand_ulid"]
 
-        row = create_funding_demand(
-            {
-                "project_ulid": project.ulid,
-                "title": "Snapshot Demand",
-                "goal_cents": 15000,
-                "deadline_date": "2026-04-15",
-                "spending_class": "basic_needs",
-                "tag_any": "housing,kit",
-            },
-            actor_ulid=None,
-            request_id="req-snapshot-create",
-        )
-        db.session.commit()
+        payload = get_funding_demand_context(funding_ulid)
+        dto = get_funding_demand(funding_ulid)
+        view = get_funding_demand_view(funding_ulid)
 
-        row = publish_funding_demand(
-            row.ulid,
-            actor_ulid=None,
-            request_id="req-snapshot-publish",
-        )
-        db.session.commit()
-
-        assert isinstance(row.published_context_json, dict)
-        assert row.published_context_json["schema_version"] == 1
+        assert payload["schema_version"] == 1
         assert (
-            row.published_context_json["demand"]["funding_demand_ulid"]
-            == row.ulid
+            payload["origin"]["demand_draft_ulid"] == built["draft"]["ulid"]
         )
+        assert payload["origin"]["budget_snapshot_ulid"] == snapshot["ulid"]
+        assert payload["origin"]["project_ulid"] == project.ulid
+
         assert (
-            row.published_context_json["planning"]["project_title"]
-            == "Snapshot Project"
+            payload["planning"]["source_profile_key"]
+            == "ops_bridge_preapproved"
         )
-        assert row.published_context_json["policy"]["eligible_fund_codes"]
-        assert row.published_context_json["workflow"][
-            "allowed_realization_modes"
+        assert payload["planning"]["scope_summary"] == "Full project scope"
+        assert payload["policy"]["eligible_fund_codes"] == [
+            "general_unrestricted"
         ]
 
+        assert dto["funding_demand_ulid"] == funding_ulid
+        assert dto["project_ulid"] == project.ulid
+        assert dto["goal_cents"] == 12000
+        assert view.funding_demand_ulid == funding_ulid
+        assert view.status == "published"
+        assert view.project_ulid == project.ulid
+        assert view.goal_cents == 12000
 
-def test_unpublish_funding_demand_retains_published_context_json(app):
+
+def test_list_published_funding_demands_filters_to_project_and_published(app):
     with app.app_context():
-        project = Project(project_title="Retain Packet", status="planned")
-        db.session.add(project)
-        db.session.commit()
-
-        row = create_funding_demand(
-            {
-                "project_ulid": project.ulid,
-                "title": "Retain Demand",
-                "goal_cents": 5000,
-                "deadline_date": "2026-05-01",
-                "spending_class": "basic_needs",
-                "tag_any": "housing",
-            },
-            actor_ulid=None,
-            request_id="req-retain-create",
+        built = _create_published_demand(
+            title="Published One",
+            amount_cents=8000,
         )
-        db.session.commit()
+        project = built["project"]
+        funding = built["funding"]
+        funding_ulid = funding["funding_demand_ulid"]
 
-        row = publish_funding_demand(
-            row.ulid,
-            actor_ulid=None,
-            request_id="req-retain-publish",
+        other_published = _create_published_demand(
+            title="Published Other",
+            amount_cents=9000,
         )
-        db.session.commit()
+        other_project = other_published["project"]
+        other_funding = other_published["funding"]
 
-        snapshot = row.published_context_json
-
-        row = unpublish_funding_demand(
-            row.ulid,
-            actor_ulid=None,
-            request_id="req-retain-unpublish",
+        draft_only_snapshot = create_working_snapshot(
+            project_ulid=other_project.ulid,
+            actor_ulid=other_project.ulid,
+            snapshot_label="Other Working Budget",
+            scope_summary="Other scope",
         )
-        db.session.commit()
+        add_budget_line(
+            snapshot_ulid=draft_only_snapshot["ulid"],
+            actor_ulid=other_project.ulid,
+            label="Other line",
+            line_kind="materials",
+            estimated_total_cents=5000,
+        )
+        lock_snapshot(
+            snapshot_ulid=draft_only_snapshot["ulid"],
+            actor_ulid=other_project.ulid,
+        )
+        draft_only = create_draft_from_snapshot(
+            project_ulid=other_project.ulid,
+            snapshot_ulid=draft_only_snapshot["ulid"],
+            actor_ulid=other_project.ulid,
+            title="Draft Only",
+            requested_amount_cents=5000,
+            spending_class_candidate="basic_needs",
+            source_profile_key="ops_bridge_preapproved",
+        )
+        draft_ulid = draft_only["ulid"]
 
-        assert row.status == "draft"
-        assert row.published_context_json == snapshot
+        rows = list_published_funding_demands(project_ulid=project.ulid)
+        ulids = {row.funding_demand_ulid for row in rows}
+
+        assert funding_ulid in ulids
+        assert other_funding["funding_demand_ulid"] not in ulids
+        assert draft_ulid not in ulids
+
+        assert all(row.project_ulid == project.ulid for row in rows)
 
 
-def test_get_funding_demand_context_returns_snapshot(app):
-    from app.extensions import db
-    from app.slices.calendar.models import Project
-    from app.slices.calendar.services_funding import (
-        create_funding_demand,
-        publish_funding_demand,
-    )
-
+def test_get_funding_demand_context_raises_when_context_missing(app):
     with app.app_context():
-        project = Project(project_title="Contract Context", status="planned")
-        db.session.add(project)
-        db.session.commit()
+        built = _create_published_demand()
+        funding_ulid = built["funding"]["funding_demand_ulid"]
+        row = db.session.get(FundingDemand, funding_ulid)
+        assert row is not None
+        row.published_context_json = None
+        db.session.flush()
 
-        row = create_funding_demand(
-            {
-                "project_ulid": project.ulid,
-                "title": "Contract Demand",
-                "goal_cents": 11000,
-                "deadline_date": "2026-04-30",
-                "spending_class": "basic_needs",
-                "tag_any": "welcome_home_kit",
-            },
-            actor_ulid=None,
-            request_id="req-contract-create",
-        )
-        db.session.commit()
-
-        publish_funding_demand(
-            row.ulid,
-            actor_ulid=None,
-            request_id="req-contract-publish",
-        )
-        db.session.commit()
-
-        ctx = calendar_v2.get_funding_demand_context(row.ulid)
-
-        assert ctx.schema_version == 1
-        assert ctx.demand.funding_demand_ulid == row.ulid
-        assert ctx.planning.project_title == "Contract Context"
-        assert ctx.policy.eligible_fund_codes
-        assert ctx.workflow.allowed_realization_modes
+        with pytest.raises(ValueError, match="has no published context"):
+            get_funding_demand_context(funding_ulid)
