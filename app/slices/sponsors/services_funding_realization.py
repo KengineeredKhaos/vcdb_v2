@@ -44,6 +44,123 @@ class FundingRealizationResult:
     flags: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class FinanceFulfillmentPackage:
+    intent_ulid: str
+    sponsor_entity_ulid: str
+    funding_demand_ulid: str
+    project_ulid: str | None
+
+    amount_cents: int
+    fund_code: str
+    fund_label: str
+    fund_restriction_type: str
+
+    income_kind: str
+    receipt_method: str
+    reserve_on_receive: bool
+
+    source_profile_key: str
+    ops_support_planned: bool
+    restriction_keys: tuple[str, ...]
+    decision_fingerprint: str
+
+    memo: str
+    actor_ulid: str | None
+    request_id: str | None
+    dry_run: bool = False
+
+
+def _build_finance_fulfillment_package(
+    *,
+    intent_row,
+    defaults,
+    fund_meta,
+    amount_cents: int,
+    fund_code: str,
+    income_kind: str,
+    receipt_method: str,
+    reserve_on_receive: bool,
+    restriction_keys: tuple[str, ...],
+    decision_fingerprint: str,
+    memo: str,
+    actor_ulid: str | None,
+    request_id: str | None,
+    dry_run: bool,
+) -> FinanceFulfillmentPackage:
+    fund_restriction_type = _derive_restriction_type(
+        restriction_keys=restriction_keys,
+        archetype=fund_meta.archetype,
+    )
+    return FinanceFulfillmentPackage(
+        intent_ulid=intent_row.ulid,
+        sponsor_entity_ulid=intent_row.sponsor_entity_ulid,
+        funding_demand_ulid=defaults.funding_demand_ulid,
+        project_ulid=defaults.project_ulid,
+        amount_cents=amount_cents,
+        fund_code=fund_code,
+        fund_label=fund_meta.label,
+        fund_restriction_type=fund_restriction_type,
+        income_kind=income_kind,
+        receipt_method=receipt_method,
+        reserve_on_receive=reserve_on_receive,
+        source_profile_key=defaults.source_profile_key,
+        ops_support_planned=defaults.ops_support_planned,
+        restriction_keys=tuple(restriction_keys or ()),
+        decision_fingerprint=decision_fingerprint,
+        memo=memo,
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+        dry_run=dry_run,
+    )
+
+
+def _post_finance_fulfillment(
+    package: FinanceFulfillmentPackage,
+) -> tuple[finance_v2.PostedDTO, finance_v2.PostedDTO | None]:
+    income_post = finance_v2.post_income(
+        finance_v2.IncomePostRequestDTO(
+            amount_cents=package.amount_cents,
+            happened_at_utc=now_iso8601_ms(),
+            fund_code=package.fund_code,
+            fund_label=package.fund_label,
+            fund_restriction_type=package.fund_restriction_type,
+            income_kind=package.income_kind,
+            receipt_method=package.receipt_method,
+            source="sponsors",
+            source_ref_ulid=package.intent_ulid,
+            funding_demand_ulid=package.funding_demand_ulid,
+            project_ulid=package.project_ulid,
+            payer_entity_ulid=package.sponsor_entity_ulid,
+            memo=package.memo,
+            created_by_actor=package.actor_ulid,
+            request_id=package.request_id,
+            dry_run=package.dry_run,
+        )
+    )
+
+    reserve_post = None
+    if package.reserve_on_receive:
+        reserve_post = finance_v2.reserve_funds(
+            finance_v2.ReserveRequestDTO(
+                funding_demand_ulid=package.funding_demand_ulid,
+                fund_code=package.fund_code,
+                amount_cents=package.amount_cents,
+                source="sponsors",
+                fund_label=package.fund_label,
+                fund_restriction_type=package.fund_restriction_type,
+                project_ulid=package.project_ulid,
+                source_ref_ulid=package.intent_ulid,
+                memo=package.memo,
+                actor_ulid=package.actor_ulid,
+                request_id=package.request_id,
+                dry_run=package.dry_run,
+            )
+        )
+
+    return income_post, reserve_post
+
+
 def _derive_restriction_type(
     *,
     restriction_keys: tuple[str, ...],
@@ -148,13 +265,13 @@ def realize_funding_intent(
             "partial realization is not supported in this baseline"
         )
 
-    context = calendar_v2.get_funding_demand_context(
+    package = calendar_v2.get_published_funding_demand_package(
         intent_row.funding_demand_ulid
     )
-    _require_realizable_context(context)
+    _require_realizable_context(package)
 
     defaults = funding_context_to_realization_defaults(
-        context,
+        package,
         intent_ulid=intent_row.ulid,
         amount_cents=amount_cents,
     )
@@ -212,51 +329,26 @@ def realize_funding_intent(
             + ", ".join(preview.required_approvals)
         )
 
-    fund_restriction_type = _derive_restriction_type(
-        restriction_keys=restriction_keys,
-        archetype=fund_meta.archetype,
-    )
     memo_txt = memo or intent_row.note or f"realized:{income_kind}"
 
-    income_post = finance_v2.post_income(
-        finance_v2.IncomePostRequestDTO(
-            amount_cents=amount_cents,
-            happened_at_utc=happened_at_utc,
-            fund_code=fund_code,
-            fund_label=fund_meta.label,
-            fund_restriction_type=fund_restriction_type,
-            income_kind=income_kind,
-            receipt_method=receipt_method,
-            source="sponsors",
-            source_ref_ulid=intent_row.ulid,
-            funding_demand_ulid=defaults.funding_demand_ulid,
-            project_ulid=defaults.project_ulid,
-            payer_entity_ulid=intent_row.sponsor_entity_ulid,
-            memo=memo_txt,
-            created_by_actor=actor_ulid,
-            request_id=request_id,
-            dry_run=dry_run,
-        )
+    package = _build_finance_fulfillment_package(
+        intent_row=intent_row,
+        defaults=defaults,
+        fund_meta=fund_meta,
+        amount_cents=amount_cents,
+        fund_code=fund_code,
+        income_kind=income_kind,
+        receipt_method=receipt_method,
+        reserve_on_receive=reserve_on_receive,
+        restriction_keys=restriction_keys,
+        decision_fingerprint=preview.decision_fingerprint,
+        memo=memo_txt,
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+        dry_run=dry_run,
     )
 
-    reserve_post = None
-    if reserve_on_receive:
-        reserve_post = finance_v2.reserve_funds(
-            finance_v2.ReserveRequestDTO(
-                funding_demand_ulid=defaults.funding_demand_ulid,
-                fund_code=fund_code,
-                amount_cents=amount_cents,
-                source="sponsors",
-                fund_label=fund_meta.label,
-                fund_restriction_type=fund_restriction_type,
-                project_ulid=defaults.project_ulid,
-                source_ref_ulid=intent_row.ulid,
-                memo=memo_txt,
-                actor_ulid=actor_ulid,
-                request_id=request_id,
-                dry_run=dry_run,
-            )
-        )
+    income_post, reserve_post = _post_finance_fulfillment(package)
 
     flags: list[str] = list(income_post.flags or ())
     if reserve_post is not None:
@@ -306,6 +398,7 @@ def realize_funding_intent(
             "reserve_on_receive": reserve_on_receive,
             "source_profile_key": defaults.source_profile_key,
             "ops_support_planned": defaults.ops_support_planned,
+            "restriction_keys": list(package.restriction_keys),
         },
     )
 

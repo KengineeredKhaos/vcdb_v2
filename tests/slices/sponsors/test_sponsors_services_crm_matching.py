@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 from app.extensions import db
+from app.extensions.contracts import governance_v2
 from app.slices.calendar.models import Project
-from app.slices.calendar.services_funding import (
-    create_funding_demand,
-    publish_funding_demand,
+from app.slices.calendar.services_budget import (
+    add_budget_line,
+    create_working_snapshot,
+    lock_snapshot,
+)
+from app.slices.calendar.services_drafts import (
+    approve_draft_for_publish,
+    create_draft_from_snapshot,
+    mark_draft_ready_for_review,
+    promote_draft_to_funding_demand,
+    submit_draft_for_governance_review,
 )
 from app.slices.entity.models import Entity, EntityOrg
 from app.slices.sponsors.mapper import sponsor_opportunity_match_to_dto
@@ -42,49 +51,90 @@ def _create_published_demand(
     title: str,
     spending_class: str,
     tag_any: str,
+    source_profile_key: str = "mission_local_veterans_cash",
+    default_restriction_keys: tuple[str, ...] = (
+        "local_only",
+        "vet_only",
+    ),
+    eligible_fund_codes: tuple[str, ...] = ("general_unrestricted",),
 ) -> str:
     project = Project(
         project_title=f"{title} Project",
-        status="planned",
+        status="draft_planning",
+        funding_profile_key=source_profile_key,
     )
     db.session.add(project)
     db.session.flush()
 
-    row = create_funding_demand(
-        {
-            "project_ulid": project.ulid,
-            "title": title,
-            "goal_cents": 25000,
-            "deadline_date": "2026-04-15",
-            "spending_class": spending_class,
-            "tag_any": tag_any,
-        },
-        actor_ulid=None,
-        request_id=f"req-match-create-{title}",
+    snapshot = create_working_snapshot(
+        project_ulid=project.ulid,
+        actor_ulid=project.ulid,
+        snapshot_label=f"{title} Basis",
+        scope_summary=title,
+    )
+    add_budget_line(
+        snapshot_ulid=snapshot["ulid"],
+        actor_ulid=project.ulid,
+        label="Initial cost",
+        line_kind="materials",
+        estimated_total_cents=25000,
+    )
+    locked = lock_snapshot(
+        snapshot_ulid=snapshot["ulid"],
+        actor_ulid=project.ulid,
     )
     db.session.flush()
 
-    row = publish_funding_demand(
-        row.ulid,
-        actor_ulid=None,
-        request_id=f"req-match-publish-{title}",
+    draft = create_draft_from_snapshot(
+        project_ulid=project.ulid,
+        snapshot_ulid=locked["ulid"],
+        actor_ulid=project.ulid,
+        title=title,
+        summary=f"{title} summary",
+        scope_summary=title,
+        requested_amount_cents=25000,
+        spending_class_candidate=spending_class,
+        source_profile_key=source_profile_key,
+        tag_any=tag_any,
     )
-    db.session.flush()
-    return row.ulid
-
-
-def test_compute_opportunity_match_likely_fit(app, monkeypatch):
-    from app.slices.calendar import services_funding as cal_svc
-
-    monkeypatch.setattr(
-        cal_svc,
-        "_project_policy_hints",
-        lambda project_ulid: cal_svc.ProjectPolicyHints(
-            source_profile_key="mission_local_veterans_cash",
-            ops_support_planned=False,
+    draft = mark_draft_ready_for_review(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+    )
+    draft = submit_draft_for_governance_review(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+    )
+    draft = approve_draft_for_publish(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+        governance_decision=governance_v2.GovernanceReviewDecisionDTO(
+            decision="approved",
+            governance_note="Governance semantics approved for publish.",
+            approved_spending_class=spending_class,
+            approved_source_profile_key=source_profile_key,
+            eligible_fund_codes=tuple(eligible_fund_codes),
+            default_restriction_keys=tuple(default_restriction_keys),
+            approved_tag_any=tuple(
+                part.strip()
+                for part in str(tag_any or "").split(",")
+                if part.strip()
+            ),
+            decision_fingerprint="fp-route-funding-match",
+            validation_errors=(),
+            reason_codes=(),
+            matched_rule_ids=(),
         ),
     )
+    promoted = promote_draft_to_funding_demand(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+    )
+    db.session.flush()
+    return promoted["funding_demand"]["funding_demand_ulid"]
 
+
+def test_compute_opportunity_match_likely_fit(app):
     with app.app_context():
         demand_ulid = _create_published_demand(
             title="Likely Fit Demand",
@@ -141,25 +191,15 @@ def test_compute_opportunity_match_likely_fit(app, monkeypatch):
         assert view.profile_note_hints[0].key == "relationship_note"
 
 
-def test_compute_opportunity_match_caution_and_manual_review(
-    app, monkeypatch
-):
-    from app.slices.calendar import services_funding as cal_svc
-
-    monkeypatch.setattr(
-        cal_svc,
-        "_project_policy_hints",
-        lambda project_ulid: cal_svc.ProjectPolicyHints(
-            source_profile_key="welcome_home_reimbursement_bridgeable",
-            ops_support_planned=False,
-        ),
-    )
-
+def test_compute_opportunity_match_caution_and_manual_review(app):
     with app.app_context():
         demand_ulid = _create_published_demand(
             title="Caution Demand",
             spending_class="basic_needs",
             tag_any="welcome_home_kit",
+            source_profile_key="mission_local_veterans_cash",
+            default_restriction_keys=("local_only", "vet_only"),
+            eligible_fund_codes=("general_unrestricted",),
         )
         sponsor = _create_sponsor("Caution Sponsor")
 
@@ -185,8 +225,8 @@ def test_compute_opportunity_match_caution_and_manual_review(
         assert view.manual_review_recommended is True
         assert view.suggested_next_action == "manual_review"
         assert any(
-            reason == "Sponsor often expects local-only scope."
-            for reason in view.caution_reasons
+            reason == "Restriction posture aligns with local-only scope."
+            for reason in view.positive_reasons
         )
         assert any(
             reason == "Board review commonly required."
@@ -198,20 +238,7 @@ def test_compute_opportunity_match_caution_and_manual_review(
         )
 
 
-def test_list_opportunity_matches_sorts_likely_before_caution(
-    app, monkeypatch
-):
-    from app.slices.calendar import services_funding as cal_svc
-
-    monkeypatch.setattr(
-        cal_svc,
-        "_project_policy_hints",
-        lambda project_ulid: cal_svc.ProjectPolicyHints(
-            source_profile_key="mission_local_veterans_cash",
-            ops_support_planned=False,
-        ),
-    )
-
+def test_list_opportunity_matches_sorts_likely_before_caution(app):
     with app.app_context():
         demand_ulid = _create_published_demand(
             title="Sorted Demand",
@@ -274,18 +301,7 @@ def test_list_opportunity_matches_sorts_likely_before_caution(
         assert caution_row.fit_band == "caution"
 
 
-def test_sponsor_opportunity_match_to_dto_shapes_output(app, monkeypatch):
-    from app.slices.calendar import services_funding as cal_svc
-
-    monkeypatch.setattr(
-        cal_svc,
-        "_project_policy_hints",
-        lambda project_ulid: cal_svc.ProjectPolicyHints(
-            source_profile_key="mission_local_veterans_cash",
-            ops_support_planned=False,
-        ),
-    )
-
+def test_sponsor_opportunity_match_to_dto_shapes_output(app):
     with app.app_context():
         demand_ulid = _create_published_demand(
             title="DTO Demand",

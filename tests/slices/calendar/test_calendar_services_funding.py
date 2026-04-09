@@ -3,6 +3,10 @@ from __future__ import annotations
 import pytest
 
 from app.extensions import db
+from app.extensions.contracts import governance_v2
+from app.extensions.contracts.calendar_v2 import (
+    get_published_funding_demand_package,
+)
 from app.slices.calendar.models import FundingDemand, Project
 from app.slices.calendar.services_budget import (
     add_budget_line,
@@ -83,13 +87,19 @@ def _create_published_demand(
     draft = approve_draft_for_publish(
         draft_ulid=draft["ulid"],
         actor_ulid=actor_ulid,
-        approved_semantics={
-            "spending_class": "basic_needs",
-            "source_profile_key": "ops_bridge_preapproved",
-            "eligible_fund_codes": ["general_unrestricted"],
-            "default_restriction_keys": [],
-            "tag_any": ["welcome_home_kit"],
-        },
+        governance_decision=governance_v2.GovernanceReviewDecisionDTO(
+            decision="approved",
+            governance_note="Governance semantics approved for publish.",
+            approved_spending_class="basic_needs",
+            approved_source_profile_key="ops_bridge_preapproved",
+            eligible_fund_codes=("general_unrestricted",),
+            default_restriction_keys=(),
+            approved_tag_any=("welcome_home_kit",),
+            decision_fingerprint="fp-test-calendar-funding",
+            validation_errors=(),
+            reason_codes=("source_profile:test",),
+            matched_rule_ids=("selector:test",),
+        ),
     )
     promoted = promote_draft_to_funding_demand(
         draft_ulid=draft["ulid"],
@@ -121,6 +131,7 @@ def test_get_funding_demand_context_returns_snapshot_from_new_pipeline(app):
         snapshot = built["snapshot"]
         funding = built["funding"]
         funding_ulid = funding["funding_demand_ulid"]
+        package = get_published_funding_demand_package(funding_ulid)
 
         payload = get_funding_demand_context(funding_ulid)
         dto = get_funding_demand(funding_ulid)
@@ -149,6 +160,16 @@ def test_get_funding_demand_context_returns_snapshot_from_new_pipeline(app):
         assert view.status == "published"
         assert view.project_ulid == project.ulid
         assert view.goal_cents == 12000
+        assert package.schema_version == 1
+        assert package.origin.demand_draft_ulid == built["draft"]["ulid"]
+        assert package.origin.budget_snapshot_ulid == snapshot["ulid"]
+        assert package.origin.project_ulid == project.ulid
+        assert package.demand.funding_demand_ulid == funding_ulid
+        assert package.demand.project_ulid == project.ulid
+        assert package.planning.source_profile_key == "ops_bridge_preapproved"
+        assert package.policy.decision_fingerprint
+        assert package.policy.eligible_fund_codes == ("general_unrestricted",)
+        assert package.workflow.allowed_realization_modes
 
 
 def test_list_published_funding_demands_filters_to_project_and_published(app):

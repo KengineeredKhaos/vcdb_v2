@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 from app.extensions import db
-from app.slices.calendar.models import Project
+from app.extensions.contracts import governance_v2
 from app.slices.calendar.models import Project, Task
-from app.slices.calendar.services_funding import (
-    create_funding_demand,
-    publish_funding_demand,
+from app.slices.calendar.services_budget import (
+    add_budget_line,
+    create_working_snapshot,
+    lock_snapshot,
+)
+from app.slices.calendar.services_drafts import (
+    approve_draft_for_publish,
+    create_draft_from_snapshot,
+    mark_draft_ready_for_review,
+    promote_draft_to_funding_demand,
+    submit_draft_for_governance_review,
 )
 from app.slices.entity.models import Entity, EntityOrg
 from app.slices.sponsors.models import Sponsor
@@ -38,51 +46,89 @@ def _create_published_demand(
     title: str,
     spending_class: str,
     tag_any: str,
+    source_profile_key: str = "mission_local_veterans_cash",
+    default_restriction_keys: tuple[str, ...] = (
+        "local_only",
+        "vet_only",
+    ),
 ) -> str:
     project = Project(
         project_title=f"{title} Project",
-        status="planned",
+        status="draft_planning",
+        funding_profile_key=source_profile_key,
     )
     db.session.add(project)
     db.session.flush()
 
-    row = create_funding_demand(
-        {
-            "project_ulid": project.ulid,
-            "title": title,
-            "goal_cents": 25000,
-            "deadline_date": "2026-04-15",
-            "spending_class": spending_class,
-            "tag_any": tag_any,
-        },
-        actor_ulid=None,
-        request_id=f"req-route-match-create-{title}",
+    snapshot = create_working_snapshot(
+        project_ulid=project.ulid,
+        actor_ulid=project.ulid,
+        snapshot_label=f"{title} Basis",
+        scope_summary=title,
+    )
+    add_budget_line(
+        snapshot_ulid=snapshot["ulid"],
+        actor_ulid=project.ulid,
+        label="Initial cost",
+        line_kind="materials",
+        estimated_total_cents=25000,
+    )
+    locked = lock_snapshot(
+        snapshot_ulid=snapshot["ulid"],
+        actor_ulid=project.ulid,
     )
     db.session.flush()
 
-    row = publish_funding_demand(
-        row.ulid,
-        actor_ulid=None,
-        request_id=f"req-route-match-publish-{title}",
+    draft = create_draft_from_snapshot(
+        project_ulid=project.ulid,
+        snapshot_ulid=locked["ulid"],
+        actor_ulid=project.ulid,
+        title=title,
+        summary=f"{title} summary",
+        scope_summary=title,
+        requested_amount_cents=25000,
+        spending_class_candidate=spending_class,
+        source_profile_key=source_profile_key,
+        tag_any=tag_any,
     )
-    db.session.flush()
-    return row.ulid
-
-
-def test_funding_opportunity_detail_shows_sponsor_matches(
-    app, staff_client, monkeypatch
-):
-    from app.slices.calendar import services_funding as cal_svc
-
-    monkeypatch.setattr(
-        cal_svc,
-        "_project_policy_hints",
-        lambda project_ulid: cal_svc.ProjectPolicyHints(
-            source_profile_key="mission_local_veterans_cash",
-            ops_support_planned=False,
+    draft = mark_draft_ready_for_review(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+    )
+    draft = submit_draft_for_governance_review(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+    )
+    draft = approve_draft_for_publish(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+        governance_decision=governance_v2.GovernanceReviewDecisionDTO(
+            decision="approved",
+            governance_note="Governance semantics approved for publish.",
+            approved_spending_class=spending_class,
+            approved_source_profile_key=source_profile_key,
+            eligible_fund_codes=("general_unrestricted",),
+            default_restriction_keys=tuple(default_restriction_keys),
+            approved_tag_any=tuple(
+                part.strip()
+                for part in str(tag_any or "").split(",")
+                if part.strip()
+            ),
+            decision_fingerprint="fp-route-funding-match",
+            validation_errors=(),
+            reason_codes=(),
+            matched_rule_ids=(),
         ),
     )
+    promoted = promote_draft_to_funding_demand(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+    )
+    db.session.flush()
+    return promoted["funding_demand"]["funding_demand_ulid"]
 
+
+def test_funding_opportunity_detail_shows_sponsor_matches(app, staff_client):
     with app.app_context():
         demand_ulid = _create_published_demand(
             title="Route Match Demand",
@@ -136,20 +182,11 @@ def test_funding_opportunity_detail_shows_sponsor_matches(
     assert "Review CRM posture" in text
 
 
-
 def test_funding_opportunity_detail_shows_recent_cultivation_for_demand(
-    app, staff_client, monkeypatch
+    app, staff_client
 ):
-    from app.slices.calendar import services_funding as cal_svc
-    from app.slices.sponsors.services_calendar import ensure_cultivation_project
-
-    monkeypatch.setattr(
-        cal_svc,
-        "_project_policy_hints",
-        lambda project_ulid: cal_svc.ProjectPolicyHints(
-            source_profile_key="mission_local_veterans_cash",
-            ops_support_planned=False,
-        ),
+    from app.slices.sponsors.services_calendar import (
+        ensure_cultivation_project,
     )
 
     with app.app_context():

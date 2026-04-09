@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 
 import pytest
@@ -10,9 +11,17 @@ from sqlalchemy import select
 from app.extensions import db
 from app.extensions.contracts import calendar_v2, governance_v2, sponsors_v2
 from app.slices.calendar.models import Project
-from app.slices.calendar.services_funding import (
-    create_funding_demand,
-    publish_funding_demand,
+from app.slices.calendar.services_budget import (
+    add_budget_line,
+    create_working_snapshot,
+    lock_snapshot,
+)
+from app.slices.calendar.services_drafts import (
+    approve_draft_for_publish,
+    create_draft_from_snapshot,
+    mark_draft_ready_for_review,
+    promote_draft_to_funding_demand,
+    submit_draft_for_governance_review,
 )
 from app.slices.entity.models import Entity, EntityOrg
 from app.slices.finance.models import Journal, Reserve
@@ -20,29 +29,6 @@ from app.slices.finance.services_journal import ensure_default_accounts
 from app.slices.ledger.models import LedgerEvent
 from app.slices.sponsors.models import Sponsor, SponsorFundingIntent
 from app.slices.sponsors.services_funding import create_funding_intent
-
-
-def _patch_publishable_hints(
-    monkeypatch,
-    *,
-    source_profile_key="mission_local_veterans_cash",
-    ops_support_planned=False,
-):
-    from app.slices.calendar import services_funding as svc
-
-    monkeypatch.setattr(
-        svc,
-        "_project_policy_hints",
-        lambda project_ulid: svc.ProjectPolicyHints(
-            source_profile_key=source_profile_key,
-            ops_support_planned=ops_support_planned,
-        ),
-    )
-
-
-@pytest.fixture(autouse=True)
-def _default_publishable_hints(monkeypatch):
-    _patch_publishable_hints(monkeypatch)
 
 
 def _create_sponsor(name: str) -> Sponsor:
@@ -63,36 +49,87 @@ def _create_sponsor(name: str) -> Sponsor:
     return sponsor
 
 
-def _create_published_demand() -> str:
+def _create_published_demand(
+    *,
+    title: str = "Bridge Test Demand",
+    amount_cents: int = 12000,
+    source_profile_key: str = "mission_local_veterans_cash",
+    default_restriction_keys: tuple[str, ...] = (
+        "local_only",
+        "vet_only",
+    ),
+    eligible_fund_codes: tuple[str, ...] = ("general_unrestricted",),
+) -> str:
     project = Project(
         project_title="Bridge Test Project",
-        status="planned",
+        status="draft_planning",
+        funding_profile_key=source_profile_key,
     )
-
     db.session.add(project)
     db.session.flush()
 
-    row = create_funding_demand(
-        {
-            "project_ulid": project.ulid,
-            "title": "Bridge Test Demand",
-            "goal_cents": 12000,
-            "deadline_date": "2026-03-31",
-            "spending_class": "admin",
-            "tag_any": "",
-        },
-        actor_ulid=None,
-        request_id="req-demand-create",
+    snapshot = create_working_snapshot(
+        project_ulid=project.ulid,
+        actor_ulid=project.ulid,
+        snapshot_label="Bridge Basis",
+        scope_summary="Bridge funding basis",
+    )
+    add_budget_line(
+        snapshot_ulid=snapshot["ulid"],
+        actor_ulid=project.ulid,
+        label="Bridge cost",
+        line_kind="materials",
+        estimated_total_cents=amount_cents,
+    )
+    locked = lock_snapshot(
+        snapshot_ulid=snapshot["ulid"],
+        actor_ulid=project.ulid,
     )
     db.session.flush()
 
-    row = publish_funding_demand(
-        row.ulid,
-        actor_ulid=None,
-        request_id="req-demand-publish",
+    draft = create_draft_from_snapshot(
+        project_ulid=project.ulid,
+        snapshot_ulid=locked["ulid"],
+        actor_ulid=project.ulid,
+        title=title,
+        summary=title,
+        scope_summary="Bridge funding basis",
+        requested_amount_cents=amount_cents,
+        spending_class_candidate="basic_needs",
+        source_profile_key=source_profile_key,
+        tag_any="",
+    )
+    draft = mark_draft_ready_for_review(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+    )
+    draft = submit_draft_for_governance_review(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+    )
+    draft = approve_draft_for_publish(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+        governance_decision=governance_v2.GovernanceReviewDecisionDTO(
+            decision="approved",
+            governance_note="Governance semantics approved for publish.",
+            approved_spending_class="basic_needs",
+            approved_source_profile_key=source_profile_key,
+            eligible_fund_codes=tuple(eligible_fund_codes),
+            default_restriction_keys=tuple(default_restriction_keys),
+            approved_tag_any=(),
+            decision_fingerprint="fp-sponsors-realization",
+            validation_errors=(),
+            reason_codes=(),
+            matched_rule_ids=(),
+        ),
+    )
+    promoted = promote_draft_to_funding_demand(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
     )
     db.session.flush()
-    return row.ulid
+    return promoted["funding_demand"]["funding_demand_ulid"]
 
 
 def test_realize_funding_intent_posts_income_and_reserve(app):
@@ -159,6 +196,8 @@ def test_realize_funding_intent_posts_income_and_reserve(app):
                 request_id="req-realize-1",
             )
         )
+        assert out.decision_fingerprint
+        assert out.fund_code == fund_code
         db.session.flush()
 
         refreshed = db.session.get(SponsorFundingIntent, intent.ulid)
@@ -188,6 +227,13 @@ def test_realize_funding_intent_posts_income_and_reserve(app):
             .one_or_none()
         )
         assert ledger_row is not None
+
+        refs = ledger_row.refs_json or {}
+        if isinstance(refs, str):
+            refs = json.loads(refs)
+
+        assert refs["journal_ulid"] == out.journal_ulid
+        assert refs["reserve_ulid"] == out.reserve_ulid
 
 
 def test_realize_funding_intent_rejects_non_committed(app):

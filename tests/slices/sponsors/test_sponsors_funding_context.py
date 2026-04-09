@@ -2,12 +2,27 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from app.extensions import db
-from app.extensions.contracts import finance_v2, governance_v2, sponsors_v2
+from app.extensions.contracts import (
+    calendar_v2,
+    finance_v2,
+    governance_v2,
+    sponsors_v2,
+)
 from app.slices.calendar.models import Project
-from app.slices.calendar.services_funding import (
-    create_funding_demand,
-    publish_funding_demand,
+from app.slices.calendar.services_budget import (
+    add_budget_line,
+    create_working_snapshot,
+    lock_snapshot,
+)
+from app.slices.calendar.services_drafts import (
+    approve_draft_for_publish,
+    create_draft_from_snapshot,
+    mark_draft_ready_for_review,
+    promote_draft_to_funding_demand,
+    submit_draft_for_governance_review,
 )
 from app.slices.entity.models import Entity, EntityOrg
 from app.slices.finance.services_journal import ensure_default_accounts
@@ -40,44 +55,206 @@ def _create_sponsor(name: str) -> Sponsor:
 def _create_published_demand() -> str:
     project = Project(
         project_title="Context Project",
-        status="planned",
+        status="draft_planning",
+        funding_profile_key="mission_local_veterans_cash",
     )
     db.session.add(project)
     db.session.flush()
 
-    row = create_funding_demand(
-        {
-            "project_ulid": project.ulid,
-            "title": "Context Demand",
-            "goal_cents": 17500,
-            "deadline_date": "2026-04-10",
-            "spending_class": "basic_needs",
-            "tag_any": "welcome_home_kit,crm_seed",
-        },
-        actor_ulid=None,
-        request_id="req-context-create",
+    snapshot = create_working_snapshot(
+        project_ulid=project.ulid,
+        actor_ulid=project.ulid,
+        snapshot_label="Context Basis",
+        scope_summary="Initial move-in support.",
+    )
+    add_budget_line(
+        snapshot_ulid=snapshot["ulid"],
+        actor_ulid=project.ulid,
+        label="Initial cost",
+        line_kind="materials",
+        estimated_total_cents=17500,
+    )
+    locked = lock_snapshot(
+        snapshot_ulid=snapshot["ulid"],
+        actor_ulid=project.ulid,
     )
     db.session.flush()
 
-    row = publish_funding_demand(
-        row.ulid,
-        actor_ulid=None,
-        request_id="req-context-publish",
+    draft = create_draft_from_snapshot(
+        project_ulid=project.ulid,
+        snapshot_ulid=locked["ulid"],
+        actor_ulid=project.ulid,
+        title="Context Demand",
+        summary="Context summary",
+        scope_summary="Initial move-in support.",
+        requested_amount_cents=17500,
+        spending_class_candidate="basic_needs",
+        source_profile_key="mission_local_veterans_cash",
+        tag_any="welcome_home_kit,crm_seed",
+    )
+    draft = mark_draft_ready_for_review(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+    )
+    draft = submit_draft_for_governance_review(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+    )
+    draft = approve_draft_for_publish(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
+        governance_decision=governance_v2.GovernanceReviewDecisionDTO(
+            decision="approved",
+            governance_note="Governance semantics approved for publish.",
+            approved_spending_class="basic_needs",
+            approved_source_profile_key="mission_local_veterans_cash",
+            eligible_fund_codes=("general_unrestricted",),
+            default_restriction_keys=("local_only", "vet_only"),
+            approved_tag_any=("welcome_home_kit", "crm_seed"),
+            decision_fingerprint="fp-sponsors-context",
+            validation_errors=(),
+            reason_codes=(),
+            matched_rule_ids=(),
+        ),
+    )
+    promoted = promote_draft_to_funding_demand(
+        draft_ulid=draft["ulid"],
+        actor_ulid=project.ulid,
     )
     db.session.flush()
-    return row.ulid
+    return promoted["funding_demand"]["funding_demand_ulid"]
+
+
+def _patch_published_package(
+    monkeypatch,
+    *,
+    source_profile_key: str,
+    ops_support_planned: bool,
+    default_restriction_keys: tuple[str, ...] = ("local_only", "vet_only"),
+    reserve_on_receive_expected: bool | None = None,
+    allowed_realization_modes: tuple[str, ...] | None = None,
+    recommended_income_kind: str | None = None,
+    bridge_support_possible: bool | None = None,
+) -> None:
+    real_pkg = calendar_v2.get_published_funding_demand_package
+
+    if source_profile_key == "welcome_home_reimbursement_bridgeable":
+        summary = governance_v2.FundingSourceProfileSummaryDTO(
+            key=source_profile_key,
+            source_kind="grant",
+            support_mode="reimbursement",
+            approval_posture="standard",
+            default_restriction_keys=tuple(default_restriction_keys),
+            bridge_allowed=True,
+            repayment_expectation="reimbursement_expected",
+            forgiveness_rule="not_applicable",
+            auto_ops_bridge_on_publish=False,
+        )
+        reserve_on_receive_expected = (
+            False
+            if reserve_on_receive_expected is None
+            else reserve_on_receive_expected
+        )
+        allowed_realization_modes = (
+            ("pledge", "reimbursement_receipt")
+            if allowed_realization_modes is None
+            else allowed_realization_modes
+        )
+        recommended_income_kind = (
+            "reimbursement"
+            if recommended_income_kind is None
+            else recommended_income_kind
+        )
+        bridge_support_possible = (
+            True
+            if bridge_support_possible is None
+            else bridge_support_possible
+        )
+    else:
+        summary = governance_v2.FundingSourceProfileSummaryDTO(
+            key=source_profile_key,
+            source_kind="cash",
+            support_mode="direct_support",
+            approval_posture="standard",
+            default_restriction_keys=tuple(default_restriction_keys),
+            bridge_allowed=False,
+            repayment_expectation="none",
+            forgiveness_rule="not_applicable",
+            auto_ops_bridge_on_publish=False,
+        )
+        reserve_on_receive_expected = (
+            True
+            if reserve_on_receive_expected is None
+            else reserve_on_receive_expected
+        )
+        allowed_realization_modes = (
+            ("pledge", "donation")
+            if allowed_realization_modes is None
+            else allowed_realization_modes
+        )
+        recommended_income_kind = (
+            "donation"
+            if recommended_income_kind is None
+            else recommended_income_kind
+        )
+        bridge_support_possible = (
+            False
+            if bridge_support_possible is None
+            else bridge_support_possible
+        )
+
+    def fake_pkg(funding_demand_ulid: str):
+        pkg = real_pkg(funding_demand_ulid)
+        return replace(
+            pkg,
+            planning=replace(
+                pkg.planning,
+                source_profile_key=source_profile_key,
+                ops_support_planned=ops_support_planned,
+            ),
+            policy=replace(
+                pkg.policy,
+                default_restriction_keys=tuple(default_restriction_keys),
+                source_profile_summary=summary,
+            ),
+            workflow=replace(
+                pkg.workflow,
+                reserve_on_receive_expected=reserve_on_receive_expected,
+                recommended_income_kind=recommended_income_kind,
+                bridge_support_possible=bridge_support_possible,
+                allowed_realization_modes=tuple(
+                    allowed_realization_modes or ()
+                ),
+            ),
+        )
+
+    def fake_ctx(funding_demand_ulid: str):
+        pkg = fake_pkg(funding_demand_ulid)
+        return calendar_v2.FundingDemandContextDTO(
+            schema_version=pkg.schema_version,
+            demand=pkg.demand,
+            planning=pkg.planning,
+            policy=pkg.policy,
+            workflow=pkg.workflow,
+        )
+
+    monkeypatch.setattr(
+        calendar_v2,
+        "get_published_funding_demand_package",
+        fake_pkg,
+    )
+    monkeypatch.setattr(
+        calendar_v2,
+        "get_funding_demand_context",
+        fake_ctx,
+    )
 
 
 def test_get_funding_opportunity_uses_context_packet(app, monkeypatch):
-    from app.slices.calendar import services_funding as svc
-
-    monkeypatch.setattr(
-        svc,
-        "_project_policy_hints",
-        lambda project_ulid: svc.ProjectPolicyHints(
-            source_profile_key="mission_local_veterans_cash",
-            ops_support_planned=False,
-        ),
+    _patch_published_package(
+        monkeypatch,
+        source_profile_key="mission_local_veterans_cash",
+        ops_support_planned=False,
     )
 
     with app.app_context():
@@ -104,6 +281,7 @@ def test_get_funding_opportunity_uses_context_packet(app, monkeypatch):
         assert detail.planning.source_profile_key
         assert detail.workflow.allowed_realization_modes
         assert detail.policy.eligible_fund_codes
+        assert detail.policy.decision_fingerprint
         assert detail.totals.pledged_cents == 9000
         assert detail.money.received_cents == 0
         assert detail.money.remaining_goal_cents == 17500
@@ -111,15 +289,10 @@ def test_get_funding_opportunity_uses_context_packet(app, monkeypatch):
 
 
 def test_realize_funding_intent_defaults_from_context(app, monkeypatch):
-    from app.slices.calendar import services_funding as svc
-
-    monkeypatch.setattr(
-        svc,
-        "_project_policy_hints",
-        lambda project_ulid: svc.ProjectPolicyHints(
-            source_profile_key="mission_local_veterans_cash",
-            ops_support_planned=False,
-        ),
+    _patch_published_package(
+        monkeypatch,
+        source_profile_key="mission_local_veterans_cash",
+        ops_support_planned=False,
     )
 
     with app.app_context():
@@ -162,15 +335,12 @@ def test_realize_funding_intent_defaults_from_context(app, monkeypatch):
 def test_realize_funding_intent_skips_reserve_when_context_expects_false(
     app, monkeypatch
 ):
-    from app.slices.calendar import services_funding as svc
-
-    monkeypatch.setattr(
-        svc,
-        "_project_policy_hints",
-        lambda project_ulid: svc.ProjectPolicyHints(
-            source_profile_key="welcome_home_reimbursement_bridgeable",
-            ops_support_planned=False,
-        ),
+    _patch_published_package(
+        monkeypatch,
+        source_profile_key="welcome_home_reimbursement_bridgeable",
+        ops_support_planned=False,
+        reserve_on_receive_expected=False,
+        allowed_realization_modes=("pledge", "reimbursement_receipt"),
     )
 
     with app.app_context():
@@ -215,15 +385,12 @@ def test_realize_funding_intent_skips_reserve_when_context_expects_false(
 def test_realize_funding_intent_explicit_reserve_override_wins(
     app, monkeypatch
 ):
-    from app.slices.calendar import services_funding as svc
-
-    monkeypatch.setattr(
-        svc,
-        "_project_policy_hints",
-        lambda project_ulid: svc.ProjectPolicyHints(
-            source_profile_key="welcome_home_reimbursement_bridgeable",
-            ops_support_planned=False,
-        ),
+    _patch_published_package(
+        monkeypatch,
+        source_profile_key="welcome_home_reimbursement_bridgeable",
+        ops_support_planned=False,
+        reserve_on_receive_expected=False,
+        allowed_realization_modes=("pledge", "reimbursement_receipt"),
     )
 
     with app.app_context():
@@ -269,15 +436,11 @@ def test_realize_funding_intent_explicit_reserve_override_wins(
 def test_realize_funding_intent_merges_context_and_fund_defaults(
     app, monkeypatch
 ):
-    from app.slices.calendar import services_funding as svc
-
-    monkeypatch.setattr(
-        svc,
-        "_project_policy_hints",
-        lambda project_ulid: svc.ProjectPolicyHints(
-            source_profile_key="mission_local_veterans_cash",
-            ops_support_planned=False,
-        ),
+    _patch_published_package(
+        monkeypatch,
+        source_profile_key="mission_local_veterans_cash",
+        ops_support_planned=False,
+        default_restriction_keys=("local_only", "vet_only"),
     )
 
     captured: dict[str, object] = {}

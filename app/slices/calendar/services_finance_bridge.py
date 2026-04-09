@@ -1,11 +1,17 @@
-from __future__ import annotations
+# app/slices/calendar/services_finance_bridge.py
 
 """Calendar -> Finance bridge using canonical published demand context."""
+
+from __future__ import annotations
 
 from app.extensions import db, event_bus
 from app.extensions.contracts import finance_v2, governance_v2
 from app.lib.chrono import now_iso8601_ms
-from app.slices.calendar.mapper import ProjectEncumbranceResult, ProjectSpendResult
+from app.slices.calendar.mapper import (
+    FundingDemandExecutionTruthView,
+    ProjectEncumbranceResult,
+    ProjectSpendResult,
+)
 from app.slices.calendar.services_funding import (
     _build_funding_decision_request_from_context,
     _get_demand_or_raise,
@@ -18,7 +24,9 @@ _ENCUMBER_OK = {"published", "funding_in_progress", "funded", "executing"}
 _SPEND_OK = {"funding_in_progress", "funded", "executing"}
 
 
-def _derive_restriction_type(*, restriction_keys: tuple[str, ...], archetype: str) -> str:
+def _derive_restriction_type(
+    *, restriction_keys: tuple[str, ...], archetype: str
+) -> str:
     keys = {str(k).strip().lower() for k in restriction_keys}
     archetype_norm = (archetype or "").strip().lower()
 
@@ -29,13 +37,11 @@ def _derive_restriction_type(*, restriction_keys: tuple[str, ...], archetype: st
     return "unrestricted"
 
 
-
 def _bucket_amount(rows, key: str) -> int:
     for row in rows or ():
         if row.key == key:
             return int(row.amount_cents or 0)
     return 0
-
 
 
 def _tupleish(value) -> tuple[str, ...]:
@@ -47,20 +53,56 @@ def _tupleish(value) -> tuple[str, ...]:
     return (text,) if text else ()
 
 
-
 def _context_semantics(funding_demand_ulid: str) -> dict[str, object]:
     payload = get_funding_demand_context(funding_demand_ulid)
     planning = dict(payload.get("planning") or {})
     policy = dict(payload.get("policy") or {})
     return {
         "spending_class": planning.get("spending_class"),
-        "tag_any": _tupleish(policy.get("approved_tag_any") or planning.get("tag_any")),
+        "tag_any": _tupleish(
+            policy.get("approved_tag_any") or planning.get("tag_any")
+        ),
         "eligible_fund_codes": _tupleish(policy.get("eligible_fund_codes")),
-        "default_restriction_keys": _tupleish(policy.get("default_restriction_keys")),
+        "default_restriction_keys": _tupleish(
+            policy.get("default_restriction_keys")
+        ),
         "source_profile_key": planning.get("source_profile_key"),
         "ops_support_planned": planning.get("ops_support_planned"),
     }
 
+
+def get_project_execution_truth(
+    *,
+    funding_demand_ulid: str,
+) -> FundingDemandExecutionTruthView:
+    row = _get_demand_or_raise(funding_demand_ulid)
+    truth = finance_v2.get_funding_demand_execution_truth(
+        row.ulid,
+        goal_cents=int(row.goal_cents or 0),
+    )
+    return FundingDemandExecutionTruthView(
+        funding_demand_ulid=row.ulid,
+        project_ulid=row.project_ulid,
+        received_cents=truth.received_cents,
+        reserved_cents=truth.reserved_cents,
+        encumbered_cents=truth.encumbered_cents,
+        spent_cents=truth.spent_cents,
+        remaining_open_cents=truth.remaining_open_cents,
+        funded_enough=truth.funded_enough,
+        support_source_posture=truth.support_source_posture,
+        received_by_fund=truth.received_by_fund,
+        reserved_by_fund=truth.reserved_by_fund,
+        encumbered_by_fund=truth.encumbered_by_fund,
+        spent_by_expense_kind=truth.spent_by_expense_kind,
+        income_by_income_kind=truth.income_by_income_kind,
+        ops_float_incoming_open_by_fund=truth.ops_float_incoming_open_by_fund,
+        ops_float_outgoing_open_by_fund=truth.ops_float_outgoing_open_by_fund,
+        income_journal_ulids=truth.income_journal_ulids,
+        expense_journal_ulids=truth.expense_journal_ulids,
+        reserve_ulids=truth.reserve_ulids,
+        encumbrance_ulids=truth.encumbrance_ulids,
+        ops_float_ulids=truth.ops_float_ulids,
+    )
 
 
 def encumber_project_funds(
@@ -138,10 +180,13 @@ def encumber_project_funds(
         )
     )
     if not preview.allowed:
-        raise PermissionError("; ".join(preview.reason_codes) or "encumber denied")
+        raise PermissionError(
+            "; ".join(preview.reason_codes) or "encumber denied"
+        )
     if preview.required_approvals:
         raise PermissionError(
-            "encumber requires approvals: " + ", ".join(preview.required_approvals)
+            "encumber requires approvals: "
+            + ", ".join(preview.required_approvals)
         )
 
     fund_restriction_type = _derive_restriction_type(
@@ -201,7 +246,6 @@ def encumber_project_funds(
         status=new_status,
         flags=tuple(out.flags or ()),
     )
-
 
 
 def spend_project_funds(
@@ -278,10 +322,13 @@ def spend_project_funds(
         )
     )
     if not preview.allowed:
-        raise PermissionError("; ".join(preview.reason_codes) or "spend denied")
+        raise PermissionError(
+            "; ".join(preview.reason_codes) or "spend denied"
+        )
     if preview.required_approvals:
         raise PermissionError(
-            "spend requires approvals: " + ", ".join(preview.required_approvals)
+            "spend requires approvals: "
+            + ", ".join(preview.required_approvals)
         )
 
     fund_restriction_type = _derive_restriction_type(
@@ -347,3 +394,6 @@ def spend_project_funds(
         status=new_status,
         flags=tuple(out.flags or ()),
     )
+
+
+__all__ = ["get_project_execution_truth"]

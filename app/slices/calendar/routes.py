@@ -559,33 +559,20 @@ def demand_draft_detail(draft_ulid: str):
     )
     _bind_spending_choices(edit_form)
     return_form = DemandDraftReturnForm()
+    decision = draft.get("approved_semantics_json") or {}
     approve_form = DemandDraftApproveForm(
         spending_class=(
-            (draft.get("approved_semantics_json") or {}).get("spending_class")
+            decision.get("approved_spending_class")
             or draft.get("spending_class_candidate")
             or ""
         ),
         source_profile_key=(
-            (draft.get("approved_semantics_json") or {}).get(
-                "source_profile_key"
-            )
+            decision.get("approved_source_profile_key")
             or draft.get("source_profile_key")
             or ""
         ),
-        eligible_fund_codes=", ".join(
-            (draft.get("approved_semantics_json") or {}).get(
-                "eligible_fund_codes", []
-            )
-        ),
-        default_restriction_keys=", ".join(
-            (draft.get("approved_semantics_json") or {}).get(
-                "default_restriction_keys", []
-            )
-        ),
         tag_any=", ".join(
-            (draft.get("approved_semantics_json") or {}).get("tag_any", [])
-            or draft.get("tag_any")
-            or []
+            decision.get("approved_tag_any", []) or draft.get("tag_any") or []
         ),
     )
     _bind_spending_choices(edit_form, approve_form)
@@ -750,12 +737,10 @@ def demand_draft_approve(draft_ulid: str):
             draft_ulid=draft_ulid,
         )
 
-    semantics = {
-        "spending_class": form.spending_class.data or None,
-        "source_profile_key": form.source_profile_key.data or None,
-        "eligible_fund_codes": _split_csv(form.eligible_fund_codes.data),
-        "default_restriction_keys": _split_csv(
-            form.default_restriction_keys.data
+    review_overrides = {
+        "spending_class_candidate": form.spending_class.data or None,
+        "source_profile_key_candidate": (
+            form.source_profile_key.data or None
         ),
         "tag_any": _split_csv(form.tag_any.data),
     }
@@ -763,9 +748,10 @@ def demand_draft_approve(draft_ulid: str):
         drafts_svc.approve_draft_for_publish(
             draft_ulid=draft_ulid,
             actor_ulid=_actor_ulid_or_403(),
-            approved_semantics=semantics,
+            review_overrides=review_overrides,
             request_id=_request_id(),
         )
+
         db_commit()
     except (LookupError, RuntimeError, ValueError) as exc:
         db.session.rollback()

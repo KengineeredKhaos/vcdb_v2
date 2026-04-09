@@ -24,6 +24,7 @@ from app.slices.calendar.services_drafts import (
 
 
 def _patch_governance_ok(monkeypatch):
+    from app.extensions.contracts import governance_v2
     from app.slices.calendar import services_drafts as svc
 
     monkeypatch.setattr(
@@ -34,7 +35,34 @@ def _patch_governance_ok(monkeypatch):
     monkeypatch.setattr(
         svc.gov,
         "get_funding_source_profile_summary",
-        lambda key: {"key": key},
+        lambda key: governance_v2.FundingSourceProfileSummaryDTO(
+            key=key,
+            source_kind="grant",
+            support_mode="reimbursement",
+            approval_posture="standard",
+            default_restriction_keys=("local_only",),
+            bridge_allowed=False,
+            repayment_expectation="none",
+            forgiveness_rule="not_applicable",
+            auto_ops_bridge_on_publish=False,
+        ),
+    )
+    monkeypatch.setattr(
+        svc.gov,
+        "review_calendar_demand",
+        lambda req: governance_v2.GovernanceReviewDecisionDTO(
+            decision="approved",
+            governance_note="Governance semantics approved for publish.",
+            approved_spending_class=req.spending_class_candidate,
+            approved_source_profile_key=req.source_profile_key_candidate,
+            eligible_fund_codes=("general_unrestricted",),
+            default_restriction_keys=("local_only",),
+            approved_tag_any=tuple(req.tag_any or ()),
+            decision_fingerprint="fp-draft-review",
+            validation_errors=(),
+            reason_codes=("source_profile:test",),
+            matched_rule_ids=("selector:test",),
+        ),
     )
 
 
@@ -193,21 +221,28 @@ def test_draft_review_lifecycle_return_update_approve_and_promote(
         draft = approve_draft_for_publish(
             draft_ulid=draft["ulid"],
             actor_ulid=actor_ulid,
-            approved_semantics={
-                "spending_class": "basic_needs",
-                "source_profile_key": (
+            review_overrides={
+                "spending_class_candidate": "basic_needs",
+                "source_profile_key_candidate": (
                     "restricted_project_grant_return_unused"
                 ),
-                "eligible_fund_codes": ["general_unrestricted"],
-                "default_restriction_keys": ["local_only"],
                 "tag_any": ["welcome_home_kit", "furniture"],
             },
         )
         assert draft["status"] == "approved_for_publish"
         assert draft["approved_for_publish_at_utc"] is not None
+        assert draft["approved_semantics_json"]["decision"] == "approved"
+        assert (
+            draft["approved_semantics_json"]["approved_source_profile_key"]
+            == "restricted_project_grant_return_unused"
+        )
         assert draft["approved_semantics_json"]["eligible_fund_codes"] == [
             "general_unrestricted"
         ]
+        assert (
+            draft["approved_semantics_json"]["decision_fingerprint"]
+            == "fp-draft-review"
+        )
 
         promoted = promote_draft_to_funding_demand(
             draft_ulid=draft["ulid"],
@@ -232,12 +267,16 @@ def test_draft_review_lifecycle_return_update_approve_and_promote(
         assert funding_row is not None
         assert funding_row.origin_draft_ulid == draft["ulid"]
         assert funding_row.project_ulid == project.ulid
-        assert funding_row.published_context_json["origin"][
-            "demand_draft_ulid"
-        ] == draft["ulid"]
-        assert funding_row.published_context_json["origin"][
-            "budget_snapshot_ulid"
-        ] == snapshot["ulid"]
+        assert (
+            funding_row.published_context_json["origin"]["demand_draft_ulid"]
+            == draft["ulid"]
+        )
+        assert (
+            funding_row.published_context_json["origin"][
+                "budget_snapshot_ulid"
+            ]
+            == snapshot["ulid"]
+        )
 
 
 def test_promote_draft_to_funding_demand_rejects_second_promotion(
@@ -270,10 +309,12 @@ def test_promote_draft_to_funding_demand_rejects_second_promotion(
         draft = approve_draft_for_publish(
             draft_ulid=draft["ulid"],
             actor_ulid=actor_ulid,
-            approved_semantics={
-                "spending_class": "basic_needs",
-                "source_profile_key": "ops_bridge_preapproved",
-                "eligible_fund_codes": ["general_unrestricted"],
+            review_overrides={
+                "spending_class_candidate": "basic_needs",
+                "source_profile_key_candidate": (
+                    "restricted_project_grant_return_unused"
+                ),
+                "tag_any": ["welcome_home_kit", "furniture"],
             },
         )
         promote_draft_to_funding_demand(

@@ -163,6 +163,23 @@ class FundingDemandPublishedSnapshotDTO:
 
 
 @dataclass(frozen=True)
+class FundingDemandOriginSnapshotDTO:
+    demand_draft_ulid: str | None
+    budget_snapshot_ulid: str | None
+    project_ulid: str
+
+
+@dataclass(frozen=True)
+class PublishedFundingDemandPackageDTO:
+    schema_version: int
+    demand: FundingDemandPublishedSnapshotDTO
+    origin: FundingDemandOriginSnapshotDTO
+    planning: FundingDemandPlanningSnapshotDTO
+    policy: FundingDemandPolicySnapshotDTO
+    workflow: FundingDemandWorkflowCuesDTO
+
+
+@dataclass(frozen=True)
 class FundingDemandPlanningSnapshotDTO:
     project_title: str
     spending_class: str
@@ -198,6 +215,31 @@ class FundingDemandContextDTO:
     planning: FundingDemandPlanningSnapshotDTO
     policy: FundingDemandPolicySnapshotDTO
     workflow: FundingDemandWorkflowCuesDTO
+
+
+@dataclass(frozen=True)
+class FundingDemandExecutionTruthDTO:
+    funding_demand_ulid: str
+    project_ulid: str | None
+    received_cents: int
+    reserved_cents: int
+    encumbered_cents: int
+    spent_cents: int
+    remaining_open_cents: int
+    funded_enough: bool
+    support_source_posture: str
+    received_by_fund: tuple[object, ...]
+    reserved_by_fund: tuple[object, ...]
+    encumbered_by_fund: tuple[object, ...]
+    spent_by_expense_kind: tuple[object, ...]
+    income_by_income_kind: tuple[object, ...]
+    ops_float_incoming_open_by_fund: tuple[object, ...]
+    ops_float_outgoing_open_by_fund: tuple[object, ...]
+    income_journal_ulids: tuple[str, ...]
+    expense_journal_ulids: tuple[str, ...]
+    reserve_ulids: tuple[str, ...]
+    encumbrance_ulids: tuple[str, ...]
+    ops_float_ulids: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -467,6 +509,118 @@ def get_funding_demand_context(
 ) -> FundingDemandContextDTO:
     where = "calendar_v2.get_funding_demand_context"
     try:
+        pkg = get_published_funding_demand_package(funding_demand_ulid)
+        return FundingDemandContextDTO(
+            schema_version=pkg.schema_version,
+            demand=pkg.demand,
+            planning=pkg.planning,
+            policy=pkg.policy,
+            workflow=pkg.workflow,
+        )
+    except Exception as exc:
+        raise _as_contract_error(where, exc) from exc
+
+
+def _obj_get(obj, key: str, default=None):
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _to_published_funding_demand_package(
+    raw: dict[str, Any],
+) -> PublishedFundingDemandPackageDTO:
+    demand_raw = raw["demand"]
+    origin_raw = raw.get("origin") or {}
+    planning_raw = raw["planning"]
+    policy_raw = raw["policy"]
+    summary_raw = policy_raw["source_profile_summary"]
+    workflow_raw = raw["workflow"]
+
+    return PublishedFundingDemandPackageDTO(
+        schema_version=int(raw["schema_version"]),
+        demand=FundingDemandPublishedSnapshotDTO(
+            funding_demand_ulid=str(demand_raw["funding_demand_ulid"]),
+            project_ulid=str(demand_raw["project_ulid"]),
+            title=str(demand_raw["title"]),
+            status=str(demand_raw["status"]),
+            goal_cents=int(demand_raw["goal_cents"]),
+            deadline_date=demand_raw.get("deadline_date"),
+            published_at_utc=str(demand_raw["published_at_utc"]),
+        ),
+        origin=FundingDemandOriginSnapshotDTO(
+            demand_draft_ulid=origin_raw.get("demand_draft_ulid"),
+            budget_snapshot_ulid=origin_raw.get("budget_snapshot_ulid"),
+            project_ulid=str(
+                origin_raw.get("project_ulid") or demand_raw["project_ulid"]
+            ),
+        ),
+        planning=FundingDemandPlanningSnapshotDTO(
+            project_title=str(planning_raw["project_title"]),
+            spending_class=str(planning_raw["spending_class"]),
+            tag_any=_require_str_tuple(
+                "planning.tag_any",
+                planning_raw.get("tag_any"),
+            ),
+            source_profile_key=planning_raw.get("source_profile_key"),
+            ops_support_planned=planning_raw.get("ops_support_planned"),
+            planning_basis=str(planning_raw["planning_basis"]),
+        ),
+        policy=FundingDemandPolicySnapshotDTO(
+            decision_fingerprint=str(policy_raw["decision_fingerprint"]),
+            eligible_fund_codes=_require_str_tuple(
+                "policy.eligible_fund_codes",
+                policy_raw.get("eligible_fund_codes"),
+            ),
+            default_restriction_keys=_require_str_tuple(
+                "policy.default_restriction_keys",
+                policy_raw.get("default_restriction_keys"),
+            ),
+            source_profile_summary=FundingSourceProfileSummaryDTO(
+                key=str(summary_raw["key"]),
+                source_kind=str(summary_raw["source_kind"]),
+                support_mode=str(summary_raw["support_mode"]),
+                approval_posture=str(summary_raw["approval_posture"]),
+                default_restriction_keys=_require_str_tuple(
+                    "policy.source_profile_summary.default_restriction_keys",
+                    summary_raw.get("default_restriction_keys"),
+                ),
+                bridge_allowed=bool(summary_raw["bridge_allowed"]),
+                repayment_expectation=str(
+                    summary_raw["repayment_expectation"]
+                ),
+                forgiveness_rule=str(summary_raw["forgiveness_rule"]),
+                auto_ops_bridge_on_publish=bool(
+                    summary_raw["auto_ops_bridge_on_publish"]
+                ),
+            ),
+        ),
+        workflow=FundingDemandWorkflowCuesDTO(
+            receive_posture=workflow_raw.get("receive_posture"),
+            reserve_on_receive_expected=workflow_raw.get(
+                "reserve_on_receive_expected"
+            ),
+            reimbursement_expected=workflow_raw.get("reimbursement_expected"),
+            bridge_support_possible=workflow_raw.get(
+                "bridge_support_possible"
+            ),
+            return_unused_posture=workflow_raw.get("return_unused_posture"),
+            recommended_income_kind=workflow_raw.get(
+                "recommended_income_kind"
+            ),
+            allowed_realization_modes=_require_str_tuple(
+                "workflow.allowed_realization_modes",
+                workflow_raw.get("allowed_realization_modes"),
+            ),
+        ),
+    )
+
+
+def get_published_funding_demand_package(
+    funding_demand_ulid: str,
+) -> PublishedFundingDemandPackageDTO:
+    where = "calendar_v2.get_published_funding_demand_package"
+    try:
         funding_demand_ulid = _require_ulid(
             "funding_demand_ulid",
             funding_demand_ulid,
@@ -474,87 +628,7 @@ def get_funding_demand_context(
         mod = importlib.import_module("app.slices.calendar.services_funding")
         fn = mod.get_funding_demand_context
         raw = fn(funding_demand_ulid)
-
-        demand_raw = raw["demand"]
-        planning_raw = raw["planning"]
-        policy_raw = raw["policy"]
-        summary_raw = policy_raw["source_profile_summary"]
-        workflow_raw = raw["workflow"]
-
-        return FundingDemandContextDTO(
-            schema_version=int(raw["schema_version"]),
-            demand=FundingDemandPublishedSnapshotDTO(
-                funding_demand_ulid=str(demand_raw["funding_demand_ulid"]),
-                project_ulid=str(demand_raw["project_ulid"]),
-                title=str(demand_raw["title"]),
-                status=str(demand_raw["status"]),
-                goal_cents=int(demand_raw["goal_cents"]),
-                deadline_date=demand_raw.get("deadline_date"),
-                published_at_utc=str(demand_raw["published_at_utc"]),
-            ),
-            planning=FundingDemandPlanningSnapshotDTO(
-                project_title=str(planning_raw["project_title"]),
-                spending_class=str(planning_raw["spending_class"]),
-                tag_any=_require_str_tuple(
-                    "planning.tag_any",
-                    planning_raw.get("tag_any"),
-                ),
-                source_profile_key=planning_raw.get("source_profile_key"),
-                ops_support_planned=planning_raw.get("ops_support_planned"),
-                planning_basis=str(planning_raw["planning_basis"]),
-            ),
-            policy=FundingDemandPolicySnapshotDTO(
-                decision_fingerprint=str(policy_raw["decision_fingerprint"]),
-                eligible_fund_codes=_require_str_tuple(
-                    "policy.eligible_fund_codes",
-                    policy_raw.get("eligible_fund_codes"),
-                ),
-                default_restriction_keys=_require_str_tuple(
-                    "policy.default_restriction_keys",
-                    policy_raw.get("default_restriction_keys"),
-                ),
-                source_profile_summary=FundingSourceProfileSummaryDTO(
-                    key=str(summary_raw["key"]),
-                    source_kind=str(summary_raw["source_kind"]),
-                    support_mode=str(summary_raw["support_mode"]),
-                    approval_posture=str(summary_raw["approval_posture"]),
-                    default_restriction_keys=_require_str_tuple(
-                        "policy.source_profile_summary.default_restriction_keys",
-                        summary_raw.get("default_restriction_keys"),
-                    ),
-                    bridge_allowed=bool(summary_raw["bridge_allowed"]),
-                    repayment_expectation=str(
-                        summary_raw["repayment_expectation"]
-                    ),
-                    forgiveness_rule=str(summary_raw["forgiveness_rule"]),
-                    auto_ops_bridge_on_publish=bool(
-                        summary_raw["auto_ops_bridge_on_publish"]
-                    ),
-                ),
-            ),
-            workflow=FundingDemandWorkflowCuesDTO(
-                receive_posture=workflow_raw.get("receive_posture"),
-                reserve_on_receive_expected=workflow_raw.get(
-                    "reserve_on_receive_expected"
-                ),
-                reimbursement_expected=workflow_raw.get(
-                    "reimbursement_expected"
-                ),
-                bridge_support_possible=workflow_raw.get(
-                    "bridge_support_possible"
-                ),
-                return_unused_posture=workflow_raw.get(
-                    "return_unused_posture"
-                ),
-                recommended_income_kind=workflow_raw.get(
-                    "recommended_income_kind"
-                ),
-                allowed_realization_modes=_require_str_tuple(
-                    "workflow.allowed_realization_modes",
-                    workflow_raw.get("allowed_realization_modes"),
-                ),
-            ),
-        )
+        return _to_published_funding_demand_package(raw)
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
 
@@ -691,6 +765,52 @@ def spend_project_funds(req: ProjectSpendRequestDTO) -> ProjectSpendDTO:
         raise _as_contract_error(where, exc) from exc
 
 
+def get_project_execution_truth(
+    *,
+    funding_demand_ulid: str,
+) -> FundingDemandExecutionTruthDTO:
+    where = "calendar_v2.get_project_execution_truth"
+    try:
+        funding_demand_ulid = _require_ulid(
+            "funding_demand_ulid",
+            funding_demand_ulid,
+        )
+        mod = importlib.import_module(
+            "app.slices.calendar.services_finance_bridge"
+        )
+        fn = mod.get_project_execution_truth
+        out = fn(funding_demand_ulid=funding_demand_ulid)
+        return FundingDemandExecutionTruthDTO(
+            funding_demand_ulid=out.funding_demand_ulid,
+            project_ulid=out.project_ulid,
+            received_cents=int(out.received_cents or 0),
+            reserved_cents=int(out.reserved_cents or 0),
+            encumbered_cents=int(out.encumbered_cents or 0),
+            spent_cents=int(out.spent_cents or 0),
+            remaining_open_cents=int(out.remaining_open_cents or 0),
+            funded_enough=bool(out.funded_enough),
+            support_source_posture=str(out.support_source_posture),
+            received_by_fund=tuple(out.received_by_fund or ()),
+            reserved_by_fund=tuple(out.reserved_by_fund or ()),
+            encumbered_by_fund=tuple(out.encumbered_by_fund or ()),
+            spent_by_expense_kind=tuple(out.spent_by_expense_kind or ()),
+            income_by_income_kind=tuple(out.income_by_income_kind or ()),
+            ops_float_incoming_open_by_fund=tuple(
+                out.ops_float_incoming_open_by_fund or ()
+            ),
+            ops_float_outgoing_open_by_fund=tuple(
+                out.ops_float_outgoing_open_by_fund or ()
+            ),
+            income_journal_ulids=tuple(out.income_journal_ulids or ()),
+            expense_journal_ulids=tuple(out.expense_journal_ulids or ()),
+            reserve_ulids=tuple(out.reserve_ulids or ()),
+            encumbrance_ulids=tuple(out.encumbrance_ulids or ()),
+            ops_float_ulids=tuple(out.ops_float_ulids or ()),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
 def list_published_funding_demands(
     *,
     project_ulid: str | None = None,
@@ -709,15 +829,19 @@ def list_published_funding_demands(
         out: list[FundingDemandDTO] = []
 
         for raw in raw_rows:
-            eligible = tuple(raw.get("eligible_fund_codes") or ())
+            eligible = tuple(_obj_get(raw, "eligible_fund_codes", ()) or ())
             out.append(
                 FundingDemandDTO(
-                    funding_demand_ulid=str(raw["funding_demand_ulid"]),
-                    project_ulid=str(raw["project_ulid"]),
-                    title=str(raw.get("title") or ""),
-                    status=str(raw.get("status") or "unknown"),
-                    goal_cents=int(raw.get("goal_cents") or 0),
-                    deadline_date=raw.get("deadline_date"),
+                    funding_demand_ulid=str(
+                        _obj_get(raw, "funding_demand_ulid")
+                    ),
+                    project_ulid=str(_obj_get(raw, "project_ulid")),
+                    title=str(_obj_get(raw, "title", "") or ""),
+                    status=str(
+                        _obj_get(raw, "status", "unknown") or "unknown"
+                    ),
+                    goal_cents=int(_obj_get(raw, "goal_cents", 0) or 0),
+                    deadline_date=_obj_get(raw, "deadline_date"),
                     eligible_fund_codes=eligible,
                 )
             )
@@ -1304,6 +1428,11 @@ __all__ = [
     "ProjectSpendRequestDTO",
     "ProjectSpendDTO",
     "TaskDTO",
+    "FundingDemandOriginSnapshotDTO",
+    "PublishedFundingDemandPackageDTO",
+    "FundingDemandExecutionTruthDTO",
+    "get_project_execution_truth",
+    "get_published_funding_demand_package",
     "get_funding_demand",
     "get_funding_demand_context",
     "get_cultivation_outcome",

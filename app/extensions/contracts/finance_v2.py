@@ -123,6 +123,30 @@ class FundingDemandMoneyViewDTO:
 
 
 @dataclass(frozen=True)
+class FundingDemandExecutionTruthDTO:
+    funding_demand_ulid: str
+    received_cents: int
+    reserved_cents: int
+    encumbered_cents: int
+    spent_cents: int
+    remaining_open_cents: int
+    funded_enough: bool
+    support_source_posture: str
+    received_by_fund: tuple[MoneyByKeyDTO, ...]
+    reserved_by_fund: tuple[MoneyByKeyDTO, ...]
+    encumbered_by_fund: tuple[MoneyByKeyDTO, ...]
+    spent_by_expense_kind: tuple[MoneyByKeyDTO, ...]
+    income_by_income_kind: tuple[MoneyByKeyDTO, ...]
+    ops_float_incoming_open_by_fund: tuple[MoneyByKeyDTO, ...]
+    ops_float_outgoing_open_by_fund: tuple[MoneyByKeyDTO, ...]
+    income_journal_ulids: tuple[str, ...]
+    expense_journal_ulids: tuple[str, ...]
+    reserve_ulids: tuple[str, ...]
+    encumbrance_ulids: tuple[str, ...]
+    ops_float_ulids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class IncomePostRequestDTO:
     amount_cents: int
     happened_at_utc: str
@@ -362,6 +386,27 @@ def _to_money_by_key(rows: object) -> tuple[MoneyByKeyDTO, ...]:
     return tuple(out)
 
 
+def _bucket_sum(rows: tuple[MoneyByKeyDTO, ...]) -> int:
+    return sum(int(r.amount_cents or 0) for r in rows or ())
+
+
+def _support_source_posture(
+    *,
+    received_by_fund: tuple[MoneyByKeyDTO, ...],
+    ops_float_incoming_open_by_fund: tuple[MoneyByKeyDTO, ...],
+) -> str:
+    sponsor_like = _bucket_sum(received_by_fund)
+    ops_like = _bucket_sum(ops_float_incoming_open_by_fund)
+
+    if sponsor_like > 0 and ops_like > 0:
+        return "mixed"
+    if ops_like > 0:
+        return "ops_float_supported"
+    if sponsor_like > 0:
+        return "sponsor_funded"
+    return "unfunded"
+
+
 def get_funding_demand_money_view(
     funding_demand_ulid: str,
     *,
@@ -399,6 +444,72 @@ def get_funding_demand_money_view(
                 raw.get("income_by_income_kind")
             ),
             links=links,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def get_funding_demand_execution_truth(
+    funding_demand_ulid: str,
+    *,
+    goal_cents: int | None = None,
+    as_of_iso: str | None = None,
+) -> FundingDemandExecutionTruthDTO:
+    where = "finance_v2.get_funding_demand_execution_truth"
+    try:
+        funding_demand_ulid = _require_ulid(
+            "funding_demand_ulid",
+            funding_demand_ulid,
+        )
+        if goal_cents is not None:
+            goal_cents = _require_int_ge("goal_cents", goal_cents, 0)
+
+        money = get_funding_demand_money_view(
+            funding_demand_ulid,
+            as_of_iso=as_of_iso,
+        )
+        ops = get_ops_float_summary(funding_demand_ulid)
+
+        available_support_cents = int(money.reserved_cents or 0) + int(
+            ops.incoming_open_cents or 0
+        )
+        remaining_open_cents = max(
+            int(goal_cents or 0) - int(money.spent_cents or 0),
+            0,
+        )
+        funded_enough = (
+            goal_cents is not None
+            and available_support_cents >= int(goal_cents)
+        )
+
+        return FundingDemandExecutionTruthDTO(
+            funding_demand_ulid=funding_demand_ulid,
+            received_cents=int(money.received_cents or 0),
+            reserved_cents=int(money.reserved_cents or 0),
+            encumbered_cents=int(money.encumbered_cents or 0),
+            spent_cents=int(money.spent_cents or 0),
+            remaining_open_cents=remaining_open_cents,
+            funded_enough=funded_enough,
+            support_source_posture=_support_source_posture(
+                received_by_fund=money.received_by_fund,
+                ops_float_incoming_open_by_fund=ops.incoming_open_by_fund,
+            ),
+            received_by_fund=money.received_by_fund,
+            reserved_by_fund=money.reserved_by_fund,
+            encumbered_by_fund=money.encumbered_by_fund,
+            spent_by_expense_kind=money.spent_by_expense_kind,
+            income_by_income_kind=money.income_by_income_kind,
+            ops_float_incoming_open_by_fund=ops.incoming_open_by_fund,
+            ops_float_outgoing_open_by_fund=ops.outgoing_open_by_fund,
+            income_journal_ulids=tuple(
+                money.links.income_journal_ulids or ()
+            ),
+            expense_journal_ulids=tuple(
+                money.links.expense_journal_ulids or ()
+            ),
+            reserve_ulids=tuple(money.links.reserve_ulids or ()),
+            encumbrance_ulids=tuple(money.links.encumbrance_ulids or ()),
+            ops_float_ulids=tuple(ops.ops_float_ulids or ()),
         )
     except Exception as exc:  # noqa: BLE001
         raise _as_contract_error(where, exc) from exc
@@ -1347,3 +1458,9 @@ def statement_of_activities(period: str) -> ActivitiesReportDTO:
     )
 
     return _svc_soa(period)
+
+
+__all__ = [
+    "FundingDemandExecutionTruthDTO",
+    "get_funding_demand_execution_truth",
+]

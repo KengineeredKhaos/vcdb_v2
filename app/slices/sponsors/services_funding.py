@@ -79,11 +79,13 @@ def list_open_funding_opportunities() -> list:
 
 
 def get_funding_opportunity(funding_demand_ulid: str):
-    context = calendar_v2.get_funding_demand_context(funding_demand_ulid)
+    package = calendar_v2.get_published_funding_demand_package(
+        funding_demand_ulid
+    )
     totals = get_funding_intent_totals(funding_demand_ulid)
     money = finance_v2.get_funding_demand_money_view(funding_demand_ulid)
     return funding_context_to_detail_view(
-        context,
+        package,
         totals=totals,
         money=money,
     )

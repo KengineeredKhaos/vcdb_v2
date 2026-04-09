@@ -1,4 +1,4 @@
-from __future__ import annotations
+# app/slices/calendar/services_draft.py
 
 """Calendar demand-draft services.
 
@@ -8,6 +8,7 @@ They promote into published FundingDemand rows.
 
 No commit/rollback here; routes own the transaction boundary.
 """
+from __future__ import annotations
 
 from typing import Any
 
@@ -34,13 +35,13 @@ def _require_ulid(name: str, value: str | None) -> str:
     return text
 
 
-
-def _clean_text(value: str | None, *, default: str | None = None) -> str | None:
+def _clean_text(
+    value: str | None, *, default: str | None = None
+) -> str | None:
     text = str(value or "").strip()
     if text:
         return text
     return default
-
 
 
 def _normalize_money(value: int | None, *, field: str) -> int:
@@ -50,8 +51,9 @@ def _normalize_money(value: int | None, *, field: str) -> int:
     return cents
 
 
-
-def _normalize_tags(raw: str | list[str] | tuple[str, ...] | None) -> list[str]:
+def _normalize_tags(
+    raw: str | list[str] | tuple[str, ...] | None
+) -> list[str]:
     if raw is None:
         return []
     parts: list[str]
@@ -70,7 +72,6 @@ def _normalize_tags(raw: str | list[str] | tuple[str, ...] | None) -> list[str]:
     return out
 
 
-
 def _get_project_or_raise(project_ulid: str) -> Project:
     _require_ulid("project_ulid", project_ulid)
     row = db.session.execute(
@@ -79,7 +80,6 @@ def _get_project_or_raise(project_ulid: str) -> Project:
     if row is None:
         raise LookupError(f"project not found: {project_ulid}")
     return row
-
 
 
 def _get_snapshot_or_raise(snapshot_ulid: str) -> ProjectBudgetSnapshot:
@@ -94,7 +94,6 @@ def _get_snapshot_or_raise(snapshot_ulid: str) -> ProjectBudgetSnapshot:
     return row
 
 
-
 def _get_draft_or_raise(draft_ulid: str) -> DemandDraft:
     _require_ulid("draft_ulid", draft_ulid)
     row = db.session.execute(
@@ -105,11 +104,9 @@ def _get_draft_or_raise(draft_ulid: str) -> DemandDraft:
     return row
 
 
-
 def _require_locked_snapshot(snapshot: ProjectBudgetSnapshot) -> None:
     if not bool(snapshot.is_locked):
         raise RuntimeError("demand draft requires a locked budget snapshot")
-
 
 
 def _require_draft_status(row: DemandDraft, allowed: set[str]) -> None:
@@ -117,7 +114,6 @@ def _require_draft_status(row: DemandDraft, allowed: set[str]) -> None:
     if status not in allowed:
         names = ", ".join(sorted(allowed))
         raise RuntimeError(f"demand draft must be in one of: {names}")
-
 
 
 def _validate_semantics(
@@ -132,11 +128,12 @@ def _validate_semantics(
             demand_eligible_fund_codes=tuple(eligible_fund_codes or ()),
         )
         if not res.ok:
-            raise ValueError("; ".join(res.errors) or "invalid spending_class")
+            raise ValueError(
+                "; ".join(res.errors) or "invalid spending_class"
+            )
 
     if source_profile_key:
         gov.get_funding_source_profile_summary(str(source_profile_key))
-
 
 
 def _emit(
@@ -161,7 +158,6 @@ def _emit(
         changed=changed or {},
         meta=meta or {},
     )
-
 
 
 def demand_draft_view(draft_ulid: str) -> dict[str, Any]:
@@ -191,7 +187,6 @@ def demand_draft_view(draft_ulid: str) -> dict[str, Any]:
     }
 
 
-
 def list_demand_drafts(project_ulid: str) -> list[dict[str, Any]]:
     _get_project_or_raise(project_ulid)
     rows = db.session.execute(
@@ -200,7 +195,6 @@ def list_demand_drafts(project_ulid: str) -> list[dict[str, Any]]:
         .order_by(DemandDraft.created_at_utc.desc())
     ).scalars()
     return [demand_draft_view(row.ulid) for row in rows]
-
 
 
 def create_draft_from_snapshot(
@@ -305,7 +299,6 @@ def create_draft_from_snapshot(
     return demand_draft_view(row.ulid)
 
 
-
 def update_draft(
     *,
     draft_ulid: str,
@@ -398,7 +391,6 @@ def update_draft(
     return demand_draft_view(row.ulid)
 
 
-
 def mark_draft_ready_for_review(
     *,
     draft_ulid: str,
@@ -426,7 +418,6 @@ def mark_draft_ready_for_review(
         changed={"fields": ["status", "ready_for_review_at_utc"]},
     )
     return demand_draft_view(row.ulid)
-
 
 
 def submit_draft_for_governance_review(
@@ -467,7 +458,6 @@ def submit_draft_for_governance_review(
     return demand_draft_view(row.ulid)
 
 
-
 def return_draft_for_revision(
     *,
     draft_ulid: str,
@@ -481,7 +471,9 @@ def return_draft_for_revision(
 
     clean_note = _clean_text(note)
     if not clean_note:
-        raise ValueError("note is required when returning a draft for revision")
+        raise ValueError(
+            "note is required when returning a draft for revision"
+        )
 
     row.status = "returned_for_revision"
     row.governance_note = clean_note
@@ -511,24 +503,100 @@ def return_draft_for_revision(
     return demand_draft_view(row.ulid)
 
 
+def _build_governance_review_request(
+    row: DemandDraft,
+    *,
+    overrides: dict[str, Any] | None = None,
+) -> gov.GovernanceReviewRequestDTO:
+    raw = dict(overrides or {})
+
+    spending_class = _clean_text(
+        raw.get("spending_class_candidate"),
+        default=row.spending_class_candidate,
+    )
+    source_profile_key = _clean_text(
+        raw.get("source_profile_key_candidate"),
+        default=row.source_profile_key,
+    )
+    tag_any = _normalize_tags(raw.get("tag_any") or row.tag_any_json)
+
+    return gov.GovernanceReviewRequestDTO(
+        demand_draft_ulid=row.ulid,
+        project_ulid=row.project_ulid,
+        budget_snapshot_ulid=row.budget_snapshot_ulid,
+        requested_amount_cents=int(row.requested_amount_cents or 0),
+        title=str(row.title or "").strip(),
+        summary=_clean_text(row.summary),
+        scope_summary=_clean_text(row.scope_summary),
+        needed_by_date=_clean_text(row.deadline_date),
+        source_profile_key_candidate=source_profile_key,
+        ops_support_planned=row.ops_support_planned,
+        spending_class_candidate=spending_class,
+        tag_any=tuple(tag_any),
+    )
+
+
+def _governance_decision_to_json(
+    decision: gov.GovernanceReviewDecisionDTO,
+) -> dict[str, Any]:
+    return {
+        "decision": decision.decision,
+        "governance_note": decision.governance_note,
+        "approved_spending_class": decision.approved_spending_class,
+        "approved_source_profile_key": (decision.approved_source_profile_key),
+        "eligible_fund_codes": list(decision.eligible_fund_codes or ()),
+        "default_restriction_keys": list(
+            decision.default_restriction_keys or ()
+        ),
+        "approved_tag_any": list(decision.approved_tag_any or ()),
+        "decision_fingerprint": decision.decision_fingerprint,
+        "validation_errors": list(decision.validation_errors or ()),
+        "reason_codes": list(decision.reason_codes or ()),
+        "matched_rule_ids": list(decision.matched_rule_ids or ()),
+    }
+
 
 def approve_draft_for_publish(
     *,
     draft_ulid: str,
     actor_ulid: str,
-    approved_semantics: dict[str, Any] | None = None,
+    review_overrides: dict[str, Any] | None = None,
+    governance_decision: gov.GovernanceReviewDecisionDTO | None = None,
     request_id: str | None = None,
 ) -> dict[str, Any]:
     row = _get_draft_or_raise(draft_ulid)
     _require_ulid("actor_ulid", actor_ulid)
     _require_draft_status(row, {"governance_review_pending"})
 
-    semantics = dict(approved_semantics or {})
-    eligible_fund_codes = list(semantics.get("eligible_fund_codes") or ())
-    spending_class = semantics.get("spending_class") or row.spending_class_candidate
-    source_profile_key = semantics.get("source_profile_key") or row.source_profile_key
-    default_restriction_keys = list(semantics.get("default_restriction_keys") or ())
-    tag_any = _normalize_tags(semantics.get("tag_any") or row.tag_any_json)
+    review_req = _build_governance_review_request(
+        row,
+        overrides=review_overrides,
+    )
+    decision = governance_decision or gov.review_calendar_demand(review_req)
+
+    if decision.decision != "approved":
+        note = str(decision.governance_note or "").strip()
+        errs = "; ".join(decision.validation_errors or ())
+        message = note or "Governance did not approve the draft."
+        if errs:
+            message = f"{message} {errs}"
+        raise RuntimeError(message)
+
+    spending_class = (
+        decision.approved_spending_class
+        or review_req.spending_class_candidate
+        or row.spending_class_candidate
+    )
+    source_profile_key = (
+        decision.approved_source_profile_key
+        or review_req.source_profile_key_candidate
+        or row.source_profile_key
+    )
+    eligible_fund_codes = list(decision.eligible_fund_codes or ())
+    default_restriction_keys = list(decision.default_restriction_keys or ())
+    approved_tag_any = _normalize_tags(
+        decision.approved_tag_any or review_req.tag_any or row.tag_any_json
+    )
 
     _validate_semantics(
         spending_class=spending_class,
@@ -537,16 +605,10 @@ def approve_draft_for_publish(
     )
 
     row.status = "approved_for_publish"
+    row.governance_note = _clean_text(decision.governance_note)
     row.review_decided_at_utc = now_iso8601_ms()
     row.approved_for_publish_at_utc = row.review_decided_at_utc
-    row.approved_semantics_json = {
-        "spending_class": spending_class,
-        "source_profile_key": source_profile_key,
-        "eligible_fund_codes": eligible_fund_codes,
-        "default_restriction_keys": default_restriction_keys,
-        "tag_any": tag_any,
-        "ops_support_planned": row.ops_support_planned,
-    }
+    row.approved_semantics_json = _governance_decision_to_json(decision)
     db.session.flush()
 
     _emit(
@@ -562,6 +624,7 @@ def approve_draft_for_publish(
         changed={
             "fields": [
                 "status",
+                "governance_note",
                 "review_decided_at_utc",
                 "approved_for_publish_at_utc",
                 "approved_semantics_json",
@@ -569,7 +632,6 @@ def approve_draft_for_publish(
         },
     )
     return demand_draft_view(row.ulid)
-
 
 
 def promote_draft_to_funding_demand(
@@ -594,10 +656,17 @@ def promote_draft_to_funding_demand(
         raise RuntimeError("draft has already been promoted")
 
     approved = dict(row.approved_semantics_json or {})
-    spending_class = approved.get("spending_class") or row.spending_class_candidate
+    spending_class = (
+        approved.get("approved_spending_class")
+        or row.spending_class_candidate
+    )
     eligible_fund_codes = list(approved.get("eligible_fund_codes") or ())
-    source_profile_key = approved.get("source_profile_key") or row.source_profile_key
-    tag_any = _normalize_tags(approved.get("tag_any") or row.tag_any_json)
+    source_profile_key = (
+        approved.get("approved_source_profile_key") or row.source_profile_key
+    )
+    tag_any = _normalize_tags(
+        approved.get("approved_tag_any") or row.tag_any_json
+    )
 
     _validate_semantics(
         spending_class=spending_class,
@@ -631,7 +700,7 @@ def promote_draft_to_funding_demand(
             approved.get("default_restriction_keys") or ()
         ),
         decision_fingerprint=approved.get("decision_fingerprint"),
-        approved_tag_any=approved.get("tag_any") or tag_any,
+        approved_tag_any=approved.get("approved_tag_any") or tag_any,
     )
 
     funding_demand = FundingDemand(

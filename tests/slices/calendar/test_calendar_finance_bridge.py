@@ -15,7 +15,6 @@ from app.slices.ledger.models import LedgerEvent
 from app.slices.sponsors.models import Sponsor
 from app.slices.sponsors.services_funding import create_funding_intent
 
-
 # -----------------
 # Local test helpers
 # -----------------
@@ -138,13 +137,19 @@ def _create_published_demand(
     approve_draft_for_publish(
         draft_ulid=draft["ulid"],
         actor_ulid=actor_ulid,
-        approved_semantics={
-            "spending_class": "basic_needs",
-            "source_profile_key": source_profile_key,
-            "eligible_fund_codes": list(eligible_fund_codes),
-            "default_restriction_keys": [],
-            "tag_any": [],
-        },
+        governance_decision=governance_v2.GovernanceReviewDecisionDTO(
+            decision="approved",
+            governance_note="Governance semantics approved for publish.",
+            approved_spending_class="basic_needs",
+            approved_source_profile_key=source_profile_key,
+            eligible_fund_codes=tuple(eligible_fund_codes),
+            default_restriction_keys=(),
+            approved_tag_any=(),
+            decision_fingerprint="fp-calendar-finance-bridge",
+            validation_errors=(),
+            reason_codes=(),
+            matched_rule_ids=(),
+        ),
     )
     promoted = promote_draft_to_funding_demand(
         draft_ulid=draft["ulid"],
@@ -369,6 +374,58 @@ def test_spend_project_funds_happy_path(app):
             .one_or_none()
         )
         assert evt is not None
+
+
+def test_get_project_execution_truth_reports_finance_posture(app):
+    with app.app_context():
+        ensure_default_accounts()
+        _project_ulid, demand_ulid, fund_code = _create_realized_demand()
+        tx = governance_v2.get_finance_taxonomy()
+        expense_kind = tx.expense_kinds[0].key
+
+        enc = calendar_v2.encumber_project_funds(
+            calendar_v2.ProjectEncumbranceRequestDTO(
+                funding_demand_ulid=demand_ulid,
+                amount_cents=4000,
+                fund_code=fund_code,
+                expense_kind=expense_kind,
+                happened_at_utc="2026-03-16T11:30:00Z",
+                request_id="req-phase4-encumber",
+            )
+        )
+        db.session.flush()
+
+        out = calendar_v2.spend_project_funds(
+            calendar_v2.ProjectSpendRequestDTO(
+                encumbrance_ulid=enc.encumbrance_ulid,
+                amount_cents=1500,
+                expense_kind=expense_kind,
+                payment_method="bank",
+                happened_at_utc="2026-03-16T12:00:00Z",
+                request_id="req-phase4-spend",
+            )
+        )
+        db.session.flush()
+        assert out.journal_ulid
+
+        truth = calendar_v2.get_project_execution_truth(
+            funding_demand_ulid=demand_ulid,
+        )
+
+        assert truth.funding_demand_ulid == demand_ulid
+        assert truth.received_cents == 12000
+        assert truth.reserved_cents == 12000
+        assert truth.encumbered_cents == 2500
+        assert truth.spent_cents == 1500
+        assert truth.remaining_open_cents == 10500
+        assert truth.funded_enough is True
+        assert truth.support_source_posture in {
+            "sponsor_funded",
+            "mixed",
+        }
+        assert truth.reserve_ulids
+        assert truth.encumbrance_ulids
+        assert truth.expense_journal_ulids
 
 
 def test_encumber_rejects_when_over_reserved(app):

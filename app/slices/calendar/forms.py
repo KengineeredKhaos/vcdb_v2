@@ -138,16 +138,6 @@ class DemandDraftApproveForm(FlaskForm):
         "Approved source profile key",
         validators=[Optional(), Length(max=32)],
     )
-    eligible_fund_codes = StringField(
-        "Eligible fund codes",
-        validators=[Optional(), Length(max=255)],
-        description="Comma-separated values",
-    )
-    default_restriction_keys = StringField(
-        "Default restriction keys",
-        validators=[Optional(), Length(max=255)],
-        description="Comma-separated values",
-    )
     tag_any = StringField(
         "Approved tags",
         validators=[Optional(), Length(max=255)],

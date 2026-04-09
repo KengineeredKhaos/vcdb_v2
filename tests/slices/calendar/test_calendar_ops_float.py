@@ -109,13 +109,19 @@ def _create_published_demand(
     approve_draft_for_publish(
         draft_ulid=draft["ulid"],
         actor_ulid=project.ulid,
-        approved_semantics={
-            "spending_class": spending_class,
-            "source_profile_key": source_profile_key,
-            "eligible_fund_codes": list(eligible_fund_codes),
-            "default_restriction_keys": list(default_restriction_keys),
-            "tag_any": list(tag_any),
-        },
+        governance_decision=governance_v2.GovernanceReviewDecisionDTO(
+            decision="approved",
+            governance_note="Governance semantics approved for publish.",
+            approved_spending_class=spending_class,
+            approved_source_profile_key=source_profile_key,
+            eligible_fund_codes=tuple(eligible_fund_codes),
+            default_restriction_keys=tuple(default_restriction_keys),
+            approved_tag_any=tuple(tag_any),
+            decision_fingerprint="fp-calendar-ops-float",
+            validation_errors=(),
+            reason_codes=(),
+            matched_rule_ids=(),
+        ),
     )
     promoted = promote_draft_to_funding_demand(
         draft_ulid=draft["ulid"],

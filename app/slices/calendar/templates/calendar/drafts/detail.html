@@ -70,11 +70,22 @@
     {{ approve_form.hidden_tag() }}
     <div>{{ approve_form.spending_class.label }} {{ approve_form.spending_class() }}</div>
     <div>{{ approve_form.source_profile_key.label }} {{ approve_form.source_profile_key() }}</div>
-    <div>{{ approve_form.eligible_fund_codes.label }} {{ approve_form.eligible_fund_codes() }}</div>
-    <div>{{ approve_form.default_restriction_keys.label }} {{ approve_form.default_restriction_keys() }}</div>
     <div>{{ approve_form.tag_any.label }} {{ approve_form.tag_any() }}</div>
     <button type="submit">Approve for publish</button>
   </form>
+{% endif %}
+{% set decision = draft.approved_semantics_json or {} %}
+{% if decision %}
+  <h2>Governance decision</h2>
+  <table>
+    <tr><th>Decision</th><td>{{ decision.decision or "" }}</td></tr>
+    <tr><th>Approved spending class</th><td>{{ decision.approved_spending_class or "" }}</td></tr>
+    <tr><th>Approved source profile</th><td>{{ decision.approved_source_profile_key or "" }}</td></tr>
+    <tr><th>Eligible fund codes</th><td>{{ decision.eligible_fund_codes | default([], true) | join(", ") }}</td></tr>
+    <tr><th>Default restriction keys</th><td>{{ decision.default_restriction_keys | default([], true) | join(", ") }}</td></tr>
+    <tr><th>Approved tags</th><td>{{ decision.approved_tag_any | default([], true) | join(", ") }}</td></tr>
+    <tr><th>Decision fingerprint</th><td>{{ decision.decision_fingerprint or "" }}</td></tr>
+  </table>
 {% endif %}
 
 {% if draft.status == "approved_for_publish" %}

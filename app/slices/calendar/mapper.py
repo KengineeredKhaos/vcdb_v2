@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from app.extensions.contracts._funding_dto import MoneyByKeyDTO
+
 
 @dataclass(frozen=True)
 class FundingDemandView:
@@ -40,6 +42,31 @@ class PublishedFundingDemandListItemView:
     goal_cents: int
     deadline_date: str | None
     eligible_fund_codes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class FundingDemandExecutionTruthView:
+    funding_demand_ulid: str
+    project_ulid: str | None
+    received_cents: int
+    reserved_cents: int
+    encumbered_cents: int
+    spent_cents: int
+    remaining_open_cents: int
+    funded_enough: bool
+    support_source_posture: str
+    received_by_fund: tuple[MoneyByKeyDTO, ...]
+    reserved_by_fund: tuple[MoneyByKeyDTO, ...]
+    encumbered_by_fund: tuple[MoneyByKeyDTO, ...]
+    spent_by_expense_kind: tuple[MoneyByKeyDTO, ...]
+    income_by_income_kind: tuple[MoneyByKeyDTO, ...]
+    ops_float_incoming_open_by_fund: tuple[MoneyByKeyDTO, ...]
+    ops_float_outgoing_open_by_fund: tuple[MoneyByKeyDTO, ...]
+    income_journal_ulids: tuple[str, ...]
+    expense_journal_ulids: tuple[str, ...]
+    reserve_ulids: tuple[str, ...]
+    encumbrance_ulids: tuple[str, ...]
+    ops_float_ulids: tuple[str, ...]
 
 
 @dataclass(frozen=True)

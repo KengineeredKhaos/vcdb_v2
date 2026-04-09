@@ -38,6 +38,7 @@ def _get_csrf_token(client, path: str) -> str:
 
 
 def _patch_governance_ok(monkeypatch) -> None:
+    from app.extensions.contracts import governance_v2
     from app.slices.calendar import services_drafts as drafts_svc
 
     monkeypatch.setattr(
@@ -48,7 +49,34 @@ def _patch_governance_ok(monkeypatch) -> None:
     monkeypatch.setattr(
         drafts_svc.gov,
         "get_funding_source_profile_summary",
-        lambda key: {"key": key},
+        lambda key: governance_v2.FundingSourceProfileSummaryDTO(
+            key=key,
+            source_kind="grant",
+            support_mode="reimbursement",
+            approval_posture="standard",
+            default_restriction_keys=("local_only",),
+            bridge_allowed=False,
+            repayment_expectation="none",
+            forgiveness_rule="not_applicable",
+            auto_ops_bridge_on_publish=False,
+        ),
+    )
+    monkeypatch.setattr(
+        drafts_svc.gov,
+        "review_calendar_demand",
+        lambda req: governance_v2.GovernanceReviewDecisionDTO(
+            decision="approved",
+            governance_note="Governance semantics approved for publish.",
+            approved_spending_class=req.spending_class_candidate,
+            approved_source_profile_key=req.source_profile_key_candidate,
+            eligible_fund_codes=("general_unrestricted",),
+            default_restriction_keys=("local_only",),
+            approved_tag_any=tuple(req.tag_any or ()),
+            decision_fingerprint="fp-draft-review",
+            validation_errors=(),
+            reason_codes=("source_profile:test",),
+            matched_rule_ids=("selector:test",),
+        ),
     )
 
 
@@ -475,8 +503,6 @@ def test_demand_draft_route_lifecycle_promotes_to_funding_demand(
             "csrf_token": csrf,
             "spending_class": "basic_needs",
             "source_profile_key": ("grant_return_unused"),
-            "eligible_fund_codes": "general_unrestricted",
-            "default_restriction_keys": "local_only",
             "tag_any": "welcome_home_kit, furniture",
         },
         follow_redirects=False,

@@ -606,10 +606,6 @@ Record and pay an actual Project expense against recognized available support.
 - whether encumbrance was relieved
 - remaining open amount on the demand
 
-
-
-
-
 ## 9. Ops Float clarification
 
 Ops Float is **not** a new demand source, alternate seam, or replacement for Sponsor fulfillment.

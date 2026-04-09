@@ -511,17 +511,22 @@ def list_funding_demands() -> list[object]:
 def list_published_funding_demands(
     *,
     project_ulid: str | None = None,
+    status: str = "published",
 ) -> list[object]:
-    stmt = (
-        select(FundingDemand)
-        .where(FundingDemand.status != "draft")
-        .order_by(
-            FundingDemand.published_at_utc.desc(),
-            FundingDemand.created_at_utc.desc(),
-        )
-    )
+    stmt = select(FundingDemand)
+
+    if status == "published":
+        stmt = stmt.where(FundingDemand.status == "published")
+    else:
+        stmt = stmt.where(FundingDemand.status == status)
+
     if project_ulid:
         stmt = stmt.where(FundingDemand.project_ulid == project_ulid)
+
+    stmt = stmt.order_by(
+        FundingDemand.published_at_utc.desc(),
+        FundingDemand.created_at_utc.desc(),
+    )
 
     rows = db.session.execute(stmt).scalars().all()
     return [funding_demand_to_list_item(row) for row in rows]

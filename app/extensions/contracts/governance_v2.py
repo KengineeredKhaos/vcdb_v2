@@ -83,6 +83,9 @@ __all__ = [
     # Calendar funding source builder
     "FundingSourceProfileSummaryDTO",
     "get_funding_source_profile_summary",
+    "GovernanceReviewRequestDTO",
+    "GovernanceReviewDecisionDTO",
+    "review_calendar_demand",
 ]
 
 
@@ -251,6 +254,37 @@ class FundingDecisionRequestDTO:
     # Actor roles for authority checks
     actor_rbac_roles: tuple[str, ...] = ()
     actor_domain_roles: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class GovernanceReviewRequestDTO:
+    demand_draft_ulid: str
+    project_ulid: str
+    budget_snapshot_ulid: str
+    requested_amount_cents: int
+    title: str
+    summary: str | None = None
+    scope_summary: str | None = None
+    needed_by_date: str | None = None
+    source_profile_key_candidate: str | None = None
+    ops_support_planned: bool | None = None
+    spending_class_candidate: str | None = None
+    tag_any: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class GovernanceReviewDecisionDTO:
+    decision: str
+    governance_note: str = ""
+    approved_spending_class: str | None = None
+    approved_source_profile_key: str | None = None
+    eligible_fund_codes: tuple[str, ...] = ()
+    default_restriction_keys: tuple[str, ...] = ()
+    approved_tag_any: tuple[str, ...] = ()
+    decision_fingerprint: str = ""
+    validation_errors: tuple[str, ...] = ()
+    reason_codes: tuple[str, ...] = ()
+    matched_rule_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -563,6 +597,133 @@ def preview_funding_decision(
             decision_fingerprint=str(
                 raw_out.get("decision_fingerprint") or ""
             ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def review_calendar_demand(
+    req: GovernanceReviewRequestDTO,
+) -> GovernanceReviewDecisionDTO:
+    where = "governance_v2.review_calendar_demand"
+    try:
+        _require_ulid("demand_draft_ulid", req.demand_draft_ulid)
+        project_ulid = _require_ulid("project_ulid", req.project_ulid)
+        _require_ulid(
+            "budget_snapshot_ulid",
+            req.budget_snapshot_ulid,
+        )
+        requested_amount_cents = _require_int_ge(
+            "requested_amount_cents",
+            req.requested_amount_cents,
+            0,
+        )
+
+        title = str(req.title or "").strip()
+        summary = str(req.summary or "").strip() or None
+        scope_summary = str(req.scope_summary or "").strip() or None
+        needed_by_date = str(req.needed_by_date or "").strip() or None
+
+        spending_class = (
+            str(req.spending_class_candidate or "").strip() or None
+        )
+        source_profile_key = (
+            str(req.source_profile_key_candidate or "").strip() or None
+        )
+        tag_any = tuple(
+            str(x).strip() for x in (req.tag_any or ()) if str(x).strip()
+        )
+
+        validation_errors: list[str] = []
+        default_restriction_keys: tuple[str, ...] = ()
+
+        if not title:
+            validation_errors.append("title must be a non-empty string")
+
+        sem = validate_semantic_keys(
+            spending_class=spending_class,
+        )
+        if not sem.ok:
+            validation_errors.extend(sem.errors)
+
+        if source_profile_key:
+            try:
+                profile = get_funding_source_profile_summary(
+                    source_profile_key,
+                )
+                default_restriction_keys = tuple(
+                    profile.default_restriction_keys or ()
+                )
+            except Exception as exc:  # noqa: BLE001
+                validation_errors.append(str(exc))
+
+        if validation_errors:
+            return GovernanceReviewDecisionDTO(
+                decision="returned_for_revision",
+                governance_note=(
+                    "Governance review returned the draft for revision."
+                ),
+                approved_spending_class=None,
+                approved_source_profile_key=None,
+                eligible_fund_codes=(),
+                default_restriction_keys=(),
+                approved_tag_any=(),
+                decision_fingerprint=None,
+                validation_errors=tuple(validation_errors),
+                reason_codes=(),
+                matched_rule_ids=(),
+            )
+
+        preview = preview_funding_decision(
+            FundingDecisionRequestDTO(
+                op="encumber",
+                amount_cents=requested_amount_cents,
+                funding_demand_ulid=None,
+                project_ulid=project_ulid,
+                spending_class=spending_class,
+                income_kind=None,
+                expense_kind=None,
+                source_profile_key=source_profile_key,
+                restriction_keys=(),
+                ops_support_planned=req.ops_support_planned,
+                demand_eligible_fund_codes=(),
+                tag_any=tag_any,
+                selected_fund_code=None,
+                actor_rbac_roles=(),
+                actor_domain_roles=(),
+            )
+        )
+
+        if not preview.allowed or not preview.eligible_fund_codes:
+            return GovernanceReviewDecisionDTO(
+                decision="returned_for_revision",
+                governance_note=(
+                    "Governance review found no publishable funding "
+                    "posture for this draft."
+                ),
+                approved_spending_class=None,
+                approved_source_profile_key=None,
+                eligible_fund_codes=(),
+                default_restriction_keys=(),
+                approved_tag_any=(),
+                decision_fingerprint=preview.decision_fingerprint,
+                validation_errors=tuple(preview.reason_codes),
+                reason_codes=preview.reason_codes,
+                matched_rule_ids=preview.matched_rule_ids,
+            )
+
+        return GovernanceReviewDecisionDTO(
+            decision="approved",
+            governance_note="Governance semantics approved for publish.",
+            approved_spending_class=spending_class,
+            approved_source_profile_key=source_profile_key,
+            eligible_fund_codes=preview.eligible_fund_codes,
+            default_restriction_keys=default_restriction_keys,
+            approved_tag_any=tag_any,
+            decision_fingerprint=preview.decision_fingerprint,
+            validation_errors=(),
+            reason_codes=preview.reason_codes,
+            matched_rule_ids=preview.matched_rule_ids,
         )
     except Exception as exc:  # noqa: BLE001
         raise _as_contract_error(where, exc) from exc
