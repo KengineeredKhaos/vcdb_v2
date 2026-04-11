@@ -125,9 +125,9 @@ def seed_rbac_from_policy(sess: Session) -> int:
     """Seed Auth Role rows from policy_rbac.json (idempotent)."""
     pol = load_policy_rbac() or {}
     codes = [
-        str(x).strip()
-        for x in (pol.get("rbac_roles") or [])
-        if str(x).strip()
+        str(row.get("code") or "").strip().lower()
+        for row in (pol.get("rbac_roles") or [])
+        if isinstance(row, dict) and str(row.get("code") or "").strip()
     ]
 
     key = _model_code_attr(Role, preferred="code")

@@ -22,6 +22,8 @@ This deviation is slice-local and deliberate.
 """
 from __future__ import annotations
 
+import logging
+
 from flask import (
     Blueprint,
     abort,
@@ -55,6 +57,37 @@ bp = Blueprint(
     url_prefix="/auth",
     template_folder="templates",
 )
+
+
+def _audit_auth_log(
+    *,
+    event: str,
+    username: str | None = None,
+    actor_ulid: str | None = None,
+    target_ulid: str | None = None,
+    success: bool,
+    meta: dict[str, object] | None = None,
+) -> None:
+    payload = {
+        "event": event,
+        "success": success,
+        "request_id": _request_id_value(),
+        "endpoint": request.endpoint,
+        "path": request.path,
+        "method": request.method,
+        "username": (str(username or "").strip().lower() or None),
+        "actor_ulid": actor_ulid,
+        "target_ulid": target_ulid,
+        "remote_addr": request.headers.get(
+            "X-Forwarded-For",
+            request.remote_addr,
+        ),
+        "user_agent": (
+            request.user_agent.string[:200] if request.user_agent else None
+        ),
+        "meta": meta or {},
+    }
+    logging.getLogger("vcdb.audit").info(payload)
 
 
 def _session_account_ulid() -> str | None:
@@ -130,12 +163,14 @@ def _rollback_with_log(message: str) -> None:
     current_app.logger.exception(message)
 
 
+# VCDB-SEC: PUBLIC entry=public authority=none reason=login_surface
 @bp.get("/login", endpoint="login")
 def login_form():
     nxt = request.args.get("next", "")
     return render_template("auth/login.html", next_url=nxt)
 
 
+# VCDB-SEC: PUBLIC entry=public authority=none reason=login_surface
 @bp.post("/login", endpoint="login_post")
 def login_post():
     username = request.form.get("username", "")
@@ -155,6 +190,19 @@ def login_post():
             operation="login_succeeded",
             actor_ulid=str(view["ulid"]),
             target_ulid=str(view["ulid"]),
+            meta={
+                "must_change_password": bool(
+                    view.get("must_change_password", False)
+                ),
+                "roles": list(view.get("roles") or []),
+            },
+        )
+        _audit_auth_log(
+            event="auth.login_succeeded",
+            username=username,
+            actor_ulid=str(view["ulid"]),
+            target_ulid=str(view["ulid"]),
+            success=True,
             meta={
                 "must_change_password": bool(
                     view.get("must_change_password", False)
@@ -190,6 +238,14 @@ def login_post():
                 target_ulid=target_ulid,
                 meta=meta,
             )
+            _audit_auth_log(
+                event="auth.login_failed",
+                username=username,
+                actor_ulid=None,
+                target_ulid=target_ulid,
+                success=False,
+                meta=meta,
+            )
         except Exception:
             session.pop("session_user", None)
             try:
@@ -214,6 +270,7 @@ def login_post():
         return redirect(url_for("auth.login", next=next_url))
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=self_service_auth_surface
 @bp.get("/change-password", endpoint="change_password_form")
 @login_required
 def change_password_form():
@@ -221,6 +278,7 @@ def change_password_form():
     return render_template("auth/change_password.html", next_url=nxt)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=self_service_auth_surface
 @bp.post("/change-password", endpoint="change_password_post")
 @login_required
 def change_password_post():
@@ -297,6 +355,7 @@ def change_password_post():
         return redirect(url_for("auth.change_password_form", next=next_url))
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=self_service_auth_surface
 @bp.post("/logout", endpoint="logout")
 @login_required
 def logout():
@@ -307,6 +366,13 @@ def logout():
             operation="logout_succeeded",
             actor_ulid=actor_ulid,
             target_ulid=actor_ulid,
+        )
+        _audit_auth_log(
+            event="auth.logout_succeeded",
+            actor_ulid=actor_ulid,
+            target_ulid=actor_ulid,
+            success=True,
+            meta={},
         )
     except Exception:
         _rollback_with_log("Unexpected error during logout")
@@ -320,52 +386,7 @@ def logout():
     return redirect(url_for("auth.login"))
 
 
-@bp.post("/bootstrap/first-admin", endpoint="bootstrap_first_admin")
-@csrf.exempt
-def bootstrap_first_admin():
-    payload = request.get_json(silent=True) or {}
-
-    try:
-        view = svc.bootstrap_first_admin(
-            username=payload.get("username", ""),
-            password=payload.get("password", ""),
-            email=payload.get("email"),
-            entity_ulid=payload.get("entity_ulid"),
-        )
-
-        _emit_and_commit(
-            operation="bootstrap_first_admin_created",
-            target_ulid=str(view["ulid"]),
-            changed={
-                "fields": [
-                    "username",
-                    "password_hash",
-                    "roles",
-                    "is_active",
-                    "must_change_password",
-                ]
-            },
-            meta={"roles": list(view.get("roles") or [])},
-        )
-
-        return jsonify(view), 201
-
-    except PermissionError as exc:
-        db.session.rollback()
-        return jsonify({"ok": False, "error": str(exc)}), 409
-
-    except ValueError as exc:
-        db.session.rollback()
-        return jsonify({"ok": False, "error": str(exc)}), 400
-
-    except Exception:
-        _rollback_with_log("Unexpected error during first-admin bootstrap")
-        return (
-            jsonify({"ok": False, "error": "bootstrap failed unexpectedly"}),
-            500,
-        )
-
-
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface
 @bp.get("/admin/users", endpoint="admin_list_users")
 @rbac("admin")
 def admin_list_users():
@@ -378,6 +399,7 @@ def admin_list_users():
     )
 
 
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface
 @bp.get("/admin/users/<user_ulid>", endpoint="admin_get_user")
 @rbac("admin")
 def admin_get_user(user_ulid: str):
@@ -388,6 +410,7 @@ def admin_get_user(user_ulid: str):
         abort(404)
 
 
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface
 @bp.post("/admin/users", endpoint="admin_create_user")
 @csrf.exempt
 @rbac("admin")
@@ -410,7 +433,7 @@ def admin_create_user():
 
         _emit_and_commit(
             operation="account_created",
-            actor_ulid=str(view["ulid"]),
+            actor_ulid=_current_actor_ulid(),
             target_ulid=str(view["ulid"]),
             changed={
                 "fields": [
@@ -441,6 +464,7 @@ def admin_create_user():
         return jsonify({"ok": False, "error": "account create failed"}), 500
 
 
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface
 @bp.post(
     "/admin/users/<user_ulid>/reset-password",
     endpoint="admin_reset_password",
@@ -489,6 +513,7 @@ def admin_reset_password(user_ulid: str):
         )
 
 
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface
 @bp.post("/admin/users/<user_ulid>/unlock", endpoint="admin_unlock_user")
 @csrf.exempt
 @rbac("admin")
@@ -520,6 +545,7 @@ def admin_unlock_user(user_ulid: str):
         return jsonify({"ok": False, "error": "unlock failed"}), 500
 
 
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface
 @bp.post("/admin/users/<user_ulid>/active", endpoint="admin_set_active")
 @csrf.exempt
 @rbac("admin")
@@ -562,6 +588,7 @@ def admin_set_active(user_ulid: str):
         )
 
 
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface
 @bp.post("/admin/users/<user_ulid>/roles", endpoint="admin_set_roles")
 @csrf.exempt
 @rbac("admin")
@@ -580,7 +607,7 @@ def admin_set_roles(user_ulid: str):
 
         _emit_and_commit(
             operation="account_roles_updated",
-            actor_ulid=str(view["ulid"]),
+            actor_ulid=_current_actor_ulid(),
             target_ulid=user_ulid,
             changed={"fields": ["roles"]},
             meta={"roles": list(view.get("roles") or [])},

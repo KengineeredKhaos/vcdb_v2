@@ -821,7 +821,7 @@ def funding_demand_detail(ulid: str):
 def funding_demand_list():
     status = (request.args.get("status") or "").strip() or None
     project_ulid = (request.args.get("project_ulid") or "").strip() or None
-    rows = funding_svc.list_funding_demands_view(
+    rows = funding_svc.list_published_funding_demands(
         project_ulid=project_ulid,
         status=status,
     )

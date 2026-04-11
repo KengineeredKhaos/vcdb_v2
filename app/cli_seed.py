@@ -42,6 +42,39 @@ from app.seeds import core as seed_core
 
 seed_cmd = click.Group("seed")
 
+BOOTSTRAP_OPERATORS = (
+    {
+        "first_name": "Admin",
+        "last_name": "Operator",
+        "preferred_name": "",
+        "username": "admin.op",
+        "email": "admin.op@example.invalid",
+        "temporary_password": "ChangeMe-AdminOp-1!",
+        "rbac_role": "admin",
+        "domain_roles": ("civilian",),
+    },
+    {
+        "first_name": "Staff",
+        "last_name": "Operator",
+        "preferred_name": "",
+        "username": "staff.op",
+        "email": "staff.op@example.invalid",
+        "temporary_password": "ChangeMe-StaffCiv-1!",
+        "rbac_role": "staff",
+        "domain_roles": ("civilian",),
+    },
+    {
+        "first_name": "Audit",
+        "last_name": "Reader",
+        "preferred_name": "",
+        "username": "auditor.read",
+        "email": "auditor.read@example.invalid",
+        "temporary_password": "ChangeMe-Auditor-1!",
+        "rbac_role": "auditor",
+        "domain_roles": (),
+    },
+)
+
 
 def _sqlite_db_path() -> Path:
     uri = current_app.config.get("SQLALCHEMY_DATABASE_URI") or ""
@@ -74,6 +107,89 @@ def _fresh_sqlite_db(*, force: bool) -> None:
         path.unlink()
 
 
+def _seed_bootstrap_operators(*, sess) -> tuple[int, str]:
+    """
+    Seed real operator accounts using the same seams the app already trusts.
+
+    Returns:
+        (created_count, seed_actor_ulid)
+
+    seed_actor_ulid is the real Entity.ulid of the first seeded admin and
+    should be used as actor_ulid for subsequent seeded service mutations.
+    """
+    from app.slices.admin import operator_onboard_services as admin_onboard
+    from app.slices.auth import services as auth_svc
+    from app.slices.entity import services as entity_svc
+
+    existing_by_username = {
+        str(v.get("username") or "").strip().lower(): v
+        for v in auth_svc.list_user_views()
+    }
+
+    created = 0
+    seed_actor_ulid: str | None = None
+
+    for idx, spec in enumerate(BOOTSTRAP_OPERATORS):
+        username = str(spec["username"]).strip().lower()
+        existing = existing_by_username.get(username)
+
+        if existing:
+            account_ulid = str(existing["ulid"])
+            entity_ulid = str(existing.get("entity_ulid") or "").strip()
+            if not entity_ulid:
+                raise RuntimeError(
+                    f"Bootstrap account {username} exists without entity_ulid."
+                )
+
+            auth_svc.set_account_roles(account_ulid, [spec["rbac_role"]])
+            auth_svc.set_account_active(account_ulid, is_active=True)
+            auth_svc.set_password(
+                account_ulid,
+                spec["temporary_password"],
+                must_change_password=True,
+                unlock=True,
+            )
+        else:
+            actor_for_create = seed_actor_ulid if seed_actor_ulid else None
+
+            result = admin_onboard.commit_operator_onboard(
+                actor_ulid=actor_for_create,
+                request_id=new_ulid(),
+                first_name=spec["first_name"],
+                last_name=spec["last_name"],
+                preferred_name=spec["preferred_name"],
+                username=spec["username"],
+                email=spec["email"],
+                temporary_password=spec["temporary_password"],
+                role_code=spec["rbac_role"],
+            )
+            account_ulid = str(result.account_ulid)
+            entity_ulid = str(result.entity_ulid)
+            created += 1
+
+        # Attach requested domain roles using a real actor ULID.
+        # For the very first admin, allow self-attachment during bootstrap.
+        # actor_for_roles = seed_actor_ulid or entity_ulid
+        # for role in spec["domain_roles"]:
+        #     entity_svc.attach_role(
+        #         entity_ulid=entity_ulid,
+        #         role=role,
+        #         request_id=new_ulid(),
+        #         actor_ulid=actor_for_roles,
+        #     )
+
+        # First operator must become the canonical seed actor.
+        if idx == 0:
+            seed_actor_ulid = entity_ulid
+
+    if not seed_actor_ulid:
+        raise RuntimeError(
+            "Bootstrap operator seeding did not produce an admin actor."
+        )
+
+    return created, seed_actor_ulid
+
+
 def seed_bootstrap_impl(
     *,
     fresh: bool,
@@ -95,13 +211,22 @@ def seed_bootstrap_impl(
 
     # Always migrate to latest
     alembic_upgrade()
-    seed_actor_ulid = new_ulid()
     faker = seed_core.make_faker(faker_seed)
 
     # Role codes (no commit yet)
     n_rbac, n_domain = seed_core.seed_policy_codes_no_commit(db.session)
 
+    # Real bootstrap operators first.
+    # The first admin's real entity_ulid becomes the seed actor for the rest
+    # of the seeded service calls.
+    n_bootstrap_ops, seed_actor_ulid = _seed_bootstrap_operators(
+        sess=db.session
+    )
+
     # Late imports so app boots even if slices change during refactors
+    from app.slices.admin import operator_onboard_services as admin_onboard
+    from app.slices.auth import services as auth_svc
+    from app.slices.entity import services as entity_svc
     from app.slices.resources.services import resource_link_poc
     from app.slices.sponsors.services import sponsor_link_poc
 
@@ -178,10 +303,13 @@ def seed_bootstrap_impl(
     db.session.commit()
 
     click.echo(
-        f"OK — bootstrap complete. (RBAC +{n_rbac}, Domain +{n_domain}, "
-        f"resources={resources}, sponsors={sponsors}, customers={customers}, "
-        f"logistics_locations={logistics.location_count}, "
-        f"logistics_skus={logistics.sku_count}, "
+        f"OK — bootstrap complete.\n  "
+        f"RBAC roles seeded {n_rbac},\n  "
+        f"domain_roles_seeded={n_domain},\n  "
+        f"bootstrap_operators={n_bootstrap_ops},\n  "
+        f"resources={resources}, sponsors={sponsors}, customers={customers},\n  "
+        f"logistics_locations={logistics.location_count},\n  "
+        f"logistics_skus={logistics.sku_count},\n  "
         f"logistics_stock_pairs={logistics.stocked_pairs_count})"
     )
     return True

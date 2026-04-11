@@ -58,8 +58,8 @@ class DevConfig(BaseConfig):
     LOG_BACKUPS = 14
     LOG_MAX_BYTES = 5 * 1024 * 1024  # 5MB
 
-    # Local sqlite file in repo /var/app-instance/dev.db
-    DATABASE = str(BaseConfig.BASE_DIR / "var" / "app-instance" / "dev.db")
+    # Local sqlite file in repo /app/instance/dev.db
+    DATABASE = str(BaseConfig.BASE_DIR / "app" / "instance" / "dev.db")
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         "VCDB_DB", f"sqlite:///{DATABASE}"
     )
@@ -112,41 +112,62 @@ class TestConfig(BaseConfig):
 
 # ---------- Production ----------
 class ProdConfig(BaseConfig):
+    ENV = "production"
     DEBUG = False
     TESTING = False
 
-    # Lazy/default DB path — do NOT raise at import-time
-    VCDB_DB = os.getenv("VCDB_DB")
-    SQLALCHEMY_DATABASE_URI = (
-        f"sqlite:///{VCDB_DB}"
-        if VCDB_DB
-        else "sqlite:///var/app-instance/prod.db"
-    )
+    VCDB_DB = os.getenv("VCDB_DB", "").strip()
+    SQLALCHEMY_DATABASE_URI = f"sqlite:///{VCDB_DB}" if VCDB_DB else None
 
-    AUTH_MODE = "db"
-    SESSION_COOKIE_NAME = "vcdb_test_session"
-    REMEMBER_COOKIE_NAME = "vcdb_test_remember"
-    ALLOW_HEADER_AUTH = True
+    AUTH_MODE = "real"
+    ALLOW_HEADER_AUTH = False
+
+    SESSION_COOKIE_NAME = "vcdb_prod_session"
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+
+    REMEMBER_COOKIE_NAME = "vcdb_prod_remember"
+    REMEMBER_COOKIE_HTTPONLY = True
+    REMEMBER_COOKIE_SECURE = True
+    REMEMBER_COOKIE_SAMESITE = "Lax"
+
     AUDIT_LOG_LEVEL = os.environ.get("VCDB_AUDIT_LEVEL", "INFO")
 
     @classmethod
     def validate(cls):
-        """
-        Call this only when actually using ProdConfig to ensure env is set.
-        """
-        if not cls.VCDB_DB:
+        db_path = os.environ.get("VCDB_DB", "").strip()
+        secret = os.environ.get("VCDB_SECRET_KEY", "").strip()
+
+        if not db_path:
             raise RuntimeError(
-                "ProdConfig requires VCDB_DB (absolute path to the SQLite DB). "
-                "Either set VCDB_DB or override SQLALCHEMY_DATABASE_URI."
+                "ProdConfig requires VCDB_DB as an absolute DB file path."
             )
+        if not secret or secret == "dev-not-secret":
+            raise RuntimeError("ProdConfig requires a real VCDB_SECRET_KEY.")
+        if cls.AUTH_MODE != "real":
+            raise RuntimeError("ProdConfig AUTH_MODE must be 'real'.")
+        if cls.ALLOW_HEADER_AUTH:
+            raise RuntimeError("ProdConfig must not allow header auth.")
 
 
 """
 Then set these when running prod:
 
-export VCDB_DB="sqlite:////data/vcdb.db"   # or a Postgres URL
-export VCDB_SECRET_KEY="change-me"
-export ATTACHMENTS_ROOT="/data/vcdb-attachments"
+export VCDB_DB="/srv/vcdb/var/db/prod.db"
+export VCDB_SECRET_KEY="put-a-long-random-secret-here"
+export ATTACHMENTS_ROOT="/srv/vcdb/var/uploads"
+export VCDB_LOG_DIR="/srv/vcdb/var/log"
 
+Notes:
+- VCDB_DB is a filesystem path here, not a full SQLAlchemy URL.
+- SESSION_COOKIE_SECURE=True assumes users reach the site over HTTPS.
+
+SECRET_KEY Notes:
+
+python -c 'import secrets; print(secrets.token_hex())'
+
+Store the real key in the server environment or a root-readable env file
+loaded by Apache
 
 """

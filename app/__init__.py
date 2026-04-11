@@ -1,4 +1,51 @@
 # app/__init__.py
+
+# @TODO(app/__init__.py cleanup, post-security-sweep / pre-beta-freeze)
+#
+# Keep this file boring. It should remain a thin app-factory shell, not a
+# second control surface or policy engine.
+#
+# Cleanup / refit items to revisit after current security hardening:
+#
+# 1) Blueprint registration strategy
+#    - All blueprints are currently registered unconditionally.
+#    - Hidden-from-menu is not the same as unreachable.
+#    - Revisit whether unfinished slices should be config-gated at boot or
+#      whether full route hardening alone is the intended protection model.
+#
+# 2) Admin-role helper deduplication
+#    - user_is_admin() and _is_admin_user() duplicate role-check logic.
+#    - Move toward one canonical helper/facade for admin-role checks.
+#
+# 3) Stub-auth scaffold cleanup
+#    - Keep stub auth strictly fenced to development/testing only.
+#    - Revisit whether any remaining convenience behavior should be reduced
+#      further once route-security work is complete.
+#
+# 4) admin_alerts() coupling
+#    - admin_alerts() currently reaches directly into admin_cron_status via
+#      SQL in the app factory layer.
+#    - Revisit whether this should move behind an Admin-owned helper/service
+#      or other read seam.
+#
+# 5) Empty / placeholder seams
+#    - _bind_contracts() is currently empty.
+#    - Either remove it or document its intended purpose clearly.
+#
+# 6) Import / structure audit
+#    - Revisit stale or no-longer-needed imports after security sweep settles.
+#    - Keep boot order explicit: config -> logging -> extensions -> csrf/jinja
+#      -> blueprints -> context processors -> error handlers -> cli.
+#
+# 7) Factory-size / readability pass
+#    - Consider splitting large local sections into small private helpers
+#      if this file grows further.
+#    - Goal: preserve one readable app-construction path with minimal drift.
+#
+# Non-goal for this TODO:
+#    - Do not reopen broad refactors during the current route-security pass.
+#    - Finish the security sweep first, then revisit cleanup with tests green.
+
 from __future__ import annotations
 
 import logging
@@ -45,19 +92,23 @@ def create_app(config_object="config.DevConfig"):
     # prod | staging | development | test
 
     # --- DB defaults (must be before init_extensions) ---
-    # Prefer explicit SQLALCHEMY_DATABASE_URI; otherwise derive from DATABASE,
-    # otherwise fall back to instance/dev.db.
-    # Resolve DB URI once, predictably.
+    # In development/testing, allow a local fallback DB path.
+    # In production, fail loudly if config did not provide a DB URI.
     if not flask_app.config.get("SQLALCHEMY_DATABASE_URI"):
+        env_name = str(flask_app.config.get("ENV", "")).lower()
+
+        if env_name == "production":
+            raise RuntimeError(
+                "create_app() requires SQLALCHEMY_DATABASE_URI in production."
+            )
+
         db_path = flask_app.config.get("DATABASE")
         if not db_path:
             Path(flask_app.instance_path).mkdir(parents=True, exist_ok=True)
             db_path = Path(flask_app.instance_path) / "dev.db"
             flask_app.config["DATABASE"] = str(db_path)
-        flask_app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
 
-    # Always good to disable this noise
-    flask_app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
+        flask_app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
 
     # -----------------
     # testing logging
@@ -151,18 +202,26 @@ def create_app(config_object="config.DevConfig"):
         def is_admin(self) -> bool:
             return "admin" in [r.lower() for r in (self.roles or [])]
 
+    # VCDB-SEC: ACTIVE entry=dev_only authority=none reason=stub_auth_scaffold test=none
     @flask_app.before_request
     def _apply_stub_auth():
-        """Enable header-based or auto-admin stub auth in dev/testing."""
+        """Enable stub auth only in development/testing."""
         cfg = flask_app.config
+
         if cfg.get("AUTH_MODE") != "stub":
-            return  # real auth path
+            return
+
+        env_name = str(cfg.get("ENV", "")).lower()
+        if env_name not in {"development", "testing"}:
+            raise RuntimeError(
+                "Stub auth is only allowed in development/testing."
+            )
 
         roles: list[str] = []
         domains: list[str] = []
 
         # 1) Header stubs (take precedence if present)
-        if cfg.get("ALLOW_HEADER_AUTH", True):
+        if cfg.get("ALLOW_HEADER_AUTH", False):
             x_rbac = request.headers.get("X-Auth-Stub")
             x_domain = request.headers.get("X-Domain-Stub")
             if x_rbac:
@@ -180,11 +239,8 @@ def create_app(config_object="config.DevConfig"):
                 roles=roles,
                 domain_roles=domains,
             )
-            # Log the user in for this request (sessionless; fine for dev)
             with suppress(Exception):
                 login_user(user, remember=False, force=True, fresh=True)
-
-    #
 
     # -------------
     # Register
@@ -393,9 +449,11 @@ def create_app(config_object="config.DevConfig"):
 
     @flask_app.context_processor
     def _stub_banner():
-        return {
-            "_stub_auth_active": flask_app.config.get("AUTH_MODE") == "stub"
-        }
+        env_name = str(flask_app.config.get("ENV", "")).lower()
+        stub_active = flask_app.config.get(
+            "AUTH_MODE"
+        ) == "stub" and env_name in {"development", "testing"}
+        return {"_stub_auth_active": stub_active}
 
     # -------------
     # dev Dbase schema check, Route dump, Sanity check

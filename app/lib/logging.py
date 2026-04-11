@@ -17,7 +17,13 @@ consistent, machine-parseable logs for debugging, auditing, and export.
 If you add new loggers, configure them via configure_logging rather than
 hand-rolling your own handlers.
 """
-
+# @TODO(app/lib/logging.py, post-security-sweep)
+# - Fix logger reset tuple typo: "debug", "vcdb.app" need a comma split.
+# - Revisit environment detection; current is_dev logic is too broad.
+# - Align AUDIT_LOG_PATH config with actual handler wiring, or remove the dead knob.
+# - Confirm dedicated audit logger contract is "vcdb.audit" everywhere.
+# - Recheck handler/propagate/reset behavior for duplicate or stale logging paths.
+# - Keep logging setup centralized here; do not hand-roll handlers elsewhere.
 
 from __future__ import annotations
 
@@ -168,7 +174,8 @@ def configure_logging(flask_app) -> None:
         "werkzeug",
         "jinja2",
         "app",
-        "debug" "vcdb.app",
+        "debug",
+        "vcdb.app",
         "vcdb.audit",
         "vcdb.jobs",
         "vcdb.export",

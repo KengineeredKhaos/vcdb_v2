@@ -46,6 +46,94 @@ Dev-only helpers
 
 Auto-login and impersonation remain development conveniences only. They
 must never become part of the canonical production authentication path.
+
+#------------------
+# Security Sweep
+# Tags & Examples
+# -----------------
+
+the format rule absolute for every touched route:
+
+# VCDB-SEC: <STATUS> entry=<rbac> authority=<gate|none|pending> reason=<short_slug> test=<slug|none>
+
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=none
+# VCDB-SEC: STAGED entry=admin authority=pending reason=missing_admin_resolution test=admin_review_approve_permissions
+# VCDB-SEC: OPEN entry=pending authority=pending reason=needs_matrix_decision test=customer_exception_permissions
+# VCDB-SEC: PUBLIC entry=public authority=none reason=login_surface test=none
+
+# VCDB-SEC: <STATUS> entry=<rbac> authority=<gate|none|pending> reason=<short_slug>
+
+# Vocabulary:
+#
+# ACTIVE = Route & services scoped & activated
+# STAGED = Under development, Route | Services pending review
+# OPEN = Under development, Route | Services undeveloped
+# PUBLIC = Route & services unrestricted
+#
+# entry: RBAC Access Level requirements
+# public
+# authenticated_user
+# admin
+# staff
+# auditor
+# authenticated_user
+# admin authority
+#
+# authority: RBAC or Domain Execution Authority requirments
+# login_required
+# admin-only
+# governor-override
+#
+# reason: Special constraints/limitations/
+# self_service_auth_surface
+# admin_only_surface
+
+
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface
+@bp.get("/customers/<ulid>")
+@login_required
+@require_rbac("staff", "admin")
+def detail(...):
+
+# VCDB-SEC: STAGED entry=admin authority=pending reason=admin_review_path_incomplete
+# @login_required
+# @require_rbac("admin")
+# @require_governance_authority("policy_override")
+@bp.post("/admin/review/<ulid>/approve")
+def approve(...):
+
+
+# VCDB-SEC: OPEN entry=unknown authority=unknown reason=direct_vs_admin_mediated_unsettled
+@bp.post("/customers/<ulid>/exception")
+def exception(...):
+
+
+# VCDB-SEC: PUBLIC entry=public authority=none reason=login_surface
+@bp.get("/login")
+def login(...):
+
+
+For every STAGED or OPEN route, require a matching test note or test name slug
+in the comment.
+
+# VCDB-SEC: STAGED entry=admin authority=pending reason=missing_admin_resolution test=admin_review_approve_permissions
+
+Use short slugs for reasons, such as:
+
+missing_admin_resolution
+awaiting_matrix_freeze
+direct_vs_admin_mediated_unsettled
+authority_rule_not_canonized
+public_surface
+operator_surface
+
+For the actual sweep, use these grep checks:
+
+rg "VCDB-SEC:" app/
+rg "VCDB-SEC: STAGED" app/
+rg "VCDB-SEC: OPEN" app/
+rg "VCDB-SEC: PUBLIC" app/
+
 """
 
 
@@ -158,47 +246,6 @@ def _enforce_password_change():
     if request.endpoint in allowed or request.endpoint is None:
         return
     return redirect(url_for("auth.change_password_form"))
-
-
-@bp.get("/dev/impersonate")
-@login_required
-def dev_impersonate():
-    from flask import redirect, request
-
-    if not _is_dev_mode():
-        return ("Not available", 404)
-
-    as_role = (request.args.get("as") or "").strip()
-    roles_csv = (request.args.get("roles") or "").strip()
-    if as_role and not roles_csv:
-        roles_csv = as_role
-
-    allowed = set(
-        current_app.config.get("STUB_ROLE_CODES", {"user", "admin"})
-    )
-    roles = [
-        role
-        for role in (part.strip().lower() for part in roles_csv.split(","))
-        if role in allowed
-    ] or ["user"]
-
-    ident = session.get("session_user") or {
-        "ulid": new_ulid(),
-        "name": "dev",
-        "username": "dev",
-        "email": "",
-        "roles": ["user"],
-        "must_change_password": False,
-    }
-    ident.update({"roles": roles})
-    session["session_user"] = ident
-
-    login_user(SessionUser(**ident), remember=False)
-
-    return redirect(
-        request.args.get("next")
-        or current_app.config.get("DEV_START_URL", "/")
-    )
 
 
 @login_manager.request_loader
