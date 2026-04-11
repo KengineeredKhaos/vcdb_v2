@@ -24,6 +24,7 @@ from flask import (
     session,
     url_for,
 )
+from flask_login import login_required
 
 from app.extensions import db, event_bus
 from app.extensions.auth_ctx import current_actor_ulid
@@ -31,7 +32,6 @@ from app.extensions.contracts import entity_v2
 from app.extensions.errors import ContractError
 from app.lib.ids import new_ulid
 from app.lib.request_ctx import ensure_request_id
-from app.lib.security import require_permission  # noqa: F401
 
 from . import onboard_services as wiz
 from . import services as res_svc
@@ -104,12 +104,13 @@ def _nav(entity_ulid: str, current_step: str) -> list[dict[str, object]]:
         )
     return out
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/poc/attach/<person_ulid>",
     methods=["GET", "POST"],
     endpoint="poc_attach",
 )
+@login_required
 def poc_attach(person_ulid: str):
     req = ensure_request_id()
 
@@ -162,8 +163,9 @@ def poc_attach(person_ulid: str):
         request_id=req,
     )
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/poc/attach/confirm", endpoint="poc_attach_confirm")
+@login_required
 def poc_attach_confirm():
     req = ensure_request_id()
     actor = current_actor_ulid()
@@ -214,13 +216,13 @@ def poc_attach_confirm():
             url_for("resources.poc_attach", person_ulid=person_ulid)
         )
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/start",
     methods=["GET", "POST"],
     endpoint="onboard_start",
 )
-# @require_permission("resources:write")
+@login_required
 def onboard_start():
     """
     Entry point.
@@ -287,13 +289,13 @@ def onboard_start():
             error=str(exc),
         )
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/profile",
     methods=["GET", "POST"],
     endpoint="onboard_profile",
 )
-# @require_permission("resources:write")
+@login_required
 def onboard_profile(entity_ulid: str):
     step = "profile"
     _set_active_entity_ulid(entity_ulid)
@@ -372,13 +374,13 @@ def onboard_profile(entity_ulid: str):
             error=str(exc),
         )
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/capabilities",
     methods=["GET", "POST"],
     endpoint="onboard_capabilities",
 )
-# @require_permission("resources:write")
+@login_required
 def onboard_capabilities(entity_ulid: str):
     step = "capabilities"
     _set_active_entity_ulid(entity_ulid)
@@ -461,13 +463,13 @@ def onboard_capabilities(entity_ulid: str):
             error=str(exc),
         )
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/capacity",
     methods=["GET", "POST"],
     endpoint="onboard_capacity",
 )
-# @require_permission("resources:write")
+@login_required
 def onboard_capacity(entity_ulid: str):
     step = "capacity"
     _set_active_entity_ulid(entity_ulid)
@@ -513,13 +515,13 @@ def onboard_capacity(entity_ulid: str):
             url_for("resources.onboard_capacity", entity_ulid=entity_ulid)
         )
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/pocs",
     methods=["GET", "POST"],
     endpoint="onboard_pocs",
 )
-# @require_permission("resources:write")
+@login_required
 def onboard_pocs(entity_ulid: str):
     step = "pocs"
     _set_active_entity_ulid(entity_ulid)
@@ -637,13 +639,13 @@ def onboard_pocs(entity_ulid: str):
             url_for("resources.onboard_pocs", entity_ulid=entity_ulid)
         )
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/mou",
     methods=["GET", "POST"],
     endpoint="onboard_mou",
 )
-# @require_permission("resources:write")
+@login_required
 def onboard_mou(entity_ulid: str):
     step = "mou"
     _set_active_entity_ulid(entity_ulid)
@@ -705,13 +707,13 @@ def onboard_mou(entity_ulid: str):
             url_for("resources.onboard_mou", entity_ulid=entity_ulid)
         )
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/review",
     methods=["GET", "POST"],
     endpoint="onboard_review",
 )
-# @require_permission("resources:read")
+@login_required
 def onboard_review(entity_ulid: str):
     step = "review"
     _set_active_entity_ulid(entity_ulid)
@@ -765,13 +767,13 @@ def onboard_review(entity_ulid: str):
             url_for("resources.onboard_review", entity_ulid=entity_ulid)
         )
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/complete",
     methods=["GET", "POST"],
     endpoint="onboard_complete",
 )
-# @require_permission("resources:write")
+@login_required
 def onboard_complete(entity_ulid: str):
     step = "complete"
     _set_active_entity_ulid(entity_ulid)

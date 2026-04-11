@@ -15,10 +15,12 @@ from flask import (
     session,
     url_for,
 )
+from flask_login import login_required
 
 from app.extensions import auth_ctx, db
 from app.extensions.errors import ContractError
 from app.lib import request_ctx
+from app.lib.security import rbac
 
 from . import services as svc
 from .models import Customer, CustomerEligibility
@@ -198,7 +200,9 @@ def _goto_step(entity_ulid: str, step: str) -> Any:
 # -----------------
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/intake/start/<entity_ulid>")
+@login_required
 def intake_start(entity_ulid: str):
     rid, actor = _ctx_mut()
 
@@ -219,7 +223,9 @@ def intake_start(entity_ulid: str):
 # -----------------
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/")
+@login_required
 def customers_list_get():
     _ctx_ro()
     page = _arg_int("page", 1, lo=1, hi=10_000)
@@ -241,7 +247,9 @@ def customers_list_get():
 # -----------------
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/<entity_ulid>")
+@login_required
 def customer_overview_get(entity_ulid: str):
     _ctx_ro()
     vm = svc.get_customer_overview_vm(entity_ulid)
@@ -257,7 +265,9 @@ def customer_overview_get(entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/<entity_ulid>/providers")
+@login_required
 def customer_provider_matches_get(entity_ulid: str):
     _ctx_ro()
     need_key = (request.args.get("need_key") or "").strip().lower()
@@ -283,11 +293,13 @@ def customer_provider_matches_get(entity_ulid: str):
 # -----------------
 # Dataset #5/#6
 # History Timeline
-# + Details
+#  Details
 # -----------------
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/<entity_ulid>/history")
+@login_required
 def customer_history_timeline_get(entity_ulid: str):
     _ctx_ro()
     display_name = svc.get_entity_display_name(entity_ulid)
@@ -307,7 +319,9 @@ def customer_history_timeline_get(entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/<entity_ulid>/history/<history_ulid>")
+@login_required
 def customer_history_detail_get(entity_ulid: str, history_ulid: str):
     _ctx_ro()
     display_name = svc.get_entity_display_name(entity_ulid)
@@ -324,7 +338,9 @@ def customer_history_detail_get(entity_ulid: str, history_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/<entity_ulid>/referrals/new")
+@login_required
 def customer_referral_new_get(entity_ulid: str):
     _ctx_ro()
     seed = svc.get_referral_compose_seed(
@@ -349,7 +365,9 @@ def customer_referral_new_get(entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/<entity_ulid>/referrals/new")
+@login_required
 def customer_referral_new_post(entity_ulid: str):
     rid, actor = _ctx_mut()
     try:
@@ -398,7 +416,9 @@ def customer_referral_new_post(entity_ulid: str):
         )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/<entity_ulid>/referrals/outcomes/new")
+@login_required
 def referral_outcome_new_get(entity_ulid: str):
     _ctx_ro()
     history_ulid = request.args.get("history_ulid") or None
@@ -429,7 +449,9 @@ def referral_outcome_new_get(entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/<entity_ulid>/referrals/outcomes/new")
+@login_required
 def referral_outcome_new_post(entity_ulid: str):
     rid, actor = _ctx_mut()
     try:
@@ -483,9 +505,12 @@ def referral_outcome_new_post(entity_ulid: str):
 # -----------------
 
 
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface
 @bp.get("/admin/inbox")
+@login_required
+@rbac("admin")
 def admin_inbox_get():
-    _ctx_mut()  # require actor; add RBAC+domain guard later
+    _ctx_mut()
     page = _arg_int("page", 1, lo=1, hi=10_000)
     per_page = _arg_int("per_page", 25, lo=5, hi=200)
     p = svc.list_admin_inbox_items(page=page, per_page=per_page)
@@ -497,7 +522,9 @@ def admin_inbox_get():
 # -----------------
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/intake/<entity_ulid>/eligibility")
+@login_required
 def intake_eligibility_get(entity_ulid: str):
     _ctx_ro()
     snap = svc.get_customer_eligibility(entity_ulid)
@@ -512,7 +539,9 @@ def intake_eligibility_get(entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/intake/<entity_ulid>/eligibility")
+@login_required
 def intake_eligibility_post(entity_ulid: str):
     if not _wiz_expect_nonce(
         STEP_ELIGIBILITY,
@@ -611,7 +640,9 @@ def _needs_post(
     return _goto_step(entity_ulid, step2)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/intake/<entity_ulid>/needs/tier1")
+@login_required
 def intake_needs_tier1_get(entity_ulid: str):
     return _needs_get(
         entity_ulid,
@@ -620,7 +651,9 @@ def intake_needs_tier1_get(entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/intake/<entity_ulid>/needs/tier1")
+@login_required
 def intake_needs_tier1_post(entity_ulid: str):
     ratings = {
         "food": request.form.get("food", "unknown"),
@@ -637,7 +670,9 @@ def intake_needs_tier1_post(entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/intake/<entity_ulid>/needs/tier2")
+@login_required
 def intake_needs_tier2_get(entity_ulid: str):
     return _needs_get(
         entity_ulid,
@@ -646,7 +681,9 @@ def intake_needs_tier2_get(entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/intake/<entity_ulid>/needs/tier2")
+@login_required
 def intake_needs_tier2_post(entity_ulid: str):
     ratings = {
         "income": request.form.get("income", "unknown"),
@@ -662,7 +699,9 @@ def intake_needs_tier2_post(entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/intake/<entity_ulid>/needs/tier3")
+@login_required
 def intake_needs_tier3_get(entity_ulid: str):
     return _needs_get(
         entity_ulid,
@@ -671,7 +710,9 @@ def intake_needs_tier3_get(entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/intake/<entity_ulid>/needs/tier3")
+@login_required
 def intake_needs_tier3_post(entity_ulid: str):
     ratings = {
         "family": request.form.get("family", "unknown"),
@@ -691,7 +732,9 @@ def intake_needs_tier3_post(entity_ulid: str):
 # -----------------
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/intake/<entity_ulid>/review")
+@login_required
 def intake_review_get(entity_ulid: str):
     _ctx_ro()
     dash = svc.get_customer_dashboard(entity_ulid)
@@ -707,7 +750,9 @@ def intake_review_get(entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/intake/<entity_ulid>/complete")
+@login_required
 def intake_complete_post(entity_ulid: str):
     if not _wiz_expect_nonce(
         STEP_REVIEW, entity_ulid, request.form.get("wiz_nonce")
@@ -732,7 +777,9 @@ def intake_complete_post(entity_ulid: str):
     return _goto_step(entity_ulid, STEP_DONE)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/intake/<entity_ulid>/done")
+@login_required
 def intake_done_get(entity_ulid: str):
     _ctx_ro()
     dash = svc.get_customer_dashboard(entity_ulid)

@@ -84,7 +84,9 @@ def _actor_ulid() -> str | None:
 # -----------------
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/onboard/start/<entity_ulid>", endpoint="onboard_start_legacy")
+@login_required
 def onboard_start_legacy(entity_ulid: str):
     # Legacy helper: bounce to the new onboarding entrypoint.
     return redirect(
@@ -97,7 +99,9 @@ def onboard_start_legacy(entity_ulid: str):
 # -----------------
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("")
+@login_required
 def ensure_sponsor():
     try:
         payload = request.get_json(force=True, silent=False) or {}
@@ -119,7 +123,9 @@ def ensure_sponsor():
         return _err(e, 400)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/<sponsor_entity_ulid>")
+@login_required
 def get_sponsor(sponsor_entity_ulid: str):
     dto = sp_svc.sponsor_view(sponsor_entity_ulid)
     return (
@@ -129,6 +135,7 @@ def get_sponsor(sponsor_entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/<sponsor_entity_ulid>/detail", endpoint="sponsor_detail_html")
 @login_required
 def sponsor_detail_html(sponsor_entity_ulid: str):
@@ -155,7 +162,9 @@ def sponsor_detail_html(sponsor_entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/<sponsor_entity_ulid>/capabilities")
+@login_required
 def upsert_caps(sponsor_entity_ulid: str):
     try:
         payload = request.get_json(force=True, silent=False) or {}
@@ -179,7 +188,9 @@ def upsert_caps(sponsor_entity_ulid: str):
         return _err(e, 400)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.patch("/<sponsor_entity_ulid>/capabilities")
+@login_required
 def patch_caps(sponsor_entity_ulid: str):
     try:
         payload = request.get_json(force=True, silent=False) or {}
@@ -203,7 +214,9 @@ def patch_caps(sponsor_entity_ulid: str):
         return _err(e, 400)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/<sponsor_entity_ulid>/readiness")
+@login_required
 def set_readiness(sponsor_entity_ulid: str):
     try:
         payload = request.get_json(force=True, silent=False) or {}
@@ -222,7 +235,9 @@ def set_readiness(sponsor_entity_ulid: str):
         return _err(e, 400)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/<sponsor_entity_ulid>/mou")
+@login_required
 def set_mou(sponsor_entity_ulid: str):
     try:
         payload = request.get_json(force=True, silent=False) or {}
@@ -241,7 +256,9 @@ def set_mou(sponsor_entity_ulid: str):
         return _err(e, 400)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/<sponsor_entity_ulid>/pledges")
+@login_required
 def upsert_pledge(sponsor_entity_ulid: str):
     try:
         pledge = request.get_json(force=True, silent=False) or {}
@@ -265,7 +282,9 @@ def upsert_pledge(sponsor_entity_ulid: str):
         return _err(e, 400)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/pledges/<pledge_ulid>/status")
+@login_required
 def set_pledge_status(pledge_ulid: str):
     try:
         payload = request.get_json(force=True, silent=False) or {}
@@ -287,7 +306,9 @@ def set_pledge_status(pledge_ulid: str):
         return _err(e, 400)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("")
+@login_required
 def search_sponsors():
     req = ensure_request_id()
     try:
@@ -336,6 +357,7 @@ def search_sponsors():
         return _err(e, 400)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route("/<sponsor_entity_ulid>/crm/edit", methods=["GET", "POST"])
 @login_required
 def sponsor_crm_edit(sponsor_entity_ulid: str):
@@ -421,6 +443,7 @@ def sponsor_crm_edit(sponsor_entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/<sponsor_entity_ulid>/cultivation-task")
 @login_required
 def sponsor_cultivation_task_create(sponsor_entity_ulid: str):
@@ -467,6 +490,7 @@ def sponsor_cultivation_task_create(sponsor_entity_ulid: str):
         raise
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post(
     "/<sponsor_entity_ulid>/cultivation-outcomes/"
     "<task_ulid>/follow-up-task"
@@ -521,6 +545,7 @@ def sponsor_cultivation_follow_up_task_create(
         return redirect(next_url)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post(
     "/<sponsor_entity_ulid>/cultivation-outcomes/<task_ulid>/promote-relationship-note"
 )

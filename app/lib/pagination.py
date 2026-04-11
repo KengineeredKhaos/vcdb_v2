@@ -22,6 +22,10 @@ consistent across slices.
 
 see implementation notes below.
 """
+# @TODO(app/lib/pagination.py)
+# SQLite test warning: DISTINCT ON style query is tolerated today but
+# deprecated for non-PostgreSQL backends. Rework pagination/count path so
+# SQLite and future SQLAlchemy versions do not break.
 
 from __future__ import annotations
 
@@ -65,6 +69,22 @@ class Page[T]:
     @property
     def pages(self) -> int:
         return ceil(self.total / self.per_page) if self.per_page > 0 else 1
+
+    @property
+    def has_prev(self) -> bool:
+        return self.prev_page is not None
+
+    @property
+    def has_next(self) -> bool:
+        return self.next_page is not None
+
+    @property
+    def prev_num(self) -> int:
+        return self.prev_page or 1
+
+    @property
+    def next_num(self) -> int:
+        return self.next_page or max(1, self.pages)
 
     def map(self, f: Callable[[T], U]) -> Page[U]:
         """Transform items, preserve metadata."""

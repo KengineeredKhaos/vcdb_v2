@@ -1,5 +1,28 @@
 # app/slices/calendar/routes.py
 
+# @TODO(calendar slice, post-security-sweep stabilization)
+#
+# Confirmed from route-access test:
+#
+# 1) /calendar/funding-demands is reachable and auth-protected, but the
+#    route fails after entry because routes.py calls
+#    funding_svc.get_funding_demand_status_choices(), and that function
+#    does not exist in services_funding.
+#
+# 2) This is a slice service-completeness issue, not a route guard issue.
+#    Auth + entry gating are working; rendering dies on missing service API.
+#
+# 3) Repair options:
+#    - add funding_svc.get_funding_demand_status_choices()
+#    - or refit funding_demand_list() to use the actual canonical source
+#      for status choices
+#
+# 4) After repair, rerun:
+#    - tests/slices/calendar/test_calendar_route_access.py
+#
+# 5) Keep decision routes (return / approve / promote) in STAGED until
+#    authority rules are explicitly frozen.
+
 from __future__ import annotations
 
 from flask import (
@@ -17,6 +40,7 @@ from sqlalchemy import select
 from app.extensions import db
 from app.extensions.auth_ctx import current_actor_ulid
 from app.lib.request_ctx import get_actor_ulid
+from app.lib.security import rbac
 
 from . import services_budget as budget_svc
 from . import services_drafts as drafts_svc
@@ -166,12 +190,15 @@ def db_commit() -> None:
     db.session.commit()
 
 
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=blueprint_proof_of_life
 @bp.get("/hello")
 @login_required
+@rbac("admin")
 def hello():
     return render_template("calendar/hello.html", title="Calendar • Hello")
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/projects/<project_ulid>/budget")
 @login_required
 def project_budget_workspace(project_ulid: str):
@@ -191,6 +218,7 @@ def project_budget_workspace(project_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/projects/<project_ulid>/budget/snapshots/new")
 @login_required
 def budget_snapshot_create(project_ulid: str):
@@ -232,6 +260,7 @@ def budget_snapshot_create(project_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/projects/<project_ulid>/budget/snapshots/<snapshot_ulid>/clone")
 @login_required
 def budget_snapshot_clone(project_ulid: str, snapshot_ulid: str):
@@ -259,6 +288,7 @@ def budget_snapshot_clone(project_ulid: str, snapshot_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post(
     "/projects/<project_ulid>/budget/snapshots/<snapshot_ulid>/set-current"
 )
@@ -291,6 +321,7 @@ def budget_snapshot_set_current(project_ulid: str, snapshot_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/projects/<project_ulid>/budget/snapshots/<snapshot_ulid>/lock")
 @login_required
 def budget_snapshot_lock(project_ulid: str, snapshot_ulid: str):
@@ -320,6 +351,7 @@ def budget_snapshot_lock(project_ulid: str, snapshot_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post(
     "/projects/<project_ulid>/budget/snapshots/<snapshot_ulid>/lines/new"
 )
@@ -379,6 +411,7 @@ def budget_line_create(project_ulid: str, snapshot_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/projects/<project_ulid>/budget/lines/<line_ulid>/edit")
 @login_required
 def budget_line_update(project_ulid: str, line_ulid: str):
@@ -440,6 +473,7 @@ def budget_line_update(project_ulid: str, line_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/projects/<project_ulid>/budget/lines/<line_ulid>/delete")
 @login_required
 def budget_line_delete(project_ulid: str, line_ulid: str):
@@ -470,6 +504,7 @@ def budget_line_delete(project_ulid: str, line_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/projects/<project_ulid>/demand-drafts/new")
 @login_required
 def demand_draft_new(project_ulid: str):
@@ -485,6 +520,7 @@ def demand_draft_new(project_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/projects/<project_ulid>/demand-drafts/new")
 @login_required
 def demand_draft_create(project_ulid: str):
@@ -540,6 +576,7 @@ def demand_draft_create(project_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/demand-drafts/<draft_ulid>")
 @login_required
 def demand_draft_detail(draft_ulid: str):
@@ -587,6 +624,7 @@ def demand_draft_detail(draft_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/demand-drafts/<draft_ulid>/edit")
 @login_required
 def demand_draft_update(draft_ulid: str):
@@ -644,6 +682,7 @@ def demand_draft_update(draft_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/demand-drafts/<draft_ulid>/ready")
 @login_required
 def demand_draft_mark_ready(draft_ulid: str):
@@ -668,6 +707,7 @@ def demand_draft_mark_ready(draft_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/demand-drafts/<draft_ulid>/submit")
 @login_required
 def demand_draft_submit(draft_ulid: str):
@@ -692,6 +732,7 @@ def demand_draft_submit(draft_ulid: str):
     )
 
 
+# VCDB-SEC: STAGED entry=authenticated_user authority=pending reason=governance_review_surface
 @bp.post("/demand-drafts/<draft_ulid>/return")
 @login_required
 def demand_draft_return(draft_ulid: str):
@@ -725,6 +766,7 @@ def demand_draft_return(draft_ulid: str):
     )
 
 
+# VCDB-SEC: STAGED entry=authenticated_user authority=pending reason=governance_review_surface
 @bp.post("/demand-drafts/<draft_ulid>/approve")
 @login_required
 def demand_draft_approve(draft_ulid: str):
@@ -767,6 +809,7 @@ def demand_draft_approve(draft_ulid: str):
     )
 
 
+# VCDB-SEC: STAGED entry=authenticated_user authority=pending reason=publish_surface
 @bp.post("/demand-drafts/<draft_ulid>/promote")
 @login_required
 def demand_draft_promote(draft_ulid: str):
@@ -805,6 +848,7 @@ def demand_draft_promote(draft_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/funding-demands/<ulid>")
 @login_required
 def funding_demand_detail(ulid: str):
@@ -816,6 +860,7 @@ def funding_demand_detail(ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/funding-demands")
 @login_required
 def funding_demand_list():

@@ -65,10 +65,12 @@ the format rule absolute for every touched route:
 
 # Vocabulary:
 #
-# ACTIVE = Route & services scoped & activated
-# STAGED = Under development, Route | Services pending review
-# OPEN = Under development, Route | Services undeveloped
-# PUBLIC = Route & services unrestricted
+# ACTIVE = Route reachable, working, and intentionally enforced
+# STAGED = reachable, but still under development or review
+# OPEN = concept/design exists, implementation incomplete
+# PUBLIC = Route reachable and unrestricted
+# UNTERMINATED = not actually wired through to a reachable working surface
+#
 #
 # entry: RBAC Access Level requirements
 # public
@@ -82,11 +84,13 @@ the format rule absolute for every touched route:
 # authority: RBAC or Domain Execution Authority requirments
 # login_required
 # admin-only
+# adimin-dev-only
 # governor-override
 #
 # reason: Special constraints/limitations/
 # self_service_auth_surface
 # admin_only_surface
+#
 
 
 # VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface

@@ -9,6 +9,8 @@ from flask import (
 )
 from flask_login import login_required
 
+from app.lib.security import rbac
+
 from . import services as svc
 from .models import EntityPerson
 
@@ -21,8 +23,10 @@ bp = Blueprint(
 )
 
 
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=blueprint_proof_of_life
 @bp.get("/hello")
 @login_required
+@rbac("admin")
 def hello():
     return render_template("entity/hello.html")
 
@@ -60,8 +64,11 @@ def _person_to_dto(p: EntityPerson) -> dict:
 # -------------------------
 # People listing
 # -------------------------
+
+
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/people")
-# @require_permission("entity:pii:read")
+@login_required
 def list_people():
     """
     List people. Optional ?role=<role_code> to restrict by role.
@@ -103,8 +110,11 @@ def list_people():
 # -------------------------
 # Orgs listing
 # -------------------------
+
+
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/orgs")
-# @require_permission("entity:pii:read")
+@login_required
 def list_orgs():
     """
     List orgs. By default shows RESOURCE and SPONSOR orgs.

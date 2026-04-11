@@ -404,3 +404,78 @@ thoroughly.
   - Remove stale examples/docs that imply "governor" is a Domain role.
   - Update route examples to show RBAC + Governance authority
     as separate concerns.
+
+---
+
+- [ ] @TODO(app/lib/pagination.py)
+  
+  - SQLite test warning: DISTINCT ON style query is tolerated today but deprecated
+    for non-PostgreSQL backends. Rework pagination/count path so
+  - SQLite and future SQLAlchemy versions do not break.
+
+---
+
+- [ ] @TODO(resources slice, post-security-sweep stabilization)
+  
+  - Confirmed from route-access backtrace:
+  
+  - 1) Admin-review routes are not live in the running app.
+       - `/resources/admin-review/<ulid>/approve` and `/reject` return 404 with endpoint=None in Flask error logging.
+       - admin_review_routes.py exists, but the module is likely not imported during Resources slice startup, so its route decorators never bind.
+       - Until fixed, treat admin-review surfaces as UNTERMINATED, not ACTIVE.
+  
+  - 2) Resource request-context seam is likely incomplete.
+       
+       - `/resources/<entity_ulid>/pocs`-expanded is registered but returns 500 for authenticated users.
+       
+       - resources/routes.py depends on get_request_id() and get_actor_ulid() but Resources does not currently mirror the Customers-style before_request request_ctx seeding hook.
+       
+       - Add a slice-local before_request hook to ensure:
+         
+         - * request_id is always present
+         - * actor_ulid is seeded from the authenticated user
+  
+  - 3) Capture and fix the actual service-layer cause for pocs-expanded 500.
+       
+       - Current access test proves the route is reachable but unstable.
+       
+       - Need the inner exception / traceback from resource_list_pocs_expanded() before changing service logic.
+       
+       - Do not guess at the business fix until the real exception is visible.
+  
+  - 4) Revisit route truth after slice wiring is corrected.
+       
+       - admin_review_onboard_approve / reject:
+         
+         - UNTERMINATED -> STAGED once imported/registered and admin door guard is live; later add authority gate if required.
+       
+       - pocs-expanded:
+         
+         - keep ACTIVE only if request-context + service path stabilize.
+  
+  - 5) After wiring fixes, rerun:
+       
+       - tests/slices/resources/test_resources_route_access.py
+       
+       - then add/adjust any xfail only if a surface is honestly still UNTERMINATED.
+  
+  ---
+
+- [ ] @TODO(calendar slice, post-security-sweep stabilization)
+  
+  - Confirmed from route-access test:
+    
+    - 1) /calendar/funding-demands is reachable and auth-protected, but the route fails after entry because routes.py calls funding_svc.get_funding_demand_status_choices(), and that function does not exist in services_funding.
+    
+    - 2) This is a slice service-completeness issue, not a route guard issue. Auth + entry gating are working; rendering dies on missing service API.
+    
+    - 3) Repair options:
+         - add funding_svc.get_funding_demand_status_choices()
+           - or refit funding_demand_list() to use the actual canonical source for status choices
+    
+    - 4) After repair, rerun:
+         - tests/slices/calendar/test_calendar_route_access.py
+    
+    - 5. Keep decision routes (return / approve / promote) in STAGED until authority rules are explicitly frozen.
+
+---

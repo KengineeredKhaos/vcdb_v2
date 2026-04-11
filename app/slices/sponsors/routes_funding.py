@@ -43,7 +43,7 @@ def _db_commit() -> None:
 
     db.session.commit()
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp_funding.get("/funding-opportunities")
 @login_required
 def funding_opportunity_list():
@@ -54,7 +54,7 @@ def funding_opportunity_list():
         rows=rows,
     )
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp_funding.get("/funding-opportunities/<funding_demand_ulid>")
 @login_required
 def funding_opportunity_detail(funding_demand_ulid: str):
@@ -82,7 +82,7 @@ def funding_opportunity_detail(funding_demand_ulid: str):
         matches=matches,
     )
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp_funding.get("/funding-intents/new")
 @login_required
 def funding_intent_new():
@@ -109,7 +109,7 @@ def funding_intent_new():
         demand=demand,
     )
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp_funding.post("/funding-intents/new")
 @login_required
 def funding_intent_create():
@@ -156,7 +156,7 @@ def funding_intent_create():
         )
     )
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp_funding.get("/funding-intents/<intent_ulid>/edit")
 @login_required
 def funding_intent_edit(intent_ulid: str):
@@ -181,7 +181,7 @@ def funding_intent_edit(intent_ulid: str):
         demand=demand,
     )
 
-
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp_funding.post("/funding-intents/<intent_ulid>/edit")
 @login_required
 def funding_intent_update(intent_ulid: str):

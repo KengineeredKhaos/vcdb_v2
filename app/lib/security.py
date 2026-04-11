@@ -255,61 +255,6 @@ def require_feature(flag_name: str):
 
 
 # -----------------
-# Optional: permission shim
-# (role->permission mapping today, contract later)
-# -----------------
-
-
-def _permission_roles_map() -> dict[str, set[str]]:
-    """
-    Returns a mapping of permission -> roles that grant it.
-    Today sourced from config PERMISSIONS_MAP; later can come from an Auth contract
-    without changing call sites.
-    Example config:
-      PERMISSIONS_MAP = {
-          "governance:policy:edit": {"admin"},
-          "ledger:read": {"admin","auditor"},
-      }
-    """
-
-    raw = current_app.config.get("PERMISSIONS_MAP", {}) or {}
-    return {str(p).lower(): _norm(roles) for p, roles in raw.items()}
-
-
-def user_has_permission(user_ulid: str, permission: str) -> bool:
-    """Does this user have the given permission (via any mapped role)?"""
-    need = str(permission).lower().strip()
-    perm_map = _permission_roles_map()
-    roles_for_perm = perm_map.get(need, set())
-    if not roles_for_perm:
-        return False
-    have = set(get_user_roles(user_ulid))
-    return not have.isdisjoint(roles_for_perm)
-
-
-def require_permission(permission: str):
-    """
-    Route decorator that enforces a high-level permission.
-    Internally maps permission -> roles (from config today).
-    """
-    need = str(permission).lower().strip()
-
-    def deco(view):
-        @wraps(view)
-        def wrap(*args, **kwargs):
-            if not _is_authenticated():
-                abort(401)
-            uid = current_user_ulid()
-            if not uid or not user_has_permission(uid, need):
-                abort(403)
-            return view(*args, **kwargs)
-
-        return wrap
-
-    return deco
-
-
-# -----------------
 # compatibility aliases
 # (so legacy imports keep working)
 # -----------------

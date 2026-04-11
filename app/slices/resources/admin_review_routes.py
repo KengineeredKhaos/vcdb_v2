@@ -11,8 +11,10 @@ from flask import (
     session,
     url_for,
 )
+from flask_login import login_required
 
 from app.extensions import db
+from app.lib.security import rbac
 from app.lib.request_ctx import ensure_request_id
 from app.slices.auth.services import current_actor_ulid
 
@@ -24,7 +26,10 @@ from .routes import bp
     "/admin-review/<review_request_ulid>/approve",
     endpoint="admin_review_onboard_approve",
 )
-# add your RBAC / governor guards here
+# VCDB-SEC: STAGED entry=admin authority=pending reason=admin_only_surface
+@login_required
+@rbac("admin")
+# add governance / approval-authority gate here later
 def admin_review_onboard_approve(review_request_ulid: str):
     req = ensure_request_id()
     actor = current_actor_ulid()
@@ -49,7 +54,10 @@ def admin_review_onboard_approve(review_request_ulid: str):
     "/admin-review/<review_request_ulid>/reject",
     endpoint="admin_review_onboard_reject",
 )
-# add your RBAC / governor guards here
+# VCDB-SEC: STAGED entry=admin authority=pending reason=admin_only_surface
+@login_required
+@rbac("admin")
+# add governance / approval-authority gate here later
 def admin_review_onboard_reject(review_request_ulid: str):
     req = ensure_request_id()
     actor = current_actor_ulid()

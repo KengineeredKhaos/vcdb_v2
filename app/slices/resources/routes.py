@@ -12,8 +12,44 @@ Endpoints (minimal, test-facing surface):
 - POST   /resources/<resource_entity_ulid>/capabilities  -> replace capabilities (upsert)
 - PATCH  /resources/<resource_entity_ulid>/capabilities  -> patch capabilities (note-only, etc.)
 """
-
-# app/slices/resources/routes.py
+# @TODO(resources slice, post-security-sweep stabilization)
+#
+# Confirmed from route-access backtrace:
+#
+# 1) Admin-review routes are not live in the running app.
+#    - /resources/admin-review/<ulid>/approve and /reject return 404
+#      with endpoint=None in Flask error logging.
+#    - admin_review_routes.py exists, but the module is likely not imported
+#      during Resources slice startup, so its route decorators never bind.
+#    - Until fixed, treat admin-review surfaces as UNTERMINATED, not ACTIVE.
+#
+# 2) Resource request-context seam is likely incomplete.
+#    - /resources/<entity_ulid>/pocs-expanded is registered but returns 500
+#      for authenticated users.
+#    - resources/routes.py depends on get_request_id() and get_actor_ulid()
+#      but Resources does not currently mirror the Customers-style
+#      before_request request_ctx seeding hook.
+#    - Add a slice-local before_request hook to ensure:
+#         * request_id is always present
+#         * actor_ulid is seeded from the authenticated user
+#
+# 3) Capture and fix the actual service-layer cause for pocs-expanded 500.
+#    - Current access test proves the route is reachable but unstable.
+#    - Need the inner exception / traceback from resource_list_pocs_expanded()
+#      before changing service logic.
+#    - Do not guess at the business fix until the real exception is visible.
+#
+# 4) Revisit route truth after slice wiring is corrected.
+#    - admin_review_onboard_approve / reject:
+#         UNTERMINATED -> STAGED once imported/registered and admin door guard
+#         is live; later add authority gate if required.
+#    - pocs-expanded:
+#         keep ACTIVE only if request-context + service path stabilize.
+#
+# 5) After wiring fixes, rerun:
+#    - tests/slices/resources/test_resources_route_access.py
+#    - then add/adjust any xfail only if a surface is honestly still
+#      UNTERMINATED.
 
 from __future__ import annotations
 
@@ -25,6 +61,7 @@ from flask import (
     request,
     url_for,
 )
+from flask_login import login_required
 
 from app.extensions import db
 from app.lib.request_ctx import get_actor_ulid, get_request_id
@@ -138,8 +175,9 @@ def _as_bool(v: str | None) -> bool | None:
 # -----------------
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/")
-# @require_permission("resources:read")
+@login_required
 def resources_index():
     return redirect(url_for("resources.search_resources"))
 
@@ -150,8 +188,9 @@ def resources_index():
 # -----------------
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/search")
-# @require_permission("resources:read")
+@login_required
 def search_resources():
     req = get_request_id()
     try:
@@ -224,8 +263,9 @@ def search_resources():
         )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/<entity_ulid>")
-# @require_permission("resources:read")
+@login_required
 def get_resource(entity_ulid: str):
     req = get_request_id()
     try:
@@ -269,8 +309,9 @@ def get_resource(entity_ulid: str):
         return _err(request_id=req, exc=exc)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/<entity_ulid>/profile-hints")
-# @require_permission("resources:read")
+@login_required
 def get_profile_hints(entity_ulid: str):
     req = get_request_id()
     if (
@@ -290,8 +331,9 @@ def get_profile_hints(entity_ulid: str):
         return _err(request_id=req, exc=exc)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/<entity_ulid>/pocs-expanded")
-# @require_permission("resources:read")
+@login_required
 def get_pocs_expanded(entity_ulid: str):
     req = get_request_id()
     actor = get_actor_ulid()
@@ -311,8 +353,9 @@ def get_pocs_expanded(entity_ulid: str):
 # ----------------
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/ensure")
-# @require_permission("resources:write")
+@login_required
 def ensure_resource():
     req = get_request_id()
     actor = get_actor_ulid()
@@ -337,8 +380,9 @@ def ensure_resource():
         return _err(request_id=req, exc=exc)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/<entity_ulid>/capabilities")
-# @require_permission("resources:write")
+@login_required
 def upsert_capabilities(entity_ulid: str):
     req = get_request_id()
     actor = get_actor_ulid()
@@ -368,8 +412,9 @@ def upsert_capabilities(entity_ulid: str):
         return _err(request_id=req, exc=exc)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/<entity_ulid>/profile-hints")
-# @require_permission("resources:write")
+@login_required
 def set_profile_hints(entity_ulid: str):
     req = get_request_id()
     actor = get_actor_ulid()
@@ -399,8 +444,9 @@ def set_profile_hints(entity_ulid: str):
         return _err(request_id=req, exc=exc)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/<entity_ulid>/status/readiness")
-# @require_permission("resources:write")
+@login_required
 def set_readiness(entity_ulid: str):
     req = get_request_id()
     actor = get_actor_ulid()
@@ -421,8 +467,9 @@ def set_readiness(entity_ulid: str):
         return _err(request_id=req, exc=exc)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/<entity_ulid>/status/mou")
-# @require_permission("resources:write")
+@login_required
 def set_mou(entity_ulid: str):
     req = get_request_id()
     actor = get_actor_ulid()

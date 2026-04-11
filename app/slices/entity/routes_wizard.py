@@ -11,6 +11,7 @@ from flask import (
     session,
     url_for,
 )
+from flask_login import current_user, login_required
 from sqlalchemy import select
 
 from app.extensions import db
@@ -226,7 +227,9 @@ def _wiz_clear_active() -> None:
 # -----------------
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/wizard/start")
+@login_required
 def wizard_start():
     if (request.args.get("reset") or "").strip() in ("1", "true", "yes"):
         _wiz_clear_active()
@@ -234,7 +237,9 @@ def wizard_start():
     return render_template("entity/wizard_start.html")
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/wizard/start")
+@login_required
 def wizard_start_post():
     active = session.get(_WIZ_ACTIVE_ENTITY_KEY)
     if active:
@@ -258,9 +263,11 @@ def wizard_start_post():
     return redirect(url_for("entity.wizard_start"))
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/wizard/person", methods=["GET", "POST"], endpoint="wizard_person_core"
 )
+@login_required
 def wizard_person_core():
     form = PersonCoreForm()
     step = "person_core"
@@ -358,7 +365,9 @@ def wizard_person_core():
         )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route("/wizard/org", methods=["GET", "POST"], endpoint="wizard_org_core")
+@login_required
 def wizard_org_core():
     form = OrgCoreForm()
     step = "org_core"
@@ -449,11 +458,13 @@ def wizard_org_core():
         return render_template("entity/wizard_org_core.html", form=form)
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/wizard/<entity_ulid>/contact",
     methods=["GET", "POST"],
     endpoint="wizard_contact",
 )
+@login_required
 def wizard_contact(entity_ulid: str):
     form = ContactForm()
     step = "contact"
@@ -553,11 +564,13 @@ def wizard_contact(entity_ulid: str):
         )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/wizard/<entity_ulid>/address",
     methods=["GET", "POST"],
     endpoint="wizard_address",
 )
+@login_required
 def wizard_address(entity_ulid: str):
     form = AddressForm()
     step = "address"
@@ -666,7 +679,9 @@ def wizard_address(entity_ulid: str):
         )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/wizard/<entity_ulid>/role")
+@login_required
 def wizard_role_get(entity_ulid: str):
     current = _wiz_next_endpoint(entity_ulid)
     if current != request.endpoint:
@@ -684,7 +699,9 @@ def wizard_role_get(entity_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/wizard/<entity_ulid>/role")
+@login_required
 def wizard_role_post(entity_ulid: str):
     form = RoleForm()
     form.role.choices = _role_choices()
@@ -758,7 +775,9 @@ def wizard_role_post(entity_ulid: str):
         )
 
 
+# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/wizard/<entity_ulid>/next", endpoint="wizard_next")
+@login_required
 def wizard_next(entity_ulid: str):
     if session.get(_WIZ_ACTIVE_ENTITY_KEY) == entity_ulid:
         _wiz_clear_active()
