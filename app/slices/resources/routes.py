@@ -63,7 +63,8 @@ from flask import (
 )
 from flask_login import login_required
 
-from app.extensions import db
+from app.extensions import auth_ctx, db
+from app.lib import request_ctx
 from app.lib.request_ctx import get_actor_ulid, get_request_id
 
 from . import mapper as res_mapper
@@ -77,6 +78,14 @@ bp = Blueprint(
     static_folder=None,
     url_prefix="/resources",
 )
+
+
+@bp.before_request
+def _inject_request_context() -> None:
+    request_ctx.ensure_request_id()
+    actor = auth_ctx.current_actor_ulid()
+    request_ctx.set_actor_ulid(actor)
+
 
 # -----------------
 # Helpers

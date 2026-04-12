@@ -13,31 +13,47 @@ from flask import (
 )
 from flask_login import login_required
 
-from app.extensions import db
-from app.lib.security import rbac
+from app.extensions import auth_ctx, db
+from app.extensions.auth_ctx import current_actor_ulid
 from app.lib.request_ctx import ensure_request_id
-from app.slices.auth.services import current_actor_ulid
+from app.lib.security import rbac, roles_required
 
 from . import admin_review_services as review_svc
 from .routes import bp
 
 
+# VCDB-SEC: STAGED entry=admin authority=pending reason=admin_only_surface
+@bp.get(
+    "/admin-review/<review_request_ulid>",
+    endpoint="admin_review_onboard_get",
+)
+@login_required
+@roles_required("admin")
+def admin_review_onboard_get(review_request_ulid: str):
+    page = review_svc.onboard_review_get(review_request_ulid)
+    if (request.args.get("format") or "").strip().lower() == "json":
+        return {"ok": True, "data": page}, 200
+    return render_template(
+        "resources/admin_review_onboard.html",
+        page=page,
+    )
+
+
+# VCDB-SEC: STAGED entry=admin authority=pending reason=admin_only_surface
 @bp.post(
     "/admin-review/<review_request_ulid>/approve",
     endpoint="admin_review_onboard_approve",
 )
-# VCDB-SEC: STAGED entry=admin authority=pending reason=admin_only_surface
 @login_required
-@rbac("admin")
-# add governance / approval-authority gate here later
+@roles_required("admin")
 def admin_review_onboard_approve(review_request_ulid: str):
     req = ensure_request_id()
-    actor = current_actor_ulid()
+    actor = auth_ctx.current_actor_ulid()
 
     try:
-        review_svc.resolve_onboard_admin_review(
+        review_svc.resolve_onboard_admin_issue(
             review_request_ulid=review_request_ulid,
-            approved=True,
+            decision="approve",
             actor_ulid=actor,
             request_id=req,
         )
@@ -50,22 +66,21 @@ def admin_review_onboard_approve(review_request_ulid: str):
     return redirect(url_for("admin.inbox"))
 
 
+# VCDB-SEC: STAGED entry=admin authority=pending reason=admin_only_surface
 @bp.post(
     "/admin-review/<review_request_ulid>/reject",
     endpoint="admin_review_onboard_reject",
 )
-# VCDB-SEC: STAGED entry=admin authority=pending reason=admin_only_surface
 @login_required
-@rbac("admin")
-# add governance / approval-authority gate here later
+@roles_required("admin")
 def admin_review_onboard_reject(review_request_ulid: str):
     req = ensure_request_id()
-    actor = current_actor_ulid()
+    actor = auth_ctx.current_actor_ulid()
 
     try:
-        review_svc.resolve_onboard_admin_review(
+        review_svc.resolve_onboard_admin_issue(
             review_request_ulid=review_request_ulid,
-            approved=False,
+            decision="reject",
             actor_ulid=actor,
             request_id=req,
         )

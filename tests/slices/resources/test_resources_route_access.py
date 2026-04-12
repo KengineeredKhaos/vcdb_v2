@@ -301,6 +301,8 @@ def test_resources_operator_surfaces_allow_authenticated_users(
 
     # Representative read surfaces
     resp = client.get("/resources/search?format=json", follow_redirects=False)
+    print(resp.status_code)
+    print(resp.get_json())
     assert resp.status_code == 200
     assert resp.get_json()["ok"] is True
 
@@ -308,6 +310,8 @@ def test_resources_operator_surfaces_allow_authenticated_users(
         f"/resources/{resource_ulid}?format=json",
         follow_redirects=False,
     )
+    print(resp.status_code)
+    print(resp.get_json())
     assert resp.status_code == 200
     assert resp.get_json()["ok"] is True
 
@@ -315,6 +319,8 @@ def test_resources_operator_surfaces_allow_authenticated_users(
         f"/resources/{resource_ulid}/profile-hints?format=json",
         follow_redirects=False,
     )
+    print(resp.status_code)
+    print(resp.get_json())
     assert resp.status_code == 200
     assert resp.get_json()["ok"] is True
 
@@ -322,28 +328,38 @@ def test_resources_operator_surfaces_allow_authenticated_users(
         f"/resources/{resource_ulid}/pocs-expanded",
         follow_redirects=False,
     )
+    print(resp.status_code)
+    print(resp.get_json())
     assert resp.status_code == 200
     assert resp.get_json()["ok"] is True
 
     resp = client.get("/resources/onboard/start", follow_redirects=False)
+    print(resp.status_code)
+    print(resp.get_json())
     assert resp.status_code == 200
 
     resp = client.get(
         f"/resources/onboard/{resource_ulid}/profile",
         follow_redirects=False,
     )
+    print(resp.status_code)
+    print(resp.get_json())
     assert resp.status_code == 200
 
     resp = client.get(
         f"/resources/poc/attach/{person_ulid}",
         follow_redirects=False,
     )
+    print(resp.status_code)
+    print(resp.get_json())
     assert resp.status_code == 200
 
     # Representative mutate surface:
     # after auth, missing entity_ulid should be a validation failure,
     # not an auth failure.
     resp = client.post("/resources/ensure", json={}, follow_redirects=False)
+    print(resp.status_code)
+    print(resp.get_json())
     assert resp.status_code == 400
 
     _logout_if_possible(client)

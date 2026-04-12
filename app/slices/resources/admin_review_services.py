@@ -1,61 +1,29 @@
 # app/slices/resources/admin_review_services.py
-
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from app.extensions import db, event_bus
 from app.extensions.contracts import admin_v1
 from app.lib.chrono import now_iso8601_ms
 from app.lib.guards import ensure_actor_ulid, ensure_request_id
-from app.lib.ids import new_ulid
 
-from . import services as res_svc
 from .models import Resource, ResourceAdminReviewRequest
 
-REVIEW_KIND_ONBOARD = "resource_onboard_review"
+REVIEW_KIND_ONBOARD = "onboard_review_required"
 
 SOURCE_STATUS_PENDING = "pending_review"
 SOURCE_STATUS_APPROVED = "approved"
 SOURCE_STATUS_REJECTED = "rejected"
 SOURCE_STATUS_CANCELLED = "cancelled"
 
-"""
-Keeping this around for reference
 
-@dataclass(frozen=True)
-class ResourceAdminReviewRequestDTO:
-    review_request_ulid: str
-    entity_ulid: str
-    issue_kind: str
-    source_status: str
-    title: str
-    summary: str
-    workflow_key: str
-    resolution_route: str
-    context: dict[str, Any]
-"""
-
-
-# -----------------
-# Public workflow API
-# -----------------
-
-
-def request_onboard_admin_review(
+def raise_onboard_admin_issue(
     *,
     entity_ulid: str,
     actor_ulid: str | None,
     request_id: str | None,
 ) -> admin_v1.AdminInboxReceiptDTO:
-    """
-    Open a Resources-owned onboarding review request and publish the
-    Admin inbox notice.
-
-    Called from onboarding workflow at the explicit submit-for-review
-    milestone.
-    """
     rid = ensure_request_id(request_id)
     act = ensure_actor_ulid(actor_ulid)
 
@@ -76,61 +44,71 @@ def request_onboard_admin_review(
             summary=review.summary,
             source_status=review.source_status,
             workflow_key="resource_onboard_review",
-            resolution_route="resources.admin_review_onboard",
+            resolution_route="resources.admin_review_onboard_get",
             context=_build_onboard_review_context(entity_ulid),
         )
     )
-
     db.session.flush()
     return receipt
 
 
-def resolve_onboard_admin_review(
+def onboard_review_get(review_request_ulid: str) -> dict[str, Any]:
+    review = _get_review_request_or_raise(review_request_ulid)
+    return {
+        "review_request_ulid": review.ulid,
+        "source_ref_ulid": review.ulid,
+        "subject_ref_ulid": review.entity_ulid,
+        "issue_kind": review.review_kind,
+        "source_status": review.source_status,
+        "title": review.title,
+        "summary": review.summary,
+        "facts": _build_onboard_review_context(review.entity_ulid),
+        "allowed_decisions": ("approve", "reject"),
+        "as_of_utc": now_iso8601_ms(),
+    }
+
+
+def resolve_onboard_admin_issue(
     *,
     review_request_ulid: str,
-    approved: bool,
+    decision: str,
     actor_ulid: str | None,
     request_id: str | None,
 ) -> admin_v1.AdminInboxReceiptDTO | None:
-    """
-    Resolve the Resources-owned onboarding review.
-
-    Service layer owns:
-    - Resource truth changes
-    - request terminalization
-    - event_bus staging
-    - Admin inbox close
-
-    Route layer owns:
-    - commit / rollback
-    """
     rid = ensure_request_id(request_id)
     act = ensure_actor_ulid(actor_ulid)
     now = now_iso8601_ms()
 
     review = _get_review_request_or_raise(review_request_ulid)
 
-    if approved:
+    if review.closed_at_utc:
+        return close_onboard_admin_issue(
+            review_request_ulid=review.ulid,
+            source_status=review.source_status,
+            close_reason="already_terminal",
+            admin_status="source_closed",
+        )
+
+    if decision == "approve":
         source_status = SOURCE_STATUS_APPROVED
         close_reason = "approved_in_resources"
-
+        event_name = "resource.onboard_review.approved"
         _apply_onboard_approval(
             entity_ulid=review.entity_ulid,
             actor_ulid=act,
             request_id=rid,
         )
-        event_name = "resource.onboard_review.approved"
-    else:
+    elif decision == "reject":
         source_status = SOURCE_STATUS_REJECTED
         close_reason = "rejected_in_resources"
-
+        event_name = "resource.onboard_review.rejected"
         _apply_onboard_rejection(
             entity_ulid=review.entity_ulid,
             actor_ulid=act,
             request_id=rid,
         )
-
-        event_name = "resource.onboard_review.rejected"
+    else:
+        raise ValueError("decision must be 'approve' or 'reject'")
 
     _mark_review_request_terminal(
         review_request_ulid=review.ulid,
@@ -139,20 +117,13 @@ def resolve_onboard_admin_review(
         request_id=rid,
     )
 
-    receipt = admin_v1.close_inbox_item(
-        admin_v1.AdminInboxCloseDTO(
-            source_slice="resources",
-            issue_kind=review.review_kind,
-            source_ref_ulid=review.ulid,
-            source_status=source_status,
-            close_reason=close_reason,
-        )
+    receipt = close_onboard_admin_issue(
+        review_request_ulid=review.ulid,
+        source_status=source_status,
+        close_reason=close_reason,
+        admin_status="resolved",
     )
 
-    db.session.flush()
-
-    # Adapt payload keys to your actual event_bus contract if needed.
-    # event_bus hangs off the db.session until route commits all flushes.
     event_bus.emit(
         domain="resources",
         operation="admin_review_resolution",
@@ -174,7 +145,56 @@ def resolve_onboard_admin_review(
         },
     )
 
+    db.session.flush()
     return receipt
+
+
+def close_onboard_admin_issue(
+    *,
+    review_request_ulid: str,
+    source_status: str,
+    close_reason: str,
+    admin_status: str = "resolved",
+) -> admin_v1.AdminInboxReceiptDTO | None:
+    return admin_v1.close_inbox_item(
+        admin_v1.AdminInboxCloseDTO(
+            source_slice="resources",
+            issue_kind=REVIEW_KIND_ONBOARD,
+            source_ref_ulid=review_request_ulid,
+            source_status=source_status,
+            close_reason=close_reason,
+            admin_status=admin_status,
+        )
+    )
+
+
+# Temporary compatibility wrappers while callers are migrated.
+def request_onboard_admin_review(
+    *,
+    entity_ulid: str,
+    actor_ulid: str | None,
+    request_id: str | None,
+) -> admin_v1.AdminInboxReceiptDTO:
+    return raise_onboard_admin_issue(
+        entity_ulid=entity_ulid,
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+    )
+
+
+def resolve_onboard_admin_review(
+    *,
+    review_request_ulid: str,
+    approved: bool,
+    actor_ulid: str | None,
+    request_id: str | None,
+) -> admin_v1.AdminInboxReceiptDTO | None:
+    return resolve_onboard_admin_issue(
+        review_request_ulid=review_request_ulid,
+        decision="approve" if approved else "reject",
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+    )
 
 
 # -----------------
