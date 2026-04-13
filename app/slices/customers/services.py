@@ -23,8 +23,6 @@ from app.lib.jsonutil import stable_dumps
 from app.lib.pagination import Page, paginate
 
 from .mapper import (
-    AdminInboxItemRow,
-    AdminInboxItemView,
     ChangeSetDTO,
     CustomerDashboardRow,
     CustomerDashboardView,
@@ -46,7 +44,6 @@ from .mapper import (
     ParsedHistoryBlobDTO,
     ReferralComposeView,
     ReferralOutcomeComposeView,
-    map_admin_inbox_item,
     map_customer_dashboard,
     map_customer_eligibility,
     map_customer_history_detail,
@@ -319,6 +316,13 @@ def _recompute_customer_cues(
         "flag_tier1_immediate",
         t1 == 1,
         "customer.flag_tier1_immediate",
+        changed,
+    )
+    _set_changed(
+        customer,
+        "watchlist",
+        t1 == 1,
+        "customer.watchlist",
         changed,
     )
 
@@ -1339,7 +1343,14 @@ def needs_complete(
         changed={"fields": changed},
         happened_at_utc=now,
     )
-    return ChangeSetDTO(ent, False, False, tuple(changed), "review")
+    return ChangeSetDTO(
+        entity_ulid=ent,
+        created=False,
+        noop=False,
+        changed_fields=tuple(changed),
+        next_step="review",
+        history_ulid=history_ulid,
+    )
 
 
 # -----------------
@@ -2083,52 +2094,3 @@ def get_customer_history_detail_public(
         parsed=parsed2,
     )
     return map_customer_history_detail(row)
-
-
-def list_admin_inbox_items(
-    *, page: int, per_page: int
-) -> Page[AdminInboxItemView]:
-    stmt = (
-        select(CustomerHistory, Customer)
-        .join(Customer, Customer.entity_ulid == CustomerHistory.entity_ulid)
-        .where(CustomerHistory.has_admin_tags == True)  # noqa: E712
-        .order_by(CustomerHistory.happened_at_iso.desc())
-    )
-
-    def _unwrap_history_customer_pair(
-        item: object,
-    ) -> tuple[CustomerHistory, Customer]:
-        try:
-            h = item[0]  # type: ignore[index]
-            c = item[1]  # type: ignore[index]
-        except Exception as exc:
-            raise TypeError(
-                "expected (CustomerHistory, Customer) row from paginate()"
-            ) from exc
-        if not isinstance(h, CustomerHistory) or not isinstance(c, Customer):
-            raise TypeError(
-                "expected CustomerHistory and Customer in selected row"
-            )
-        return h, c
-
-    def _to_row(item: Any) -> AdminInboxItemRow:
-        h, c = _unwrap_history_customer_pair(item)
-        return AdminInboxItemRow(
-            history_ulid=h.ulid,
-            entity_ulid=h.entity_ulid,
-            customer_status=c.status,
-            watchlist=bool(c.watchlist),
-            tier1_min=c.tier1_min,
-            flag_tier1_immediate=bool(c.flag_tier1_immediate),
-            happened_at_iso=h.happened_at_iso,
-            severity=h.severity,
-            title=h.title,
-            summary=h.summary,
-            admin_tags=csv_to_tags(h.admin_tags_csv),
-        )
-
-    return (
-        paginate(stmt, page=page, per_page=per_page)
-        .map(_to_row)
-        .map(map_admin_inbox_item)
-    )

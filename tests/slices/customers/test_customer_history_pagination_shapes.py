@@ -170,38 +170,6 @@ def test_list_customer_history_items_unwraps_paginated_row_shape(
     assert row.public_tags == ("assessment",)
 
 
-
-def test_list_admin_inbox_items_unwraps_paginated_pair_shape(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    _patch_query_env(monkeypatch)
-    history = _make_history(with_admin_tags=True)
-    customer = _make_customer()
-
-    def fake_paginate(stmt, *, page: int, per_page: int):
-        return FakePage(
-            [(history, customer)],
-            page=page,
-            per_page=per_page,
-            total=1,
-        )
-
-    monkeypatch.setattr(svc, "paginate", fake_paginate)
-
-    page = svc.list_admin_inbox_items(page=1, per_page=25)
-
-    assert len(page.items) == 1
-    row = page.items[0]
-    assert row.history_ulid == HISTORY_ULID
-    assert row.entity_ulid == ENTITY_ULID
-    assert row.customer_status == "active"
-    assert row.watchlist is True
-    assert row.tier1_min == 1
-    assert row.flag_tier1_immediate is True
-    assert row.admin_tags == ("followup",)
-
-
-
 def test_list_customer_history_items_rejects_unexpected_paginate_shape(
     monkeypatch: pytest.MonkeyPatch,
 ):

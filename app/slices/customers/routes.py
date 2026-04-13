@@ -22,11 +22,12 @@ from app.extensions.errors import ContractError
 from app.lib import request_ctx
 from app.lib.security import rbac
 
+from . import admin_review_services as admin_review_svc
 from . import services as svc
 from .models import Customer, CustomerEligibility
 from .taxonomy import (
-    NEEDS_CATEGORY_KEY,
     NEED_LABELS,
+    NEEDS_CATEGORY_KEY,
     REFERRAL_MATCH_BUCKETS,
     REFERRAL_METHODS,
     REFERRAL_OUTCOMES,
@@ -500,24 +501,6 @@ def referral_outcome_new_post(entity_ulid: str):
 
 
 # -----------------
-# Dataset #7
-# Admin Inbox
-# -----------------
-
-
-# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface
-@bp.get("/admin/inbox")
-@login_required
-@rbac("admin")
-def admin_inbox_get():
-    _ctx_mut()
-    page = _arg_int("page", 1, lo=1, hi=10_000)
-    per_page = _arg_int("per_page", 25, lo=5, hi=200)
-    p = svc.list_admin_inbox_items(page=page, per_page=per_page)
-    return render_template("customers/admin_inbox.html", page=p)
-
-
-# -----------------
 # Eligibility step
 # -----------------
 
@@ -762,14 +745,33 @@ def intake_complete_post(entity_ulid: str):
 
     rid, actor = _ctx_mut()
     try:
-        svc.needs_complete(
+        dto = svc.needs_complete(
             entity_ulid=entity_ulid,
             request_id=rid,
             actor_ulid=actor,
         )
+
+        if dto.history_ulid:
+            admin_review_svc.publish_assessment_completed_admin_advisory(
+                entity_ulid=entity_ulid,
+                history_ulid=dto.history_ulid,
+                actor_ulid=actor,
+                request_id=rid,
+            )
+
+        dash = svc.get_customer_dashboard(entity_ulid)
+        if dash.watchlist:
+            admin_review_svc.publish_watchlist_admin_advisory(
+                entity_ulid=entity_ulid,
+                actor_ulid=actor,
+                request_id=rid,
+                source_ref_ulid=entity_ulid,
+            )
+
         db.session.commit()
         _wiz_consume_nonce(STEP_REVIEW, entity_ulid)
     except Exception as exc:
+        print("INTAKE COMPLETE ERROR:", repr(exc))
         db.session.rollback()
         flash(str(exc), "error")
         return _goto_step(entity_ulid, STEP_REVIEW)

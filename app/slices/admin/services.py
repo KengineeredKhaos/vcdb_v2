@@ -456,7 +456,7 @@ def list_active_inbox_items() -> tuple[InboxItemDTO, ...]:
             status=row.admin_status,
             resolution_route=row.resolution_route,
             allowed_actions_summary=(
-                "Launch owning-slice workflow; Admin queue actions only."
+                "Launch owning-slice workflow or advisory surface; Admin queue actions only."
             ),
             context_preview=row.title,
         )
@@ -478,8 +478,8 @@ def get_inbox_page() -> InboxPageDTO:
     return to_inbox_page(
         title="Unified Admin Inbox",
         summary=(
-            "Admin triage surface for slice-owned review items with real "
-            "resolution paths."
+            "Admin triage surface for slice-owned review items and advisory "
+            "notices with truthful launch paths."
         ),
         inbox_summary=inbox_summary,
         items=items,
@@ -724,7 +724,9 @@ def get_auth_operators_page() -> AuthOperatorsPageDTO:
 
         roles = tuple(row.get("roles") or ())
         role_code = str(roles[0]) if roles else None
-        role_label = role_labels.get(role_code, role_code) if role_code else None
+        role_label = (
+            role_labels.get(role_code, role_code) if role_code else None
+        )
 
         items.append(
             {
@@ -732,7 +734,9 @@ def get_auth_operators_page() -> AuthOperatorsPageDTO:
                 "entity_ulid": (str(entity_ulid) if entity_ulid else None),
                 "display_name": display_name,
                 "username": username,
-                "email": (str(row.get("email")) if row.get("email") else None),
+                "email": (
+                    str(row.get("email")) if row.get("email") else None
+                ),
                 "role_code": role_code,
                 "role_label": role_label,
                 "is_active": is_active,

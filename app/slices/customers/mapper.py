@@ -374,53 +374,19 @@ def map_customer_history_detail(
 
 
 @dataclass(frozen=True, slots=True)
-class AdminInboxItemView:
-    history_ulid: str
-    entity_ulid: str
-    customer_status: str
-    watchlist: bool
-    tier1_min: int | None
-    flag_tier1_immediate: bool
-    happened_at_iso: str
-    severity: str
-    title: str | None
-    summary: str | None
-    admin_tags: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class AdminInboxItemRow:
-    history_ulid: str
-    entity_ulid: str
-    customer_status: str
-    watchlist: bool
-    tier1_min: int | None
-    flag_tier1_immediate: bool
-    happened_at_iso: str
-    severity: str
-    title: str | None
-    summary: str | None
-    admin_tags: tuple[str, ...]
-
-
-def map_admin_inbox_item(r: AdminInboxItemRow) -> AdminInboxItemView:
-    return AdminInboxItemView(**asdict(r))
-
-
-@dataclass(frozen=True, slots=True)
 class ChangeSetDTO:
     entity_ulid: str
     created: bool
     noop: bool
     changed_fields: tuple[str, ...]
     next_step: str | None
+    history_ulid: str | None = None
 
 
 __all__ = [
     "ChangeSetDTO",
     "CustomerHistoryItemView",
     "CustomerHistoryDetailView",
-    "AdminInboxItemView",
     "CustomerSummaryView",
     "CustomerDashboardView",
     "CustomerEligibilityView",
@@ -433,7 +399,6 @@ __all__ = [
     "ReferralOutcomeComposeView",
     "map_customer_history_item",
     "map_customer_history_detail",
-    "map_admin_inbox_item",
     "map_customer_summary",
     "map_customer_dashboard",
     "map_customer_eligibility",
