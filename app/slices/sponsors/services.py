@@ -915,7 +915,7 @@ def record_prospect_realization(
 
     The expectation is that callers will:
 
-      1) Log the inbound donation in Finance via finance_v2.log_donation(...).
+      1) Post the inbound money in Finance via finance_v2.post_income(...).
       2) Call this function with the same sponsor_entity_ulid / prospect_ulid /
          amount_cents and (optionally) the Finance journal_ulid.
     """

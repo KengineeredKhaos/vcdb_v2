@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
+from app.lib.request_ctx import ensure_request_id
 from app.slices.finance.models import Encumbrance, Reserve
 
 from .services_journal import ensure_fund
@@ -24,7 +25,7 @@ def reserve_funds(payload: dict, *, dry_run: bool = False) -> dict:
     amount = int(payload.get("amount_cents") or 0)
     source = payload.get("source") or "unknown"
     actor_ulid = payload.get("actor_ulid")
-    request_id = payload.get("request_id")
+    request_id = str(payload.get("request_id") or ensure_request_id())
 
     if not fd:
         raise ValueError("funding_demand_ulid required")
@@ -63,7 +64,7 @@ def reserve_funds(payload: dict, *, dry_run: bool = False) -> dict:
     event_bus.emit(
         domain="finance",
         operation="reserve_recorded",
-        request_id=str(request_id or r.ulid),
+        request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=r.ulid,
         happened_at_utc=now_iso8601_ms(),
@@ -96,7 +97,7 @@ def encumber_funds(payload: dict, *, dry_run: bool = False) -> dict:
     amount = int(payload.get("amount_cents") or 0)
     source = payload.get("source") or "unknown"
     actor_ulid = payload.get("actor_ulid")
-    request_id = payload.get("request_id")
+    request_id = str(payload.get("request_id") or ensure_request_id())
 
     if not fd:
         raise ValueError("funding_demand_ulid required")
@@ -136,7 +137,7 @@ def encumber_funds(payload: dict, *, dry_run: bool = False) -> dict:
     event_bus.emit(
         domain="finance",
         operation="encumbrance_recorded",
-        request_id=str(request_id or e.ulid),
+        request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=e.ulid,
         happened_at_utc=now_iso8601_ms(),
@@ -163,6 +164,7 @@ def relieve_encumbrance(
 ) -> None:
     if amount_cents <= 0:
         return
+    request_id = str(request_id or ensure_request_id())
     e = db.session.get(Encumbrance, encumbrance_ulid)
     if not e:
         raise LookupError(f"unknown encumbrance: {encumbrance_ulid}")
@@ -174,7 +176,7 @@ def relieve_encumbrance(
     event_bus.emit(
         domain="finance",
         operation="encumbrance_relieved",
-        request_id=str(request_id or e.ulid),
+        request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=e.ulid,
         happened_at_utc=now_iso8601_ms(),

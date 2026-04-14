@@ -13,43 +13,6 @@ from typing import Any
 
 
 @dataclass(frozen=True)
-class AdminInboxUpsertDTO:
-    source_slice: str
-    issue_kind: str
-    source_ref_ulid: str
-    subject_ref_ulid: str | None
-    severity: str
-    title: str
-    summary: str
-    source_status: str
-    workflow_key: str
-    resolution_route: str
-    context: dict[str, Any]
-    opened_at_utc: str | None = None
-    updated_at_utc: str | None = None
-
-
-@dataclass(frozen=True)
-class AdminInboxCloseDTO:
-    source_slice: str
-    issue_kind: str
-    source_ref_ulid: str
-    source_status: str
-    close_reason: str
-    admin_status: str
-    closed_at_utc: str | None = None
-
-
-@dataclass(frozen=True)
-class AdminInboxReceiptDTO:
-    inbox_item_ulid: str
-    source_slice: str
-    issue_kind: str
-    source_ref_ulid: str
-    admin_status: str
-
-
-@dataclass(frozen=True)
 class SliceHealthCardDTO:
     slice_key: str
     label: str

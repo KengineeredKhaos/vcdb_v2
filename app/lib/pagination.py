@@ -4,6 +4,28 @@
 # Purpose: Stable library primitive for VCDB.
 # Canon API: lib-core v1.0.0 (frozen)
 
+
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from math import ceil
+from typing import Any, TypeVar, overload
+
+# VCDB_REDFLAG_TEST_REWORK
+"""
+The DISTINCT ON warnings in pagination are real, but they are not breaking
+the route-access test and they are not fixture-related.
+They are background noise for this thread, not the next rabbit hole.
+"""
+
+"""Calendar funding read-side + canonical published-context helpers.
+
+This module is intentionally read-side only.
+Direct FundingDemand draft/publish mutators are retired.
+The canonical downstream package is the frozen published_context_json
+written at DemandDraft promotion time.
+"""
 """
 Generic pagination helpers (in-memory and SQLAlchemy).
 
@@ -26,14 +48,6 @@ see implementation notes below.
 # SQLite test warning: DISTINCT ON style query is tolerated today but
 # deprecated for non-PostgreSQL backends. Rework pagination/count path so
 # SQLite and future SQLAlchemy versions do not break.
-
-from __future__ import annotations
-
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from math import ceil
-from typing import Any, TypeVar, overload
-
 U = TypeVar("U")
 
 # Optional SQLAlchemy support (works whether SA is present or not)

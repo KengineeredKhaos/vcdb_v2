@@ -1,13 +1,5 @@
 # app/slices/calendar/services_funding.py
 
-"""Calendar funding read-side + canonical published-context helpers.
-
-This module is intentionally read-side only.
-Direct FundingDemand draft/publish mutators are retired.
-The canonical downstream package is the frozen published_context_json
-written at DemandDraft promotion time.
-"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -24,6 +16,22 @@ from .mapper import (
     funding_demand_to_view,
 )
 from .models import FundingDemand, Project
+
+# VCDB_REDFLAG_TEST_REWORK
+"""
+The calendar test logs in, reaches /calendar/funding-demands,
+ and then dies in the route because the app calls
+ funding_svc.get_funding_demand_status_choices() and that attribute
+ does not exist.
+"""
+
+"""Calendar funding read-side + canonical published-context helpers.
+
+This module is intentionally read-side only.
+Direct FundingDemand draft/publish mutators are retired.
+The canonical downstream package is the frozen published_context_json
+written at DemandDraft promotion time.
+"""
 
 
 def _clean_text(
@@ -484,6 +492,18 @@ def get_spending_class_choices() -> list[tuple[str, str]]:
     return [("", "— Select —"), *[(v.key, v.label) for v in vals]]
 
 
+def get_funding_demand_status_choices() -> list[tuple[str, str]]:
+    return [
+        ("", "All statuses"),
+        ("draft", "Draft"),
+        ("published", "Published"),
+        ("funding_in_progress", "Funding In Progress"),
+        ("funded", "Funded"),
+        ("executing", "Executing"),
+        ("closed", "Closed"),
+    ]
+
+
 def get_funding_demand_context(funding_demand_ulid: str) -> dict[str, object]:
     row = _get_demand_or_raise(funding_demand_ulid)
     if not row.published_context_json:
@@ -568,6 +588,7 @@ __all__ = [
     "get_funding_demand_context",
     "get_funding_demand_view",
     "get_spending_class_choices",
+    "get_funding_demand_status_choices",
     "list_funding_demands",
     "list_projects_for_form",
     "list_published_funding_demands",

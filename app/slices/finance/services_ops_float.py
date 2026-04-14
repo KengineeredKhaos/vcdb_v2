@@ -8,6 +8,7 @@ from sqlalchemy import or_, select
 
 from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
+from app.lib.request_ctx import ensure_request_id
 
 from .models import Encumbrance, OpsFloat, Reserve
 
@@ -87,7 +88,7 @@ def allocate_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
     support_mode = payload.get("support_mode")
     amount = int(payload.get("amount_cents") or 0)
     actor_ulid = payload.get("actor_ulid")
-    request_id = payload.get("request_id")
+    request_id = str(payload.get("request_id") or ensure_request_id())
 
     if not source_fd:
         raise ValueError("source_funding_demand_ulid required")
@@ -137,7 +138,7 @@ def allocate_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
     event_bus.emit(
         domain="finance",
         operation="ops_float_allocated",
-        request_id=str(request_id or row.ulid),
+        request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=row.ulid,
         happened_at_utc=now_iso8601_ms(),
@@ -165,7 +166,7 @@ def repay_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
     parent_ulid = payload.get("parent_ops_float_ulid")
     amount = int(payload.get("amount_cents") or 0)
     actor_ulid = payload.get("actor_ulid")
-    request_id = payload.get("request_id")
+    request_id = str(payload.get("request_id") or ensure_request_id())
 
     if not parent_ulid:
         raise ValueError("parent_ops_float_ulid required")
@@ -210,7 +211,7 @@ def repay_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
     event_bus.emit(
         domain="finance",
         operation="ops_float_repaid",
-        request_id=str(request_id or row.ulid),
+        request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=row.ulid,
         happened_at_utc=now_iso8601_ms(),
@@ -236,7 +237,7 @@ def forgive_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
     parent_ulid = payload.get("parent_ops_float_ulid")
     amount = int(payload.get("amount_cents") or 0)
     actor_ulid = payload.get("actor_ulid")
-    request_id = payload.get("request_id")
+    request_id = str(payload.get("request_id") or ensure_request_id())
 
     if not parent_ulid:
         raise ValueError("parent_ops_float_ulid required")
@@ -281,7 +282,7 @@ def forgive_ops_float(payload: dict, *, dry_run: bool = False) -> dict:
     event_bus.emit(
         domain="finance",
         operation="ops_float_forgiven",
-        request_id=str(request_id or row.ulid),
+        request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=row.ulid,
         happened_at_utc=now_iso8601_ms(),

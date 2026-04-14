@@ -1,95 +1,213 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Grant Accountability</title>
-  <style>
-    body { font-family: sans-serif; margin: 1.5rem; }
-    h1, h2 { margin-bottom: 0.35rem; }
-    .muted { color: #555; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
-    .card { border: 1px solid #ccc; border-radius: 8px; padding: 0.9rem; }
-    table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
-    th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid #e5e5e5; }
-    code { font-size: 0.95em; }
-    ul { margin-top: 0.5rem; }
-  </style>
-</head>
-<body>
-  <h1>Grant Accountability</h1>
-  <p class="muted">
-    {{ report.grant.award_name }}{% if report.grant.award_number %}
-    · {{ report.grant.award_number }}{% endif %}
-  </p>
+{% extends "layout/base.html" %}
+{% block title %}Grant Accountability{% endblock %}
+{% block content %}
+  <div class="container">
+    <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
+      <div>
+        <h1 class="h3 mb-1">Grant Accountability</h1>
+        <div class="text-muted small">
+          {{ report.grant.award_name }}
+          {% if report.grant.award_number %}
+            · {{ report.grant.award_number }}
+          {% endif %}
+        </div>
+      </div>
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-auto">
+          <label class="form-label mb-1" for="start_on">Start</label>
+          <input
+            class="form-control"
+            type="date"
+            id="start_on"
+            name="start_on"
+            value="{{ report.period.start_on }}"
+          >
+        </div>
+        <div class="col-auto">
+          <label class="form-label mb-1" for="end_on">End</label>
+          <input
+            class="form-control"
+            type="date"
+            id="end_on"
+            name="end_on"
+            value="{{ report.period.end_on }}"
+          >
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-primary" type="submit">View</button>
+        </div>
+      </form>
+    </div>
 
-  <div class="grid">
-    <section class="card">
-      <h2>Grant</h2>
-      <table>
-        <tr><th>Grant ULID</th><td><code>{{ report.grant.id }}</code></td></tr>
-        <tr><th>Fund</th><td>{{ report.grant.fund_code }}</td></tr>
-        <tr><th>Restriction</th><td>{{ report.grant.restriction_type }}</td></tr>
-        <tr><th>Funding mode</th><td>{{ report.grant.funding_mode }}</td></tr>
-        <tr><th>Project</th><td>{{ report.grant.project_ulid or '—' }}</td></tr>
-        <tr><th>Grant term</th><td>{{ report.grant.start_on }} to {{ report.grant.end_on }}</td></tr>
-        <tr><th>Report period</th><td>{{ report.period.start_on }} to {{ report.period.end_on }}</td></tr>
-      </table>
-    </section>
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="text-muted small">Awarded</div>
+            <div class="h5 mb-0">{{ (report.funding.amount_awarded_cents or 0) | currency }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="text-muted small">Income Received</div>
+            <div class="h5 mb-0">{{ (report.funding.income_received_cents or 0) | currency }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="text-muted small">Remaining Authority</div>
+            <div class="h5 mb-0">{{ (report.funding.remaining_authority_cents or 0) | currency }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-    <section class="card">
-      <h2>Funding</h2>
-      <table>
-        <tr><th>Awarded</th><td>{{ report.funding.amount_awarded_cents }}</td></tr>
-        <tr><th>Income received</th><td>{{ report.funding.income_received_cents }}</td></tr>
-        <tr><th>Remaining authority</th><td>{{ report.funding.remaining_authority_cents }}</td></tr>
-      </table>
-    </section>
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <div class="card h-100">
+          <div class="card-body">
+            <h2 class="h5">Grant</h2>
+            <table class="table table-sm align-middle mb-0">
+              <tbody>
+                <tr><th>Grant ULID</th><td><code>{{ report.grant.id }}</code></td></tr>
+                <tr><th>Fund</th><td>{{ report.grant.fund_code }}</td></tr>
+                <tr><th>Restriction</th><td>{{ report.grant.restriction_type }}</td></tr>
+                <tr><th>Funding mode</th><td>{{ report.grant.funding_mode }}</td></tr>
+                <tr><th>Project</th><td>{% if report.grant.project_ulid %}<code>{{ report.grant.project_ulid }}</code>{% else %}—{% endif %}</td></tr>
+                <tr><th>Grant term</th><td>{{ report.grant.start_on }} to {{ report.grant.end_on }}</td></tr>
+                <tr><th>Report period</th><td>{{ report.period.start_on }} to {{ report.period.end_on }}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
-    <section class="card">
-      <h2>Commitments</h2>
-      <table>
-        <tr><th>Reserved</th><td>{{ report.commitments.reserved_cents }}</td></tr>
-        <tr><th>Encumbered open</th><td>{{ report.commitments.encumbered_open_cents }}</td></tr>
-        <tr><th>Encumbrance relieved</th><td>{{ report.commitments.encumbrance_relieved_cents }}</td></tr>
-      </table>
-    </section>
+      <div class="col-lg-6">
+        <div class="card h-100">
+          <div class="card-body">
+            <h2 class="h5">Commitments</h2>
+            <table class="table table-sm align-middle mb-0">
+              <tbody>
+                <tr><th>Reserved</th><td class="text-end">{{ (report.commitments.reserved_cents or 0) | currency }}</td></tr>
+                <tr><th>Encumbered open</th><td class="text-end">{{ (report.commitments.encumbered_open_cents or 0) | currency }}</td></tr>
+                <tr><th>Encumbrance relieved</th><td class="text-end">{{ (report.commitments.encumbrance_relieved_cents or 0) | currency }}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
-    <section class="card">
-      <h2>Spending</h2>
-      <table>
-        <tr><th>Posted expense</th><td>{{ report.spending.posted_expense_cents }}</td></tr>
-        <tr><th>Disbursed</th><td>{{ report.spending.disbursed_cents }}</td></tr>
-      </table>
-    </section>
+      <div class="col-lg-6">
+        <div class="card h-100">
+          <div class="card-body">
+            <h2 class="h5">Spending</h2>
+            <table class="table table-sm align-middle mb-0">
+              <tbody>
+                <tr><th>Posted expense</th><td class="text-end">{{ (report.spending.posted_expense_cents or 0) | currency }}</td></tr>
+                <tr><th>Disbursed</th><td class="text-end">{{ (report.spending.disbursed_cents or 0) | currency }}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
-    <section class="card">
-      <h2>Reimbursements</h2>
-      <table>
-        <tr><th>Claimed</th><td>{{ report.reimbursements.claimed_cents }}</td></tr>
-        <tr><th>Approved</th><td>{{ report.reimbursements.approved_cents }}</td></tr>
-        <tr><th>Received</th><td>{{ report.reimbursements.received_cents }}</td></tr>
-        <tr><th>Outstanding</th><td>{{ report.reimbursements.outstanding_cents }}</td></tr>
-      </table>
-      {% if report.reimbursements.claim_ulids %}
-      <p><strong>Claim ULIDs</strong></p>
-      <ul>
-        {% for claim_ulid in report.reimbursements.claim_ulids %}
-        <li><code>{{ claim_ulid }}</code></li>
-        {% endfor %}
-      </ul>
-      {% endif %}
-    </section>
+      <div class="col-lg-6">
+        <div class="card h-100">
+          <div class="card-body">
+            <h2 class="h5">Reimbursements</h2>
+            <table class="table table-sm align-middle mb-3">
+              <tbody>
+                <tr><th>Claimed</th><td class="text-end">{{ (report.reimbursements.claimed_cents or 0) | currency }}</td></tr>
+                <tr><th>Approved</th><td class="text-end">{{ (report.reimbursements.approved_cents or 0) | currency }}</td></tr>
+                <tr><th>Received</th><td class="text-end">{{ (report.reimbursements.received_cents or 0) | currency }}</td></tr>
+                <tr><th>Outstanding</th><td class="text-end">{{ (report.reimbursements.outstanding_cents or 0) | currency }}</td></tr>
+              </tbody>
+            </table>
+            <div class="small text-muted mb-1">Claim ULIDs</div>
+            {% if report.reimbursements.claim_ulids %}
+              <ul class="mb-0">
+                {% for claim_ulid in report.reimbursements.claim_ulids %}
+                  <li><code>{{ claim_ulid }}</code></li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div class="text-muted">No reimbursement claims in this period.</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
 
-    <section class="card">
-      <h2>Traceability</h2>
-      <ul>
-        <li>Income journals: {{ report.traceability.income_journal_ulids|length }}</li>
-        <li>Expense journals: {{ report.traceability.expense_journal_ulids|length }}</li>
-        <li>Reserves: {{ report.traceability.reserve_ulids|length }}</li>
-        <li>Encumbrances: {{ report.traceability.encumbrance_ulids|length }}</li>
-        <li>Disbursements: {{ report.traceability.disbursement_ulids|length }}</li>
-      </ul>
-    </section>
+    <div class="card mt-4">
+      <div class="card-body">
+        <h2 class="h5">Traceability</h2>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="small text-muted mb-1">Income journals</div>
+            {% if report.traceability.income_journal_ulids %}
+              <ul class="mb-0">
+                {% for item in report.traceability.income_journal_ulids %}
+                  <li><code>{{ item }}</code></li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div class="text-muted">None.</div>
+            {% endif %}
+          </div>
+          <div class="col-md-6">
+            <div class="small text-muted mb-1">Expense journals</div>
+            {% if report.traceability.expense_journal_ulids %}
+              <ul class="mb-0">
+                {% for item in report.traceability.expense_journal_ulids %}
+                  <li><code>{{ item }}</code></li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div class="text-muted">None.</div>
+            {% endif %}
+          </div>
+          <div class="col-md-4">
+            <div class="small text-muted mb-1">Reserves</div>
+            {% if report.traceability.reserve_ulids %}
+              <ul class="mb-0">
+                {% for item in report.traceability.reserve_ulids %}
+                  <li><code>{{ item }}</code></li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div class="text-muted">None.</div>
+            {% endif %}
+          </div>
+          <div class="col-md-4">
+            <div class="small text-muted mb-1">Encumbrances</div>
+            {% if report.traceability.encumbrance_ulids %}
+              <ul class="mb-0">
+                {% for item in report.traceability.encumbrance_ulids %}
+                  <li><code>{{ item }}</code></li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div class="text-muted">None.</div>
+            {% endif %}
+          </div>
+          <div class="col-md-4">
+            <div class="small text-muted mb-1">Disbursements</div>
+            {% if report.traceability.disbursement_ulids %}
+              <ul class="mb-0">
+                {% for item in report.traceability.disbursement_ulids %}
+                  <li><code>{{ item }}</code></li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div class="text-muted">None.</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
-</body>
-</html>
+{% endblock %}

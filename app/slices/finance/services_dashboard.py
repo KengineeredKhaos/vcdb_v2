@@ -2,24 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 
 from sqlalchemy import select
 
 from app.extensions import db
-from app.slices.finance.models import Encumbrance, Reserve
-from app.slices.ledger.models import LedgerEvent
 
-
-def _load_json(text: str | None) -> dict:
-    if not text:
-        return {}
-    try:
-        raw = json.loads(text)
-    except Exception:  # noqa: BLE001
-        return {}
-    return raw if isinstance(raw, dict) else {}
+from .models import Encumbrance, FinancePostingFact, Reserve
 
 
 def _as_rows(bucket: dict[str, int]) -> list[dict[str, int | str]]:
@@ -56,48 +45,24 @@ def get_funding_demand_money_view(
     encumbered_cents = 0
     spent_cents = 0
 
-    income_rows = db.session.execute(
-        select(LedgerEvent).where(
-            LedgerEvent.event_type == "finance.income_posted"
+    fact_rows = db.session.execute(
+        select(FinancePostingFact).where(
+            FinancePostingFact.funding_demand_ulid == funding_demand_ulid
         )
     ).scalars()
-    for row in income_rows:
+    for row in fact_rows:
         if not _before_or_equal(row.happened_at_utc, as_of_iso):
             continue
-        refs = _load_json(row.refs_json)
-        if refs.get("funding_demand_ulid") != funding_demand_ulid:
-            continue
-        amount = int(refs.get("amount_cents") or 0)
-        fund_code = str(refs.get("fund_code") or "")
-        income_kind = str(refs.get("income_kind") or "")
-
-        received_cents += amount
-        if fund_code:
-            received_by_fund[fund_code] += amount
-        if income_kind:
-            income_by_income_kind[income_kind] += amount
-        if row.target_ulid:
-            income_journal_ulids.add(str(row.target_ulid))
-
-    expense_rows = db.session.execute(
-        select(LedgerEvent).where(
-            LedgerEvent.event_type == "finance.expense_posted"
-        )
-    ).scalars()
-    for row in expense_rows:
-        if not _before_or_equal(row.happened_at_utc, as_of_iso):
-            continue
-        refs = _load_json(row.refs_json)
-        if refs.get("funding_demand_ulid") != funding_demand_ulid:
-            continue
-        amount = int(refs.get("amount_cents") or 0)
-        expense_kind = str(refs.get("expense_kind") or "")
-
-        spent_cents += amount
-        if expense_kind:
-            spent_by_expense_kind[expense_kind] += amount
-        if row.target_ulid:
-            expense_journal_ulids.add(str(row.target_ulid))
+        amount = int(row.amount_cents or 0)
+        if row.posting_family == "income":
+            received_cents += amount
+            received_by_fund[str(row.fund_code)] += amount
+            income_by_income_kind[str(row.semantic_key)] += amount
+            income_journal_ulids.add(str(row.journal_ulid))
+        elif row.posting_family == "expense":
+            spent_cents += amount
+            spent_by_expense_kind[str(row.semantic_key)] += amount
+            expense_journal_ulids.add(str(row.journal_ulid))
 
     reserve_rows = db.session.execute(
         select(Reserve).where(
@@ -110,8 +75,9 @@ def get_funding_demand_money_view(
         reserve_ulids.add(row.ulid)
         if row.status != "active":
             continue
-        reserved_cents += int(row.amount_cents or 0)
-        reserved_by_fund[str(row.fund_code)] += int(row.amount_cents or 0)
+        amount = int(row.amount_cents or 0)
+        reserved_cents += amount
+        reserved_by_fund[str(row.fund_code)] += amount
 
     enc_rows = db.session.execute(
         select(Encumbrance).where(
@@ -168,5 +134,6 @@ def get_encumbrance_view(encumbrance_ulid: str) -> dict[str, object]:
         "relieved_cents": int(row.relieved_cents or 0),
         "open_cents": open_cents,
         "status": row.status,
+        "decision_fingerprint": row.decision_fingerprint,
         "source_ref_ulid": row.source_ref_ulid,
     }

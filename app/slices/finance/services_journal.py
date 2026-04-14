@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
+from app.lib.request_ctx import ensure_request_id
 from app.slices.finance.models import (
     Account,
     BalanceMonthly,
@@ -18,7 +19,42 @@ from app.slices.finance.models import (
     StatMetric,
 )
 
-from .mapper import DonationDTO, ExpenseDTO
+from typing import NotRequired, TypedDict
+
+
+class DonationDTO(TypedDict):
+    id: str
+    sponsor_ulid: str
+    fund_id: str
+    happened_at_utc: str
+    amount_cents: int
+    flags: list[str]
+
+
+class ReceiptDTO(TypedDict):
+    id: str
+    fund_id: str
+    received_on: str
+    source: str
+    amount_cents: int
+    instrument: NotRequired[str]
+
+
+class ExpenseDTO(TypedDict):
+    id: str
+    fund_id: str
+    project_id: str
+    happened_at_utc: str
+    vendor: str
+    amount_cents: int
+    expense_type: str
+    approved_by_ulid: NotRequired[str | None]
+    flags: NotRequired[list[str]]
+
+
+def _legacy_write_path_retired(name: str, replacement: str) -> RuntimeError:
+    return RuntimeError(f"{name} is retired. Use {replacement} instead.")
+
 
 # -----------------
 # Constants
@@ -374,8 +410,6 @@ def ensure_fund(*, code: str, name: str, restriction: str) -> Fund:
     return row
 
 
-
-
 def _external_restriction_type(internal: str) -> str:
     """Map internal Fund.restriction -> external DTO string."""
     mapping = {
@@ -400,6 +434,7 @@ def post_journal(
     memo: str | None,
     lines: list[dict],
     created_by_actor: str | None,
+    request_id: str | None = None,
     project_ulid: str | None = None,
     grant_ulid: str | None = None,
 ) -> str:
@@ -546,11 +581,13 @@ def post_journal(
     _apply_to_balances(lines=lines, period_key=period_key)
     db.session.flush()
 
+    request_id = str(request_id or ensure_request_id())
+
     # Emit cross-slice audit (NOT the Finance journal)
     event_bus.emit(
         domain="finance",
         operation="journal_posted",
-        request_id=j.ulid,
+        request_id=request_id,
         actor_ulid=created_by_actor,
         target_ulid=j.ulid,
         happened_at_utc=now_iso8601_ms(),
@@ -616,7 +653,7 @@ def reverse_journal(
         lines=lines,
         created_by_actor=created_by_actor,
         project_ulid=j.project_ulid,
-        grant_ulid=j.grant_ulid,       
+        grant_ulid=j.grant_ulid,
     )
 
 
@@ -648,163 +685,10 @@ def _select_expense_accounts(*, expense_type: str) -> tuple[str, str]:
 
 # ---- Required fields ----
 def log_expense(payload: dict, *, dry_run: bool = False) -> ExpenseDTO:
-    """Slice implementation for finance_v2.log_expense(...).
-
-    Notes:
-      - This writes Finance facts only (Journal rows). It assumes any
-        governance/budget checks already happened upstream.
-      - `external_ref_ulid` is the canonical payload key.
-        (We also accept legacy `external_ref_id` for safety.)
-
-    IMPORTANT:
-      This function assumes any Governance / budget / policy checks have
-      already been performed (for example via
-      ``governance_v2.preview_spend_decision`` or a Finance helper).
-      It MUST NOT perform policy decisions itself; its sole responsibility
-      is to persist the approved expense as Finance facts (Journal rows).
-
-    MVP behaviour:
-      * require fund_id, project_id, happened_at_utc, vendor, category, amount_cents
-      * choose an expense account based on `category`
-      * credit Operating Cash (1000) by default
-      * post a balanced Journal entry and return an ExpenseDTO
-
-    Callers MAY override:
-      * `bank_account_code` (e.g. petty cash 1010)
-      * `expense_account_code` (explicit COA code)
-
-    Expected payload keys (matching finance_v2 contract docstring):
-
-      Required:
-        - fund_id:      ULID of fin_fund
-        - project_id:   ULID of calendar project (or similar “bucket”)
-        - happened_at_utc:  ISO-8601 date or datetime string
-        - vendor:       free-text payee (or 'N/A')
-        - amount_cents: integer cents (> 0)
-        - expense_type: free-text category label
-
-      Optional (honoured if present):
-        - bank_account_code:    COA code for the cash/bank account (default '1000')
-        - expense_account_code: COA code for the expense account (default '5200')
-        - memo:                 free-text memo to attach to the Journal
-        - external_ref_id:      ULID of related object (e.g. Allocation)
-        - created_by_actor:     actor ULID
-        - source:               free-text source label (default 'calendar')
-
-    Raises:
-        ValueError: if required fields are missing or malformed
-                    (e.g. non-integer amount, amount <= 0).
-        LookupError: if the referenced fund_id cannot be found.
-
-    Returns:
-        ExpenseDTO: PII-free summary of the (real or simulated) expense.
-    """
-
-    # ---- Required fields ----
-    try:
-        fund_id = payload["fund_id"]
-        project_id = payload["project_id"]
-        happened_at_utc = payload["happened_at_utc"]
-        vendor = payload["vendor"]
-        expense_type = payload["expense_type"]
-        amount_raw = payload["amount_cents"]
-    except KeyError as exc:
-        raise ValueError(f"missing required field: {exc.args[0]}") from exc
-
-    try:
-        amount_cents = int(amount_raw)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("amount_cents must be an integer") from exc
-
-    if amount_cents <= 0:
-        raise ValueError("amount_cents must be > 0")
-
-    fund = db.session.get(Fund, fund_id)
-    if not fund:
-        raise LookupError(f"unknown fund_id {fund_id!r}")
-
-    happened_at_utc = str(happened_at_utc)
-
-    # ---- Optional fields / defaults ----
-    bank_account_code = payload.get("bank_account_code")
-    expense_account_code = payload.get("expense_account_code")
-
-    if bank_account_code is None or expense_account_code is None:
-        expense_acct, cash_acct = _select_expense_accounts(
-            expense_type=expense_type
-        )
-
-        if expense_account_code is None:
-            expense_account_code = expense_acct
-        if bank_account_code is None:
-            bank_account_code = cash_acct
-
-    memo = payload.get("memo") or (
-        f"{expense_type} — {vendor}" if vendor else str(expense_type)
+    raise _legacy_write_path_retired(
+        "services_journal.log_expense",
+        "finance_v2.post_expense(...) / services_semantic_posting.post_expense(...)",
     )
-
-    # Canonical external ref key is external_ref_ulid; accept legacy too.
-    external_ref_ulid = payload.get("external_ref_ulid") or payload.get(
-        "external_ref_id"
-    )
-
-    created_by_actor = payload.get("created_by_actor")
-    source = payload.get("source", "expense")
-
-    if dry_run:
-        dto: ExpenseDTO = {
-            "id": "DRY-RUN",
-            "fund_id": fund.ulid,
-            "project_id": project_id,
-            "happened_at_utc": happened_at_utc,
-            "vendor": vendor,
-            "amount_cents": amount_cents,
-            "expense_type": expense_type,
-            "approved_by_ulid": None,
-            "flags": ["dry_run"],
-        }
-        return dto
-
-    else:
-        lines = [
-            {
-                "account_code": expense_account_code,
-                "fund_code": fund.code,
-                "project_ulid": project_id,
-                "amount_cents": amount_cents,
-                "memo": memo,
-            },
-            {
-                "account_code": bank_account_code,
-                "fund_code": fund.code,
-                "project_ulid": project_id,
-                "amount_cents": -amount_cents,
-                "memo": memo,
-            },
-        ]
-
-        journal_ulid = post_journal(
-            source=source,
-            external_ref_ulid=external_ref_ulid,
-            happened_at_utc=happened_at_utc,
-            currency="USD",
-            memo=memo,
-            lines=lines,
-            created_by_actor=created_by_actor,
-        )
-
-        dto: ExpenseDTO = {
-            "id": journal_ulid,
-            "fund_id": fund.ulid,
-            "project_id": project_id,
-            "happened_at_utc": happened_at_utc,
-            "vendor": vendor,
-            "amount_cents": amount_cents,
-            "expense_type": expense_type,
-            "approved_by_ulid": None,
-            "flags": ["posted"],
-        }
-        return dto
 
 
 # -----------------
@@ -844,133 +728,9 @@ def _select_donation_accounts(
 
 
 def log_donation(payload: dict, *, dry_run: bool = False) -> DonationDTO:
-    """Slice implementation for finance_v2.log_donation(...).
-
-    MVP behaviour:
-      * require sponsor_ulid, fund_id, happened_at_utc, amount_cents
-      * post a balanced Journal entry (cash/bank vs revenue)
-      * return a DonationDTO summarising the entry
-
-    Default account logic:
-      * Debit Operating Cash (1000) unless caller overrides `bank_account_code`.
-      * Credit Contributions – Cash Donations (4100) unless caller overrides
-        `revenue_account_code`. If you later want to distinguish restricted vs
-        unrestricted at the account level, you can swap the default here
-        based on `fund.restriction` or flags.
-
-    Expected payload keys (matching finance_v2 contract docstring):
-
-      Required:
-        - sponsor_ulid:   ULID of the sponsor (from Sponsors slice)
-        - fund_id:        ULID of fin_fund
-        - happened_at_utc: ISO-8601 UTC timestamp string
-        - amount_cents:   integer cents (> 0)
-
-      Optional (honoured if present):
-        - bank_account_code:     COA code for the cash/bank account (default '1000')
-        - revenue_account_code:  COA code for the revenue account (default '4100')
-        - memo:                  free-text memo to attach to the Journal
-        - external_ref_ulid:     ULID of related object (e.g. pledge, receipt image)
-        - created_by_actor:      actor ULID
-        - source:                free-text source label (default 'sponsor')
-        - flags:                 list[str] of tags (e.g. ['pledge_realization'])
-
-    Raises:
-        ValueError: if required fields are missing or malformed
-                    (e.g. non-integer amount, amount <= 0).
-        LookupError: if the referenced fund_id cannot be found.
-
-    Returns:
-        DonationDTO: PII-free summary of the (real or simulated) donation.
-    """
-    # ---- Required fields ----
-    try:
-        sponsor_ulid = payload["sponsor_ulid"]
-        fund_id = payload["fund_id"]
-        happened_at_utc = payload["happened_at_utc"]
-        amount_raw = payload["amount_cents"]
-    except KeyError as exc:
-        raise ValueError(f"missing required field: {exc.args[0]}") from exc
-
-    try:
-        amount_cents = int(amount_raw)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("amount_cents must be an integer") from exc
-
-    if amount_cents <= 0:
-        raise ValueError("amount_cents must be > 0")
-
-    fund = db.session.get(Fund, fund_id)
-    if not fund:
-        # _as_contract_error will map this to code="not_found"
-        raise LookupError(f"unknown fund_id {fund_id!r}")
-
-    # ---- Optional fields / defaults ----
-    flags_list = list(payload.get("flags") or [])
-
-    bank_account_code = payload.get("bank_account_code")
-    revenue_account_code = payload.get("revenue_account_code")
-
-    if bank_account_code is None or revenue_account_code is None:
-        # Let the rulebook choose sensible defaults.
-        cash_acct, rev_acct = _select_donation_accounts(
-            fund=fund,
-            flags=flags_list,
-        )
-        if bank_account_code is None:
-            bank_account_code = cash_acct
-        if revenue_account_code is None:
-            revenue_account_code = rev_acct
-
-    memo = payload.get("memo") or "Donation"
-    external_ref_ulid = payload.get("external_ref_ulid")
-    created_by_actor = payload.get("created_by_actor")
-    source = payload.get("source", "sponsor")
-
-    # Dry-run: no DB writes, just a DTO that says what would happen
-    if dry_run:
-        return DonationDTO(
-            id="DRY-RUN",
-            sponsor_ulid=sponsor_ulid,
-            fund_id=fund.ulid,
-            happened_at_utc=happened_at_utc,
-            amount_cents=amount_cents,
-            flags=flags_list + ["dry_run"],
-        )
-
-    # Build balanced journal lines: DR cash/bank, CR contribution revenue.
-    lines = [
-        {
-            "account_code": bank_account_code,
-            "fund_code": fund.code,
-            "amount_cents": amount_cents,
-            "memo": memo,
-        },
-        {
-            "account_code": revenue_account_code,
-            "fund_code": fund.code,
-            "amount_cents": -amount_cents,
-            "memo": memo,
-        },
-    ]
-
-    journal_ulid = post_journal(
-        source=source,
-        external_ref_ulid=external_ref_ulid,
-        happened_at_utc=happened_at_utc,
-        currency="USD",
-        memo=memo,
-        lines=lines,
-        created_by_actor=created_by_actor,
-    )
-
-    return DonationDTO(
-        id=journal_ulid,
-        sponsor_ulid=sponsor_ulid,
-        fund_id=fund.ulid,
-        happened_at_utc=happened_at_utc,
-        amount_cents=amount_cents,
-        flags=flags_list,
+    raise _legacy_write_path_retired(
+        "services_journal.log_donation",
+        "finance_v2.post_income(...) / services_semantic_posting.post_income(...)",
     )
 
 
@@ -1036,8 +796,11 @@ def record_inkind(
 # -----------------
 
 
-def record_receipt():
-    pass
+def record_receipt(*args, **kwargs):
+    raise _legacy_write_path_retired(
+        "services_journal.record_receipt",
+        "finance_v2.post_income(...) / services_semantic_posting.post_income(...)",
+    )
 
 
 # -----------------
@@ -1181,9 +944,9 @@ def rebuild_balances(*, period_from: str, period_to: str) -> dict:
     event_bus.emit(
         domain="finance",
         operation="balance_rebuild",
-        request_id="-",
+        request_id=ensure_request_id(),
         actor_ulid=None,
-        target_ulid="-",
+        target_ulid=None,
         happened_at_utc=now_iso8601_ms(),
         refs={
             "period_from": period_from,
@@ -1228,7 +991,7 @@ def record_stat_metric(
     event_bus.emit(
         domain="finance",
         operation="stat_recorded",
-        request_id="-",
+        request_id=ensure_request_id(),
         actor_ulid=None,
         target_ulid=m.ulid,
         happened_at_utc=now_iso8601_ms(),

@@ -181,24 +181,15 @@ def test_set_account_active_toggles_state(app):
         assert on_view["is_active"] is True
 
 
-def test_bootstrap_first_admin_works_once(app):
+def test_bootstrap_first_admin_is_closed_under_seeded_operator_mode(app):
     with app.app_context():
-        _get_or_create_role("admin")
-        username = "authsvc_bootstrap_admin"
-
-        view = svc.bootstrap_first_admin(
-            username=username,
-            password="bootstrap-password",
-        )
-
-        assert view["username"] == username
-        assert view["roles"] == ["admin"]
-        assert svc.any_admin_account_exists() is True
-
-        with pytest.raises(PermissionError):
+        with pytest.raises(
+            PermissionError,
+            match="First-admin bootstrap is closed",
+        ):
             svc.bootstrap_first_admin(
-                username="authsvc_second_admin",
-                password="another-password",
+                username="authsvc_bootstrap_admin",
+                password="bootstrap-password",
             )
 
 

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from app.extensions import db, event_bus
 from app.extensions.contracts import calendar_v2, finance_v2, governance_v2
 from app.lib.chrono import now_iso8601_ms
+from app.lib.request_ctx import ensure_request_id
 
 from .mapper import funding_context_to_realization_defaults
 from .services_funding import _get_intent_or_raise
@@ -66,6 +67,7 @@ class FinanceFulfillmentPackage:
     decision_fingerprint: str
 
     memo: str
+    happened_at_utc: str
     actor_ulid: str | None
     request_id: str | None
     dry_run: bool = False
@@ -84,6 +86,7 @@ def _build_finance_fulfillment_package(
     restriction_keys: tuple[str, ...],
     decision_fingerprint: str,
     memo: str,
+    happened_at_utc: str,
     actor_ulid: str | None,
     request_id: str | None,
     dry_run: bool,
@@ -109,6 +112,7 @@ def _build_finance_fulfillment_package(
         restriction_keys=tuple(restriction_keys or ()),
         decision_fingerprint=decision_fingerprint,
         memo=memo,
+        happened_at_utc=happened_at_utc,
         actor_ulid=actor_ulid,
         request_id=request_id,
         dry_run=dry_run,
@@ -121,7 +125,7 @@ def _post_finance_fulfillment(
     income_post = finance_v2.post_income(
         finance_v2.IncomePostRequestDTO(
             amount_cents=package.amount_cents,
-            happened_at_utc=now_iso8601_ms(),
+            happened_at_utc=package.happened_at_utc,
             fund_code=package.fund_code,
             fund_label=package.fund_label,
             fund_restriction_type=package.fund_restriction_type,
@@ -331,6 +335,8 @@ def realize_funding_intent(
 
     memo_txt = memo or intent_row.note or f"realized:{income_kind}"
 
+    request_id = str(request_id or ensure_request_id())
+
     package = _build_finance_fulfillment_package(
         intent_row=intent_row,
         defaults=defaults,
@@ -343,6 +349,7 @@ def realize_funding_intent(
         restriction_keys=restriction_keys,
         decision_fingerprint=preview.decision_fingerprint,
         memo=memo_txt,
+        happened_at_utc=happened_at_utc,
         actor_ulid=actor_ulid,
         request_id=request_id,
         dry_run=dry_run,
@@ -377,8 +384,8 @@ def realize_funding_intent(
         operation="sponsor_funding_realized",
         actor_ulid=actor_ulid,
         target_ulid=intent_row.ulid,
-        request_id=request_id or income_post.id,
         happened_at_utc=now_iso8601_ms(),
+        request_id=request_id,
         refs={
             "sponsor_entity_ulid": intent_row.sponsor_entity_ulid,
             "funding_demand_ulid": defaults.funding_demand_ulid,

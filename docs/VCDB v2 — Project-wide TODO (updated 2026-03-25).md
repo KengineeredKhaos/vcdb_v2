@@ -6,18 +6,33 @@ Conventions:
 - Use **@TODO:** as the queue marker for new work.
 - Keep items atomic (one outcome per TODO), but allow sub-bullets.
 - Prefer links to files/paths and named functions when applicable.
+---
+Before production:
 
+1. audit all model timestamp fields project-wide
+2. classify each timestamp by purpose:
+   - DB storage / default / onupdate
+   - wire / JSON / logging payload
+3. convert DB timestamp columns to canonical naive UTC DateTime in one
+   focused migration sweep
+4. replace string-based DB defaults/onupdate helpers with chrono canon
+   helpers where appropriate
+5. update services, mappers, tests, fixtures, and migrations together
+6. run full test suite plus migration verification until green
+7. remove transitional split-brain timestamp handling and compatibility
+   reasoning
+8. treat this as a pre-production gate, not a someday cleanup
+
+Rationale:
+Do not allow slow timestamp creep toward canon through scattered partial
+conversions. Keep the project internally consistent for now, then perform
+one deliberate, whole-project timestamp standardization pass and verify it
+thoroughly.
 ---
 
 ## Now
 
 ### Foundation docs and guardrails
-
-- [ ] @TODO: Add a pagination smoke test (regression tripwire).
-  
-  - exercise `app/lib/pagination.py::paginate()` in app context
-  - Evaluate pagination macro (existing) vs `app/lib/pagination.py` for as unified method.
-  - run against a trivial `select()` (SQLite) to catch extension wiring drift
 
 - [ ] @TODO: Generate a “strip map” of the Entity Wizard flow.
   
@@ -43,7 +58,7 @@ Conventions:
 ### Customers: contracts first
 
 - [ ] @TODO: Clean up `customers_v2` contract (keep it small and stable).
-  - remove DTOs camped inside the contract (DTOs live in slice mapper)
+  - remove DTOs camped inside the contract (non-contract DTOs live in slice mapper)
   - keep contracts minimal:
     - read cues (non-PII)
     - controlled history append write
@@ -95,6 +110,159 @@ Conventions:
   - keep queue rows PII-free (ULIDs + reason codes only; names via Entity name
     cards at render)
 
+
+- [ ] @TODO: Ledger hardening
+
+  - implement EventHashConflict for duplicate/hash-chain collision handling in the Ledger provider and contract mapping.
+
+  - Define when to reject, when to idempotently accept, and what audit/meta fields to record.
+
+- [ ] @TODO: Ledger hardening
+
+  - implement ProviderTemporarilyDown for transient
+    Ledger/provider outages.
+
+  - Add normalized contract mapping, retry/rollback policy, and operator-visible diagnostics for CLI/HTTP workflows.
+
+- [ ] @TODO: Audit resilience pass
+
+  - review event_bus -> ledger_v2 degraded-mode behavior so transient provider failures are handled explicitly before live deployment.
+
+- [ ] @TODO: Pre-live hardening sweep
+
+  - replace any temporary generic exception handling around Ledger/provider writes with explicit EventHashConflict and ProviderTemporarilyDown semantics once the money pipeline is complete.
+
+- [ ] @TODO: remove preview_funding_decision getattr backward-compat shim after FundingDecisionRequestDTO and all callers carry ops_support_planned explicitly
+
+- [ ] @TODO: **Revisit Calendar task taxonomy and realign task finance hints to consume canonical Governance policy semantics.**
+
+  - What that means in practice:
+
+    - stop treating Calendar as a quasi-owner of finance semantics
+
+    - make task hints reference Governance-owned `expense_kind` / source-control vocabulary cleanly
+
+    - remove drift-prone legacy labels like `travel_meetings` from Calendar hint space
+
+    - treat Calendar hints as consumers of policy, not parallel taxonomy authors
+
+- [ ] @TODO: restore focused seam test for encumber preview op after Calendar/Governance alignment pass
+
+- [ ] @TODO: Revisit Finance handling of Calendar contract FundingDemandContextDTO
+
+- [ ] @TODO: Revisit Calendar Project/Task planning, synthesis & funding demand development
+
+- [ ] @TODO: Refresh route-access matrix to match the current authority model.
+
+  - classify routes by access surface:
+    - public
+    - authenticated operator
+    - staff
+    - admin
+    - auditor
+  - separately note routes that also require Governance authority
+  - remove stale use of "governor" as a simple route-access bucket
+  - use the matrix as the documentation baseline for route guards and
+    permission tests
+
+- [x] @TODO: Harden access control slice-by-slice and add permission tests.
+
+  - baseline route-access sweep completed for:
+    - Admin
+    - Entity
+    - Customers
+    - Resources
+    - Sponsors
+    - Calendar
+  - reworked fixtures now prove access behavior without reseeding a full
+    demo world on every run
+  - future follow-up belongs under authority-sensitive route refinement,
+    not baseline access hardening
+
+- [ ] @TODO: Define Admin as the control surface for Governance, Finance, and Ledger.
+
+  - specify which read/edit/review actions belong in Admin
+  - specify which slices remain infrastructure-only
+  - define Admin vs Auditor access boundaries
+
+- [ ] @TODO: Replace generic inbox/message concepts with a typed Admin work queue.
+
+  - define queue item kinds
+  - define owning-slice contract providers
+  - define status lifecycle and audit expectations
+  - keep queue rows PII-free
+
+- [~] @TODO: Route/template integrity follow-up.
+
+  - major stale endpoint issues found during the access sweep were corrected
+  - continue verifying `render_template(...)` targets as UI surfaces evolve
+  - continue scanning layout/nav for stale endpoint names
+  - add a lightweight smoke check for known entry pages
+
+- [ ] @TODO: Define and test auth-mode boundaries for dev vs real access control.
+
+  - document the expected behavior in stub auth vs db/real auth
+  - document the current seeded-operator posture for real-auth tests
+  - retire stale "first-admin bootstrap happy path" assumptions from the
+    normal suite where the live app now runs with bootstrap closed
+  - ensure dev conveniences cannot mask denied-access failures
+
+- [ ] @TODO: Audit cross-slice imports and replace reach-arounds with contracts/extensions.
+
+  - search for direct foreign-slice model/table imports
+
+  - classify each as allowed, temporary, or must-fix
+
+  - move read/write seams to contracts or approved projections
+
+
+
+- [ ] @TODO: Security/Governance authority cleanup
+
+- security.py:
+
+  - Keep RBAC helpers/decorators as the route-level access standard.
+  - Retain Domain-role helpers only for true Entity Domain roles
+    (customer, civilian, resource, sponsor).
+  - Deprecate/remove any use of require_domain_role("governor")
+    or require_domain_roles_*("governor"); business authority is
+    no longer a Domain-role concern.
+  - Add a standard commented placeholder/pattern for two-step route
+    gating on authority-sensitive routes:
+    1) RBAC check
+    2) Governance authority check
+  - Ensure dev-assumed Domain roles never satisfy Governance
+    business-authority checks.
+
+- Governance authority model:
+
+  - Treat officer/pro tem authority as Governance assignment data,
+    not Entity Domain roles and not standalone RBAC roles.
+  - Add a dedicated Governance authority helper/contract for
+    route/service checks (current office holder, pro tem, effective/
+    expired status, allowed action).
+  - Standardize two-step gating on authority-sensitive routes:
+      RBAC  ->  Governance authority
+  - Standardize assignment/rescind routes for Governance authority:
+      requires RBAC admin + current Governance authority.
+  - Document/bootstrap first-governor runbook sequence and
+    break-glass recovery path.
+  - Ensure expired office term automatically invalidates dependent
+    pro tem authority unless rescinded earlier.
+
+- Canon follow-up:
+
+  - Remove stale examples/docs that imply "governor" is a Domain role.
+  - Update route examples to show RBAC + Governance authority
+    as separate concerns.
+
+---
+
+- [ ] @TODO(app/lib/pagination.py)
+
+  - SQLite test warning: DISTINCT ON style query is tolerated today but deprecated
+    for non-PostgreSQL backends. Rework pagination/count path so
+  - SQLite and future SQLAlchemy versions do not break.
 ---
 
 ## Later
@@ -225,257 +393,10 @@ Conventions:
   - reassessment: archive prior version snapshot JSON into `customer_history`
     (kind=`needs_reassessment`, schema_name=`customers.needs_snapshot`)
 
-- [ ] @TODO: Ledger hardening
-  
-  - implement EventHashConflict for duplicate/hash-chain collision handling in the Ledger provider and contract mapping. 
-  
-  - Define when to reject, when to idempotently accept, and what audit/meta fields to record.
+- [x] @TODO: Add a pagination smoke test (regression tripwire).
 
-- [ ] @TODO: Ledger hardening
-  
-  - implement ProviderTemporarilyDown for transient
-    Ledger/provider outages. 
-  
-  - Add normalized contract mapping, retry/rollback policy, and operator-visible diagnostics for CLI/HTTP workflows.
+  - exercise `app/lib/pagination.py::paginate()` in app context
+  - Evaluate pagination macro (existing) vs `app/lib/pagination.py` for as unified method.
+  - run against a trivial `select()` (SQLite) to catch extension wiring drift
 
-- [ ] @TODO: Audit resilience pass
-  
-  - review event_bus -> ledger_v2 degraded-mode behavior so transient provider failures are handled explicitly before live deployment.
 
-- [ ] @TODO: Pre-live hardening sweep
-  
-  - replace any temporary generic exception handling around Ledger/provider writes with explicit EventHashConflict and ProviderTemporarilyDown semantics once the money pipeline is complete.
-
-- [ ] @TODO: remove preview_funding_decision getattr backward-compat shim after FundingDecisionRequestDTO and all callers carry ops_support_planned explicitly
-
-- [ ] @TODO: **Revisit Calendar task taxonomy and realign task finance hints to consume canonical Governance policy semantics.**
-
-- What that means in practice:
-  
-  - stop treating Calendar as a quasi-owner of finance semantics
-  
-  - make task hints reference Governance-owned `expense_kind` / source-control vocabulary cleanly
-  
-  - remove drift-prone legacy labels like `travel_meetings` from Calendar hint space
-  
-  - treat Calendar hints as consumers of policy, not parallel taxonomy authors
-
-- [ ] @TODO: restore focused seam test for encumber preview op after Calendar/Governance alignment pass
-
-- [ ] @TODO: Revisit Finance handling of Calendar contract FundingDemandContextDTO
-
-- [ ] @TODO: Revisit Calendar Project/Task planning, synthesis & funding demand development
-
-- [ ] @TODO: Define route-access matrix by slice and role.
-  
-  - classify each route as public / operator / staff / admin / auditor / governor
-  
-  - identify which slices are operator-facing vs Admin-mediated infrastructure
-  
-  - use as the baseline for route guards and permission tests
-
-- [ ] @TODO: Harden access control slice-by-slice and add permission tests.
-  
-  - start with Admin, Entity, Customers, Resources, Sponsors, Calendar
-  
-  - verify allowed / denied access at route level
-  
-  - confirm mutating routes are protected correctly
-  
-  - defer polish until route protection is real
-
-- [ ] @TODO: Define Admin as the control surface for Governance, Finance, and Ledger.
-  
-  - specify which read/edit/review actions belong in Admin
-  
-  - specify which slices remain infrastructure-only
-  
-  - define Admin vs Auditor access boundaries
-
-- [ ] @TODO: Replace generic inbox/message concepts with a typed Admin work queue.
-  
-  - define queue item kinds
-  
-  - define owning-slice contract providers
-  
-  - define status lifecycle and audit expectations
-  
-  - keep queue rows PII-free
-
-- [ ] @TODO: Route/template integrity sweep.
-  
-  - verify every `render_template(...)` target exists
-  
-  - scan global layout/nav for stale endpoint names
-  
-  - retire or fix dead links before further UI build-out
-  
-  - add a lightweight smoke check for known entry pages
-
-- [ ] @TODO: Audit mutating services for transaction-boundary drift.
-  
-  - remove service-layer commit() / rollback() where canon says routes own transaction
-  
-  - document any intentional exception
-  
-  - add targeted tests for transaction ownership at route/command edges
-
-- [ ] @TODO: Audit cross-slice imports and replace reach-arounds with contracts/extensions.
-  
-  - search for direct foreign-slice model/table imports
-  
-  - classify each as allowed, temporary, or must-fix
-  
-  - move read/write seams to contracts or approved projections
-
-- [ ] @TODO: Define and test auth-mode boundaries for dev vs real access control.
-  
-  - document expected behavior in stub auth vs db/real auth
-  
-  - ensure permission tests are meaningful under both
-  
-  - prevent dev conveniences from masking denied-access failures
-
-- [ ] @TODO: Major Refactor — Timestamp Canon Unification
-
-- Current posture is intentionally temporary:
-
-- parts of the project still store DB timestamps as ISO-8601 Z strings for consistency with existing tables/models
-
-- canon direction in app/lib/chrono.py is to use naive UTC DateTime for DB columns/defaults/onupdate, and reserve ISO-8601 strings for logs/JSON
-
-Before production:
-
-1. audit all model timestamp fields project-wide
-2. classify each timestamp by purpose:
-   - DB storage / default / onupdate
-   - wire / JSON / logging payload
-3. convert DB timestamp columns to canonical naive UTC DateTime in one
-   focused migration sweep
-4. replace string-based DB defaults/onupdate helpers with chrono canon
-   helpers where appropriate
-5. update services, mappers, tests, fixtures, and migrations together
-6. run full test suite plus migration verification until green
-7. remove transitional split-brain timestamp handling and compatibility
-   reasoning
-8. treat this as a pre-production gate, not a someday cleanup
-
-Rationale:
-Do not allow slow timestamp creep toward canon through scattered partial
-conversions. Keep the project internally consistent for now, then perform
-one deliberate, whole-project timestamp standardization pass and verify it
-thoroughly.
-
-- [ ]@TODO: Security/Governance authority cleanup
-
-- security.py:
-  
-  - Keep RBAC helpers/decorators as the route-level access standard.
-  - Retain Domain-role helpers only for true Entity Domain roles
-    (customer, civilian, resource, sponsor).
-  - Deprecate/remove any use of require_domain_role("governor")
-    or require_domain_roles_*("governor"); business authority is
-    no longer a Domain-role concern.
-  - Add a standard commented placeholder/pattern for two-step route
-    gating on authority-sensitive routes:
-    1) RBAC check
-    2) Governance authority check
-  - Ensure dev-assumed Domain roles never satisfy Governance
-    business-authority checks.
-
-- Governance authority model:
-  
-  - Treat officer/pro tem authority as Governance assignment data,
-    not Entity Domain roles and not standalone RBAC roles.
-  - Add a dedicated Governance authority helper/contract for
-    route/service checks (current office holder, pro tem, effective/
-    expired status, allowed action).
-  - Standardize two-step gating on authority-sensitive routes:
-      RBAC  ->  Governance authority
-  - Standardize assignment/rescind routes for Governance authority:
-      requires RBAC admin + current Governance authority.
-  - Document/bootstrap first-governor runbook sequence and
-    break-glass recovery path.
-  - Ensure expired office term automatically invalidates dependent
-    pro tem authority unless rescinded earlier.
-
-- Canon follow-up:
-  
-  - Remove stale examples/docs that imply "governor" is a Domain role.
-  - Update route examples to show RBAC + Governance authority
-    as separate concerns.
-
----
-
-- [ ] @TODO(app/lib/pagination.py)
-  
-  - SQLite test warning: DISTINCT ON style query is tolerated today but deprecated
-    for non-PostgreSQL backends. Rework pagination/count path so
-  - SQLite and future SQLAlchemy versions do not break.
-
----
-
-- [ ] @TODO(resources slice, post-security-sweep stabilization)
-  
-  - Confirmed from route-access backtrace:
-  
-  - 1) Admin-review routes are not live in the running app.
-       - `/resources/admin-review/<ulid>/approve` and `/reject` return 404 with endpoint=None in Flask error logging.
-       - admin_review_routes.py exists, but the module is likely not imported during Resources slice startup, so its route decorators never bind.
-       - Until fixed, treat admin-review surfaces as UNTERMINATED, not ACTIVE.
-  
-  - 2) Resource request-context seam is likely incomplete.
-       
-       - `/resources/<entity_ulid>/pocs`-expanded is registered but returns 500 for authenticated users.
-       
-       - resources/routes.py depends on get_request_id() and get_actor_ulid() but Resources does not currently mirror the Customers-style before_request request_ctx seeding hook.
-       
-       - Add a slice-local before_request hook to ensure:
-         
-         - * request_id is always present
-         - * actor_ulid is seeded from the authenticated user
-  
-  - 3) Capture and fix the actual service-layer cause for pocs-expanded 500.
-       
-       - Current access test proves the route is reachable but unstable.
-       
-       - Need the inner exception / traceback from resource_list_pocs_expanded() before changing service logic.
-       
-       - Do not guess at the business fix until the real exception is visible.
-  
-  - 4) Revisit route truth after slice wiring is corrected.
-       
-       - admin_review_onboard_approve / reject:
-         
-         - UNTERMINATED -> STAGED once imported/registered and admin door guard is live; later add authority gate if required.
-       
-       - pocs-expanded:
-         
-         - keep ACTIVE only if request-context + service path stabilize.
-  
-  - 5) After wiring fixes, rerun:
-       
-       - tests/slices/resources/test_resources_route_access.py
-       
-       - then add/adjust any xfail only if a surface is honestly still UNTERMINATED.
-  
-  ---
-
-- [ ] @TODO(calendar slice, post-security-sweep stabilization)
-  
-  - Confirmed from route-access test:
-    
-    - 1) /calendar/funding-demands is reachable and auth-protected, but the route fails after entry because routes.py calls funding_svc.get_funding_demand_status_choices(), and that function does not exist in services_funding.
-    
-    - 2) This is a slice service-completeness issue, not a route guard issue. Auth + entry gating are working; rendering dies on missing service API.
-    
-    - 3) Repair options:
-         - add funding_svc.get_funding_demand_status_choices()
-           - or refit funding_demand_list() to use the actual canonical source for status choices
-    
-    - 4) After repair, rerun:
-         - tests/slices/calendar/test_calendar_route_access.py
-    
-    - 5. Keep decision routes (return / approve / promote) in STAGED until authority rules are explicitly frozen.
-
----

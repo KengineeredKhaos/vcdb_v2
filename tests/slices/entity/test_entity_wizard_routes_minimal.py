@@ -1,10 +1,20 @@
-
 from __future__ import annotations
 
 import re
 
 from app.extensions import db
-from app.slices.entity.models import Entity, EntityAddress, EntityContact, EntityRole
+from app.slices.entity.models import (
+    Entity,
+    EntityAddress,
+    EntityContact,
+    EntityRole,
+)
+from tests.support.real_auth import (
+    ADMIN_SETTLED_PASSWORD,
+    ADMIN_TEMP_PASSWORD,
+    ADMIN_USERNAME,
+    login_and_settle_password,
+)
 
 
 def _nonce(html: bytes) -> str:
@@ -15,8 +25,15 @@ def _nonce(html: bytes) -> str:
 
 
 def test_entity_wizard_person_minimum_creation_flow(client, app):
-    # Step 1: load person core page to get nonce
-    resp = client.get("/entity/wizard/person")
+    login_and_settle_password(
+        client,
+        username=ADMIN_USERNAME,
+        temporary_password=ADMIN_TEMP_PASSWORD,
+        settled_password=ADMIN_SETTLED_PASSWORD,
+    )
+
+    # Step 0: load person core page to get nonce
+    resp = client.get("/entity/wizard/person", follow_redirects=False)
     assert resp.status_code == 200
     nonce = _nonce(resp.data)
 

@@ -4,108 +4,37 @@ from __future__ import annotations
 
 import pytest
 
-from app.cli_seed import seed_bootstrap_impl
-
-
-ADMIN_USERNAME = "admin.op"
-ADMIN_TEMP_PASSWORD = "ChangeMe-AdminOp-1!"
-ADMIN_SETTLED_PASSWORD = "AdminOp-TestPass-1!"
-
-STAFF_USERNAME = "staff.op"
-STAFF_TEMP_PASSWORD = "ChangeMe-StaffCiv-1!"
-STAFF_SETTLED_PASSWORD = "StaffOp-TestPass-1!"
-
-AUDITOR_USERNAME = "auditor.read"
-AUDITOR_TEMP_PASSWORD = "ChangeMe-Auditor-1!"
-AUDITOR_SETTLED_PASSWORD = "AuditorRead-TestPass-1!"
+from tests.support.real_auth import (
+    ADMIN_SETTLED_PASSWORD,
+    ADMIN_TEMP_PASSWORD,
+    ADMIN_USERNAME,
+    AUDITOR_SETTLED_PASSWORD,
+    AUDITOR_TEMP_PASSWORD,
+    AUDITOR_USERNAME,
+    STAFF_SETTLED_PASSWORD,
+    STAFF_TEMP_PASSWORD,
+    STAFF_USERNAME,
+    assert_forbidden,
+    assert_unauthenticated,
+    login_and_settle_password,
+    logout_if_possible,
+    seed_real_auth_world,
+)
 
 
 @pytest.fixture()
 def entity_seeded(app):
     """
-    Seed real auth users plus a little domain data.
-    Force real auth so these tests prove the real login path.
+    Seed only real auth users for route-access coverage.
     """
-    with app.app_context():
-        app.config["AUTH_MODE"] = "real"
-        app.config["ALLOW_HEADER_AUTH"] = False
-        app.config["AUTO_LOGIN_ADMIN"] = False
-
-        seed_bootstrap_impl(
-            fresh=False,
-            force=False,
-            faker_seed=1337,
-            customers=2,
-            resources=1,
-            sponsors=1,
-        )
-
+    seed_real_auth_world(
+        app,
+        customers=0,
+        resources=0,
+        sponsors=0,
+        normalize_passwords=False,
+    )
     return app
-
-
-def _assert_unauthenticated(resp) -> None:
-    assert resp.status_code in {302, 303, 401}
-
-
-def _assert_forbidden(resp) -> None:
-    assert resp.status_code == 403
-
-
-def _try_login_via_auth_surface(
-    client, *, username: str, password: str
-) -> bool:
-    resp = client.post(
-        "/auth/login",
-        data={
-            "username": username,
-            "password": password,
-            "next": "/",
-        },
-        follow_redirects=False,
-    )
-
-    if resp.status_code not in {302, 303}:
-        return False
-
-    probe = client.get("/auth/change-password", follow_redirects=False)
-    return probe.status_code == 200
-
-
-def _login_and_settle_password(
-    client,
-    *,
-    username: str,
-    temporary_password: str,
-    settled_password: str,
-) -> None:
-    """
-    Works whether the password was already rotated or is still temporary.
-    """
-    if _try_login_via_auth_surface(
-        client, username=username, password=settled_password
-    ):
-        return
-
-    ok = _try_login_via_auth_surface(
-        client, username=username, password=temporary_password
-    )
-    assert ok, f"Could not log in as {username}"
-
-    resp = client.post(
-        "/auth/change-password",
-        data={
-            "current_password": temporary_password,
-            "new_password": settled_password,
-            "confirm_password": settled_password,
-            "next": "/",
-        },
-        follow_redirects=False,
-    )
-    assert resp.status_code in {302, 303}
-
-
-def _logout_if_possible(client) -> None:
-    client.post("/auth/logout", follow_redirects=False)
 
 
 @pytest.mark.parametrize(
@@ -123,7 +52,7 @@ def test_entity_routes_require_authentication(
     client, entity_seeded, path: str
 ):
     resp = client.get(path, follow_redirects=False)
-    _assert_unauthenticated(resp)
+    assert_unauthenticated(resp)
 
 
 @pytest.mark.parametrize(
@@ -140,7 +69,7 @@ def test_entity_hello_is_admin_only(
     temporary_password: str,
     settled_password: str,
 ):
-    _login_and_settle_password(
+    login_and_settle_password(
         client,
         username=username,
         temporary_password=temporary_password,
@@ -148,13 +77,13 @@ def test_entity_hello_is_admin_only(
     )
 
     resp = client.get("/entity/hello", follow_redirects=False)
-    _assert_forbidden(resp)
+    assert_forbidden(resp)
 
-    _logout_if_possible(client)
+    logout_if_possible(client)
 
 
 def test_entity_hello_allows_admin(client, entity_seeded):
-    _login_and_settle_password(
+    login_and_settle_password(
         client,
         username=ADMIN_USERNAME,
         temporary_password=ADMIN_TEMP_PASSWORD,
@@ -180,7 +109,7 @@ def test_entity_operator_surfaces_allow_authenticated_users(
     temporary_password: str,
     settled_password: str,
 ):
-    _login_and_settle_password(
+    login_and_settle_password(
         client,
         username=username,
         temporary_password=temporary_password,
@@ -208,4 +137,4 @@ def test_entity_operator_surfaces_allow_authenticated_users(
     resp = client.get("/entity/wizard/org", follow_redirects=False)
     assert resp.status_code == 200
 
-    _logout_if_possible(client)
+    logout_if_possible(client)

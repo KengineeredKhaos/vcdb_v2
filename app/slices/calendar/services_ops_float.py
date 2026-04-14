@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.extensions import db, event_bus
 from app.extensions.contracts import finance_v2, governance_v2
 from app.lib.chrono import now_iso8601_ms
+from app.lib.request_ctx import ensure_request_id
 
 from .mapper import OpsFloatAllocationResult, OpsFloatSettlementResult
 from .services_funding import _get_demand_or_raise, get_funding_demand_context
@@ -125,6 +126,8 @@ def allocate_ops_float_to_project(
             "ops float requires approvals: " + ", ".join(preview.required_approvals)
         )
 
+    request_id = str(request_id or ensure_request_id())
+
     out = finance_v2.allocate_ops_float(
         finance_v2.OpsFloatRequestDTO(
             source_funding_demand_ulid=source.ulid,
@@ -153,7 +156,7 @@ def allocate_ops_float_to_project(
     event_bus.emit(
         domain="calendar",
         operation="ops_float_allocated",
-        request_id=str(request_id or out.id),
+        request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=dest.ulid,
         happened_at_utc=now_iso8601_ms(),
@@ -262,6 +265,8 @@ def repay_ops_float_to_operations(
             "ops float requires approvals: " + ", ".join(preview.required_approvals)
         )
 
+    request_id = str(request_id or ensure_request_id())
+
     out = finance_v2.repay_ops_float(
         finance_v2.OpsFloatSettleRequestDTO(
             parent_ops_float_ulid=parent.ops_float_ulid,
@@ -277,7 +282,7 @@ def repay_ops_float_to_operations(
     event_bus.emit(
         domain="calendar",
         operation="ops_float_repaid",
-        request_id=str(request_id or out.id),
+        request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=dest.ulid,
         happened_at_utc=now_iso8601_ms(),
@@ -372,6 +377,8 @@ def forgive_ops_float_shortfall(
             "ops float requires approvals: " + ", ".join(preview.required_approvals)
         )
 
+    request_id = str(request_id or ensure_request_id())
+
     out = finance_v2.forgive_ops_float(
         finance_v2.OpsFloatSettleRequestDTO(
             parent_ops_float_ulid=parent.ops_float_ulid,
@@ -387,7 +394,7 @@ def forgive_ops_float_shortfall(
     event_bus.emit(
         domain="calendar",
         operation="ops_float_forgiven",
-        request_id=str(request_id or out.id),
+        request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=dest.ulid,
         happened_at_utc=now_iso8601_ms(),

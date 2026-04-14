@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from app.extensions import event_bus
 from app.lib.chrono import now_iso8601_ms
+from app.extensions import db, event_bus
+from app.lib.request_ctx import ensure_request_id
 
+from .models import FinancePostingFact
 from .services_commitments import relieve_encumbrance
 from .services_journal import ensure_fund, post_journal
 from .services_posting_map import (
@@ -45,7 +47,7 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
         raise ValueError("receipt_method required")
 
     source = payload.get("source") or "income"
-    request_id = payload.get("request_id")
+    request_id = str(payload.get("request_id") or ensure_request_id())
 
     funding_demand_ulid = payload.get("funding_demand_ulid")
     if not funding_demand_ulid:
@@ -104,11 +106,29 @@ def post_income(payload: dict, *, dry_run: bool = False) -> dict:
         grant_ulid=payload.get("grant_ulid"),
     )
 
+    fact = FinancePostingFact(
+        journal_ulid=str(journal_ulid),
+        request_id=request_id,
+        posting_family="income",
+        semantic_key=str(income_kind),
+        method_key=str(receipt_method),
+        funding_demand_ulid=str(funding_demand_ulid),
+        project_ulid=payload.get("project_ulid"),
+        fund_code=str(fund_code),
+        amount_cents=amount,
+        source=str(source),
+        source_ref_ulid=source_ref_ulid,
+        happened_at_utc=str(happened_at_utc),
+        actor_ulid=created_by_actor,
+    )
+    db.session.add(fact)
+    db.session.flush()
+
     # Optional extra semantic event (keeps UI/reporting glue easy)
     event_bus.emit(
         domain="finance",
         operation="income_posted",
-        request_id=str(request_id or journal_ulid),
+        request_id=request_id,
         actor_ulid=created_by_actor,
         target_ulid=journal_ulid,
         happened_at_utc=now_iso8601_ms(),
@@ -166,7 +186,7 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
         raise ValueError("payment_method required")
 
     source = payload.get("source") or "expense"
-    request_id = payload.get("request_id")
+    request_id = str(payload.get("request_id") or ensure_request_id())
 
     funding_demand_ulid = payload.get("funding_demand_ulid")
     if not funding_demand_ulid:
@@ -225,19 +245,37 @@ def post_expense(payload: dict, *, dry_run: bool = False) -> dict:
         grant_ulid=payload.get("grant_ulid"),
     )
 
+    fact = FinancePostingFact(
+        journal_ulid=str(journal_ulid),
+        request_id=request_id,
+        posting_family="expense",
+        semantic_key=str(expense_kind),
+        method_key=str(payment_method),
+        funding_demand_ulid=str(funding_demand_ulid),
+        project_ulid=payload.get("project_ulid"),
+        fund_code=str(fund_code),
+        amount_cents=amount,
+        source=str(source),
+        source_ref_ulid=source_ref_ulid,
+        happened_at_utc=now_iso8601_ms(),
+        actor_ulid=created_by_actor,
+    )
+    db.session.add(fact)
+    db.session.flush()
+
     enc_ulid = payload.get("encumbrance_ulid")
     if enc_ulid:
         relieve_encumbrance(
             encumbrance_ulid=str(enc_ulid),
             amount_cents=amount,
             actor_ulid=created_by_actor,
-            request_id=str(request_id or journal_ulid),
+            request_id=request_id,
         )
 
     event_bus.emit(
         domain="finance",
         operation="expense_posted",
-        request_id=str(request_id or journal_ulid),
+        request_id=request_id,
         actor_ulid=created_by_actor,
         target_ulid=journal_ulid,
         happened_at_utc=now_iso8601_ms(),

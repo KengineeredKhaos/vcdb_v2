@@ -39,7 +39,7 @@ from sqlalchemy import select
 
 from app.extensions import db
 from app.extensions.auth_ctx import current_actor_ulid
-from app.lib.request_ctx import get_actor_ulid
+from app.lib.request_ctx import ensure_request_id, get_actor_ulid
 from app.lib.security import rbac
 
 from . import services_budget as budget_svc
@@ -76,8 +76,8 @@ def _actor_ulid_or_403() -> str:
     return text
 
 
-def _request_id() -> str | None:
-    return request.headers.get("X-Request-Id")
+def _request_id() -> str:
+    return ensure_request_id()
 
 
 def _date_to_iso(value) -> str | None:
@@ -880,3 +880,12 @@ def funding_demand_list():
         project_choices=[("", "All projects")]
         + funding_svc.list_projects_for_form(),
     )
+
+
+# VCDB_REDFLAG_TEST_REWORK
+"""
+The calendar test logs in, reaches /calendar/funding-demands,
+ and then dies in the route because the app calls
+ funding_svc.get_funding_demand_status_choices() and that attribute
+ does not exist.
+"""

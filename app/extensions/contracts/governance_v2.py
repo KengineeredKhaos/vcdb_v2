@@ -2029,7 +2029,7 @@ def preview_spend_decision(
     within budget policy for a given fund/project/period.
 
     This function is intended to be called *before* any use of
-    ``finance_v2.log_expense(...)`` so that policy decisions and Journal
+    ``finance_v2.post_expense(...)`` so that policy decisions and Journal
     writes remain cleanly separated.
 
     MVP behaviour:

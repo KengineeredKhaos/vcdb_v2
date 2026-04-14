@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Any, NotRequired, TypedDict
 
 from app.extensions.errors import ContractError
-from app.slices.finance.mapper import DonationDTO, ExpenseDTO, ReceiptDTO
 from app.slices.finance.services_commitments import (
     encumber_funds as _encumber_funds,
 )
@@ -60,6 +59,36 @@ log_donation / log_expense in services_journal, exactly on the line you wanted.
 # -----------------
 # ContractError Handling
 # -----------------
+
+
+class DonationDTO(TypedDict):
+    id: str
+    sponsor_ulid: str
+    fund_id: str
+    happened_at_utc: str
+    amount_cents: int
+    flags: list[str]
+
+
+class ReceiptDTO(TypedDict):
+    id: str
+    fund_id: str
+    received_on: str
+    source: str
+    amount_cents: int
+    instrument: NotRequired[str]
+
+
+class ExpenseDTO(TypedDict):
+    id: str
+    fund_id: str
+    project_id: str
+    happened_at_utc: str
+    vendor: str
+    amount_cents: int
+    expense_type: str
+    approved_by_ulid: NotRequired[str | None]
+    flags: NotRequired[list[str]]
 
 
 def _as_contract_error(where: str, exc: Exception) -> ContractError:
@@ -779,6 +808,21 @@ def get_ops_float(ops_float_ulid: str) -> OpsFloatViewDTO:
         raise _as_contract_error(where, exc) from exc  # -----------------
 
 
+# -----------------
+# Retired Legacy Surfaces
+# -----------------
+
+
+def _retired_surface(name: str, replacement: str) -> ContractError:
+    return ContractError(
+        code="retired",
+        where=f"finance_v2.{name}",
+        message=(f"{name} is retired. Use {replacement} instead."),
+        http_status=410,
+    )
+
+
+# -----------------
 # Old Paradigm
 # below this line
 # -----------------
@@ -920,58 +964,10 @@ def log_donation(
     flags: list[str] | None = None,
     dry_run: bool = False,
 ) -> DonationDTO:
-    """Record a monetary donation in Finance.
-
-    Thin contract wrapper around
-    app.slices.finance.services_journal.log_donation(...).
-
-    Responsibilities:
-      * Light validation (ULIDs, strings, ints).
-      * Shape arguments into a `payload` dict.
-      * Delegate to the Finance slice service.
-      * Map errors into a canonical ContractError via `_as_contract_error`.
-
-    For full semantics, see:
-      app.slices.finance.services_journal.log_donation
-    """
-    where = "finance_v2.log_donation"
-    try:
-        sponsor_ulid = _require_ulid("sponsor_ulid", sponsor_ulid)
-        fund_id = _require_ulid("fund_id", fund_id)
-        happened_at_utc = _require_str("happened_at_utc", happened_at_utc)
-        amount_cents = _require_int_ge("amount_cents", amount_cents, minval=1)
-
-        if flags is not None and not isinstance(flags, list):
-            raise ValueError("flags must be a list of strings")
-
-        from app.slices.finance import services_journal as svc
-
-        payload: dict = {
-            "sponsor_ulid": sponsor_ulid,
-            "fund_id": fund_id,
-            "happened_at_utc": happened_at_utc,
-            "amount_cents": amount_cents,
-        }
-
-        if bank_account_code is not None:
-            payload["bank_account_code"] = bank_account_code
-        if revenue_account_code is not None:
-            payload["revenue_account_code"] = revenue_account_code
-        if memo is not None:
-            payload["memo"] = memo
-        if external_ref_id is not None:
-            payload["external_ref_ulid"] = external_ref_id
-        if created_by_actor is not None:
-            payload["created_by_actor"] = created_by_actor
-        if source is not None:
-            payload["source"] = source
-        if flags:
-            payload["flags"] = flags
-
-        return svc.log_donation(payload=payload, dry_run=dry_run)
-
-    except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
+    raise _retired_surface(
+        "log_donation",
+        "post_income(...) from the Sponsors funding realization flow",
+    )
 
 
 # -----------------
@@ -990,72 +986,10 @@ def preview_expense(
     period_label: str | None = None,
     current_spent_cents: int | None = None,
 ) -> ExpensePreviewDTO:
-    """
-    Contract entry point: preview an expense against Governance budget
-    policy, without writing anything to the Journal.
-
-    Responsibilities:
-      * Validate argument shapes (ULIDs, strings, positive amount).
-      * Delegate to governance_v2.preview_spend_decision using the
-        supplied fund_archetype_key / project_type_key / period_label.
-      * Return an ExpensePreviewDTO bundling the Governance decision
-        with the original Finance identifiers (fund_id, project_id).
-
-    NOTE:
-      This function is a *lead-in* to ``log_expense``; it MUST NOT call
-      ``log_expense`` or write any Journal entries. Callers are expected
-      to:
-        1) call preview_expense(...)
-        2) decide based on ok / requires_override
-        3) call log_expense(...) separately if appropriate.
-    """
-    where = "finance_v2.preview_expense"
-    try:
-        fund_id = _require_ulid("fund_id", fund_id)
-        project_id = _require_ulid("project_id", project_id)
-        fund_archetype_key = _require_str(
-            "fund_archetype_key", fund_archetype_key
-        )
-        if project_type_key is not None:
-            project_type_key = _require_str(
-                "project_type_key", project_type_key
-            )
-        if period_label is not None:
-            period_label = _require_str("period_label", period_label)
-
-        amount_cents = _require_int_ge("amount_cents", amount_cents, minval=1)
-        if current_spent_cents is not None:
-            current_spent_cents = _require_int_ge(
-                "current_spent_cents", current_spent_cents, minval=0
-            )
-
-        from app.extensions.contracts import governance_v2 as gov
-
-        spend_decision = gov.preview_spend_decision(
-            fund_archetype_key=fund_archetype_key,
-            project_type_key=project_type_key,
-            amount_cents=amount_cents,
-            period_label=period_label,
-            current_spent_cents=current_spent_cents,
-        )
-
-        return ExpensePreviewDTO(
-            fund_id=fund_id,
-            project_id=project_id,
-            ok=spend_decision["ok"],
-            requires_override=spend_decision["requires_override"],
-            reason=spend_decision["reason"],
-            fund_archetype_key=spend_decision["fund_archetype_key"],
-            project_type_key=spend_decision["project_type_key"],
-            period_label=spend_decision["period_label"],
-            amount_cents=spend_decision["amount_cents"],
-            cap_cents=spend_decision["cap_cents"],
-            spent_cents=spend_decision["spent_cents"],
-            remaining_cents=spend_decision["remaining_cents"],
-        )
-
-    except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
+    raise _retired_surface(
+        "preview_expense",
+        "governance_v2.preview_funding_decision(...) or Finance semantic posting helpers",
+    )
 
 
 # -----------------
@@ -1080,51 +1014,10 @@ def log_expense(
     source: str | None = None,
     dry_run: bool = False,
 ) -> ExpenseDTO:
-    """
-    Contract entry point for recording an **expense** against a fund+project.
-
-    This function is a thin, versioned wrapper around the Finance slice’s
-    ``services_journal.log_expense`` service.
-
-    """
-    where = "finance_v2.log_expense"
-    try:
-        fund_id = _require_ulid("fund_id", fund_id)
-        project_id = _require_ulid("project_id", project_id)
-        happened_at_utc = _require_str("happened_at_utc", happened_at_utc)
-        vendor = _require_str("vendor", vendor)
-        category = _require_str("category", category)
-        amount_cents = _require_int_ge("amount_cents", amount_cents, minval=1)
-
-        from app.slices.finance import services_journal as svc
-
-        payload: dict = {
-            "fund_id": fund_id,
-            "project_id": project_id,
-            "happened_at_utc": happened_at_utc,
-            "vendor": vendor,
-            "category": category,
-            "amount_cents": amount_cents,
-        }
-
-        if bank_account_code is not None:
-            payload["bank_account_code"] = bank_account_code
-        if expense_account_code is not None:
-            payload["expense_account_code"] = expense_account_code
-        if memo is not None:
-            payload["memo"] = memo
-        if external_ref_id is not None:
-            # internal key name matches the Finance service and log_donation
-            payload["external_ref_ulid"] = external_ref_id
-        if created_by_actor is not None:
-            payload["created_by_actor"] = created_by_actor
-        if source is not None:
-            payload["source"] = source
-
-        return svc.log_expense(payload, dry_run=dry_run)
-
-    except Exception as exc:
-        raise _as_contract_error(where, exc) from exc
+    raise _retired_surface(
+        "log_expense",
+        "post_expense(...) from the Calendar spend / disbursement flow",
+    )
 
 
 # -----------------
@@ -1138,12 +1031,10 @@ def log_expense(
 # services_journal
 # -----------------
 def record_receipt(payload: dict) -> ReceiptDTO:
-    # type: ignore[override]
-    from app.slices.finance.services_journal import (
-        record_receipt as _svc_record_receipt,
+    raise _retired_surface(
+        "finance_v2.record_receipt",
+        "post_income(...) from the Sponsors funding realization flow",
     )
-
-    return _svc_record_receipt(payload)
 
 
 # -----------------
@@ -1461,6 +1352,38 @@ def statement_of_activities(period: str) -> ActivitiesReportDTO:
 
 
 __all__ = [
+    "FundingDemandMoneyViewDTO",
     "FundingDemandExecutionTruthDTO",
+    "IncomePostRequestDTO",
+    "ExpensePostRequestDTO",
+    "PostedDTO",
+    "ReserveRequestDTO",
+    "EncumbranceRequestDTO",
+    "OpsFloatRequestDTO",
+    "OpsFloatSettleRequestDTO",
+    "OpsFloatSummaryDTO",
+    "OpsFloatViewDTO",
+    "EncumbranceViewDTO",
+    "DonationDTO",
+    "ExpenseDTO",
+    "ReceiptDTO",
+    "get_funding_demand_money_view",
     "get_funding_demand_execution_truth",
+    "get_encumbrance",
+    "post_income",
+    "post_expense",
+    "reserve_funds",
+    "encumber_funds",
+    "allocate_ops_float",
+    "repay_ops_float",
+    "forgive_ops_float",
+    "get_ops_float_summary",
+    "get_ops_float",
+    "create_grant",
+    "submit_reimbursement",
+    "mark_disbursed",
+    "prepare_grant_report",
+    "create_grant_award",
+    "record_disbursement",
+    "statement_of_activities",
 ]

@@ -1,0 +1,31 @@
+Error Flags
+
+
+Python flag
+
+# VCDB_REDFLAG_TEST_REWORK
+# Test is behaving correctly. Code defect intentionally left in place
+# during fixture/test-suite rework.
+# Surface: customers/services_referrals.py::create_referral(...)
+# Triggered by: tests/slices/customers/test_referral_create.py::test_...
+# Why parked: fixture rework takes priority; do not widen scope here.
+# Next repair pass: customer referral code-path hardening
+# Notes: <plain-English diagnosis>
+
+
+Jinja flag
+
+{# VCDB_REDFLAG_TEST_REWORK #}
+{# Test is correct; code defect parked during suite rework. #}
+
+
+HTML flag
+
+<!-- VCDB_REDFLAG_TEST_REWORK -->
+<!-- Test is correct; code defect parked during suite rework. -->
+
+
+Markdown flag
+
+<!-- VCDB_REDFLAG_TEST_REWORK -->
+Test is correct; code defect parked during suite rework.

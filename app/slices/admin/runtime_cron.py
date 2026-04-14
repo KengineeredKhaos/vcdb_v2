@@ -9,10 +9,10 @@ from typing import Protocol
 from sqlalchemy import delete, func, select
 
 from app.extensions import db
+from app.extensions.contracts.admin_v1 import AdminInboxUpsertDTO
 from app.lib.chrono import now_iso8601_ms, to_iso8601, utcnow_aware
 from app.lib.ids import new_ulid
 
-from .mapper import AdminInboxUpsertDTO
 from .models import CronLock, CronRun
 from .services import upsert_inbox_item
 

@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
+from app.lib.request_ctx import ensure_request_id
 from app.slices.finance.models import (
     DISBURSEMENT_METHODS,
     DISBURSEMENT_STATUSES,
@@ -331,12 +332,8 @@ def create_grant(payload: dict[str, Any]) -> dict[str, Any]:
         program_income_allowed=bool(
             payload.get("program_income_allowed", False)
         ),
-        conditions_summary=_optional_str(
-            payload.get("conditions_summary")
-        ),
-        source_document_ref=_optional_str(
-            payload.get("source_document_ref")
-        ),
+        conditions_summary=_optional_str(payload.get("conditions_summary")),
+        source_document_ref=_optional_str(payload.get("source_document_ref")),
         status=_optional_str(payload.get("status")) or "draft",
         notes=_optional_str(payload.get("notes")),
     )
@@ -350,10 +347,12 @@ def create_grant(payload: dict[str, Any]) -> dict[str, Any]:
     db.session.add(grant)
     db.session.flush()
 
+    request_id = str(payload.get("request_id") or ensure_request_id())
+
     event_bus.emit(
         domain="finance",
         operation="grant_created",
-        request_id=str(payload.get("request_id") or grant.ulid),
+        request_id=request_id,
         actor_ulid=payload.get("actor_ulid"),
         target_ulid=grant.ulid,
         happened_at_utc=now_iso8601_ms(),
@@ -435,9 +434,7 @@ def submit_reimbursement(payload: dict[str, Any]) -> dict[str, Any]:
     row = Reimbursement(
         grant_ulid=grant.ulid,
         project_ulid=project_ulid,
-        funding_demand_ulid=_optional_str(
-            payload.get("funding_demand_ulid")
-        ),
+        funding_demand_ulid=_optional_str(payload.get("funding_demand_ulid")),
         claim_number=_optional_str(payload.get("claim_number")),
         period_start=_date_required(
             "period_start", payload.get("period_start")
@@ -501,10 +498,13 @@ def submit_reimbursement(payload: dict[str, Any]) -> dict[str, Any]:
         )
 
     db.session.flush()
+
+    request_id = str(payload.get("request_id") or ensure_request_id())
+
     event_bus.emit(
         domain="finance",
         operation="reimbursement_claim_submitted",
-        request_id=str(payload.get("request_id") or row.ulid),
+        request_id=request_id,
         actor_ulid=payload.get("actor_ulid"),
         target_ulid=row.ulid,
         happened_at_utc=now_iso8601_ms(),
@@ -548,10 +548,14 @@ def mark_disbursed(payload: dict[str, Any]) -> dict[str, Any]:
     row.status = "void" if status == "void" else status
     if row.status == "paid":
         received_on = _optional_str(payload.get("received_on"))
-        row.received_on = received_on or row.received_on or now_iso8601_ms()[:10]
+        row.received_on = (
+            received_on or row.received_on or now_iso8601_ms()[:10]
+        )
         received_amount = payload.get("received_amount_cents")
         if received_amount is None:
-            received_amount = row.approved_amount_cents or row.claimed_amount_cents
+            received_amount = (
+                row.approved_amount_cents or row.claimed_amount_cents
+            )
         row.received_amount_cents = _require_int_ge(
             "received_amount_cents", received_amount, 0
         )
@@ -559,10 +563,12 @@ def mark_disbursed(payload: dict[str, Any]) -> dict[str, Any]:
             row.approved_amount_cents = row.claimed_amount_cents
     db.session.flush()
 
+    request_id = str(payload.get("request_id") or ensure_request_id())
+
     event_bus.emit(
         domain="finance",
         operation="reimbursement_claim_updated",
-        request_id=str(payload.get("request_id") or row.ulid),
+        request_id=request_id,
         actor_ulid=payload.get("actor_ulid"),
         target_ulid=row.ulid,
         happened_at_utc=now_iso8601_ms(),
@@ -632,10 +638,12 @@ def record_disbursement(payload: dict[str, Any]) -> dict[str, Any]:
     db.session.add(row)
     db.session.flush()
 
+    request_id = str(payload.get("request_id") or ensure_request_id())
+
     event_bus.emit(
         domain="finance",
         operation="disbursement_recorded",
-        request_id=str(payload.get("request_id") or row.ulid),
+        request_id=request_id,
         actor_ulid=payload.get("actor_ulid"),
         target_ulid=row.ulid,
         happened_at_utc=now_iso8601_ms(),
@@ -769,10 +777,15 @@ def prepare_grant_report(payload: dict[str, Any]) -> dict[str, Any]:
                     row.journal_ulid
                     for row, _journal in db.session.execute(
                         select(JournalLine, Journal)
-                        .join(Journal, Journal.ulid == JournalLine.journal_ulid)
+                        .join(
+                            Journal, Journal.ulid == JournalLine.journal_ulid
+                        )
                         .where(JournalLine.grant_ulid == grant.ulid)
                         .where(Journal.happened_at_utc >= period_start)
-                        .where(Journal.happened_at_utc <= f"{period_end}T23:59:59Z")
+                        .where(
+                            Journal.happened_at_utc
+                            <= f"{period_end}T23:59:59Z"
+                        )
                     ).all()
                     if row.account_code.startswith(("4",))
                 }
@@ -782,10 +795,15 @@ def prepare_grant_report(payload: dict[str, Any]) -> dict[str, Any]:
                     row.journal_ulid
                     for row, _journal in db.session.execute(
                         select(JournalLine, Journal)
-                        .join(Journal, Journal.ulid == JournalLine.journal_ulid)
+                        .join(
+                            Journal, Journal.ulid == JournalLine.journal_ulid
+                        )
                         .where(JournalLine.grant_ulid == grant.ulid)
                         .where(Journal.happened_at_utc >= period_start)
-                        .where(Journal.happened_at_utc <= f"{period_end}T23:59:59Z")
+                        .where(
+                            Journal.happened_at_utc
+                            <= f"{period_end}T23:59:59Z"
+                        )
                     ).all()
                     if row.account_code.startswith(("5", "6"))
                 }
@@ -799,14 +817,18 @@ def prepare_grant_report(payload: dict[str, Any]) -> dict[str, Any]:
             "encumbrance_ulids": sorted(
                 row.ulid
                 for row in db.session.execute(
-                    select(Encumbrance).where(Encumbrance.grant_ulid == grant.ulid)
+                    select(Encumbrance).where(
+                        Encumbrance.grant_ulid == grant.ulid
+                    )
                 ).scalars()
                 if row.status != "void"
             ),
             "disbursement_ulids": sorted(
                 row.ulid
                 for row in db.session.execute(
-                    select(Disbursement).where(Disbursement.grant_ulid == grant.ulid)
+                    select(Disbursement).where(
+                        Disbursement.grant_ulid == grant.ulid
+                    )
                 ).scalars()
                 if row.status == "recorded"
             ),

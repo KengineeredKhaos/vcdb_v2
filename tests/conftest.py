@@ -50,17 +50,10 @@ def app() -> Flask:
     except Exception:
         pass
 
-    with app.app_context():
-        from app.cli_seed import seed_bootstrap_impl
-
-        seed_bootstrap_impl(
-            fresh=True,
-            force=True,
-            faker_seed=1337,
-            customers=2,
-            resources=1,
-            sponsors=1,
-        )
+    # VCDB_REDFLAG_TEST_REWORK
+    # Default test app state stays unseeded on purpose.
+    # Test modules must opt into only the bootstrap data they actually need.
+    # This prevents whole-suite over-seeding and keeps fixture intent honest.
 
     yield app
 

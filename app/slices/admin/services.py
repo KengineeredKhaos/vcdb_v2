@@ -26,14 +26,20 @@ from typing import Any
 from sqlalchemy import select
 
 from app.extensions import db
-from app.extensions.contracts import auth_v1, entity_v2, governance_v2
+from app.extensions.contracts import (
+    auth_v1,
+    entity_v2,
+    governance_v2,
+)
+from app.extensions.contracts.admin_v1 import (
+    AdminInboxCloseDTO,
+    AdminInboxReceiptDTO,
+    AdminInboxUpsertDTO,
+)
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
 
 from .mapper import (
-    AdminInboxCloseDTO,
-    AdminInboxReceiptDTO,
-    AdminInboxUpsertDTO,
     AuthOperatorsPageDTO,
     CronPageDTO,
     DashboardDTO,
@@ -235,7 +241,9 @@ def get_inbox_item_by_ulid(inbox_item_ulid: str) -> AdminInboxItem | None:
     return db.session.execute(stmt).scalar_one_or_none()
 
 
-def upsert_inbox_item(dto: AdminInboxUpsertDTO) -> AdminInboxReceiptDTO:
+def upsert_inbox_item(
+    dto: AdminInboxUpsertDTO,
+) -> AdminInboxReceiptDTO:
     """
     Create or refresh a hot-queue inbox item.
 

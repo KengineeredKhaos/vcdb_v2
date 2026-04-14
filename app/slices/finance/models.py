@@ -389,6 +389,62 @@ class JournalLine(db.Model, ULIDPK):
 # -----------------
 
 
+class FinancePostingFact(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "finance_posting_fact"
+
+    journal_ulid: Mapped[str] = mapped_column(
+        String(26),
+        ForeignKey("finance_journal.ulid"),
+        nullable=False,
+        index=True,
+    )
+    request_id: Mapped[str] = mapped_column(
+        String(26), nullable=False, index=True
+    )
+    posting_family: Mapped[str] = mapped_column(
+        String(16), nullable=False, index=True
+    )
+    semantic_key: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    method_key: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True
+    )
+    funding_demand_ulid: Mapped[str] = mapped_column(
+        String(26), nullable=False, index=True
+    )
+    project_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+    fund_code: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True
+    )
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True
+    )
+    source_ref_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+    happened_at_utc: Mapped[str] = mapped_column(
+        String(30), nullable=False, index=True
+    )
+    actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+
+    journal: Mapped["Journal"] = relationship("Journal")
+
+    __table_args__ = (
+        CheckConstraint(
+            "posting_family in ('income','expense')",
+            name="ck_postfact_family",
+        ),
+        CheckConstraint("amount_cents >= 0", name="ck_postfact_nonneg"),
+        UniqueConstraint("journal_ulid", name="uq_postfact_journal"),
+    )
+
+
 class BalanceMonthly(db.Model, ULIDPK):
     __tablename__ = "finance_balance_monthly"
 

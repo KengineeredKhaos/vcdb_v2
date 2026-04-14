@@ -377,23 +377,8 @@ def test_admin_reset_unlock_and_set_active_routes(app, monkeypatch):
         assert active_resp.get_json()["is_active"] is False
 
 
-
-def test_bootstrap_first_admin_happy_path(app, monkeypatch):
+def test_first_admin_bootstrap_route_is_not_registered(app):
     app.config["WTF_CSRF_ENABLED"] = False
-
-    monkeypatch.setattr(
-        auth_routes.svc,
-        "bootstrap_first_admin",
-        lambda username, password, email=None, entity_ulid=None: {
-            "ulid": "01ARZ3NDEKTSV4RRFFQ69G5FAE",
-            "username": username,
-            "email": email or "",
-            "roles": ["admin"],
-            "is_active": True,
-            "is_locked": False,
-            "must_change_password": False,
-        },
-    )
 
     with app.test_client() as client:
         resp = client.post(
@@ -404,34 +389,7 @@ def test_bootstrap_first_admin_happy_path(app, monkeypatch):
             },
         )
 
-        assert resp.status_code == 201
-        payload = resp.get_json()
-        assert payload["username"] == "bootstrap-admin"
-        assert payload["roles"] == ["admin"]
-
-
-def test_bootstrap_first_admin_closed_returns_409(app, monkeypatch):
-    app.config["WTF_CSRF_ENABLED"] = False
-
-    def _closed(**kwargs):
-        raise PermissionError("First-admin bootstrap is closed.")
-
-    monkeypatch.setattr(
-        auth_routes.svc,
-        "bootstrap_first_admin",
-        _closed,
-    )
-
-    with app.test_client() as client:
-        resp = client.post(
-            "/auth/bootstrap/first-admin",
-            json={
-                "username": "bootstrap-admin",
-                "password": "bootstrap-password",
-            },
-        )
-
-        assert resp.status_code == 409
+    assert resp.status_code == 404
 
 
 def test_admin_list_users_happy_path(app, monkeypatch):

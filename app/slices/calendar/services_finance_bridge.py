@@ -7,6 +7,7 @@ from __future__ import annotations
 from app.extensions import db, event_bus
 from app.extensions.contracts import finance_v2, governance_v2
 from app.lib.chrono import now_iso8601_ms
+from app.lib.request_ctx import ensure_request_id
 from app.slices.calendar.mapper import (
     FundingDemandExecutionTruthView,
     ProjectEncumbranceResult,
@@ -129,6 +130,8 @@ def encumber_project_funds(
     if not happened_at_utc:
         raise ValueError("happened_at_utc required")
 
+    request_id = str(request_id or ensure_request_id())
+
     row = _get_demand_or_raise(funding_demand_ulid)
     if row.status not in _ENCUMBER_OK:
         raise ValueError(
@@ -222,7 +225,7 @@ def encumber_project_funds(
     event_bus.emit(
         domain="calendar",
         operation="project_funds_encumbered",
-        request_id=str(request_id or out.id),
+        request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=row.ulid,
         happened_at_utc=now_iso8601_ms(),
@@ -369,7 +372,7 @@ def spend_project_funds(
     event_bus.emit(
         domain="calendar",
         operation="project_funds_spent",
-        request_id=str(request_id or out.id),
+        request_id=request_id,
         actor_ulid=actor_ulid,
         target_ulid=row.ulid,
         happened_at_utc=now_iso8601_ms(),

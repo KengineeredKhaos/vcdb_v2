@@ -2,70 +2,163 @@
 {% block title %}Statement of Activities — {{ period }}{% endblock %}
 {% block content %}
   <div class="container">
-    <h1 class="h3">Statement of Activities <small class="text-muted">{{ period }}</small></h1>
+    <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
+      <div>
+        <h1 class="h3 mb-1">Statement of Activities</h1>
+        <div class="text-muted small">
+          Period {{ period }}
+          {% if report.period.starts_on and report.period.ends_on %}
+            · {{ report.period.starts_on }} to {{ report.period.ends_on }}
+          {% endif %}
+        </div>
+      </div>
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-auto">
+          <label class="form-label mb-1" for="period">Period</label>
+          <input
+            class="form-control"
+            type="month"
+            id="period"
+            name="period"
+            value="{{ period }}"
+          >
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-primary" type="submit">View</button>
+        </div>
+      </form>
+    </div>
 
-    <h2 class="h5 mt-4">By Restriction</h2>
-    <table class="table table-sm">
-      <thead>
-        <tr>
-          <th>Restriction</th>
-          <th class="text-end">Revenue</th>
-          <th class="text-end">Expense</th>
-          <th class="text-end">Change in Net Assets</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for key, row in report.by_restriction.items() %}
-          <tr>
-            <td>{{ key }}</td>
-            <td class="text-end">{{ (row.revenue_cents or 0) | currency }}</td>
-            <td class="text-end">{{ (row.expense_cents or 0) | currency }}</td>
-            <td class="text-end">{{ ((row.revenue_cents or 0) - (row.expense_cents or 0)) | currency }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="text-muted small">Revenue</div>
+            <div class="h5 mb-0">{{ (report.summary.revenue_cents or 0) | currency }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="text-muted small">Expense</div>
+            <div class="h5 mb-0">{{ (report.summary.expense_cents or 0) | currency }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="text-muted small">Change in Net Assets</div>
+            <div class="h5 mb-0">{{ (report.summary.change_net_assets_cents or 0) | currency }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-    <h2 class="h5 mt-4">By Fund</h2>
-    <table class="table table-sm">
-      <thead>
-        <tr>
-          <th>Fund</th>
-          <th>Restriction</th>
-          <th class="text-end">Revenue</th>
-          <th class="text-end">Expense</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for fid, row in report.by_fund.items() %}
-          <tr>
-            <td>{{ row.name }}</td>
-            <td>{{ row.restriction_type }}</td>
-            <td class="text-end">{{ (row.revenue_cents or 0) | currency }}</td>
-            <td class="text-end">{{ (row.expense_cents or 0) | currency }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <section class="mb-4">
+      <h2 class="h5">By Restriction</h2>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>Restriction</th>
+              <th class="text-end">Revenue</th>
+              <th class="text-end">Expense</th>
+              <th class="text-end">Change in Net Assets</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if report.by_restriction %}
+              {% for key, row in report.by_restriction.items() %}
+                <tr>
+                  <td>{{ key }}</td>
+                  <td class="text-end">{{ (row.revenue_cents or 0) | currency }}</td>
+                  <td class="text-end">{{ (row.expense_cents or 0) | currency }}</td>
+                  <td class="text-end">{{ (row.change_net_assets_cents or 0) | currency }}</td>
+                </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="4" class="text-muted">No activity for this period.</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </section>
 
-    <h2 class="h5 mt-4">By Project</h2>
-    <table class="table table-sm">
-      <thead>
-        <tr>
-          <th>Project</th>
-          <th class="text-end">Revenue</th>
-          <th class="text-end">Expense</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for pid, row in report.by_project.items() %}
-          <tr>
-            <td>{{ row.name }}</td>
-            <td class="text-end">{{ (row.revenue_cents or 0) | currency }}</td>
-            <td class="text-end">{{ (row.expense_cents or 0) | currency }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <section class="mb-4">
+      <h2 class="h5">By Fund</h2>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>Fund</th>
+              <th>Restriction</th>
+              <th class="text-end">Revenue</th>
+              <th class="text-end">Expense</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if report.by_fund %}
+              {% for fid, row in report.by_fund.items() %}
+                <tr>
+                  <td>
+                    <div>{{ row.name or row.code or fid }}</div>
+                    {% if row.code and row.name != row.code %}
+                      <div class="text-muted small"><code>{{ row.code }}</code></div>
+                    {% endif %}
+                  </td>
+                  <td>{{ row.restriction_type }}</td>
+                  <td class="text-end">{{ (row.revenue_cents or 0) | currency }}</td>
+                  <td class="text-end">{{ (row.expense_cents or 0) | currency }}</td>
+                </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="4" class="text-muted">No fund activity for this period.</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="h5">By Project</h2>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th class="text-end">Revenue</th>
+              <th class="text-end">Expense</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if report.by_project %}
+              {% for pid, row in report.by_project.items() %}
+                <tr>
+                  <td>
+                    <div>{{ row.name or pid }}</div>
+                    {% if pid and row.name != pid and pid != '-' %}
+                      <div class="text-muted small"><code>{{ pid }}</code></div>
+                    {% endif %}
+                  </td>
+                  <td class="text-end">{{ (row.revenue_cents or 0) | currency }}</td>
+                  <td class="text-end">{{ (row.expense_cents or 0) | currency }}</td>
+                </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <p>No activity for this period.</p>
+                <p class="text-muted">Try another accounting period or post activity first.</p>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </section>
   </div>
 {% endblock %}

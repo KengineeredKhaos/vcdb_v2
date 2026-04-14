@@ -4,6 +4,8 @@
 """
 Canonical naming:
 
+extensions.contracts.admin_v1
+
 extensions.contracts.auth_v2
 
 extensions.contracts.customers_v2.py

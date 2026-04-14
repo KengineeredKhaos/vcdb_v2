@@ -5,9 +5,13 @@
 <h1>Funding Demands</h1>
 
 <p>
-  <a href="{{ url_for('calendar.funding_demand_new') }}">
-    New funding demand
-  </a>
+  {% if selected_project_ulid %}
+    <a href="{{ url_for('calendar.denand_draft_new', project_ulid=selected_project_ulid) }}">
+      New demand draft
+    </a>
+  {% else %}
+    <span>Select a project to create a new demand draft.</span>
+  {% endif %}
 </p>
 
 <form method="get">

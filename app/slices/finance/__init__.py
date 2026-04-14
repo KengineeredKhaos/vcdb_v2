@@ -12,7 +12,7 @@ VCDB v2 Finance slice has four jobs:
 
 Journal engine – low-level “post a balanced entry”:
 Debits/credits, funds, projects, periods.
-This is where post_journal, reverse_journal, log_donation, log_expense, etc.
+This is where post_journal, reverse_journal, semantic posting helpers, etc.
 live.
 
 Grants & reimbursements – this pot of money came from Sponsor X with rules Y:
@@ -196,7 +196,7 @@ Finance does not need to write to these directly in most day-to-day flows.
 * ``4100`` — Contributions – Cash Donations
 
   General cash donations from individuals or organizations. This is the
-  default revenue account for ``log_donation(...)``.
+  default revenue account for semantic income posting helpers.
 
 * ``4200`` — Grant Revenue
 
@@ -232,7 +232,7 @@ Finance does not need to write to these directly in most day-to-day flows.
 * ``5200`` — Program Supplies – General
 
   A general-purpose program expense account. In the current implementation,
-  this is the default **expense account** for ``log_expense(...)``.
+  this is the default **expense account** for semantic expense posting helpers.
 
 * ``5300`` — Event Costs – Memorial Ride  (optional)
 
@@ -269,8 +269,9 @@ separation.
 How Finance Uses This Chart
 ---------------------------
 
-Service functions in the Finance slice (e.g. ``log_donation(...)``,
-``log_expense(...)``) are thin, reusable “lego blocks” that:
+Service functions in the Finance slice (e.g. ``post_income(...)``,
+``post_expense(...)`` and ``post_journal(...)``) are thin, 
+reusable “lego blocks” that:
 
 * Choose appropriate **account_code** defaults:
   * ``1000`` for cash/bank
@@ -283,7 +284,7 @@ Service functions in the Finance slice (e.g. ``log_donation(...)``,
 
 Slices such as Sponsors, Calendar, and Governance **do not** reach into
 Finance tables directly. They call Finance via contracts (e.g.
-``finance_v2.log_donation``, ``finance_v2.log_expense``) using DTOs and
+``finance_v2.post_income``, ``finance_v2.post_expense``) using DTOs and
 well-defined arguments. Finance then applies this Chart of Accounts plus
 fund, grant, and project metadata to record the facts.
 
