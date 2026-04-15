@@ -193,9 +193,19 @@ def session_identity_from_view(
     }
 
 
-def _is_dev_mode() -> bool:
-    app_mode = current_app.config.get("APP_MODE", "dev")
-    return bool(current_app.debug) and app_mode != "production"
+def _allow_dev_auto_login() -> bool:
+    env_name = str(current_app.config.get("ENV", "")).lower()
+
+    if env_name != "development":
+        return False
+
+    if current_app.config.get("AUTH_MODE") != "stub":
+        return False
+
+    if not current_app.config.get("ALLOW_DEV_STUB_AUTH", False):
+        return False
+
+    return bool(current_app.config.get("AUTO_LOGIN_ADMIN", False))
 
 
 @login_manager.user_loader
@@ -208,7 +218,7 @@ def _load_user(user_ulid: str):
 
 @bp.before_app_request
 def _dev_auto_login():
-    if not _is_dev_mode():
+    if not _allow_dev_auto_login():
         return
 
     if getattr(current_user, "is_authenticated", False):

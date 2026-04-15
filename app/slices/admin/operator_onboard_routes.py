@@ -59,6 +59,7 @@ def _clear_preview() -> None:
     session.modified = True
 
 
+# VCDB-SEC: ACTIVE entry=admin_only authority=none reason=rbac_surface
 @bp.get("/auth/operators/onboard/")
 @login_required
 @roles_required("admin")
@@ -68,6 +69,7 @@ def auth_operator_onboard():
     return render_template("admin/auth/operator_onboard.html", form=form)
 
 
+# VCDB-SEC: ACTIVE entry=admin_only authority=none reason=rbac_surface
 @bp.post("/auth/operators/onboard/review")
 @login_required
 @roles_required("admin")
@@ -113,6 +115,7 @@ def auth_operator_onboard_review():
     )
 
 
+# VCDB-SEC: ACTIVE entry=admin_only authority=none reason=rbac_surface
 @bp.post("/auth/operators/onboard/commit")
 @login_required
 @roles_required("admin")
@@ -172,6 +175,7 @@ def auth_operator_onboard_commit():
     return redirect(url_for("admin.auth_operators"))
 
 
+# VCDB-SEC: ACTIVE entry=admin_only authority=none reason=rbac_surface
 @bp.get("/auth/operators/<string:account_ulid>/rbac-role")
 @login_required
 @roles_required("admin")
@@ -188,6 +192,7 @@ def auth_operator_rbac_role_get(account_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=admin_only authority=none reason=rbac_surface
 @bp.post("/auth/operators/<string:account_ulid>/rbac-role")
 @login_required
 @roles_required("admin")

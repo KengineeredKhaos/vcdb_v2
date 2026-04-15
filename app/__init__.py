@@ -205,22 +205,29 @@ def create_app(config_object="config.DevConfig"):
     # VCDB-SEC: ACTIVE entry=dev_only authority=none reason=stub_auth_scaffold test=none
     @flask_app.before_request
     def _apply_stub_auth():
-        """Enable stub auth only in development/testing."""
+        """Enable stub auth for tests, or only by explicit opt-in in dev."""
         cfg = flask_app.config
 
         if cfg.get("AUTH_MODE") != "stub":
             return
 
         env_name = str(cfg.get("ENV", "")).lower()
-        if env_name not in {"development", "testing"}:
-            raise RuntimeError(
-                "Stub auth is only allowed in development/testing."
-            )
+
+        # Testing keeps the scaffold alive for fixtures and route tests.
+        if env_name == "testing":
+            stub_allowed = True
+        # Development requires an explicit second switch.
+        elif env_name == "development":
+            stub_allowed = bool(cfg.get("ALLOW_DEV_STUB_AUTH", False))
+        else:
+            stub_allowed = False
+
+        if not stub_allowed:
+            return
 
         roles: list[str] = []
         domains: list[str] = []
 
-        # 1) Header stubs (take precedence if present)
         if cfg.get("ALLOW_HEADER_AUTH", False):
             x_rbac = request.headers.get("X-Auth-Stub")
             x_domain = request.headers.get("X-Domain-Stub")
@@ -229,7 +236,6 @@ def create_app(config_object="config.DevConfig"):
             if x_domain:
                 domains = [x_domain.lower()]
 
-        # 2) Auto-admin if allowed and nothing set by headers
         if not roles and cfg.get("AUTO_LOGIN_ADMIN", False):
             roles = ["admin"]
 
@@ -450,9 +456,18 @@ def create_app(config_object="config.DevConfig"):
     @flask_app.context_processor
     def _stub_banner():
         env_name = str(flask_app.config.get("ENV", "")).lower()
-        stub_active = flask_app.config.get(
-            "AUTH_MODE"
-        ) == "stub" and env_name in {"development", "testing"}
+
+        if flask_app.config.get("AUTH_MODE") != "stub":
+            stub_active = False
+        elif env_name == "testing":
+            stub_active = True
+        elif env_name == "development":
+            stub_active = bool(
+                flask_app.config.get("ALLOW_DEV_STUB_AUTH", False)
+            )
+        else:
+            stub_active = False
+
         return {"_stub_auth_active": stub_active}
 
     # -------------

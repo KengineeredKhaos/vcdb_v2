@@ -3,6 +3,25 @@
 
 {% block content %}
 <section class="hero" style="margin-top:18px;">
+  <div class="hero-actions">
+    {% set login_ep =
+        "auth.login" if has_endpoint("auth.login")
+        else "auth.login_get" if has_endpoint("auth.login_get")
+        else None
+    %}
+
+    {% if login_ep %}
+      <a class="btn btn-primary" href="{{ url_for(login_ep) }}">
+        Log in
+      </a>
+    {% endif %}
+
+    {% if current_user.is_authenticated and user_is_admin() and has_endpoint('admin.index') %}
+      <a class="btn btn-secondary" href="{{ url_for('admin.index') }}">
+        Admin
+      </a>
+    {% endif %}
+  </div>
   <div class="hero-card">
     <div class="glow"></div>
     <h1>Transparent operations for real-world impact</h1>

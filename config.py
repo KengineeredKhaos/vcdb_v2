@@ -38,6 +38,16 @@ class BaseConfig:
         os.environ.get("VCDB_ALLOW_HEADER_AUTH", "false").lower() == "true"
     )
 
+    # Dev-only: require an explicit second switch before allowing stub auth.
+    ALLOW_DEV_STUB_AUTH = (
+        os.environ.get("VCDB_ALLOW_DEV_STUB_AUTH", "false").lower() == "true"
+    )
+
+    # Dev-only convenience auto-login.
+    AUTO_LOGIN_ADMIN = (
+        os.environ.get("VCDB_AUTO_LOGIN_ADMIN", "false").lower() == "true"
+    )
+
     # Dev-only helper: which fields can log in
     LOGIN_FIELDS = ("email", "username")
 
@@ -64,12 +74,16 @@ class DevConfig(BaseConfig):
         "VCDB_DB", f"sqlite:///{DATABASE}"
     )
 
-    # Dev ergonomics
-    AUTH_MODE = "stub"  # 'real' or 'stub' if iterating quickly on UI
+    # Dev defaults should behave like real auth unless explicitly overridden.
+    AUTH_MODE = os.environ.get("VCDB_AUTH_MODE", "real")
     SESSION_COOKIE_NAME = "vcdb_dev_session"
     REMEMBER_COOKIE_NAME = "vcdb_dev_remember"
-    ALLOW_HEADER_AUTH = True  # convenience; makes curl stubs easy
-    AUTO_LOGIN_ADMIN = True
+    ALLOW_HEADER_AUTH = (
+        os.environ.get("VCDB_ALLOW_HEADER_AUTH", "false").lower() == "true"
+    )
+    AUTO_LOGIN_ADMIN = (
+        os.environ.get("VCDB_AUTO_LOGIN_ADMIN", "false").lower() == "true"
+    )
     DEV_ACTOR_ULID = "01KN8N389YT7YZE09QQB8N29P2"
     AUDIT_LOG_LEVEL = "DEBUG"
 
