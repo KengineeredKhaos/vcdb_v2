@@ -12,6 +12,10 @@ from typing import Any
 
 from app.extensions.errors import ContractError
 from app.slices.ledger import services as ledger_svc
+from app.slices.ledger.errors import (
+    LedgerBadArgument,
+    LedgerUnavailable,
+)
 
 # -*- coding: utf-8 -*-
 # VCDB Canon — DO NOT MODIFY WITHOUT GOVERNANCE APPROVAL
@@ -43,8 +47,9 @@ def emit(
     """
     Canonical ledger write contract.
 
-    Maps provider-level ledger errors to ContractError so that callers see a
-    stable, PII-free error surface regardless of the underlying implementation.
+    Maps provider-level ledger errors to ContractError so that callers
+    see a stable, PII-free error surface regardless of the underlying
+    implementation.
     """
     where = "ledger_v2.emit"
 
@@ -61,21 +66,27 @@ def emit(
             happened_at_utc=happened_at_utc,
             chain_key=chain_key,
         )
-    except ledger_svc.EventHashConflict as e:
+    except LedgerBadArgument as exc:
         raise ContractError(
-            code="ledger_hash_conflict",
+            code="bad_argument",
             where=where,
-            message="ledger hash conflict when appending event",
-            http_status=503,
-            data={"hint": "re-read tail"},
-        ) from e
-    except ledger_svc.ProviderTemporarilyDown as e:
+            message=str(exc),
+            http_status=400,
+        ) from exc
+    except LedgerUnavailable as exc:
         raise ContractError(
             code="ledger_unavailable",
             where=where,
-            message="ledger provider temporarily unavailable",
+            message=str(exc) or "ledger provider unavailable",
             http_status=503,
-        ) from e
+        ) from exc
+    except Exception as exc:
+        raise ContractError(
+            code="internal_error",
+            where=where,
+            message=f"unexpected: {exc.__class__.__name__}",
+            http_status=500,
+        ) from exc
 
     return EmitResult(
         ok=True,
@@ -86,4 +97,28 @@ def emit(
 
 
 def verify(chain_key: str | None = None) -> dict[str, Any]:
-    return ledger_svc.verify_chain(chain_key=chain_key)
+    where = "ledger_v2.verify"
+
+    try:
+        return ledger_svc.verify_chain(chain_key=chain_key)
+    except LedgerBadArgument as exc:
+        raise ContractError(
+            code="bad_argument",
+            where=where,
+            message=str(exc),
+            http_status=400,
+        ) from exc
+    except LedgerUnavailable as exc:
+        raise ContractError(
+            code="ledger_unavailable",
+            where=where,
+            message=str(exc) or "ledger provider unavailable",
+            http_status=503,
+        ) from exc
+    except Exception as exc:
+        raise ContractError(
+            code="internal_error",
+            where=where,
+            message=f"unexpected: {exc.__class__.__name__}",
+            http_status=500,
+        ) from exc
