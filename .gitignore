@@ -8,7 +8,6 @@ pyrightconfig.json
 *.zip
 
 # --- Repo focus (non-app artifacts/docs)
-/tools/
 /scripts/
 /Test_rat_hole/
 

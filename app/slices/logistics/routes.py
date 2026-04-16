@@ -182,18 +182,6 @@ def transfer():
         return _err(e)
 
 
-@bp.get("/stock")
-def stock():
-    try:
-        item = request.args.get("item_ulid")
-        loc = request.args.get("location_ulid")
-        return _ok(
-            {"rows": svc.stock_view(item_ulid=item, location_ulid=loc)}
-        )
-    except Exception as e:
-        return _err(e)
-
-
 @bp.post("/stock/rebuild")
 def stock_rebuild():
     try:
