@@ -25,6 +25,47 @@ a:hover{text-decoration:underline}
 .navlinks{display:flex; gap:10px; margin-left:12px}
 .navlinks a{padding:8px 10px; border-radius:8px}
 .navlinks a[aria-current="page"]{background:rgba(148,163,184,.12)}
+.nav-dropdown {
+  position: relative;
+}
+
+.nav-dropdown summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.nav-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 240px;
+  background: var(--panel);
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 12px;
+  padding: 8px;
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 20;
+}
+
+.nav-dropdown[open] .nav-dropdown-menu {
+  display: flex;
+}
+
+.nav-dropdown-menu a {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.nav-dropdown-menu a:hover {
+  background: rgba(148,163,184,.08);
+  text-decoration: none;
+}
 .spacer{flex:1}
 .btn{display:inline-block; padding:.5rem .8rem; border:1px solid rgba(148,163,184,.25); border-radius:10px; color:var(--hi)}
 .btn:hover{background:rgba(148,163,184,.08); text-decoration:none}
@@ -71,3 +112,21 @@ a:hover{text-decoration:underline}
 /* small helpers */
 .kbd{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size:12px; border:1px solid rgba(148,163,184,.35); padding:2px 6px; border-radius:6px; color:var(--muted)}
 .footer{color:var(--muted); font-size:13px; padding:24px 0 40px}
+
+.home-attention {
+  margin: 16px 0 12px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid rgba(148,163,184,.18);
+  border-left: 4px solid var(--link);
+  border-radius: 12px;
+}
+
+.home-attention__list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.home-attention__list li {
+  color: var(--muted);
+}

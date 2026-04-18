@@ -15,69 +15,170 @@
           <span class="logo"></span> VCDB
         </a>
 
-        <button class="menu-btn" data-menu-btn aria-label="Toggle navigation">Menu</button>
+        <button class="menu-btn" data-menu-btn aria-label="Toggle navigation">
+          Menu
+        </button>
 
-        {% set bp = (request.blueprint or '') %}
-        <nav class="navlinks" data-navlinks>
-          {# Only show links if endpoints exist. aria-current is applied when the current blueprint matches. #}
-          {% if has_endpoint('resources.search_resources') %}
-            <a href="{{ url_for('resources.search_resources') }}"
-               aria-current="{{ 'page' if bp.startswith('resources') else '' }}">Resources</a>
+        <nav class="navlinks" data-navlinks aria-label="Primary">
+          <details class="nav-dropdown">
+            <summary>Public Info</summary>
+            <div class="nav-dropdown-menu">
+              <a href="{{ url_for('static', filename='public_docs/arts_of_inc.html') }}"
+                target="_blank"
+                rel="noopener noreferrer">
+                <span class="nav-link-label">Articles of Incorporation</span><br>
+                <span class="nav-link-note">(opens in new tab)</span>
+              </a>
+              <a href="{{ url_for('static', filename='public_docs/bylaws.html') }}"
+                target="_blank"
+                rel="noopener noreferrer">
+                <span class="nav-link-label">Bylaws</span><br>
+                <span class="nav-link-note">(opens in new tab)</span>
+              </a>
+              <a href="{{ url_for('static', filename='public_docs/c_of_i.html') }}"
+                target="_blank"
+                rel="noopener noreferrer">
+                <span class="nav-link-label">Conflict of Intereset Policy</span><br>
+                <span class="nav-link-note">(opens in new tab)</span>
+              </a>
+              <a href="{{ url_for('static', filename='public_docs/financials.html') }}"
+                target="_blank"
+                rel="noopener noreferrer">
+                <span class="nav-link-label">Financial Statements</span><br>
+                <span class="nav-link-note">(opens in new tab)</span>
+              </a>
+              <a href="{{ url_for('static', filename='public_docs/r_r_o_o.html') }}"
+                target="_blank"
+                rel="noopener noreferrer">
+                <span class="nav-link-label">Robert&#39;s Rules of Order Primer</span><br>
+                <span class="nav-link-note">(opens in new tab)</span>
+
+              </a>
+              <a href="{{ url_for('static', filename='public_docs/flag_etiquette.html') }}"
+                target="_blank"
+                rel="noopener noreferrer">
+                <span class="nav-link-label">Flag Display Primer</span><br>
+                <span class="nav-link-note">(opens in new tab)</span>
+              </a>
+              <a href="{{ url_for('static', filename='public_docs/request_system_access.html') }}"
+                target="_blank"
+                rel="noopener noreferrer">
+                <span class="nav-link-label">Request system access</span><br>
+                <span class="nav-link-note">(opens in new tab)</span>
+              </a>
+            </div>
+          </details>
+
+          {% if current_user.is_authenticated %}
+            <details class="nav-dropdown">
+              <summary>User Docs</summary>
+              <div class="nav-dropdown-menu">
+                <p>These links open in a<br>
+                  fresh browser tab.<br>
+                  (current tab remains active)
+                </p>
+                <a href="{{ url_for('static', filename='sys_docs/operator_runbook.html') }}"
+                  target="_blank"
+                  rel="noopener noreferrer">
+                  Runbook
+                </a>
+                <a href="{{ url_for('static', filename='sys_docs/SKU_cheat_sheet.html') }}"
+                  target="_blank"
+                  rel="noopener noreferrer">
+                  SKU Diagram
+                </a>
+                <a href="{{ url_for('static', filename='sys_docs/schedule_calendar_event.html') }}"
+                  target="_blank"
+                  rel="noopener noreferrer">
+                  Event Primer
+                </a>
+                <a href="{{ url_for('static', filename='sys_docs/project_planning_worksheet.html') }}"
+                  target="_blank"
+                  rel="noopener noreferrer">
+                  Project Worksheet
+                </a>
+                <a href="{{ url_for('static', filename='sys_docs/customer_vetting_standards.html') }}"
+                  target="_blank"
+                  rel="noopener noreferrer">
+                  Vetting
+                </a>
+              </div>
+            </details>
           {% endif %}
 
-          {# Customer nav #}
-          {% if has_endpoint('customers.customers_list_get') %}
-            <a href="{{ url_for('customers.customers_list_get') }}"
-               aria-current="{{ 'page' if bp.startswith('customers') else '' }}">
-              Customers
-            </a>
-          {% endif %}
-
-          {% if has_endpoint('inventory.hello') %}
-            <a href="{{ url_for('inventory.hello') }}"
-               aria-current="{{ 'page' if bp.startswith('inventory') else '' }}">Inventory</a>
-          {% endif %}
-
-          {% if has_endpoint('sponsors.search_sponsor') %}
-            <a href="{{ url_for('sponsors.search_sponsor') }}"
-               aria-current="{{ 'page' if bp.startswith('sponsors') else '' }}">Sponsors</a>
-          {% endif %}
-
-          {% if has_endpoint('governance.roles') %}
-            <a href="{{ url_for('governance.roles') }}"
-               aria-current="{{ 'page' if bp.startswith('governance') else '' }}">Governance</a>
+          {% if current_user.is_authenticated
+                and has_endpoint('admin.index')
+                and user_is_admin() %}
+            <a href="{{ url_for('admin.index') }}">Admin Dashboard</a>
           {% endif %}
         </nav>
 
         <div class="spacer"></div>
-        {{ current_user.username|default('') or
-           current_user.name|default('') or
-           current_user.email|default('') }}
+
+        {% set session_user = session.get('session_user') or {} %}
+        {% set user_roles = [] %}
         {% if current_user.is_authenticated %}
-          <span class="btn" style="margin-right:.5rem;">
-            {{ current_user.username or current_user.name or current_user.email }}
-          </span>
-
-          {% if has_endpoint('auth.change_password') %}
-            <a class="btn" href="{{ url_for('auth.change_password') }}">Change password</a>
+          {% if current_user.roles is defined and current_user.roles %}
+            {% set user_roles = current_user.roles %}
+          {% elif session_user.get('roles') %}
+            {% set user_roles = session_user.get('roles') %}
           {% endif %}
 
-          {% if has_endpoint('auth.logout') %}
-            <form method="post" action="{{ url_for('auth.logout') }}" style="display:inline">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="btn" type="submit">Logout</button>
-            </form>
-          {% endif %}
+          <details class="nav-dropdown nav-dropdown--account">
+            <summary>
+              {{ current_user.username|default('') or
+                 current_user.name|default('') or
+                 current_user.email|default('Operator') }}
+            </summary>
+            <div class="nav-dropdown-menu nav-dropdown-menu--account">
+              <div class="nav-account-line">
+                <strong>
+                  {{ current_user.username|default('') or
+                     current_user.name|default('') or
+                     current_user.email|default('Operator') }}
+                </strong>
+              </div>
+
+              {% if user_roles %}
+                <div class="nav-account-line">
+                  RBAC:
+                  {{ user_roles | join(', ') }}
+                </div>
+              {% endif %}
+
+              {% if has_endpoint('auth.change_password_form') %}
+                <a href="{{ url_for('auth.change_password_form') }}">
+                  Change password
+                </a>
+              {% elif has_endpoint('auth.change_password') %}
+                <a href="{{ url_for('auth.change_password') }}">
+                  Change password
+                </a>
+              {% endif %}
+
+              {% if has_endpoint('auth.logout') %}
+                <form method="post"
+                      action="{{ url_for('auth.logout') }}"
+                      style="display:block; margin:0;">
+                  <input type="hidden"
+                         name="csrf_token"
+                         value="{{ csrf_token() }}">
+                  <button class="btn" type="submit">Logout</button>
+                </form>
+              {% endif %}
+            </div>
+          </details>
         {% else %}
-          {# Our GET form endpoint is auth.login (alias). #}
           <a class="btn" href="{{ url_for('auth.login') }}">Login</a>
         {% endif %}
       </div>
     </header>
+
     {% set assumed_roles = session.get('assumed_domain_roles') or [] %}
     {% if assumed_roles %}
     <div class="alert alert-warning text-xs py-1 px-2">
-      DEV MODE — assumed roles: {{ (session.get('assumed_domain_roles') or []) | join(', ') }}
+      DEV MODE — assumed roles:
+      {{ (session.get('assumed_domain_roles') or []) | join(', ') }}
     </div>
     {% endif %}
 
@@ -104,7 +205,10 @@
 
     <!-- Footer -->
     <footer class="footer container">
-      <div>© {{ current_year }} VCDB licensed under GNU GPLv3 · <span class="kbd">ESC</span> to chill</div>
+      <div>
+        © {{ current_year }} VCDB licensed under GNU GPLv3 ·
+        <span class="kbd">ESC</span> to chill
+      </div>
       <div>Find the full app repo @ https://github.com/KengineeredKhaos</div>
     </footer>
 
