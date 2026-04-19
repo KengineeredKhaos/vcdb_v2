@@ -7,19 +7,7 @@ from sqlalchemy import asc, desc
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.extensions import db, event_bus
-from app.lib.chrono import now_iso8601_ms
-from app.lib.geo import is_state_code
-from app.lib.pagination import Page, paginate_sa, rewrap_page
-from app.lib.utils import (
-    normalize_ein,
-    normalize_email,
-    normalize_phone,
-    validate_ein,
-    validate_email,
-    validate_phone,
-)
-
-from .mapper import (
+from app.extensions.contracts.entity_v2 import (
     EntityAddressSummaryDTO,
     EntityCardDTO,
     EntityContactSummaryDTO,
@@ -32,6 +20,19 @@ from .mapper import (
     to_address_summary,
     to_contact_summary,
 )
+from app.lib.chrono import now_iso8601_ms
+from app.lib.geo import is_state_code
+from app.lib.pagination import Page, paginate_sa, rewrap_page
+from app.lib.utils import (
+    normalize_ein,
+    normalize_email,
+    normalize_phone,
+    validate_ein,
+    validate_email,
+    validate_phone,
+)
+
+
 from .models import (
     Entity,
     EntityAddress,

@@ -6,7 +6,7 @@ from flask import g
 from sqlalchemy import select
 
 from app.extensions import db
-from app.slices.entity.mapper import EntityNameCardDTO
+from app.extensions.contracts.entity_v2 import EntityNameCardDTO
 from app.slices.entity.models import Entity, EntityOrg, EntityPerson
 
 

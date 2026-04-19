@@ -1,7 +1,7 @@
 {% extends "layout/base.html" %}
 {# templates/macros.html #}
 {% macro csrf_field() -%}
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 {%- endmacro %}
 {% import "_macros.html" as _macros %}
 
@@ -18,9 +18,9 @@
   <p>
     <strong>Schema:</strong>
     {% if page.has_schema %}
-      {{ "ok" if page.schema_ok else "error" }}
+    {{ "ok" if page.schema_ok else "error" }}
     {% else %}
-      missing
+    missing
     {% endif %}
   </p>
   <p>
@@ -31,22 +31,22 @@
   <h3>Metadata</h3>
   <ul>
     {% for item in page.meta_items %}
-      <li><strong>{{ item.key }}:</strong> {{ item.value }}</li>
+    <li><strong>{{ item.key }}:</strong> {{ item.value }}</li>
     {% else %}
-      <li>No metadata found.</li>
+    <li>No metadata found.</li>
     {% endfor %}
   </ul>
 
   <h3>Validation</h3>
   <ul>
     {% for issue in page.issues %}
-      <li>
-        [{{ issue.source }} / {{ issue.severity }}]
-        {% if issue.path %}{{ issue.path }} — {% endif %}
-        {{ issue.message }}
-      </li>
+    <li>
+      [{{ issue.source }} / {{ issue.severity }}]
+      {% if issue.path %}{{ issue.path }} — {% endif %}
+      {{ issue.message }}
+    </li>
     {% else %}
-      <li>No validation issues.</li>
+    <li>No validation issues.</li>
     {% endfor %}
   </ul>
 </section>
@@ -64,7 +64,7 @@
       <label for="{{ form.policy_text.id }}">{{ form.policy_text.label.text }}</label>
       {{ form.policy_text() }}
       {% for error in form.policy_text.errors %}
-        <div>{{ error }}</div>
+      <div>{{ error }}</div>
       {% endfor %}
     </div>
     <div>

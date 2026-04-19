@@ -6,7 +6,9 @@ Conventions:
 - Use **@TODO:** as the queue marker for new work.
 - Keep items atomic (one outcome per TODO), but allow sub-bullets.
 - Prefer links to files/paths and named functions when applicable.
+
 ---
+
 Before production:
 
 1. audit all model timestamp fields project-wide
@@ -28,13 +30,14 @@ Do not allow slow timestamp creep toward canon through scattered partial
 conversions. Keep the project internally consistent for now, then perform
 one deliberate, whole-project timestamp standardization pass and verify it
 thoroughly.
+
 ---
 
 ## Now
 
 ### Foundation docs and guardrails
 
-- [ ] @TODO: Generate a “strip map” of the Entity Wizard flow.
+- [x] @TODO: Generate a “strip map” of the Entity Wizard flow.
   
   - essential form data acquisition per step (what/why)
   - nonce lifecycle: issue → expect → consume (stale-submit behavior)
@@ -46,7 +49,7 @@ thoroughly.
   - confirmation UX (created/updated views) and resume behavior
   - include a sequence diagram + per-step checklist
 
-- [ ] @TODO: Template audit for CSRF macro on POST.
+- [x] @TODO: Template audit for CSRF macro on POST.
   
   - run: `flask dev template-csrf-audit --strict`
   - for every `<form method="post">`, require:
@@ -57,7 +60,7 @@ thoroughly.
 
 ### Customers: contracts first
 
-- [ ] @TODO: Clean up `customers_v2` contract (keep it small and stable).
+- [x] @TODO: Clean up `customers_v2` contract (keep it small and stable).
   - remove DTOs camped inside the contract (non-contract DTOs live in slice mapper)
   - keep contracts minimal:
     - read cues (non-PII)
@@ -82,8 +85,6 @@ thoroughly.
       (kind="needs_reassessment") then calls `needs_begin()`
   - ensure no spam:
     - snapshot only on reassessment start (not on every needs_set_block())
-
-### Admin: silent-review signals (separate from Customers staff UI)
 
 - [ ] @TODO: Implement Admin sweep job for CustomerHistory admin tags.
   
@@ -110,40 +111,39 @@ thoroughly.
   - keep queue rows PII-free (ULIDs + reason codes only; names via Entity name
     cards at render)
 
-
 - [ ] @TODO: Ledger hardening
-
+  
   - implement EventHashConflict for duplicate/hash-chain collision handling in the Ledger provider and contract mapping.
-
+  
   - Define when to reject, when to idempotently accept, and what audit/meta fields to record.
 
 - [ ] @TODO: Ledger hardening
-
+  
   - implement ProviderTemporarilyDown for transient
     Ledger/provider outages.
-
+  
   - Add normalized contract mapping, retry/rollback policy, and operator-visible diagnostics for CLI/HTTP workflows.
 
 - [ ] @TODO: Audit resilience pass
-
+  
   - review event_bus -> ledger_v2 degraded-mode behavior so transient provider failures are handled explicitly before live deployment.
 
 - [ ] @TODO: Pre-live hardening sweep
-
+  
   - replace any temporary generic exception handling around Ledger/provider writes with explicit EventHashConflict and ProviderTemporarilyDown semantics once the money pipeline is complete.
 
 - [ ] @TODO: remove preview_funding_decision getattr backward-compat shim after FundingDecisionRequestDTO and all callers carry ops_support_planned explicitly
 
 - [ ] @TODO: **Revisit Calendar task taxonomy and realign task finance hints to consume canonical Governance policy semantics.**
-
+  
   - What that means in practice:
-
+    
     - stop treating Calendar as a quasi-owner of finance semantics
-
+    
     - make task hints reference Governance-owned `expense_kind` / source-control vocabulary cleanly
-
+    
     - remove drift-prone legacy labels like `travel_meetings` from Calendar hint space
-
+    
     - treat Calendar hints as consumers of policy, not parallel taxonomy authors
 
 - [ ] @TODO: restore focused seam test for encumber preview op after Calendar/Governance alignment pass
@@ -153,7 +153,7 @@ thoroughly.
 - [ ] @TODO: Revisit Calendar Project/Task planning, synthesis & funding demand development
 
 - [ ] @TODO: Refresh route-access matrix to match the current authority model.
-
+  
   - classify routes by access surface:
     - public
     - authenticated operator
@@ -166,7 +166,7 @@ thoroughly.
     permission tests
 
 - [x] @TODO: Harden access control slice-by-slice and add permission tests.
-
+  
   - baseline route-access sweep completed for:
     - Admin
     - Entity
@@ -180,89 +180,49 @@ thoroughly.
     not baseline access hardening
 
 - [ ] @TODO: Define Admin as the control surface for Governance, Finance, and Ledger.
-
+  
   - specify which read/edit/review actions belong in Admin
   - specify which slices remain infrastructure-only
   - define Admin vs Auditor access boundaries
 
 - [ ] @TODO: Replace generic inbox/message concepts with a typed Admin work queue.
-
+  
   - define queue item kinds
   - define owning-slice contract providers
   - define status lifecycle and audit expectations
   - keep queue rows PII-free
 
 - [~] @TODO: Route/template integrity follow-up.
-
+  
   - major stale endpoint issues found during the access sweep were corrected
   - continue verifying `render_template(...)` targets as UI surfaces evolve
   - continue scanning layout/nav for stale endpoint names
   - add a lightweight smoke check for known entry pages
 
-- [ ] @TODO: Define and test auth-mode boundaries for dev vs real access control.
-
+- [x] @TODO: Define and test auth-mode boundaries for dev vs real access control.
+  
   - document the expected behavior in stub auth vs db/real auth
   - document the current seeded-operator posture for real-auth tests
   - retire stale "first-admin bootstrap happy path" assumptions from the
     normal suite where the live app now runs with bootstrap closed
   - ensure dev conveniences cannot mask denied-access failures
 
-- [ ] @TODO: Audit cross-slice imports and replace reach-arounds with contracts/extensions.
-
+- [x] @TODO: Audit cross-slice imports and replace reach-arounds with contracts/extensions.
+  
   - search for direct foreign-slice model/table imports
-
+  
   - classify each as allowed, temporary, or must-fix
-
+  
   - move read/write seams to contracts or approved projections
-
-
-
-- [ ] @TODO: Security/Governance authority cleanup
-
-- security.py:
-
-  - Keep RBAC helpers/decorators as the route-level access standard.
-  - Retain Domain-role helpers only for true Entity Domain roles
-    (customer, civilian, resource, sponsor).
-  - Deprecate/remove any use of require_domain_role("governor")
-    or require_domain_roles_*("governor"); business authority is
-    no longer a Domain-role concern.
-  - Add a standard commented placeholder/pattern for two-step route
-    gating on authority-sensitive routes:
-    1) RBAC check
-    2) Governance authority check
-  - Ensure dev-assumed Domain roles never satisfy Governance
-    business-authority checks.
-
-- Governance authority model:
-
-  - Treat officer/pro tem authority as Governance assignment data,
-    not Entity Domain roles and not standalone RBAC roles.
-  - Add a dedicated Governance authority helper/contract for
-    route/service checks (current office holder, pro tem, effective/
-    expired status, allowed action).
-  - Standardize two-step gating on authority-sensitive routes:
-      RBAC  ->  Governance authority
-  - Standardize assignment/rescind routes for Governance authority:
-      requires RBAC admin + current Governance authority.
-  - Document/bootstrap first-governor runbook sequence and
-    break-glass recovery path.
-  - Ensure expired office term automatically invalidates dependent
-    pro tem authority unless rescinded earlier.
-
-- Canon follow-up:
-
-  - Remove stale examples/docs that imply "governor" is a Domain role.
-  - Update route examples to show RBAC + Governance authority
-    as separate concerns.
 
 ---
 
-- [ ] @TODO(app/lib/pagination.py)
-
+- [x] @TODO(app/lib/pagination.py)
+  
   - SQLite test warning: DISTINCT ON style query is tolerated today but deprecated
     for non-PostgreSQL backends. Rework pagination/count path so
   - SQLite and future SQLAlchemy versions do not break.
+
 ---
 
 ## Later
@@ -270,13 +230,23 @@ thoroughly.
 ### Standard guard helpers (alignment sweep)
 
 - [ ] @TODO: Sweep mutating services for standard guard helpers.
-  - add `_ensure_actor_ulid()` alongside `_ensure_entity_ulid()` and
-    `_ensure_request_id()`
-  - for every mutating service command:
-    - call all three guards at the top (fail fast)
-    - require `request_id` and `actor_ulid` as keyword-only params
-  - apply forward-first; defer refactors of stable/working slices
-  - later: deliberate alignment sweep across older slices (Entity, etc.)
+  - Boundary-owned context
+    route/bootstrap establishes request_id
+    actor originates from auth/session boundary
+    inner layers do not invent replacements
+  - Single helper vocabulary
+    one shared request guard name
+    one shared actor guard name
+    one shared entity guard name
+    no slice-local synonyms like _ensure_reqid() unless deliberately grandfathered and scheduled for removal
+  - Exception classes are explicit
+    CLI/dev tools
+    seeds
+    migrations
+    system jobs / cron
+  - Ledger/event provenance rule
+    emitted request_id must remain stable through one logical operation
+    emitted actor_ulid must match the authenticated operator for operator-driven flows"
 
 ### Logistics: physical inventory reconciliation
 
@@ -394,9 +364,7 @@ thoroughly.
     (kind=`needs_reassessment`, schema_name=`customers.needs_snapshot`)
 
 - [x] @TODO: Add a pagination smoke test (regression tripwire).
-
+  
   - exercise `app/lib/pagination.py::paginate()` in app context
   - Evaluate pagination macro (existing) vs `app/lib/pagination.py` for as unified method.
   - run against a trivial `select()` (SQLite) to catch extension wiring drift
-
-

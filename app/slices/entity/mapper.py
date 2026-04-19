@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from typing import Any, Literal, TypedDict
+from dataclasses import dataclass
 
 from .models import (
     Entity,
@@ -62,30 +61,6 @@ Mapped JSON payload: (for reference only)
 
 """
 # -----------------
-# Entity_v2 DTO's
-# -----------------
-
-
-@dataclass(frozen=True, slots=True)
-class EntityLabelDTO:
-    """
-    Minimal, UI-oriented label for cross-slice display.
-    PII is intentionally limited to names (no email/phone/address).
-    """
-
-    entity_ulid: str
-    kind: str  # "person" | "org" | "unknown"
-    display_name: str
-    # People (optional)
-    first_name: str | None
-    last_name: str | None
-    preferred_name: str | None
-    # Orgs (optional)
-    legal_name: str | None
-    dba_name: str | None
-
-
-# -----------------
 # services_wizard
 # DTO's
 # -----------------
@@ -125,31 +100,32 @@ class WizardStepDTO:
 
 
 # -----------------
-# TypedDict
-# Blobs/Views
+# Contact data setup
 # -----------------
 
 
-class PersonView(TypedDict):
-    entity_ulid: str
-    first_name: str
-    last_name: str
-    preferred_name: str | None
-    email: str | None
-    phone: str | None
-    created_at_utc: str | None
-    updated_at_utc: str | None
+def _primary_contact_bits(
+    entity_ulid: str,
+    rows: list[EntityContact],
+) -> tuple[str | None, str | None]:
+    emails: list[str] = []
+    phones: list[str] = []
 
+    for row in rows:
+        if row.email:
+            email = row.email.strip()
+            if email:
+                emails.append(email)
+        if row.phone:
+            phone = row.phone.strip()
+            if phone:
+                phones.append(phone)
+        if len(emails) >= 1 and len(phones) >= 1:
+            break
 
-class OrgView(TypedDict):
-    entity_ulid: str
-    legal_name: str
-    dba_name: str | None
-    ein: str | None
-    email: str | None
-    phone: str | None
-    created_at_utc: str | None
-    updated_at_utc: str | None
+    primary_email = emails[0] if emails else None
+    primary_phone = phones[0] if phones else None
+    return primary_email, primary_phone
 
 
 # -----------------
@@ -176,240 +152,24 @@ def to_wizard_summary(ent: Entity) -> WizardSummaryDTO:
         ),
         reverse=True,
     )
-    summary = to_contact_summary(ent.ulid, active_contacts)
+    primary_email, primary_phone = _primary_contact_bits(
+        ent.ulid,
+        active_contacts,
+    )
 
     return WizardSummaryDTO(
         entity_ulid=ent.ulid,
         kind=ent.kind,
         display_name=display.strip() or ent.ulid,
         role_code=role,
-        email=summary.primary_email,
-        phone=summary.primary_phone,
+        email=primary_email,
+        phone=primary_phone,
     )
-
-
-# -----------------
-# Entity_v2 DTO's (Rolodex)
-# -----------------
-
-
-@dataclass(frozen=True, slots=True)
-class EntityContactSummaryDTO:
-    entity_ulid: str
-    primary_email: str | None
-    primary_phone: str | None
-    secondary_email: str | None
-    secondary_phone: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class EntityAddressDTO:
-    address1: str
-    address2: str | None
-    city: str
-    state: str
-    postal_code: str
-
-
-@dataclass(frozen=True, slots=True)
-class EntityAddressSummaryDTO:
-    entity_ulid: str
-    physical: EntityAddressDTO | None
-    postal: EntityAddressDTO | None
-
-
-@dataclass(frozen=True, slots=True)
-class EntityCardDTO:
-    """
-    Rolodex "card": label always; contacts/addresses are opt-in.
-    """
-
-    entity_ulid: str
-    label: EntityLabelDTO
-    contacts: EntityContactSummaryDTO | None
-    addresses: EntityAddressSummaryDTO | None
-
-
-# -----------------
-# Name Cards
-# (slice-agnostic)
-# -----------------
-
-"""
-Semantics:
-
-display_name: “safe UI name” (no DOB/last4/address/phone/email).
-person: e.g. "Shaw, Mike" or "Mike Shaw"
-org: trade/doing-business-as if present, else legal name
-short_label (optional): compact label for tight UIs
-person: "Shaw, M."
-org: "ACME" / truncated trade name
-No other fields. No “reason”, “notes”, “identifiers”, etc.
-"""
-
-EntityKind = Literal["person", "org"]
-
-
-@dataclass(frozen=True, slots=True)
-class EntityNameCardDTO:
-    entity_ulid: str
-    kind: EntityKind
-    display_name: str
-    short_label: str | None = None
-
-
-# -----------------
-# Rolodex View-builder
-# functions
-# -----------------
-
-
-def entity_label_to_dict(label: EntityLabelDTO) -> dict[str, Any]:
-    # asdict() recursively converts nested dataclasses to dicts/lists
-    return asdict(label)
-
-
-def entity_card_to_dict(card: EntityCardDTO) -> dict[str, Any]:
-    # asdict() recursively converts nested dataclasses to dicts/lists
-    return asdict(card)
-
-
-def to_contact_summary(
-    entity_ulid: str,
-    rows: list[EntityContact],
-) -> EntityContactSummaryDTO:
-    # rows are expected to be pre-sorted best-first
-    emails: list[str] = []
-    phones: list[str] = []
-
-    for c in rows:
-        if c.email:
-            e = c.email.strip()
-            if e:
-                emails.append(e)
-        if c.phone:
-            p = c.phone.strip()
-            if p:
-                phones.append(p)
-        if len(emails) >= 2 and len(phones) >= 2:
-            break
-
-    return EntityContactSummaryDTO(
-        entity_ulid=entity_ulid,
-        primary_email=emails[0] if len(emails) > 0 else None,
-        secondary_email=emails[1] if len(emails) > 1 else None,
-        primary_phone=phones[0] if len(phones) > 0 else None,
-        secondary_phone=phones[1] if len(phones) > 1 else None,
-    )
-
-
-def _to_addr(a: EntityAddress) -> EntityAddressDTO:
-    return EntityAddressDTO(
-        address1=a.address1,
-        address2=a.address2,
-        city=a.city,
-        state=a.state,
-        postal_code=a.postal_code,
-    )
-
-
-def to_address_summary(
-    entity_ulid: str,
-    rows: list[EntityAddress],
-) -> EntityAddressSummaryDTO:
-    # rows are expected to be pre-sorted newest-first
-    physical: EntityAddressDTO | None = None
-    postal: EntityAddressDTO | None = None
-
-    for a in rows:
-        if physical is None and bool(a.is_physical):
-            physical = _to_addr(a)
-        if postal is None and bool(a.is_postal):
-            postal = _to_addr(a)
-        if physical is not None and postal is not None:
-            break
-
-    return EntityAddressSummaryDTO(
-        entity_ulid=entity_ulid,
-        physical=physical,
-        postal=postal,
-    )
-
-
-# -----------------
-# other functions
-# -----------------
-
-
-def _active_contact_summary(
-    ent: Entity | None,
-) -> EntityContactSummaryDTO | None:
-    if not ent or not ent.contacts:
-        return None
-
-    rows = sorted(
-        [c for c in ent.contacts if c.archived_at is None],
-        key=lambda c: (
-            1 if c.is_primary else 0,
-            c.updated_at_utc or "",
-            c.created_at_utc or "",
-        ),
-        reverse=True,
-    )
-    return to_contact_summary(ent.ulid, rows)
-
-
-def map_person_view(p: EntityPerson) -> PersonView:
-    ent = p.entity
-    summary = _active_contact_summary(ent)
-    return {
-        "entity_ulid": ent.ulid if ent else p.entity_ulid,
-        "first_name": p.first_name,
-        "last_name": p.last_name,
-        "preferred_name": p.preferred_name,
-        "email": summary.primary_email if summary else None,
-        "phone": summary.primary_phone if summary else None,
-        "created_at_utc": ent.created_at_utc if ent else None,
-        "updated_at_utc": ent.updated_at_utc if ent else None,
-    }
-
-
-def map_org_view(o: EntityOrg) -> OrgView:
-    ent = o.entity
-    summary = _active_contact_summary(ent)
-    return {
-        "entity_ulid": ent.ulid if ent else o.entity_ulid,
-        "legal_name": o.legal_name,
-        "dba_name": o.dba_name,
-        "ein": o.ein,
-        "email": summary.primary_email if summary else None,
-        "phone": summary.primary_phone if summary else None,
-        "created_at_utc": ent.created_at_utc if ent else None,
-        "updated_at_utc": ent.updated_at_utc if ent else None,
-    }
 
 
 __all__ = [
-    # Entity_v2 DTOs
-    "EntityLabelDTO",
     # Wizard DTOs (dataclasses)
     "WizardEntityCreatedDTO",
-    "OperatorCoreCreatedDTO",
     "WizardStepDTO",
     "WizardSummaryDTO",
-    # Rolodex (TypedDict)
-    "EntityCardDTO",
-    "EntityAddressDTO",
-    "EntityAddressSummaryDTO",
-    "EntityContactSummaryDTO",
-    # Rolodex Builders
-    "to_contact_summary",
-    "_to_addr",
-    "to_address_summary",
-    # Views (TypedDict)
-    "PersonView",
-    "OrgView",
-    # View mappers
-    "map_person_view",
-    "map_org_view",
 ]
