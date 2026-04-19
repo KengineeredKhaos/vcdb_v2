@@ -1,33 +1,34 @@
 {% extends "layout/base.html" %}
-
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 {% block title %}Resource Onboarding · Complete{% endblock %}
 {% include "resources/onboard/_entity_card.html" %}
 {% block content %}
-  <h1>Resource Onboarding</h1>
-  {% include "resources/onboard/_entity_card.html" %}
+<h1>Resource Onboarding</h1>
+{% include "resources/onboard/_entity_card.html" %}
 
-  {% include "resources/onboard/_wizard_nav.html" %}
+{% include "resources/onboard/_wizard_nav.html" %}
 
-  <section class="card">
-    <h2>Submit for Admin review</h2>
-    <div class="help">
-      This marks onboarding complete (<span class="mono">onboard_step=complete</span>)
-      and leaves readiness as <span class="mono">draft</span>.
-      Admin will review, adjust drafts, and activate later.
-    </div>
+<section class="card">
+  <h2>Submit for Admin review</h2>
+  <div class="help">
+    This marks onboarding complete (<span class="mono">onboard_step=complete</span>)
+    and leaves readiness as <span class="mono">draft</span>.
+    Admin will review, adjust drafts, and activate later.
+  </div>
 
-    <form method="post"
-          action="{{ url_for('resources.onboard_complete', entity_ulid=entity_ulid) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
-      <button class="btn" type="submit">Submit</button>
-    </form>
+  <form method="post" {{ csrf_field() }} action="{{ url_for('resources.onboard_complete', entity_ulid=entity_ulid) }}">
+    <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
+    <button class="btn" type="submit">Submit</button>
+  </form>
 
-    <div class="help" style="margin-top:.75rem;">
-      Dev link:
-      <a href="{{ url_for('resources.get_resource', entity_ulid=entity_ulid) }}">
-        raw resource page
-      </a>
-    </div>
-  </section>
+  <div class="help" style="margin-top:.75rem;">
+    Dev link:
+    <a href="{{ url_for('resources.get_resource', entity_ulid=entity_ulid) }}">
+      raw resource page
+    </a>
+  </div>
+</section>
 {% endblock %}

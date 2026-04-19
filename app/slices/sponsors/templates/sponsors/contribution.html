@@ -1,8 +1,12 @@
 {% extends "layout/base.html" %}
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 {% block content %}
 <h1>Record Contribution</h1>
 <form method="post" action="{{ url_for('sponsors.contribution_submit') }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {{ csrf_field() }}
   <div>
     <label>Sponsor ID</label>
     <input name="sponsor_id" required placeholder="01H...ULID">

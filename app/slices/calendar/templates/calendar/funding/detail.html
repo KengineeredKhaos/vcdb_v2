@@ -1,4 +1,8 @@
 {% extends "layout/base.html" %}
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
@@ -18,7 +22,7 @@
     <td>
       {{ demand.project_title or "" }}
       {% if demand.project_ulid %}
-        ({{ demand.project_ulid }})
+      ({{ demand.project_ulid }})
       {% endif %}
     </td>
   </tr>
@@ -63,20 +67,16 @@
 </p>
 
 {% if demand.status == "draft" %}
-  <form
-    method="post"
-    action="{{ url_for('calendar.funding_demand_publish', ulid=demand.funding_demand_ulid) }}"
-  >
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit">Publish</button>
-  </form>
+<form method="post" {{ csrf_field() }}
+  action="{{ url_for('calendar.funding_demand_publish', ulid=demand.funding_demand_ulid) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit">Publish</button>
+</form>
 {% elif demand.status == "published" %}
-  <form
-    method="post"
-    action="{{ url_for('calendar.funding_demand_unpublish', ulid=demand.funding_demand_ulid) }}"
-  >
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit">Revert to draft</button>
-  </form>
+<form method="post" {{ csrf_field() }}
+  action="{{ url_for('calendar.funding_demand_unpublish', ulid=demand.funding_demand_ulid) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit">Revert to draft</button>
+</form>
 {% endif %}
 {% endblock %}

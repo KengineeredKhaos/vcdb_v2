@@ -1,17 +1,22 @@
 {% extends "layout/base.html" %}
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
 <h1>New Demand Draft</h1>
 <p><strong>Project:</strong> {{ project.project_title }} ({{ project.ulid }})</p>
 <p>
-  <a href="{{ url_for('calendar.project_budget_workspace', project_ulid=project.ulid, snapshot_ulid=form.snapshot_ulid.data) }}">
+  <a
+    href="{{ url_for('calendar.project_budget_workspace', project_ulid=project.ulid, snapshot_ulid=form.snapshot_ulid.data) }}">
     Back to budget workspace
   </a>
 </p>
 
-<form method="post"
-      action="{{ url_for('calendar.demand_draft_create', project_ulid=project.ulid) }}">
+<form method="post" {{ csrf_field() }}
+  action="{{ url_for('calendar.demand_draft_create', project_ulid=project.ulid) }}">
   {{ form.hidden_tag() }}
   <div>{{ form.title.label }} {{ form.title() }}</div>
   <div>{{ form.summary.label }} {{ form.summary(rows=3) }}</div>

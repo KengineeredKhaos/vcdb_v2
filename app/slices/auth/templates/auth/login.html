@@ -1,5 +1,9 @@
 {# app/slices/auth/templates/auth/login.html #}
 {% extends "layout/base.html" %}
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 {% block title %}Sign in · VCDB{% endblock %}
 
 {% block content %}
@@ -16,7 +20,7 @@
   {% endwith %}
 
   <form method="post" action="{{ url_for('auth.login_post') }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {{ csrf_field() }}
     {# pass through ?next=/some/path from GET /auth/login #}
     {% if next_url %}
       <input type="hidden" name="next" value="{{ next_url }}">

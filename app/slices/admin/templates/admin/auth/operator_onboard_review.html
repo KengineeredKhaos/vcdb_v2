@@ -1,5 +1,8 @@
 {% extends "layout/base.html" %}
-
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 {% block title %}Operator Onboarding Review{% endblock %}
 
 {% block content %}
@@ -20,8 +23,7 @@
   </li>
 </ul>
 
-<form method="post"
-      action="{{ url_for('admin.auth_operator_onboard_commit') }}">
+<form method="post" {{ csrf_field() }} action="{{ url_for('admin.auth_operator_onboard_commit') }}">
   {{ form.hidden_tag() }}
   {{ form.preview_token() }}
   <div>{{ form.commit() }}</div>

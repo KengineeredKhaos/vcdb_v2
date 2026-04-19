@@ -1,11 +1,14 @@
 {% extends "layout/base.html" %}
-
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 {% block title %}Entity Wizard — Organization{% endblock %}
 
 {% block content %}
   <h1>Step 1 — Organization core identity</h1>
 
-  <form method="post" action="{{ url_for('entity.wizard_org_core') }}" class="card" style="padding:1rem;max-width:46rem;">
+  <form method="post" {{ csrf_field() }} action="{{ url_for('entity.wizard_org_core') }}" class="card" style="padding:1rem;max-width:46rem;">
     {{ form.hidden_tag() }}
     <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
 

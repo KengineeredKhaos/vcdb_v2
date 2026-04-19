@@ -1,10 +1,14 @@
 {% extends "layout/base.html" %}
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 {% from "_forms.html" import text, select, radios %}
 
 {% block content %}
 <h1>Create Entity</h1>
 
-<form method="post" action="{{ url_for('entity.create') }}" id="entity-form">
+<form method="post" {{ csrf_field() }} action="{{ url_for('entity.create') }}" id="entity-form">
   {{ radios("kind", "Entity Type", [("person","Person"), ("org","Organization")], value="person") }}
 
   <div id="person-fields">

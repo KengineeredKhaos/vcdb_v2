@@ -1,35 +1,37 @@
 {% extends "layout/base.html" %}
-
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 {% block title %}Sponsor Onboarding · Profile{% endblock %}
 
 {% block content %}
-  <h1>Sponsor Onboarding</h1>
-  {% include "sponsors/onboard/_entity_card.html" %}
+<h1>Sponsor Onboarding</h1>
+{% include "sponsors/onboard/_entity_card.html" %}
 
-  {% include "sponsors/onboard/_wizard_nav.html" %}
+{% include "sponsors/onboard/_wizard_nav.html" %}
 
-  {% if error is defined and error %}
-    <div class="banner banner--danger">{{ error }}</div>
-  {% endif %}
+{% if error is defined and error %}
+<div class="banner banner--danger">{{ error }}</div>
+{% endif %}
 
-  <section class="card">
-    <h2>Profile hints (draft)</h2>
-    <form method="post"
-          action="{{ url_for('sponsors.onboard_profile', entity_ulid=entity_ulid) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
+<section class="card">
+  <h2>Profile hints (draft)</h2>
+  <form method="post" action="{{ url_for('sponsors.onboard_profile', entity_ulid=entity_ulid) }}">
+    {{ csrf_field() }}
+    <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
 
-      <label class="fld">
-        <div class="lbl">Relationship note</div>
-        <textarea name="relationship_note" rows="4">{{ hints.get('relationship_note','') }}</textarea>
-      </label>
+    <label class="fld">
+      <div class="lbl">Relationship note</div>
+      <textarea name="relationship_note" rows="4">{{ hints.get('relationship_note','') }}</textarea>
+    </label>
 
-      <label class="fld">
-        <div class="lbl">Recognition / acknowledgments note</div>
-        <textarea name="recognition_note" rows="4">{{ hints.get('recognition_note','') }}</textarea>
-      </label>
+    <label class="fld">
+      <div class="lbl">Recognition / acknowledgments note</div>
+      <textarea name="recognition_note" rows="4">{{ hints.get('recognition_note','') }}</textarea>
+    </label>
 
-      <button class="btn" type="submit">Save &amp; Continue</button>
-    </form>
-  </section>
+    <button class="btn" type="submit">Save &amp; Continue</button>
+  </form>
+</section>
 {% endblock %}

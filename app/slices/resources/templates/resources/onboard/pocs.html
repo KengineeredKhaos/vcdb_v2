@@ -1,100 +1,102 @@
 {% extends "layout/base.html" %}
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 {% import "_forms.html" as forms %}
 
 {% block title %}Resource Onboarding · POCs{% endblock %}
 {% include "resources/onboard/_entity_card.html" %}
 {% block content %}
-  <h1>Resource Onboarding</h1>
-  {% include "resources/onboard/_entity_card.html" %}
+<h1>Resource Onboarding</h1>
+{% include "resources/onboard/_entity_card.html" %}
 
-  {% include "resources/onboard/_wizard_nav.html" %}
+{% include "resources/onboard/_wizard_nav.html" %}
 
-  {% if error %}
-    <div class="banner banner--danger">{{ error }}</div>
+{% if error %}
+<div class="banner banner--danger">{{ error }}</div>
+{% endif %}
+
+<section class="card">
+  <h2>Existing POCs</h2>
+
+  {% if pocs %}
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Person</th>
+        <th>Role</th>
+        <th>Scope</th>
+        <th>Rank</th>
+        <th>Primary?</th>
+        <th>Active?</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in pocs %}
+      <tr>
+        <td>
+          {% set c = (poc_cards or {}).get(p.link.person_entity_ulid) %}
+          {% if c %}
+          <div>{{ c.display_name }}</div>
+          <div class="help mono">{{ p.link.person_entity_ulid }}</div>
+          {% else %}
+          <div class="mono">{{ p.link.person_entity_ulid }}</div>
+          {% endif %}
+        </td>
+        <td>{{ p.link.org_role or '' }}</td>
+        <td>{{ p.link.scope or '' }}</td>
+        <td class="mono">{{ p.link.rank }}</td>
+        <td>{{ 'yes' if p.link.is_primary else 'no' }}</td>
+        <td>{{ 'yes' if p.link.active else 'no' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="help">No POCs linked yet (allowed during onboarding).</div>
   {% endif %}
+</section>
 
-  <section class="card">
-    <h2>Existing POCs</h2>
+<section class="card">
+  <h2>Add a POC (Entity person ULID)</h2>
+  <form method="post" {{ csrf_field() }} action="{{ url_for('resources.onboard_pocs', entity_ulid=entity_ulid) }}">
+    <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
 
-    {% if pocs %}
-      <table class="tbl">
-        <thead>
-          <tr>
-            <th>Person</th>
-            <th>Role</th>
-            <th>Scope</th>
-            <th>Rank</th>
-            <th>Primary?</th>
-            <th>Active?</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for p in pocs %}
-            <tr>
-              <td>
-                {% set c = (poc_cards or {}).get(p.link.person_entity_ulid) %}
-                {% if c %}
-                  <div>{{ c.display_name }}</div>
-                  <div class="help mono">{{ p.link.person_entity_ulid }}</div>
-                {% else %}
-                  <div class="mono">{{ p.link.person_entity_ulid }}</div>
-                {% endif %}
-              </td>
-              <td>{{ p.link.org_role or '' }}</td>
-              <td>{{ p.link.scope or '' }}</td>
-              <td class="mono">{{ p.link.rank }}</td>
-              <td>{{ 'yes' if p.link.is_primary else 'no' }}</td>
-              <td>{{ 'yes' if p.link.active else 'no' }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <div class="help">No POCs linked yet (allowed during onboarding).</div>
-    {% endif %}
-  </section>
+    <div class="row">
+      {{ forms.text(
+      'person_entity_ulid',
+      'Person Entity ULID',
+      placeholder='01...',
+      required=true
+      ) }}
+      {{ forms.text('org_role', 'Org role', placeholder='Coordinator') }}
+    </div>
 
-  <section class="card">
-    <h2>Add a POC (Entity person ULID)</h2>
-    <form method="post"
-          action="{{ url_for('resources.onboard_pocs', entity_ulid=entity_ulid) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
-
-      <div class="row">
-        {{ forms.text(
-          'person_entity_ulid',
-          'Person Entity ULID',
-          placeholder='01...',
-          required=true
-        ) }}
-        {{ forms.text('org_role', 'Org role', placeholder='Coordinator') }}
-      </div>
-
-      <div class="row">
-        {{ forms.select('scope', 'Scope', scopes, value=default_scope) }}
-        {{ forms.text('rank', 'Rank (0-99)', value='0', inputmode='numeric') }}
-        <label class="fld" style="align-self:flex-end;">
-          <div class="lbl">Primary?</div>
-          <label style="display:flex; gap:.35rem; align-items:center;">
-            <input type="checkbox" name="is_primary" value="1">
-            yes
-          </label>
+    <div class="row">
+      {{ forms.select('scope', 'Scope', scopes, value=default_scope) }}
+      {{ forms.text('rank', 'Rank (0-99)', value='0', inputmode='numeric') }}
+      <label class="fld" style="align-self:flex-end;">
+        <div class="lbl">Primary?</div>
+        <label style="display:flex; gap:.35rem; align-items:center;">
+          <input type="checkbox" name="is_primary" value="1">
+          yes
         </label>
-      </div>
+      </label>
+    </div>
 
-      <div class="row">
-        <button class="btn" type="submit" name="action" value="add">
-          Add POC
-        </button>
-        <button class="btn" type="submit" name="action" value="continue">
-          Continue
-        </button>
-      </div>
+    <div class="row">
+      <button class="btn" type="submit" name="action" value="add">
+        Add POC
+      </button>
+      <button class="btn" type="submit" name="action" value="continue">
+        Continue
+      </button>
+    </div>
 
-      <div class="help">
-        POCs must already exist as Entity persons (PII stays in Entity).
-      </div>
-    </form>
-  </section>
+    <div class="help">
+      POCs must already exist as Entity persons (PII stays in Entity).
+    </div>
+  </form>
+</section>
 {% endblock %}

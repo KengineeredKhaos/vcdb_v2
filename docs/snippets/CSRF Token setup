@@ -96,6 +96,10 @@ Tip: wrap that in a macro so you never forget:
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 {%- endmacro %}
 ```
+and deploy on POST routes with
+```jinja
+{{ csrf_field() }}
+```
 
 # 4) AJAX / fetch POSTs from browser pages
 

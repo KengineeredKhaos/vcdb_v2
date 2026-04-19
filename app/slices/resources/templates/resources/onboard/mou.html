@@ -1,32 +1,34 @@
 {% extends "layout/base.html" %}
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 {% import "_forms.html" as forms %}
 
 {% block title %}Resource Onboarding · MOU{% endblock %}
 {% include "resources/onboard/_entity_card.html" %}
 {% block content %}
-  <h1>Resource Onboarding</h1>
-  {% include "resources/onboard/_entity_card.html" %}
+<h1>Resource Onboarding</h1>
+{% include "resources/onboard/_entity_card.html" %}
 
-  {% include "resources/onboard/_wizard_nav.html" %}
+{% include "resources/onboard/_wizard_nav.html" %}
 
-  <section class="card">
-    <h2>MOU status (draft)</h2>
-    <form method="post"
-          action="{{ url_for('resources.onboard_mou', entity_ulid=entity_ulid) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
+<section class="card">
+  <h2>MOU status (draft)</h2>
+  <form method="post" {{ csrf_field() }} action="{{ url_for('resources.onboard_mou', entity_ulid=entity_ulid) }}">
+    <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
 
-      {{ forms.select(
-        'mou_status',
-        'MOU status',
-        mou_statuses,
-        value=current_status
-      ) }}
+    {{ forms.select(
+    'mou_status',
+    'MOU status',
+    mou_statuses,
+    value=current_status
+    ) }}
 
-      <button class="btn" type="submit">Save &amp; Continue</button>
-      <div class="help">
-        Wizard records draft status only. Admin can later set to active.
-      </div>
-    </form>
-  </section>
+    <button class="btn" type="submit">Save &amp; Continue</button>
+    <div class="help">
+      Wizard records draft status only. Admin can later set to active.
+    </div>
+  </form>
+</section>
 {% endblock %}

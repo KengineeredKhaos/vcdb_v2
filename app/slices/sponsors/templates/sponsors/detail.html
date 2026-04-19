@@ -1,349 +1,383 @@
 {% extends "layout/base.html" %}
-
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 {% block title %}Sponsor Detail{% endblock %}
 
 {% block content %}
-  <h1>Sponsor Detail</h1>
-  {% include "sponsors/onboard/_entity_card.html" %}
+<h1>Sponsor Detail</h1>
+{% include "sponsors/onboard/_entity_card.html" %}
 
-  <section class="card">
-    <h2>Summary</h2>
-    <table class="tbl">
-      <tbody>
-        <tr><th>Entity ULID</th><td class="mono">{{ sponsor.entity_ulid }}</td></tr>
-        <tr><th>Readiness</th><td>{{ sponsor.readiness_status }}</td></tr>
-        <tr><th>MOU</th><td>{{ sponsor.mou_status }}</td></tr>
-        <tr><th>Admin review required</th>
-          <td>{{ 'yes' if sponsor.admin_review_required else 'no' }}</td>
-        </tr>
-        <tr><th>Onboard step</th><td>{{ sponsor.onboard_step or '' }}</td></tr>
-        <tr><th>Last touch</th><td>{{ sponsor.last_touch_utc or '' }}</td></tr>
-      </tbody>
-    </table>
-  </section>
-  <section class="card">
-    <h2>Operator workflow</h2>
+<section class="card">
+  <h2>Summary</h2>
+  <table class="tbl">
+    <tbody>
+      <tr>
+        <th>Entity ULID</th>
+        <td class="mono">{{ sponsor.entity_ulid }}</td>
+      </tr>
+      <tr>
+        <th>Readiness</th>
+        <td>{{ sponsor.readiness_status }}</td>
+      </tr>
+      <tr>
+        <th>MOU</th>
+        <td>{{ sponsor.mou_status }}</td>
+      </tr>
+      <tr>
+        <th>Admin review required</th>
+        <td>{{ 'yes' if sponsor.admin_review_required else 'no' }}</td>
+      </tr>
+      <tr>
+        <th>Onboard step</th>
+        <td>{{ sponsor.onboard_step or '' }}</td>
+      </tr>
+      <tr>
+        <th>Last touch</th>
+        <td>{{ sponsor.last_touch_utc or '' }}</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+<section class="card">
+  <h2>Operator workflow</h2>
 
-    <div class="help" style="margin-bottom:.75rem;">
-      Keep the next touch, relationship note, and CRM posture review in one working area.
-    </div>
+  <div class="help" style="margin-bottom:.75rem;">
+    Keep the next touch, relationship note, and CRM posture review in one working area.
+  </div>
 
-    <div class="row" style="gap:.5rem; flex-wrap:wrap; margin-bottom:.75rem;">
-      <form method="post"
-            action="{{ url_for('sponsors.sponsor_cultivation_task_create', sponsor_entity_ulid=sponsor.entity_ulid) }}"
-            style="display:inline-block;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="next"
-               value="{{ url_for('sponsors.sponsor_detail_html', sponsor_entity_ulid=sponsor.entity_ulid) }}">
-        <button class="btn btn-sm" type="submit">
-          Create cultivation task
-        </button>
-      </form>
+  <div class="row" style="gap:.5rem; flex-wrap:wrap; margin-bottom:.75rem;">
+    <form method="post"
+      action="{{ url_for('sponsors.sponsor_cultivation_task_create', sponsor_entity_ulid=sponsor.entity_ulid) }}"
+      style="display:inline-block;">
+      {{ csrf_field() }}
+      <input type="hidden" name="next"
+        value="{{ url_for('sponsors.sponsor_detail_html', sponsor_entity_ulid=sponsor.entity_ulid) }}">
+      <button class="btn btn-sm" type="submit">
+        Create cultivation task
+      </button>
+    </form>
 
-      <a class="btn btn-sm"
-         href="{{ url_for('sponsors.sponsor_crm_edit', sponsor_entity_ulid=sponsor.entity_ulid) }}">
-        Review CRM posture
-      </a>
-    </div>
+    <a class="btn btn-sm" href="{{ url_for('sponsors.sponsor_crm_edit', sponsor_entity_ulid=sponsor.entity_ulid) }}">
+      Review CRM posture
+    </a>
+  </div>
 
-    {% if cultivation_outcomes %}
-      {% set latest = cultivation_outcomes[0] %}
-      {% set latest_completed = latest.status == 'done' or latest.done_at_utc %}
-      {% set latest_has_signal =
-        latest.follow_up_recommended
-        or latest.off_cadence_follow_up_signal
-        or latest.funding_interest_signal %}
+  {% if cultivation_outcomes %}
+  {% set latest = cultivation_outcomes[0] %}
+  {% set latest_completed = latest.status == 'done' or latest.done_at_utc %}
+  {% set latest_has_signal =
+  latest.follow_up_recommended
+  or latest.off_cadence_follow_up_signal
+  or latest.funding_interest_signal %}
 
-      <h3>Latest cultivation touch</h3>
-      <table class="tbl">
-        <tbody>
-          <tr><th>Task</th><td>{{ latest.task_title }}</td></tr>
-          <tr><th>Status</th><td>{{ latest.status }}</td></tr>
-          <tr><th>Completed</th><td>{{ latest.done_at_utc or '' }}</td></tr>
-          <tr><th>Due</th><td>{{ latest.due_at_utc or '' }}</td></tr>
-          <tr><th>Demand</th><td class="mono">{{ latest.funding_demand_ulid or '' }}</td></tr>
-        </tbody>
-      </table>
+  <h3>Latest cultivation touch</h3>
+  <table class="tbl">
+    <tbody>
+      <tr>
+        <th>Task</th>
+        <td>{{ latest.task_title }}</td>
+      </tr>
+      <tr>
+        <th>Status</th>
+        <td>{{ latest.status }}</td>
+      </tr>
+      <tr>
+        <th>Completed</th>
+        <td>{{ latest.done_at_utc or '' }}</td>
+      </tr>
+      <tr>
+        <th>Due</th>
+        <td>{{ latest.due_at_utc or '' }}</td>
+      </tr>
+      <tr>
+        <th>Demand</th>
+        <td class="mono">{{ latest.funding_demand_ulid or '' }}</td>
+      </tr>
+    </tbody>
+  </table>
 
-      <div style="margin-top:.75rem;">
-        <strong>Operator cues</strong>
-        {% if latest_has_signal %}
-          <ul>
-            {% if latest.follow_up_recommended %}
-              <li>Follow-up recommended</li>
-            {% endif %}
-            {% if latest.off_cadence_follow_up_signal %}
-              <li>Off-cadence follow-up</li>
-            {% endif %}
-            {% if latest.funding_interest_signal %}
-              <li>Funding interest surfaced</li>
-            {% endif %}
-          </ul>
-        {% else %}
-          <div class="help">No current operator cues on the latest touch.</div>
-        {% endif %}
-      </div>
+  <div style="margin-top:.75rem;">
+    <strong>Operator cues</strong>
+    {% if latest_has_signal %}
+    <ul>
+      {% if latest.follow_up_recommended %}
+      <li>Follow-up recommended</li>
+      {% endif %}
+      {% if latest.off_cadence_follow_up_signal %}
+      <li>Off-cadence follow-up</li>
+      {% endif %}
+      {% if latest.funding_interest_signal %}
+      <li>Funding interest surfaced</li>
+      {% endif %}
+    </ul>
+    {% else %}
+    <div class="help">No current operator cues on the latest touch.</div>
+    {% endif %}
+  </div>
 
-      <div class="row" style="gap:.5rem; flex-wrap:wrap; margin-top:.75rem;">
-        {% if latest_completed %}
+  <div class="row" style="gap:.5rem; flex-wrap:wrap; margin-top:.75rem;">
+    {% if latest_completed %}
+    <form method="post"
+      action="{{ url_for('sponsors.sponsor_cultivation_follow_up_task_create', sponsor_entity_ulid=sponsor.entity_ulid, task_ulid=latest.task_ulid) }}"
+      style="display:inline-block;">
+      {{ csrf_field() }}
+      <input type="hidden" name="next"
+        value="{{ url_for('sponsors.sponsor_detail_html', sponsor_entity_ulid=sponsor.entity_ulid) }}">
+      <button class="btn btn-sm" type="submit">
+        Create follow-up task
+      </button>
+    </form>
+    {% else %}
+    <div class="help">Await outcome before follow-up.</div>
+    {% endif %}
+
+    {% if latest.outcome_note %}
+    <form method="post"
+      action="{{ url_for('sponsors.promote_cultivation_outcome_to_relationship_note', sponsor_entity_ulid=sponsor.entity_ulid, task_ulid=latest.task_ulid) }}"
+      style="display:inline-block;">
+      {{ csrf_field() }}
+      <input type="hidden" name="next"
+        value="{{ url_for('sponsors.sponsor_detail_html', sponsor_entity_ulid=sponsor.entity_ulid) }}">
+      <button class="btn btn-sm" type="submit">
+        Promote to relationship note
+      </button>
+    </form>
+    {% endif %}
+
+    {% if latest.funding_demand_ulid %}
+    <a class="btn btn-sm"
+      href="{{ url_for('sponsors_funding.funding_opportunity_detail', funding_demand_ulid=latest.funding_demand_ulid) }}">
+      View funding opportunity
+    </a>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="help">No cultivation activity recorded yet.</div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>CRM posture</h2>
+
+  <div class="help">
+    Active factors: {{ posture.active_factor_count }} ·
+    Note hints inside posture: {{ posture.note_hint_count }}
+  </div>
+
+  {% if posture.factors_by_bucket %}
+  {% for bucket, rows in posture.factors_by_bucket.items() %}
+  <h3>{{ bucket|replace('_', ' ')|title }}</h3>
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Factor</th>
+        <th>Active</th>
+        <th>Strength</th>
+        <th>Source</th>
+        <th>Note</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <strong>{{ row.label }}</strong>
+          <div class="help mono">{{ row.key }}</div>
+          <div class="help">{{ row.description }}</div>
+        </td>
+        <td>{{ 'yes' if row.active else 'no' }}</td>
+        <td>{{ row.strength }}</td>
+        <td>{{ row.source }}</td>
+        <td>{{ row.note or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endfor %}
+  {% else %}
+  <div class="help">No CRM posture factors recorded yet.</div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Profile note hints</h2>
+
+  {% if note_hints.hints %}
+  <ul>
+    {% for hint in note_hints.hints %}
+    <li>
+      <strong>{{ hint.label }}:</strong> {{ hint.note }}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="help">No profile note hints recorded yet.</div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Recent cultivation activity</h2>
+
+  {% if cultivation_outcomes %}
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Task</th>
+        <th>Timing</th>
+        <th>Demand</th>
+        <th>Operator cues</th>
+        <th>Outcome note</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in cultivation_outcomes %}
+      {% set completed = row.status == 'done' or row.done_at_utc %}
+      {% set has_signal =
+      row.follow_up_recommended
+      or row.off_cadence_follow_up_signal
+      or row.funding_interest_signal %}
+      <tr>
+        <td>
+          <strong>{{ row.task_title }}</strong>
+          <div class="help mono">{{ row.task_ulid }}</div>
+          <div class="help">Status: {{ row.status }}</div>
+        </td>
+        <td>
+          {% if row.done_at_utc %}
+          <div>Completed: {{ row.done_at_utc }}</div>
+          {% endif %}
+          {% if row.due_at_utc %}
+          <div>Due: {{ row.due_at_utc }}</div>
+          {% endif %}
+          {% if not row.done_at_utc and not row.due_at_utc %}
+          <div class="help">No timing captured.</div>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.funding_demand_ulid %}
+          <div class="mono">{{ row.funding_demand_ulid }}</div>
+          <div style="margin-top:.5rem;">
+            <a
+              href="{{ url_for('sponsors_funding.funding_opportunity_detail', funding_demand_ulid=row.funding_demand_ulid) }}">
+              View funding opportunity
+            </a>
+          </div>
+          {% else %}
+          <div class="help">No linked demand.</div>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.follow_up_recommended %}
+          <div>Follow-up recommended</div>
+          {% endif %}
+          {% if row.off_cadence_follow_up_signal %}
+          <div>Off-cadence follow-up</div>
+          {% endif %}
+          {% if row.funding_interest_signal %}
+          <div>Funding interest surfaced</div>
+          {% endif %}
+          {% if not has_signal %}
+          <div class="help">No current operator cues.</div>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.outcome_note %}
+          {{ row.outcome_note }}
+          {% else %}
+          <div class="help">No outcome note recorded.</div>
+          {% endif %}
+        </td>
+        <td>
+          {% if completed %}
           <form method="post"
-                action="{{ url_for('sponsors.sponsor_cultivation_follow_up_task_create', sponsor_entity_ulid=sponsor.entity_ulid, task_ulid=latest.task_ulid) }}"
-                style="display:inline-block;">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            action="{{ url_for('sponsors.sponsor_cultivation_follow_up_task_create', sponsor_entity_ulid=sponsor.entity_ulid, task_ulid=row.task_ulid) }}"
+            style="margin-bottom:.5rem;">
+            {{ csrf_field() }}
             <input type="hidden" name="next"
-                   value="{{ url_for('sponsors.sponsor_detail_html', sponsor_entity_ulid=sponsor.entity_ulid) }}">
+              value="{{ url_for('sponsors.sponsor_detail_html', sponsor_entity_ulid=sponsor.entity_ulid) }}">
             <button class="btn btn-sm" type="submit">
               Create follow-up task
             </button>
           </form>
-        {% else %}
-          <div class="help">Await outcome before follow-up.</div>
-        {% endif %}
+          {% else %}
+          <div class="help" style="margin-bottom:.5rem;">
+            Await outcome before follow-up.
+          </div>
+          {% endif %}
 
-        {% if latest.outcome_note %}
+          {% if row.outcome_note %}
           <form method="post"
-                action="{{ url_for('sponsors.promote_cultivation_outcome_to_relationship_note', sponsor_entity_ulid=sponsor.entity_ulid, task_ulid=latest.task_ulid) }}"
-                style="display:inline-block;">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            action="{{ url_for('sponsors.promote_cultivation_outcome_to_relationship_note', sponsor_entity_ulid=sponsor.entity_ulid, task_ulid=row.task_ulid) }}"
+            style="margin-bottom:.5rem;">
+            {{ csrf_field() }}
             <input type="hidden" name="next"
-                   value="{{ url_for('sponsors.sponsor_detail_html', sponsor_entity_ulid=sponsor.entity_ulid) }}">
+              value="{{ url_for('sponsors.sponsor_detail_html', sponsor_entity_ulid=sponsor.entity_ulid) }}">
             <button class="btn btn-sm" type="submit">
               Promote to relationship note
             </button>
           </form>
-        {% endif %}
+          {% endif %}
 
-        {% if latest.funding_demand_ulid %}
-          <a class="btn btn-sm"
-             href="{{ url_for('sponsors_funding.funding_opportunity_detail', funding_demand_ulid=latest.funding_demand_ulid) }}">
-            View funding opportunity
+          {% if has_signal %}
+          <a href="{{ url_for('sponsors.sponsor_crm_edit', sponsor_entity_ulid=sponsor.entity_ulid) }}">
+            Review CRM posture
           </a>
-        {% endif %}
-      </div>
-    {% else %}
-      <div class="help">No cultivation activity recorded yet.</div>
-    {% endif %}
-  </section>
-
-  <section class="card">
-    <h2>CRM posture</h2>
-
-    <div class="help">
-      Active factors: {{ posture.active_factor_count }} ·
-      Note hints inside posture: {{ posture.note_hint_count }}
-    </div>
-
-    {% if posture.factors_by_bucket %}
-      {% for bucket, rows in posture.factors_by_bucket.items() %}
-        <h3>{{ bucket|replace('_', ' ')|title }}</h3>
-        <table class="tbl">
-          <thead>
-            <tr>
-              <th>Factor</th>
-              <th>Active</th>
-              <th>Strength</th>
-              <th>Source</th>
-              <th>Note</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in rows %}
-              <tr>
-                <td>
-                  <strong>{{ row.label }}</strong>
-                  <div class="help mono">{{ row.key }}</div>
-                  <div class="help">{{ row.description }}</div>
-                </td>
-                <td>{{ 'yes' if row.active else 'no' }}</td>
-                <td>{{ row.strength }}</td>
-                <td>{{ row.source }}</td>
-                <td>{{ row.note or '' }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+          {% endif %}
+        </td>
+      </tr>
       {% endfor %}
-    {% else %}
-      <div class="help">No CRM posture factors recorded yet.</div>
-    {% endif %}
-  </section>
+    </tbody>
+  </table>
+  {% else %}
+  <div class="help">No cultivation activity recorded yet.</div>
+  {% endif %}
+</section>
 
-  <section class="card">
-    <h2>Profile note hints</h2>
+<section class="card">
+  <h2>Capabilities</h2>
+  {% if sponsor.active_capabilities %}
+  <ul>
+    {% for c in sponsor.active_capabilities %}
+    <li class="mono">{{ c.domain }}.{{ c.key }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="help">No active capabilities recorded.</div>
+  {% endif %}
+</section>
 
-    {% if note_hints.hints %}
-      <ul>
-        {% for hint in note_hints.hints %}
-          <li>
-            <strong>{{ hint.label }}:</strong> {{ hint.note }}
-          </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <div class="help">No profile note hints recorded yet.</div>
-    {% endif %}
-  </section>
-
-  <section class="card">
-    <h2>Recent cultivation activity</h2>
-
-    {% if cultivation_outcomes %}
-      <table class="tbl">
-        <thead>
-          <tr>
-            <th>Task</th>
-            <th>Timing</th>
-            <th>Demand</th>
-            <th>Operator cues</th>
-            <th>Outcome note</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in cultivation_outcomes %}
-            {% set completed = row.status == 'done' or row.done_at_utc %}
-            {% set has_signal =
-              row.follow_up_recommended
-              or row.off_cadence_follow_up_signal
-              or row.funding_interest_signal %}
-            <tr>
-              <td>
-                <strong>{{ row.task_title }}</strong>
-                <div class="help mono">{{ row.task_ulid }}</div>
-                <div class="help">Status: {{ row.status }}</div>
-              </td>
-              <td>
-                {% if row.done_at_utc %}
-                  <div>Completed: {{ row.done_at_utc }}</div>
-                {% endif %}
-                {% if row.due_at_utc %}
-                  <div>Due: {{ row.due_at_utc }}</div>
-                {% endif %}
-                {% if not row.done_at_utc and not row.due_at_utc %}
-                  <div class="help">No timing captured.</div>
-                {% endif %}
-              </td>
-              <td>
-                {% if row.funding_demand_ulid %}
-                  <div class="mono">{{ row.funding_demand_ulid }}</div>
-                  <div style="margin-top:.5rem;">
-                    <a href="{{ url_for('sponsors_funding.funding_opportunity_detail', funding_demand_ulid=row.funding_demand_ulid) }}">
-                      View funding opportunity
-                    </a>
-                  </div>
-                {% else %}
-                  <div class="help">No linked demand.</div>
-                {% endif %}
-              </td>
-              <td>
-                {% if row.follow_up_recommended %}
-                  <div>Follow-up recommended</div>
-                {% endif %}
-                {% if row.off_cadence_follow_up_signal %}
-                  <div>Off-cadence follow-up</div>
-                {% endif %}
-                {% if row.funding_interest_signal %}
-                  <div>Funding interest surfaced</div>
-                {% endif %}
-                {% if not has_signal %}
-                  <div class="help">No current operator cues.</div>
-                {% endif %}
-              </td>
-              <td>
-                {% if row.outcome_note %}
-                  {{ row.outcome_note }}
-                {% else %}
-                  <div class="help">No outcome note recorded.</div>
-                {% endif %}
-              </td>
-              <td>
-                {% if completed %}
-                  <form method="post"
-                    action="{{ url_for('sponsors.sponsor_cultivation_follow_up_task_create', sponsor_entity_ulid=sponsor.entity_ulid, task_ulid=row.task_ulid) }}"
-                    style="margin-bottom:.5rem;">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="next"
-                      value="{{ url_for('sponsors.sponsor_detail_html', sponsor_entity_ulid=sponsor.entity_ulid) }}">
-                    <button class="btn btn-sm" type="submit">
-                      Create follow-up task
-                    </button>
-                  </form>
-                {% else %}
-                  <div class="help" style="margin-bottom:.5rem;">
-                    Await outcome before follow-up.
-                  </div>
-                {% endif %}
-
-                {% if row.outcome_note %}
-                  <form method="post"
-                    action="{{ url_for('sponsors.promote_cultivation_outcome_to_relationship_note', sponsor_entity_ulid=sponsor.entity_ulid, task_ulid=row.task_ulid) }}"
-                    style="margin-bottom:.5rem;">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="next"
-                      value="{{ url_for('sponsors.sponsor_detail_html', sponsor_entity_ulid=sponsor.entity_ulid) }}">
-                    <button class="btn btn-sm" type="submit">
-                      Promote to relationship note
-                    </button>
-                  </form>
-                {% endif %}
-
-                {% if has_signal %}
-                  <a href="{{ url_for('sponsors.sponsor_crm_edit', sponsor_entity_ulid=sponsor.entity_ulid) }}">
-                    Review CRM posture
-                  </a>
-                {% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <div class="help">No cultivation activity recorded yet.</div>
-    {% endif %}
-  </section>
-
-  <section class="card">
-    <h2>Capabilities</h2>
-    {% if sponsor.active_capabilities %}
-      <ul>
-        {% for c in sponsor.active_capabilities %}
-          <li class="mono">{{ c.domain }}.{{ c.key }}</li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <div class="help">No active capabilities recorded.</div>
-    {% endif %}
-  </section>
-
-  <section class="card">
-    <h2>Pledges</h2>
-    {% if sponsor.pledges %}
-      <table class="tbl">
-        <thead>
-          <tr>
-            <th>Pledge ULID</th>
-            <th>Type</th>
-            <th>Status</th>
-            <th>Restricted?</th>
-            <th>Value</th>
-            <th>Updated</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for p in sponsor.pledges %}
-            <tr>
-              <td class="mono">{{ p.pledge_ulid }}</td>
-              <td>{{ p.type }}</td>
-              <td>{{ p.status }}</td>
-              <td>{{ 'yes' if p.has_restriction else 'no' }}</td>
-              <td>{{ p.est_value_number or '' }} {{ p.currency or '' }}</td>
-              <td>{{ p.updated_at_utc or '' }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <div class="help">No pledges recorded.</div>
-    {% endif %}
-  </section>
+<section class="card">
+  <h2>Pledges</h2>
+  {% if sponsor.pledges %}
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Pledge ULID</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Restricted?</th>
+        <th>Value</th>
+        <th>Updated</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in sponsor.pledges %}
+      <tr>
+        <td class="mono">{{ p.pledge_ulid }}</td>
+        <td>{{ p.type }}</td>
+        <td>{{ p.status }}</td>
+        <td>{{ 'yes' if p.has_restriction else 'no' }}</td>
+        <td>{{ p.est_value_number or '' }} {{ p.currency or '' }}</td>
+        <td>{{ p.updated_at_utc or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="help">No pledges recorded.</div>
+  {% endif %}
+</section>
 {% endblock %}

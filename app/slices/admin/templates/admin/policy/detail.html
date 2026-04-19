@@ -1,4 +1,8 @@
 {% extends "layout/base.html" %}
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 {% import "_macros.html" as _macros %}
 
 {% block title %}{{ page.title }}{% endblock %}
@@ -54,7 +58,7 @@
 
 <section>
   <h2>Stage edit</h2>
-  <form method="post" action="{{ page.preview_route }}">
+  <form method="post" {{ csrf_field() }} action="{{ page.preview_route }}">
     {{ form.hidden_tag() }}
     <div>
       <label for="{{ form.policy_text.id }}">{{ form.policy_text.label.text }}</label>

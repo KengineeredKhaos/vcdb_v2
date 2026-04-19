@@ -1,5 +1,8 @@
 {% extends "layout/base.html" %}
-
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 {% block title %}{{ page.title }}{% endblock %}
 
 {% block content %}
@@ -15,8 +18,7 @@
   </li>
 </ul>
 
-<form method="post"
-      action="{{ url_for('admin.auth_operator_rbac_role_post',
+<form method="post" {{ csrf_field() }} action="{{ url_for('admin.auth_operator_rbac_role_post',
                           account_ulid=page.account_ulid) }}">
   {{ form.hidden_tag() }}
   <div>
@@ -25,7 +27,7 @@
     </label>
     {{ form.role_code() }}
     {% for error in form.role_code.errors %}
-      <div>{{ error }}</div>
+    <div>{{ error }}</div>
     {% endfor %}
   </div>
   <div>{{ form.save() }}</div>
