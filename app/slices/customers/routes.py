@@ -18,8 +18,14 @@ from flask import (
 from flask_login import login_required
 
 from app.extensions import auth_ctx, db
+from app.extensions.auth_ctx import current_actor_ulid
 from app.extensions.errors import ContractError
-from app.lib import request_ctx
+from app.lib.request_ctx import (
+    ensure_request_id,
+    get_actor_ulid,
+    set_actor_ulid,
+    set_request_id,
+)
 from app.lib.security import rbac
 
 from . import admin_review_services as admin_review_svc
@@ -73,24 +79,31 @@ Dataset Descriptions
 @bp.before_request
 def _inject_request_context() -> None:
     # Always mint a request_id for this request.
-    request_ctx.ensure_request_id()
+    ensure_request_id()
 
     # If authenticated, seed actor_ulid into request_ctx.
     actor = auth_ctx.current_actor_ulid()
-    request_ctx.set_actor_ulid(actor)
+    set_actor_ulid(actor)
 
 
 def _ctx_ro() -> str:
     """Read-only routes: ensure request_id exists, return it."""
-    return request_ctx.ensure_request_id()
+    return ensure_request_id()
 
 
 def _ctx_mut() -> tuple[str, str]:
-    """Mutating routes: require actor_ulid; return (request_id, actor_ulid)."""
-    rid = request_ctx.ensure_request_id()
-    actor = request_ctx.get_actor_ulid()
+    """Mutating routes: adopt carried request_id; require actor_ulid."""
+    incoming = (request.args.get("request_id") or "").strip() or (
+        request.form.get("request_id") or ""
+    ).strip()
+
+    rid = incoming or ensure_request_id()
+
+    actor = get_actor_ulid()
     if not actor:
         abort(403)
+
+    set_request_id(rid)
     return rid, actor
 
 

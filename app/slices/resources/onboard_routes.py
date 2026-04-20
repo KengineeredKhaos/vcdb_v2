@@ -31,7 +31,12 @@ from app.extensions.auth_ctx import current_actor_ulid
 from app.extensions.contracts import entity_v2
 from app.extensions.errors import ContractError
 from app.lib.ids import new_ulid
-from app.lib.request_ctx import ensure_request_id
+from app.lib.request_ctx import (
+    ensure_request_id,
+    get_actor_ulid,
+    set_actor_ulid,
+    set_request_id,
+)
 
 from . import onboard_services as wiz
 from . import services as res_svc
@@ -104,6 +109,20 @@ def _nav(entity_ulid: str, current_step: str) -> list[dict[str, object]]:
         )
     return out
 
+
+def _adopt_request_ctx() -> tuple[str, str | None]:
+    incoming = (
+        request.args.get("request_id") or request.form.get("request_id") or ""
+    ).strip()
+
+    rid = incoming or ensure_request_id()
+    actor = current_actor_ulid()  # or canonical equivalent
+
+    set_request_id(rid)
+    set_actor_ulid(actor)
+    return rid, actor
+
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/poc/attach/<person_ulid>",
@@ -112,7 +131,7 @@ def _nav(entity_ulid: str, current_step: str) -> list[dict[str, object]]:
 )
 @login_required
 def poc_attach(person_ulid: str):
-    req = ensure_request_id()
+    req, actor = _adopt_request_ctx()
 
     from app.extensions.contracts import entity_v2
     from app.extensions.errors import ContractError
@@ -163,12 +182,12 @@ def poc_attach(person_ulid: str):
         request_id=req,
     )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/poc/attach/confirm", endpoint="poc_attach_confirm")
 @login_required
 def poc_attach_confirm():
-    req = ensure_request_id()
-    actor = current_actor_ulid()
+    req, actor = _adopt_request_ctx()
 
     person_ulid = (request.form.get("person_ulid") or "").strip()
     org_ulid = (request.form.get("org_ulid") or "").strip()
@@ -216,6 +235,7 @@ def poc_attach_confirm():
             url_for("resources.poc_attach", person_ulid=person_ulid)
         )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/start",
@@ -258,8 +278,7 @@ def onboard_start():
             error=None,
         )
 
-    req = ensure_request_id()
-    actor = current_actor_ulid()
+    req, actor = _adopt_request_ctx()
 
     try:
         wiz.ensure_resource_for_onboard(
@@ -270,8 +289,13 @@ def onboard_start():
         db.session.commit()
         _set_active_entity_ulid(entity_ulid)
 
-        next_ep = wiz.wizard_next_step(entity_ulid=entity_ulid)
-        return redirect(url_for(next_ep, entity_ulid=entity_ulid))
+        return redirect(
+            url_for(
+                "resources.onboard_start",
+                entity_ulid=entity_ulid,
+                request_id=req,
+            )
+        )
 
     except Exception as exc:
         db.session.rollback()
@@ -289,6 +313,7 @@ def onboard_start():
             error=str(exc),
         )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/profile",
@@ -301,7 +326,7 @@ def onboard_profile(entity_ulid: str):
     _set_active_entity_ulid(entity_ulid)
 
     req = ensure_request_id()
-    actor = current_actor_ulid()
+    actor = get_actor_ulid()
 
     if request.method == "GET":
         hints = {}
@@ -374,6 +399,7 @@ def onboard_profile(entity_ulid: str):
             error=str(exc),
         )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/capabilities",
@@ -386,7 +412,7 @@ def onboard_capabilities(entity_ulid: str):
     _set_active_entity_ulid(entity_ulid)
 
     req = ensure_request_id()
-    actor = current_actor_ulid()
+    actor = get_actor_ulid()
 
     if request.method == "GET":
         selected: set[str] = set()
@@ -463,6 +489,7 @@ def onboard_capabilities(entity_ulid: str):
             error=str(exc),
         )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/capacity",
@@ -475,7 +502,7 @@ def onboard_capacity(entity_ulid: str):
     _set_active_entity_ulid(entity_ulid)
 
     req = ensure_request_id()
-    actor = current_actor_ulid()
+    actor = get_actor_ulid()
 
     if request.method == "GET":
         return render_template(
@@ -515,6 +542,7 @@ def onboard_capacity(entity_ulid: str):
             url_for("resources.onboard_capacity", entity_ulid=entity_ulid)
         )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/pocs",
@@ -527,7 +555,7 @@ def onboard_pocs(entity_ulid: str):
     _set_active_entity_ulid(entity_ulid)
 
     req = ensure_request_id()
-    actor = current_actor_ulid()
+    actor = get_actor_ulid()
 
     if request.method == "GET":
         pocs = []
@@ -639,6 +667,7 @@ def onboard_pocs(entity_ulid: str):
             url_for("resources.onboard_pocs", entity_ulid=entity_ulid)
         )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/mou",
@@ -651,7 +680,7 @@ def onboard_mou(entity_ulid: str):
     _set_active_entity_ulid(entity_ulid)
 
     req = ensure_request_id()
-    actor = current_actor_ulid()
+    actor = get_actor_ulid()
 
     if request.method == "GET":
         v = res_svc.resource_view(entity_ulid)
@@ -707,6 +736,7 @@ def onboard_mou(entity_ulid: str):
             url_for("resources.onboard_mou", entity_ulid=entity_ulid)
         )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/review",
@@ -719,7 +749,7 @@ def onboard_review(entity_ulid: str):
     _set_active_entity_ulid(entity_ulid)
 
     req = ensure_request_id()
-    actor = current_actor_ulid()
+    actor = get_actor_ulid()
 
     snap = {}
     error = None
@@ -767,6 +797,7 @@ def onboard_review(entity_ulid: str):
             url_for("resources.onboard_review", entity_ulid=entity_ulid)
         )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/complete",
@@ -779,7 +810,7 @@ def onboard_complete(entity_ulid: str):
     _set_active_entity_ulid(entity_ulid)
 
     req = ensure_request_id()
-    actor = current_actor_ulid()
+    actor = get_actor_ulid()
 
     if request.method == "GET":
         return render_template(

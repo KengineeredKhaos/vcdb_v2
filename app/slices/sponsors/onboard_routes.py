@@ -14,10 +14,15 @@ from flask import (
 from flask_login import login_required
 
 from app.extensions import db, event_bus
+from app.extensions.auth_ctx import current_actor_ulid
 from app.extensions.contracts import entity_v2
 from app.extensions.errors import ContractError
 from app.lib.ids import new_ulid
-from app.lib.request_ctx import ensure_request_id, get_actor_ulid
+from app.lib.request_ctx import (
+    ensure_request_id,
+    set_actor_ulid,
+    set_request_id,
+)
 
 from . import onboard_services as wiz
 from . import services as sp_svc
@@ -26,6 +31,7 @@ from .models import Sponsor
 from .routes import bp
 
 _ACTIVE_KEY = "wiz_active_sponsor_entity_ulid"
+_ACTIVE_REQ_KEY = "wiz_active_sponsor_request_id"
 
 
 def _try_entity_name_card(entity_ulid: str | None):
@@ -46,12 +52,18 @@ def _active_entity_ulid() -> str | None:
     return session.get(_ACTIVE_KEY)
 
 
-def _set_active_entity_ulid(entity_ulid: str) -> None:
+def _active_request_id() -> str | None:
+    return session.get(_ACTIVE_REQ_KEY)
+
+
+def _set_active_flow(entity_ulid: str, request_id: str) -> None:
     session[_ACTIVE_KEY] = entity_ulid
+    session[_ACTIVE_REQ_KEY] = request_id
 
 
 def _clear_active_entity_ulid() -> None:
     session.pop(_ACTIVE_KEY, None)
+    session.pop(_ACTIVE_REQ_KEY, None)
 
 
 def _nonce_key(step: str, entity_ulid: str) -> str:
@@ -89,6 +101,30 @@ def _nav(entity_ulid: str, current_step: str) -> list[dict[str, object]]:
         )
     return out
 
+
+def _adopt_request_ctx(
+    *, entity_ulid: str | None = None
+) -> tuple[str, str | None]:
+    incoming = (
+        request.args.get("request_id") or request.form.get("request_id") or ""
+    ).strip()
+
+    active_rid = _active_request_id()
+    if entity_ulid and _active_entity_ulid() != entity_ulid:
+        active_rid = None
+
+    rid = incoming or active_rid or ensure_request_id()
+    actor = current_actor_ulid()
+
+    set_request_id(rid)
+    set_actor_ulid(actor)
+    if entity_ulid:
+        _set_active_flow(entity_ulid, rid)
+    elif rid:
+        session[_ACTIVE_REQ_KEY] = rid
+    return rid, actor
+
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/poc/attach/<person_ulid>",
@@ -97,7 +133,7 @@ def _nav(entity_ulid: str, current_step: str) -> list[dict[str, object]]:
 )
 @login_required
 def poc_attach(person_ulid: str):
-    req = ensure_request_id()
+    req, _actor = _adopt_request_ctx()
 
     from app.extensions.contracts import entity_v2
     from app.extensions.errors import ContractError
@@ -128,12 +164,20 @@ def poc_attach(person_ulid: str):
     if not org_card:
         flash("Org ULID not found.", "error")
         return redirect(
-            url_for("sponsors.poc_attach", person_ulid=person_ulid)
+            url_for(
+                "sponsors.poc_attach",
+                person_ulid=person_ulid,
+                request_id=req,
+            )
         )
     if org_card.kind != "org":
         flash("That ULID is not an organization.", "error")
         return redirect(
-            url_for("sponsors.poc_attach", person_ulid=person_ulid)
+            url_for(
+                "sponsors.poc_attach",
+                person_ulid=person_ulid,
+                request_id=req,
+            )
         )
 
     return render_template(
@@ -151,12 +195,12 @@ def poc_attach(person_ulid: str):
 
 # sponsors/onboard_routes.py (or wherever your sponsors bp routes live)
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.post("/poc/attach/confirm", endpoint="poc_attach_confirm")
 @login_required
 def poc_attach_confirm():
-    req = ensure_request_id()
-    actor = get_actor_ulid()
+    req, actor = _adopt_request_ctx()
 
     person_ulid = (request.form.get("person_ulid") or "").strip()
     sponsor_ulid = (request.form.get("sponsor_ulid") or "").strip()
@@ -227,16 +271,26 @@ def poc_attach_confirm():
 
         db.session.commit()
         flash("POC linked to Sponsor.", "success")
+        _set_active_flow(sponsor_ulid, req)
         return redirect(
-            url_for("sponsors.onboard_pocs", entity_ulid=sponsor_ulid)
+            url_for(
+                "sponsors.onboard_pocs",
+                entity_ulid=sponsor_ulid,
+                request_id=req,
+            )
         )
 
     except Exception as exc:
         db.session.rollback()
         flash(str(exc) or "Unable to link POC.", "error")
         return redirect(
-            url_for("sponsors.poc_attach", person_ulid=person_ulid)
+            url_for(
+                "sponsors.poc_attach",
+                person_ulid=person_ulid,
+                request_id=req,
+            )
         )
+
 
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route("/onboard/start", methods=["GET", "POST"], endpoint="onboard_start")
@@ -253,8 +307,13 @@ def onboard_start():
         if not entity_ulid:
             flash("Enter an Org Entity ULID.", "error")
             return redirect(url_for("sponsors.onboard_start"))
+        req, _actor = _adopt_request_ctx()
         return redirect(
-            url_for("sponsors.onboard_start", entity_ulid=entity_ulid)
+            url_for(
+                "sponsors.onboard_start",
+                entity_ulid=entity_ulid,
+                request_id=req,
+            )
         )
 
     if (request.args.get("reset") or "").strip() in ("1", "true", "yes"):
@@ -275,8 +334,8 @@ def onboard_start():
             error=None,
         )
 
-    req = ensure_request_id()
-    actor = get_actor_ulid()
+    req, actor = _adopt_request_ctx()
+
     try:
         wiz.ensure_sponsor_for_onboard(
             entity_ulid=entity_ulid,
@@ -284,9 +343,10 @@ def onboard_start():
             actor_ulid=actor,
         )
         db.session.commit()
-        _set_active_entity_ulid(entity_ulid)
+        _set_active_flow(entity_ulid, req)
         nxt = wiz.wizard_next_step(entity_ulid=entity_ulid)
-        return redirect(url_for(nxt, entity_ulid=entity_ulid))
+        return redirect(url_for(nxt, entity_ulid=entity_ulid, request_id=req))
+
     except Exception as exc:
         db.session.rollback()
         current_app.logger.exception(
@@ -303,6 +363,7 @@ def onboard_start():
             error=str(exc),
         )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/profile",
@@ -312,9 +373,7 @@ def onboard_start():
 @login_required
 def onboard_profile(entity_ulid: str):
     step = "profile"
-    _set_active_entity_ulid(entity_ulid)
-    req = ensure_request_id()
-    actor = get_actor_ulid()
+    req, actor = _adopt_request_ctx(entity_ulid=entity_ulid)
 
     if request.method == "GET":
         hints = sp_svc.get_profile_hints(entity_ulid) or {}
@@ -352,7 +411,12 @@ def onboard_profile(entity_ulid: str):
             request_id=req,
             actor_ulid=actor,
         )
-        wiz.mark_step(entity_ulid=entity_ulid, step=step)
+        wiz.mark_step(
+            entity_ulid=entity_ulid,
+            step=step,
+            request_id=req,
+            actor_ulid=actor,
+        )
         db.session.commit()
         _consume_nonce(step, entity_ulid)
         return redirect(
@@ -371,6 +435,7 @@ def onboard_profile(entity_ulid: str):
             error=str(exc),
         )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/pocs",
@@ -380,9 +445,7 @@ def onboard_profile(entity_ulid: str):
 @login_required
 def onboard_pocs(entity_ulid: str):
     step = "pocs"
-    _set_active_entity_ulid(entity_ulid)
-    req = ensure_request_id()
-    actor = get_actor_ulid()
+    req, actor = _adopt_request_ctx(entity_ulid=entity_ulid)
 
     if request.method == "GET":
         pocs = []
@@ -460,7 +523,12 @@ def onboard_pocs(entity_ulid: str):
                 request_id=req,
             )
 
-        wiz.mark_step(entity_ulid=entity_ulid, step=step)
+        wiz.mark_step(
+            entity_ulid=entity_ulid,
+            step=step,
+            request_id=req,
+            actor_ulid=actor,
+        )
         db.session.commit()
         _consume_nonce(step, entity_ulid)
 
@@ -480,6 +548,7 @@ def onboard_pocs(entity_ulid: str):
             url_for("sponsors.onboard_pocs", entity_ulid=entity_ulid)
         )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/funding_rules",
@@ -489,9 +558,7 @@ def onboard_pocs(entity_ulid: str):
 @login_required
 def onboard_funding_rules(entity_ulid: str):
     step = "funding_rules"
-    _set_active_entity_ulid(entity_ulid)
-    req = ensure_request_id()
-    actor = get_actor_ulid()
+    req, actor = _adopt_request_ctx(entity_ulid=entity_ulid)
 
     if request.method == "GET":
         selected_caps: set[str] = set()
@@ -552,7 +619,12 @@ def onboard_funding_rules(entity_ulid: str):
             actor_ulid=actor,
         )
 
-        wiz.mark_step(entity_ulid=entity_ulid, step=step)
+        wiz.mark_step(
+            entity_ulid=entity_ulid,
+            step=step,
+            request_id=req,
+            actor_ulid=actor,
+        )
         db.session.commit()
         _consume_nonce(step, entity_ulid)
         return redirect(
@@ -565,6 +637,7 @@ def onboard_funding_rules(entity_ulid: str):
             url_for("sponsors.onboard_funding_rules", entity_ulid=entity_ulid)
         )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/mou",
@@ -574,9 +647,7 @@ def onboard_funding_rules(entity_ulid: str):
 @login_required
 def onboard_mou(entity_ulid: str):
     step = "mou"
-    _set_active_entity_ulid(entity_ulid)
-    req = ensure_request_id()
-    actor = get_actor_ulid()
+    req, actor = _adopt_request_ctx(entity_ulid=entity_ulid)
 
     if request.method == "GET":
         v = sp_svc.sponsor_view(entity_ulid)
@@ -609,7 +680,12 @@ def onboard_mou(entity_ulid: str):
                 request_id=req,
                 actor_ulid=actor,
             )
-        wiz.mark_step(entity_ulid=entity_ulid, step=step)
+        wiz.mark_step(
+            entity_ulid=entity_ulid,
+            step=step,
+            request_id=req,
+            actor_ulid=actor,
+        )
         db.session.commit()
         _consume_nonce(step, entity_ulid)
         return redirect(
@@ -622,6 +698,7 @@ def onboard_mou(entity_ulid: str):
             url_for("sponsors.onboard_mou", entity_ulid=entity_ulid)
         )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/review",
@@ -631,7 +708,7 @@ def onboard_mou(entity_ulid: str):
 @login_required
 def onboard_review(entity_ulid: str):
     step = "review"
-    _set_active_entity_ulid(entity_ulid)
+    req, actor = _adopt_request_ctx(entity_ulid=entity_ulid)
 
     snap = wiz.review_snapshot(entity_ulid=entity_ulid)
     if request.method == "GET":
@@ -654,7 +731,12 @@ def onboard_review(entity_ulid: str):
         )
 
     try:
-        wiz.mark_step(entity_ulid=entity_ulid, step=step)
+        wiz.mark_step(
+            entity_ulid=entity_ulid,
+            step=step,
+            request_id=req,
+            actor_ulid=actor,
+        )
         db.session.commit()
         _consume_nonce(step, entity_ulid)
         return redirect(
@@ -667,6 +749,7 @@ def onboard_review(entity_ulid: str):
             url_for("sponsors.onboard_review", entity_ulid=entity_ulid)
         )
 
+
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.route(
     "/onboard/<entity_ulid>/complete",
@@ -676,7 +759,7 @@ def onboard_review(entity_ulid: str):
 @login_required
 def onboard_complete(entity_ulid: str):
     step = "complete"
-    _set_active_entity_ulid(entity_ulid)
+    req, actor = _adopt_request_ctx(entity_ulid=entity_ulid)
 
     if request.method == "GET":
         return render_template(
@@ -697,7 +780,12 @@ def onboard_complete(entity_ulid: str):
         )
 
     try:
-        wiz.mark_step(entity_ulid=entity_ulid, step=step)
+        wiz.mark_step(
+            entity_ulid=entity_ulid,
+            step=step,
+            request_id=req,
+            actor_ulid=actor,
+        )
         db.session.commit()
         _consume_nonce(step, entity_ulid)
         flash("Submitted for Admin review.", "success")
@@ -714,6 +802,7 @@ def onboard_complete(entity_ulid: str):
         return redirect(
             url_for("sponsors.onboard_complete", entity_ulid=entity_ulid)
         )
+
 
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
 @bp.get("/search", endpoint="search_sponsors_html")
