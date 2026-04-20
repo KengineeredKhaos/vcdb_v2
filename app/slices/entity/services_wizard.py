@@ -130,53 +130,10 @@ def wizard_next_step(*, entity_ulid: str) -> str:
     if step == INTAKE_STEP_HANDOFF:
         return "entity.wizard_next"
 
-    """
-    # Legacy fallback Start
-    has_role = (
-        db.session.execute(
-            select(EntityRole).where(
-                EntityRole.entity_ulid == entity_ulid,
-                EntityRole.archived_at.is_(None),
-            )
-        ).scalar_one_or_none()
-        is not None
-    )
-    if has_role:
-        return "entity.wizard_next"
-
-    has_address = (
-        db.session.execute(
-            select(EntityAddress).where(
-                EntityAddress.entity_ulid == entity_ulid,
-                EntityAddress.archived_at.is_(None),
-            )
-        ).scalar_one_or_none()
-        is not None
-    )
-    if has_address:
-        return "entity.wizard_role_get"
-
-    has_contact = (
-        db.session.execute(
-            select(EntityContact).where(
-                EntityContact.entity_ulid == entity_ulid,
-                EntityContact.archived_at.is_(None),
-            )
-        ).scalar_one_or_none()
-        is not None
-    )
-    if has_contact:
-        return "entity.wizard_address"
-    # Legacy fallback End
-    """
-
-    # Active on legacy retirement
     raise WizardError(
-        "stit's broke",
+        "wizard state invalid",
         "wizard state is missing or invalid for this entity",
     )
-
-    return "entity.wizard_contact"
 
 
 # -----------------
