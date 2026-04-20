@@ -81,6 +81,8 @@ class WizardEntityCreatedDTO:
     entity_ulid: str
     entity_kind: str
     display_name: str
+    intake_step: str
+    intake_request_id: str
     next_step: str
 
 
@@ -94,6 +96,8 @@ class OperatorCoreCreatedDTO:
 @dataclass(frozen=True, slots=True)
 class WizardStepDTO:
     entity_ulid: str
+    intake_step: str
+    intake_request_id: str
     created: bool
     changed_fields: tuple[str, ...]
     next_step: str

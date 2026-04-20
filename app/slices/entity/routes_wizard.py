@@ -11,14 +11,14 @@ from flask import (
     session,
     url_for,
 )
-from flask_login import current_user, login_required
+from flask_login import login_required
 from sqlalchemy import select
 
 from app.extensions import db
 from app.extensions.auth_ctx import current_actor_ulid
 from app.extensions.contracts import governance_v2
 from app.lib.ids import new_ulid
-from app.lib.request_ctx import ensure_request_id
+from app.lib.request_ctx import ensure_request_id, use_request_ctx
 
 from . import services_wizard as wiz
 from .errors_wizard import WizardError
@@ -29,7 +29,7 @@ from .forms import (
     PersonCoreForm,
     RoleForm,
 )
-from .models import Entity, EntityAddress, EntityContact, EntityRole
+from .models import Entity, EntityRole
 from .routes import bp
 
 # -----------------
@@ -45,8 +45,6 @@ LABELS = {
 
 
 _WIZ_ACTIVE_ENTITY_KEY = "wiz_active_entity_ulid"
-
-_WIZ_STATE_PREFIX = "wiz:state:"
 
 
 # -----------------
@@ -99,104 +97,30 @@ def _wiz_active_entity_ulid() -> str | None:
     return session.get(_WIZ_ACTIVE_ENTITY_KEY)
 
 
-def _wiz_state_key(entity_ulid: str) -> str:
-    return f"{_WIZ_STATE_PREFIX}{entity_ulid}"
-
-
-def _wiz_get_state(entity_ulid: str) -> dict[str, str]:
-    raw = session.get(_wiz_state_key(entity_ulid))
-    return dict(raw) if isinstance(raw, dict) else {}
-
-
-def _wiz_set_state(entity_ulid: str, **updates: str) -> None:
-    state = _wiz_get_state(entity_ulid)
-    for key, value in updates.items():
-        if value is None:
-            state.pop(key, None)
-        else:
-            state[key] = str(value)
-    session[_wiz_state_key(entity_ulid)] = state
-    session.modified = True
-
-
-def _wiz_mark_contact_status(entity_ulid: str, status: str) -> None:
-    _wiz_set_state(entity_ulid, contact_status=status)
-
-
-def _wiz_mark_address_status(entity_ulid: str, status: str) -> None:
-    _wiz_set_state(entity_ulid, address_status=status)
-
-
-def _wiz_has_active_contact(entity_ulid: str) -> bool:
-    return (
-        db.session.execute(
-            select(EntityContact).where(
-                EntityContact.entity_ulid == entity_ulid,
-                EntityContact.archived_at.is_(None),
-            )
-        ).scalar_one_or_none()
-        is not None
-    )
-
-
-def _wiz_has_active_address(entity_ulid: str) -> bool:
-    return (
-        db.session.execute(
-            select(EntityAddress).where(
-                EntityAddress.entity_ulid == entity_ulid,
-                EntityAddress.archived_at.is_(None),
-            )
-        ).scalar_one_or_none()
-        is not None
-    )
-
-
-def _wiz_has_active_role(entity_ulid: str) -> bool:
-    return (
-        db.session.execute(
-            select(EntityRole).where(
-                EntityRole.entity_ulid == entity_ulid,
-                EntityRole.archived_at.is_(None),
-            )
-        ).scalar_one_or_none()
-        is not None
-    )
+def _wiz_operation_request_id(entity_ulid: str) -> str:
+    ent = db.session.get(Entity, entity_ulid)
+    if not ent or getattr(ent, "archived_at", None):
+        raise LookupError("wizard entity not found")
+    return (ent.intake_request_id or "").strip() or ensure_request_id()
 
 
 def _wiz_next_endpoint(entity_ulid: str) -> str:
-    """
-    Route-local wizard progression using session-backed completeness state.
-
-    Minimal-valid entity creation requires:
-      * core
-      * initial role
-
-    Contact and address are optional at intake. Session state records whether
-    those sections were provided or deferred so the wizard can resume honestly
-    without fabricating placeholder rows.
-    """
+    """Return the next endpoint from persisted entity intake truth."""
     ent = db.session.get(Entity, entity_ulid)
     if not ent or getattr(ent, "archived_at", None):
         raise LookupError("wizard entity not found")
 
-    state = _wiz_get_state(entity_ulid)
-
-    if state.get("contact_status") not in {"provided", "deferred"}:
-        if _wiz_has_active_contact(entity_ulid):
-            _wiz_mark_contact_status(entity_ulid, "provided")
-        else:
-            return "entity.wizard_contact"
-
-    if state.get("address_status") not in {"provided", "deferred"}:
-        if _wiz_has_active_address(entity_ulid):
-            _wiz_mark_address_status(entity_ulid, "provided")
-        else:
-            return "entity.wizard_address"
-
-    if not _wiz_has_active_role(entity_ulid):
+    step = (ent.intake_step or "").strip().lower()
+    if step == wiz.INTAKE_STEP_CONTACT:
+        return "entity.wizard_contact"
+    if step == wiz.INTAKE_STEP_ADDRESS:
+        return "entity.wizard_address"
+    if step == wiz.INTAKE_STEP_ROLE:
         return "entity.wizard_role_get"
+    if step == wiz.INTAKE_STEP_HANDOFF:
+        return "entity.wizard_next"
 
-    return "entity.wizard_next"
+    return wiz.wizard_next_step(entity_ulid=entity_ulid)
 
 
 # -----------------
@@ -205,19 +129,13 @@ def _wiz_next_endpoint(entity_ulid: str) -> str:
 
 
 def _wiz_clear_active() -> None:
-    """
-    Clear wizard "active entity" and any related nonce/state keys.
-    Safe to call repeatedly.
-    """
+    """Clear wizard active-entity and nonce keys."""
     active = session.pop(_WIZ_ACTIVE_ENTITY_KEY, None)
-    # Clear entity-scoped nonce keys
     if active:
         suffix = f":{active}"
         for k in list(session.keys()):
             if k.startswith("wiz:") and k.endswith(suffix):
                 session.pop(k, None)
-        session.pop(_wiz_state_key(active), None)
-    # Clear unscoped core-step nonces too
     for k in ("wiz:person_core", "wiz:org_core"):
         session.pop(k, None)
 
@@ -309,22 +227,23 @@ def wizard_person_core():
         )
     _wiz_consume_nonce(step, None)
     dto = None
+    rid = ensure_request_id()
+    actor_ulid = current_actor_ulid()
     try:
-        dto = wiz.wizard_create_person_core(
-            first_name=form.first_name.data or "",
-            last_name=form.last_name.data or "",
-            preferred_name=form.preferred_name.data,
-            dob=form.dob.data,
-            last_4=form.last_4.data,
-            request_id=ensure_request_id(),
-            actor_ulid=current_actor_ulid(),
-        )
-        db.session.commit()
+        with use_request_ctx(rid, actor_ulid):
+            dto = wiz.wizard_create_person_core(
+                first_name=form.first_name.data or "",
+                last_name=form.last_name.data or "",
+                preferred_name=form.preferred_name.data,
+                dob=form.dob.data,
+                last_4=form.last_4.data,
+                request_id=rid,
+                actor_ulid=actor_ulid,
+            )
+            db.session.commit()
 
         # Lock browser session onto the created entity until completion/reset.
         session[_WIZ_ACTIVE_ENTITY_KEY] = dto.entity_ulid
-        _wiz_set_state(dto.entity_ulid)
-
         flash(f"Created: {dto.display_name}", "success")
         return redirect(url_for(dto.next_step, entity_ulid=dto.entity_ulid))
     except WizardError as exc:
@@ -350,7 +269,7 @@ def wizard_person_core():
         current_app.logger.exception(
             "wizard_person_core failed",
             extra={
-                "request_id": ensure_request_id(),
+                "request_id": rid,
                 "entity_ulid": getattr(dto, "entity_ulid", None),
                 "op": "entity_wizard_person_core",
             },
@@ -408,20 +327,21 @@ def wizard_org_core():
         )
     _wiz_consume_nonce(step, None)
     dto = None
+    rid = ensure_request_id()
+    actor_ulid = current_actor_ulid()
     try:
-        dto = wiz.wizard_create_org_core(
-            legal_name=form.legal_name.data or "",
-            dba_name=form.dba_name.data,
-            ein=form.ein.data,
-            request_id=ensure_request_id(),
-            actor_ulid=current_actor_ulid(),
-        )
-        db.session.commit()
+        with use_request_ctx(rid, actor_ulid):
+            dto = wiz.wizard_create_org_core(
+                legal_name=form.legal_name.data or "",
+                dba_name=form.dba_name.data,
+                ein=form.ein.data,
+                request_id=rid,
+                actor_ulid=actor_ulid,
+            )
+            db.session.commit()
 
         # Lock browser session onto the created entity until completion/reset.
         session[_WIZ_ACTIVE_ENTITY_KEY] = dto.entity_ulid
-        _wiz_set_state(dto.entity_ulid)
-
         flash(f"Created: {dto.display_name}", "success")
         return redirect(url_for(dto.next_step, entity_ulid=dto.entity_ulid))
     except WizardError as exc:
@@ -447,7 +367,7 @@ def wizard_org_core():
         current_app.logger.exception(
             "wizard_org_core failed",
             extra={
-                "request_id": ensure_request_id(),
+                "request_id": rid,
                 "entity_ulid": getattr(dto, "entity_ulid", None),
                 "op": "entity_wizard_org_core",
             },
@@ -504,23 +424,18 @@ def wizard_contact(entity_ulid: str):
     # Consume nonce only on successful mutation path.
     _wiz_consume_nonce(step, entity_ulid)
     dto = None
+    rid = _wiz_operation_request_id(entity_ulid)
+    actor_ulid = current_actor_ulid()
     try:
-        dto = wiz.wizard_contact(
-            entity_ulid=entity_ulid,
-            email=form.email.data,
-            phone=form.phone.data,
-            request_id=ensure_request_id(),
-            actor_ulid=current_actor_ulid(),
-        )
-        db.session.commit()
-
-        has_contact_data = bool(
-            (form.email.data or "").strip() or (form.phone.data or "").strip()
-        )
-        _wiz_mark_contact_status(
-            entity_ulid,
-            "provided" if has_contact_data else "deferred",
-        )
+        with use_request_ctx(rid, actor_ulid):
+            dto = wiz.wizard_contact(
+                entity_ulid=entity_ulid,
+                email=form.email.data,
+                phone=form.phone.data,
+                request_id=rid,
+                actor_ulid=actor_ulid,
+            )
+            db.session.commit()
 
         return redirect(url_for(dto.next_step, entity_ulid=dto.entity_ulid))
 
@@ -548,7 +463,7 @@ def wizard_contact(entity_ulid: str):
         current_app.logger.exception(
             "wizard_contact failed",
             extra={
-                "request_id": ensure_request_id(),
+                "request_id": rid,
                 "entity_ulid": entity_ulid,
                 "op": "entity_wizard_contact",
             },
@@ -602,14 +517,43 @@ def wizard_address(entity_ulid: str):
     # Explicit operator bypass for "no address available right now".
     if (request.form.get("action") or "").strip().lower() == "skip":
         _wiz_consume_nonce(step, entity_ulid)
-        _wiz_mark_address_status(entity_ulid, "deferred")
+        rid = _wiz_operation_request_id(entity_ulid)
+        actor_ulid = current_actor_ulid()
+        dto = None
+        try:
+            with use_request_ctx(rid, actor_ulid):
+                dto = wiz.wizard_defer_address(
+                    entity_ulid=entity_ulid,
+                    request_id=rid,
+                    actor_ulid=actor_ulid,
+                )
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception(
+                "wizard_address_skip failed",
+                extra={
+                    "request_id": rid,
+                    "entity_ulid": entity_ulid,
+                    "op": "entity_wizard_address_skip",
+                },
+            )
+            flash(
+                "Unexpected error while deferring address data.",
+                "error",
+            )
+            return render_template(
+                "entity/wizard_address.html",
+                form=form,
+                entity_ulid=entity_ulid,
+                wiz_nonce=expected,
+            )
+
         flash(
             "Address deferred. You can add it later through Entity edit tools.",
             "warning",
         )
-        return redirect(
-            url_for("entity.wizard_role_get", entity_ulid=entity_ulid)
-        )
+        return redirect(url_for(dto.next_step, entity_ulid=dto.entity_ulid))
 
     # Normal form validation: keep the same nonce on errors
     if not form.validate_on_submit():
@@ -621,22 +565,23 @@ def wizard_address(entity_ulid: str):
         )
     _wiz_consume_nonce(step, entity_ulid)
     dto = None
+    rid = _wiz_operation_request_id(entity_ulid)
+    actor_ulid = current_actor_ulid()
     try:
-        dto = wiz.wizard_address(
-            entity_ulid=entity_ulid,
-            is_physical=form.is_physical.data,
-            is_postal=form.is_postal.data,
-            address1=form.address1.data,
-            address2=form.address2.data,
-            city=form.city.data,
-            state=form.state.data,
-            postal_code=form.postal_code.data,
-            request_id=ensure_request_id(),
-            actor_ulid=current_actor_ulid(),
-        )
-        db.session.commit()
-        _wiz_mark_address_status(entity_ulid, "provided")
-
+        with use_request_ctx(rid, actor_ulid):
+            dto = wiz.wizard_address(
+                entity_ulid=entity_ulid,
+                is_physical=form.is_physical.data,
+                is_postal=form.is_postal.data,
+                address1=form.address1.data,
+                address2=form.address2.data,
+                city=form.city.data,
+                state=form.state.data,
+                postal_code=form.postal_code.data,
+                request_id=rid,
+                actor_ulid=actor_ulid,
+            )
+            db.session.commit()
         return redirect(url_for(dto.next_step, entity_ulid=dto.entity_ulid))
 
     except WizardError as exc:
@@ -663,7 +608,7 @@ def wizard_address(entity_ulid: str):
         current_app.logger.exception(
             "wizard_address failed",
             extra={
-                "request_id": ensure_request_id(),
+                "request_id": rid,
                 "entity_ulid": entity_ulid,
                 "op": "entity_wizard_address",
             },
@@ -728,14 +673,17 @@ def wizard_role_post(entity_ulid: str):
 
     _wiz_consume_nonce(step, entity_ulid)
     dto = None
+    rid = _wiz_operation_request_id(entity_ulid)
+    actor_ulid = current_actor_ulid()
     try:
-        dto = wiz.wizard_set_single_role(
-            entity_ulid=entity_ulid,
-            role=form.role.data,
-            request_id=ensure_request_id(),
-            actor_ulid=current_actor_ulid(),
-        )
-        db.session.commit()
+        with use_request_ctx(rid, actor_ulid):
+            dto = wiz.wizard_set_single_role(
+                entity_ulid=entity_ulid,
+                role=form.role.data,
+                request_id=rid,
+                actor_ulid=actor_ulid,
+            )
+            db.session.commit()
         return redirect(url_for(dto.next_step, entity_ulid=entity_ulid))
     except WizardError as exc:
         db.session.rollback()
@@ -761,7 +709,7 @@ def wizard_role_post(entity_ulid: str):
         current_app.logger.exception(
             "wizard_role failed",
             extra={
-                "request_id": ensure_request_id(),
+                "request_id": rid,
                 "entity_ulid": entity_ulid,
                 "op": "entity_wizard_role",
             },
@@ -782,9 +730,11 @@ def wizard_next(entity_ulid: str):
     if session.get(_WIZ_ACTIVE_ENTITY_KEY) == entity_ulid:
         _wiz_clear_active()
 
-    rid = ensure_request_id()
-
     ent = db.session.get(Entity, entity_ulid)
+    rid = (getattr(ent, "intake_request_id", None) or "").strip()
+    if not rid:
+        rid = ensure_request_id()
+
     if not ent:
         # If this happens, something upstream is wrong; but give a graceful exit
         flash("Entity not found.", "error")
@@ -814,7 +764,9 @@ def wizard_next(entity_ulid: str):
             {
                 "label": "Continue to Customer Intake",
                 "url": url_for(
-                    "customers.intake_start", entity_ulid=entity_ulid
+                    "customers.intake_start",
+                    entity_ulid=entity_ulid,
+                    request_id=rid,
                 ),
             }
         )

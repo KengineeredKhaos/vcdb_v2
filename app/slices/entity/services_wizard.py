@@ -32,6 +32,7 @@ from app.lib.utils import (
     validate_phone,
 )
 
+from .errors_wizard import WizardError
 from .guards import _validate_entity_shape, require_wizard_entity
 from .mapper import WizardEntityCreatedDTO, WizardStepDTO
 from .models import (
@@ -48,6 +49,11 @@ from .models import (
 # -----------------
 
 _ZIP5_RE = re.compile(r"^\d{5}$")
+
+INTAKE_STEP_CONTACT = "contact"
+INTAKE_STEP_ADDRESS = "address"
+INTAKE_STEP_ROLE = "role"
+INTAKE_STEP_HANDOFF = "handoff"
 
 
 # -----------------
@@ -87,24 +93,45 @@ def _display_name_org(*, legal_name: str, dba_name: str | None) -> str:
     return (dba_name or legal_name).strip()
 
 
+def _resolved_request_id(ent: Entity, request_id: str) -> tuple[str, bool]:
+    rid = _req_str("request_id", request_id)
+    if ent.intake_request_id:
+        return ent.intake_request_id, False
+    ent.intake_request_id = rid
+    return rid, True
+
+
+def _set_intake_step(ent: Entity, step: str) -> bool:
+    nxt = _req_str("intake_step", step).lower()
+    if ent.intake_step == nxt:
+        return False
+    ent.intake_step = nxt
+    return True
+
+
 # -----------------
 # Wizard Step Check
 # -----------------
 
 
 def wizard_next_step(*, entity_ulid: str) -> str:
-    """
-    Service-layer fallback used when no route-local wizard progress state
-    is available. Minimal-valid wizard completion is:
-        core + initial role
-
-    Contact and address are optional at intake, so this helper only blocks
-    on active role assignment. Route/session progress may still choose to
-    drive operators through contact/address steps before role selection.
-    """
+    """Return the next wizard endpoint from persisted intake truth."""
     ent = require_wizard_entity(entity_ulid)
     _validate_entity_shape(ent)
 
+    step = (ent.intake_step or "").strip().lower()
+
+    if step == INTAKE_STEP_CONTACT:
+        return "entity.wizard_contact"
+    if step == INTAKE_STEP_ADDRESS:
+        return "entity.wizard_address"
+    if step == INTAKE_STEP_ROLE:
+        return "entity.wizard_role_get"
+    if step == INTAKE_STEP_HANDOFF:
+        return "entity.wizard_next"
+
+    """
+    # Legacy fallback Start
     has_role = (
         db.session.execute(
             select(EntityRole).where(
@@ -114,10 +141,42 @@ def wizard_next_step(*, entity_ulid: str) -> str:
         ).scalar_one_or_none()
         is not None
     )
-    if not has_role:
+    if has_role:
+        return "entity.wizard_next"
+
+    has_address = (
+        db.session.execute(
+            select(EntityAddress).where(
+                EntityAddress.entity_ulid == entity_ulid,
+                EntityAddress.archived_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        is not None
+    )
+    if has_address:
         return "entity.wizard_role_get"
 
-    return "entity.wizard_next"
+    has_contact = (
+        db.session.execute(
+            select(EntityContact).where(
+                EntityContact.entity_ulid == entity_ulid,
+                EntityContact.archived_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        is not None
+    )
+    if has_contact:
+        return "entity.wizard_address"
+    # Legacy fallback End
+    """
+
+    # Active on legacy retirement
+    raise WizardError(
+        "stit's broke",
+        "wizard state is missing or invalid for this entity",
+    )
+
+    return "entity.wizard_contact"
 
 
 # -----------------
@@ -149,7 +208,11 @@ def wizard_create_person_core(
     if l4_raw and ((not l4_raw.isdigit()) or len(l4_raw) != 4):
         raise ValueError("last_4 must be 4 digits")
 
-    ent = Entity(kind="person")
+    ent = Entity(
+        kind="person",
+        intake_step=INTAKE_STEP_CONTACT,
+        intake_request_id=request_id,
+    )
     ent.person = EntityPerson(
         first_name=fn,
         last_name=ln,
@@ -180,6 +243,8 @@ def wizard_create_person_core(
             last_name=ln,
             preferred_name=pn,
         ),
+        intake_step=INTAKE_STEP_CONTACT,
+        intake_request_id=request_id,
         next_step="entity.wizard_contact",
     )
 
@@ -200,7 +265,11 @@ def wizard_create_org_core(
     if ein_norm and not validate_ein(ein_norm):
         raise ValueError("invalid ein")
 
-    ent = Entity(kind="org")
+    ent = Entity(
+        kind="org",
+        intake_step=INTAKE_STEP_CONTACT,
+        intake_request_id=request_id,
+    )
     ent.org = EntityOrg(legal_name=ln, dba_name=dba, ein=ein_norm)
     db.session.add(ent)
     db.session.flush()
@@ -221,6 +290,8 @@ def wizard_create_org_core(
         entity_ulid=ent.ulid,
         entity_kind="org",
         display_name=_display_name_org(legal_name=ln, dba_name=dba),
+        intake_step=INTAKE_STEP_CONTACT,
+        intake_request_id=request_id,
         next_step="entity.wizard_contact",
     )
 
@@ -258,6 +329,7 @@ def wizard_upsert_primary_contact(
     ent = require_wizard_entity(entity_ulid)
     _validate_entity_shape(ent)
 
+    rid, rid_changed = _resolved_request_id(ent, request_id)
     email_norm = None
     phone_norm = None
 
@@ -271,14 +343,16 @@ def wizard_upsert_primary_contact(
         if phone_norm and not validate_phone(phone_norm):
             raise ValueError("invalid phone")
 
-    # Minimal-intake rule: contact is optional. If the operator has no
-    # contact data right now, move forward honestly without fabricating
-    # placeholder contact rows.
     if not email_norm and not phone_norm:
+        step_changed = _set_intake_step(ent, INTAKE_STEP_ADDRESS)
+        if step_changed or rid_changed:
+            db.session.flush()
         return WizardStepDTO(
             entity_ulid=entity_ulid,
             created=False,
             changed_fields=(),
+            intake_step=INTAKE_STEP_ADDRESS,
+            intake_request_id=rid,
             next_step="entity.wizard_address",
         )
 
@@ -314,24 +388,29 @@ def wizard_upsert_primary_contact(
             c.phone = phone_norm
             changed.append("phone")
 
-    db.session.flush()
+    step_changed = _set_intake_step(ent, INTAKE_STEP_ADDRESS)
+    if changed or step_changed or rid_changed:
+        db.session.flush()
 
-    as_of = now_iso8601_ms()
-    event_bus.emit(
-        domain="entity",
-        operation="wizard_contact_upserted",
-        request_id=request_id,
-        actor_ulid=actor_ulid,
-        target_ulid=entity_ulid,
-        refs=None,
-        changed={"fields": list(changed)},
-        happened_at_utc=as_of,
-    )
+    if changed:
+        as_of = now_iso8601_ms()
+        event_bus.emit(
+            domain="entity",
+            operation="wizard_contact_upserted",
+            request_id=rid,
+            actor_ulid=actor_ulid,
+            target_ulid=entity_ulid,
+            refs=None,
+            changed={"fields": list(changed)},
+            happened_at_utc=as_of,
+        )
 
     return WizardStepDTO(
         entity_ulid=entity_ulid,
         created=created,
         changed_fields=tuple(changed),
+        intake_step=INTAKE_STEP_ADDRESS,
+        intake_request_id=rid,
         next_step="entity.wizard_address",
     )
 
@@ -368,6 +447,32 @@ def wizard_address(
     )
 
 
+def wizard_defer_address(
+    *,
+    entity_ulid: str,
+    request_id: str,
+    actor_ulid: str | None,
+) -> WizardStepDTO:
+    del actor_ulid
+
+    ent = require_wizard_entity(entity_ulid)
+    _validate_entity_shape(ent)
+
+    rid, rid_changed = _resolved_request_id(ent, request_id)
+    step_changed = _set_intake_step(ent, INTAKE_STEP_ROLE)
+    if step_changed or rid_changed:
+        db.session.flush()
+
+    return WizardStepDTO(
+        entity_ulid=entity_ulid,
+        created=False,
+        changed_fields=(),
+        intake_step=INTAKE_STEP_ROLE,
+        intake_request_id=rid,
+        next_step="entity.wizard_role_get",
+    )
+
+
 def wizard_upsert_address(
     *,
     entity_ulid: str,
@@ -384,7 +489,8 @@ def wizard_upsert_address(
     ent = require_wizard_entity(entity_ulid)
     _validate_entity_shape(ent)
 
-    # Default to physical=True if user doesn't explicitly choose.
+    rid, rid_changed = _resolved_request_id(ent, request_id)
+
     phy = True if is_physical is None else bool(is_physical)
     post = False if is_postal is None else bool(is_postal)
     if not phy and not post:
@@ -458,24 +564,30 @@ def wizard_upsert_address(
             addr.postal_code = zipc
             changed.append("postal_code")
 
-    db.session.flush()
+    step_changed = _set_intake_step(ent, INTAKE_STEP_ROLE)
 
-    as_of = now_iso8601_ms()
-    event_bus.emit(
-        domain="entity",
-        operation="wizard_address_upserted",
-        request_id=request_id,
-        actor_ulid=actor_ulid,
-        target_ulid=entity_ulid,
-        refs=None,
-        changed={"fields": list(changed)},
-        happened_at_utc=as_of,
-    )
+    if changed or step_changed or rid_changed:
+        db.session.flush()
+
+    if changed:
+        as_of = now_iso8601_ms()
+        event_bus.emit(
+            domain="entity",
+            operation="wizard_address_upserted",
+            request_id=rid,
+            actor_ulid=actor_ulid,
+            target_ulid=entity_ulid,
+            refs=None,
+            changed={"fields": list(changed)},
+            happened_at_utc=as_of,
+        )
 
     return WizardStepDTO(
         entity_ulid=entity_ulid,
         created=created,
         changed_fields=tuple(changed),
+        intake_step=INTAKE_STEP_ROLE,
+        intake_request_id=rid,
         next_step="entity.wizard_role_get",
     )
 
@@ -495,6 +607,7 @@ def wizard_set_single_role(
     ent = require_wizard_entity(entity_ulid)
     _validate_entity_shape(ent)
 
+    rid, rid_changed = _resolved_request_id(ent, request_id)
     r = (role or "").strip().lower()
     if not r:
         raise ValueError("role is required")
@@ -518,10 +631,15 @@ def wizard_set_single_role(
 
     # If already active, keep going.
     if active and any(x.role == r for x in active):
+        step_changed = _set_intake_step(ent, INTAKE_STEP_HANDOFF)
+        if step_changed or rid_changed:
+            db.session.flush()
         return WizardStepDTO(
             entity_ulid=entity_ulid,
             created=False,
             changed_fields=(),
+            intake_step=INTAKE_STEP_HANDOFF,
+            intake_request_id=rid,
             next_step="entity.wizard_next",
         )
 
@@ -535,12 +653,13 @@ def wizard_set_single_role(
     db.session.add(EntityRole(entity_ulid=entity_ulid, role=r))
     changed.append(f"role:{r}")
 
+    _set_intake_step(ent, INTAKE_STEP_HANDOFF)
     db.session.flush()
 
     event_bus.emit(
         domain="entity",
         operation="wizard_domain_role_set",
-        request_id=request_id,
+        request_id=rid,
         actor_ulid=actor_ulid,
         target_ulid=entity_ulid,
         refs=None,
@@ -552,5 +671,7 @@ def wizard_set_single_role(
         entity_ulid=entity_ulid,
         created=True,
         changed_fields=tuple(changed),
+        intake_step=INTAKE_STEP_HANDOFF,
+        intake_request_id=rid,
         next_step="entity.wizard_next",
     )

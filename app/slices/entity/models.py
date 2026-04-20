@@ -15,6 +15,9 @@ Models:
     and timestamp metadata. It owns the 1:1 relationships to EntityPerson and
     EntityOrg, plus 1:N relationships to roles, contacts, and addresses. This
     is the canonical ID other slices use as `entity_ulid`.
+    This table also tracks request_id and intake_step to track interupted
+    intake flow and maintain continuity throughout creation flows in other
+    facet slices.
 * EntityPerson
     1:1 extension of Entity for people. Stores first/last name and an optional
     preferred name. Enforced as a strict 1:1 via a UNIQUE constraint on
@@ -92,6 +95,14 @@ class Entity(db.Model, ULIDPK, IsoTimestamps):
     )
     addresses: Mapped[list[EntityAddress]] = relationship(
         "EntityAddress", back_populates="entity", cascade="all, delete-orphan"
+    )
+    intake_step: Mapped[str | None] = mapped_column(
+        String(32), 
+        nullable=True
+    )
+    intake_request_id: Mapped[str | None] = mapped_column(
+        String(26), 
+        nullable=True
     )
 
 
