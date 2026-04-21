@@ -19,6 +19,7 @@ def _err(msg, code=400):
     return jsonify({"ok": False, "error": str(msg)}), code
 
 
+# VCDB-SEC: OPEN entry=authenticated_user authority=login_required reason=needs_matrix_decision
 @bp.post("/upload")
 def upload():
     try:
@@ -43,6 +44,7 @@ def upload():
         return _err(e)
 
 
+# VCDB-SEC: OPEN entry=authenticated_user authority=login_required reason=needs_matrix_decision
 @bp.post("/link")
 def link():
     try:
@@ -63,6 +65,7 @@ def link():
         return _err(e)
 
 
+# VCDB-SEC: OPEN entry=authenticated_user authority=login_required reason=needs_matrix_decision
 @bp.post("/unlink")
 def unlink():
     try:
@@ -77,6 +80,7 @@ def unlink():
         return _err(e)
 
 
+# VCDB-SEC: OPEN entry=authenticated_user authority=login_required reason=needs_matrix_decision
 @bp.post("/sign-url")
 def sign_url():
     try:

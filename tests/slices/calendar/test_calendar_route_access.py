@@ -92,15 +92,31 @@ def test_calendar_hello_allows_admin(client, calendar_seeded):
     assert resp.status_code == 200
 
 
+def test_calendar_operator_list_surface_denies_auditor(
+    client,
+    calendar_seeded,
+):
+    login_and_settle_password(
+        client,
+        username=AUDITOR_USERNAME,
+        temporary_password=AUDITOR_TEMP_PASSWORD,
+        settled_password=AUDITOR_SETTLED_PASSWORD,
+    )
+
+    resp = client.get("/calendar/funding-demands", follow_redirects=False)
+    assert_forbidden(resp)
+
+    logout_if_possible(client)
+
+
 @pytest.mark.parametrize(
     ("username", "temporary_password", "settled_password"),
     [
         (ADMIN_USERNAME, ADMIN_TEMP_PASSWORD, ADMIN_SETTLED_PASSWORD),
         (STAFF_USERNAME, STAFF_TEMP_PASSWORD, STAFF_SETTLED_PASSWORD),
-        (AUDITOR_USERNAME, AUDITOR_TEMP_PASSWORD, AUDITOR_SETTLED_PASSWORD),
     ],
 )
-def test_calendar_operator_list_surface_allows_authenticated_users(
+def test_calendar_operator_list_surface_allows_staff_and_admin(
     client,
     calendar_seeded,
     username: str,

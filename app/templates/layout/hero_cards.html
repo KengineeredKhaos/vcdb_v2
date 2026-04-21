@@ -8,8 +8,9 @@
     <h1>Transparent operations for real-world impact</h1>
     <p>VCDB v2 keeps donors, staff, and community aligned with a tamper-evident, publicly auditable ledger.</p>
     <div>
-      <a class="btn" href="{{ url_for('transactions.ledger_index') }}">View Ledger</a>
-      {% if not current_user.is_authenticated %}
+      {% if current_user.is_authenticated and has_endpoint('web.index') %}
+        <a class="btn" href="{{ url_for('web.index') }}">Open Workbench</a>
+      {% elif has_endpoint('auth.login') %}
         <a class="btn" href="{{ url_for('auth.login') }}">Sign in</a>
       {% endif %}
     </div>

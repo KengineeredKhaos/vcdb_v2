@@ -37,35 +37,7 @@ thoroughly.
 
 ### Foundation docs and guardrails
 
-- [x] @TODO: Generate a “strip map” of the Entity Wizard flow.
-  
-  - essential form data acquisition per step (what/why)
-  - nonce lifecycle: issue → expect → consume (stale-submit behavior)
-  - route responsibilities (PRG, redirect targets, commit/rollback)
-  - service responsibilities (normalize/validate, DB reads/writes)
-  - no-op rules (no write/no flush/no ledger)
-  - `db.flush()` boundaries vs `db.commit()` boundaries
-  - ledger entry assembly (field names only, request_id/actor/target/op)
-  - confirmation UX (created/updated views) and resume behavior
-  - include a sequence diagram + per-step checklist
-
-- [x] @TODO: Template audit for CSRF macro on POST.
-  
-  - run: `flask dev template-csrf-audit --strict`
-  - for every `<form method="post">`, require:
-    - `{% import "_macros.html" as macros %}`
-    - `{{ macros.csrf_field() }}`
-  - apply “Boy Scout rule”: fix templates you touch; run audit at end of each
-    evolution
-
 ### Customers: contracts first
-
-- [x] @TODO: Clean up `customers_v2` contract (keep it small and stable).
-  - remove DTOs camped inside the contract (non-contract DTOs live in slice mapper)
-  - keep contracts minimal:
-    - read cues (non-PII)
-    - controlled history append write
-  - standardize ContractError wrapping + error codes
 
 ### Governance: policy-driven issues + reassessment
 
@@ -165,20 +137,6 @@ thoroughly.
   - use the matrix as the documentation baseline for route guards and
     permission tests
 
-- [x] @TODO: Harden access control slice-by-slice and add permission tests.
-  
-  - baseline route-access sweep completed for:
-    - Admin
-    - Entity
-    - Customers
-    - Resources
-    - Sponsors
-    - Calendar
-  - reworked fixtures now prove access behavior without reseeding a full
-    demo world on every run
-  - future follow-up belongs under authority-sensitive route refinement,
-    not baseline access hardening
-
 - [ ] @TODO: Define Admin as the control surface for Governance, Finance, and Ledger.
   
   - specify which read/edit/review actions belong in Admin
@@ -199,54 +157,7 @@ thoroughly.
   - continue scanning layout/nav for stale endpoint names
   - add a lightweight smoke check for known entry pages
 
-- [x] @TODO: Define and test auth-mode boundaries for dev vs real access control.
-  
-  - document the expected behavior in stub auth vs db/real auth
-  - document the current seeded-operator posture for real-auth tests
-  - retire stale "first-admin bootstrap happy path" assumptions from the
-    normal suite where the live app now runs with bootstrap closed
-  - ensure dev conveniences cannot mask denied-access failures
-
-- [x] @TODO: Audit cross-slice imports and replace reach-arounds with contracts/extensions.
-  
-  - search for direct foreign-slice model/table imports
-  
-  - classify each as allowed, temporary, or must-fix
-  
-  - move read/write seams to contracts or approved projections
-
 ---
-
-- [x] @TODO(app/lib/pagination.py)
-  
-  - SQLite test warning: DISTINCT ON style query is tolerated today but deprecated
-    for non-PostgreSQL backends. Rework pagination/count path so
-  - SQLite and future SQLAlchemy versions do not break.
-
----
-
-## Later
-
-### Standard guard helpers (alignment sweep)
-
-- [ ] @TODO: Sweep mutating services for standard guard helpers.
-  - Boundary-owned context
-    route/bootstrap establishes request_id
-    actor originates from auth/session boundary
-    inner layers do not invent replacements
-  - Single helper vocabulary
-    one shared request guard name
-    one shared actor guard name
-    one shared entity guard name
-    no slice-local synonyms like _ensure_reqid() unless deliberately grandfathered and scheduled for removal
-  - Exception classes are explicit
-    CLI/dev tools
-    seeds
-    migrations
-    system jobs / cron
-  - Ledger/event provenance rule
-    emitted request_id must remain stable through one logical operation
-    emitted actor_ulid must match the authenticated operator for operator-driven flows"
 
 ### Logistics: physical inventory reconciliation
 
@@ -294,9 +205,91 @@ thoroughly.
 
 ---
 
-## Done (locked / canonized)
+# Done (locked / canonized)
 
-### Customers slice canonization
+- [x] @TODO: Clean up `customers_v2` contract (keep it small and stable).
+  
+  - remove DTOs camped inside the contract (non-contract DTOs live in slice mapper)
+  - keep contracts minimal:
+    - read cues (non-PII)
+    - controlled history append write
+  - standardize ContractError wrapping + error codes
+
+- [x] @TODO: Harden access control slice-by-slice and add permission tests.
+  
+  - baseline route-access sweep completed for:
+    - Admin
+    - Entity
+    - Customers
+    - Resources
+    - Sponsors
+    - Calendar
+  - reworked fixtures now prove access behavior without reseeding a full
+    demo world on every run
+  - future follow-up belongs under authority-sensitive route refinement,
+    not baseline access hardening
+
+- [x] @TODO: Define and test auth-mode boundaries for dev vs real access control.
+  
+  - document the expected behavior in stub auth vs db/real auth
+  - document the current seeded-operator posture for real-auth tests
+  - retire stale "first-admin bootstrap happy path" assumptions from the
+    normal suite where the live app now runs with bootstrap closed
+  - ensure dev conveniences cannot mask denied-access failures
+
+- [x] @TODO: Audit cross-slice imports and replace reach-arounds with contracts/extensions.
+  
+  - search for direct foreign-slice model/table imports
+  
+  - classify each as allowed, temporary, or must-fix
+  
+  - move read/write seams to contracts or approved projections
+
+- [x] @TODO(app/lib/pagination.py)
+  
+  - SQLite test warning: DISTINCT ON style query is tolerated today but deprecated
+    for non-PostgreSQL backends. Rework pagination/count path so
+  - SQLite and future SQLAlchemy versions do not break.
+
+- [x] @TODO: Sweep mutating services for standard guard helpers.
+  - Boundary-owned context
+    route/bootstrap establishes request_id
+    actor originates from auth/session boundary
+    inner layers do not invent replacements
+  - Single helper vocabulary
+    one shared request guard name
+    one shared actor guard name
+    one shared entity guard name
+    no slice-local synonyms like _ensure_reqid() unless deliberately grandfathered and scheduled for removal
+  - Exception classes are explicit
+    CLI/dev tools
+    seeds
+    migrations
+    system jobs / cron
+  - Ledger/event provenance rule
+    emitted request_id must remain stable through one logical operation
+    emitted actor_ulid must match the authenticated operator for operator-driven flows"
+
+- [x] @TODO: Generate a “strip map” of the Entity Wizard flow.
+  
+  - essential form data acquisition per step (what/why)
+  - nonce lifecycle: issue → expect → consume (stale-submit behavior)
+  - route responsibilities (PRG, redirect targets, commit/rollback)
+  - service responsibilities (normalize/validate, DB reads/writes)
+  - no-op rules (no write/no flush/no ledger)
+  - `db.flush()` boundaries vs `db.commit()` boundaries
+  - ledger entry assembly (field names only, request_id/actor/target/op)
+  - confirmation UX (created/updated views) and resume behavior
+  - include a sequence diagram + per-step checklist
+
+- [x] @TODO: Template audit for CSRF macro on POST.
+  
+  - run: `flask dev template-csrf-audit --strict`
+  - for every `<form method="post">`, require:
+    - `{% import "_macros.html" as macros %}`
+    - `{{ macros.csrf_field() }}`
+  - apply “Boy Scout rule”: fix templates you touch; run audit at end of each
+    evolution
 
 - [x] @TODO: Replace Customers slice schema with the new facet-key design.
   

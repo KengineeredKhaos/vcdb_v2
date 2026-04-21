@@ -12,10 +12,12 @@ from flask import (
     request,
     url_for,
 )
+from flask_login import login_required
 from sqlalchemy import select
 
 from app.extensions import db
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
+from app.lib.security import rbac
 
 from . import services as svc
 from .issuance_services import issue_inventory as issue_inventory_service
@@ -64,7 +66,10 @@ def _commit_or_rollback(data: dict | None = None):
     return _ok(data)
 
 
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=logistics_route_access
 @bp.post("/locations")
+@login_required
+@rbac("staff", "admin")
 def ensure_location():
     try:
         p = request.get_json(force=True)
@@ -75,7 +80,10 @@ def ensure_location():
         return _err(e)
 
 
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=logistics_route_access
 @bp.post("/items")
+@login_required
+@rbac("staff", "admin")
 def ensure_item():
     try:
         p = request.get_json(force=True)
@@ -95,13 +103,20 @@ def ensure_item():
         return _err(e)
 
 
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=logistics_route_access
 @bp.get("/items/by-sku/<sku>")
+@login_required
+@rbac("staff", "admin")
 def item_by_sku(sku: str):
     dto = svc.find_item_by_sku(sku)
     return _ok(dto) if dto else _err("not found", 404)
 
 
+# VCDB-SEC: OPEN entry=authenticated_user authority=login_required reason=needs_matrix_decision
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=logistics_route_access
 @bp.post("/receive")
+@login_required
+@rbac("staff", "admin")
 def receive():
     try:
         p = request.get_json(force=True)
@@ -122,7 +137,10 @@ def receive():
         return _err(e)
 
 
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=logistics_route_access
 @bp.post("/issue")
+@login_required
+@rbac("staff", "admin")
 def issue():
     """Issue an item to a customer (policy + stock enforced)."""
     try:
@@ -161,7 +179,10 @@ def issue():
         return _err(e)
 
 
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=logistics_route_access
 @bp.post("/transfer")
+@login_required
+@rbac("staff", "admin")
 def transfer():
     try:
         p = request.get_json(force=True)
@@ -182,7 +203,10 @@ def transfer():
         return _err(e)
 
 
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=logistics_route_access
 @bp.post("/stock/rebuild")
+@login_required
+@rbac("staff", "admin")
 def stock_rebuild():
     try:
         p = request.get_json(force=True) or {}
@@ -195,13 +219,19 @@ def stock_rebuild():
         return _err(e)
 
 
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=logistics_route_access
 @bp.get("/items/<item_ulid>")
+@login_required
+@rbac("staff", "admin")
 def get_item(item_ulid: str):
     dto = svc.item_view(item_ulid)
     return _ok(dto) if dto else _err("not found", 404)
 
 
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=logistics_route_access
 @bp.get("/customers/<customer_ulid>/issue-cart")
+@login_required
+@rbac("staff", "admin")
 def customer_issue_cart_get(customer_ulid: str):
     ensure_request_id()
     preview = None
@@ -223,7 +253,10 @@ def customer_issue_cart_get(customer_ulid: str):
     )
 
 
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=logistics_route_access
 @bp.post("/customers/<customer_ulid>/issue-cart")
+@login_required
+@rbac("staff", "admin")
 def customer_issue_cart_post(customer_ulid: str):
     actor_ulid = get_actor_ulid()
     if not actor_ulid and current_app.config.get("AUTH_MODE") == "stub":

@@ -1,17 +1,18 @@
 <nav>
   {% set slices = [
-    ('Customers','v2.customers.hello'),
-    ('Calendar','v2.calendar.hello'),
-    ('Governance','v2.governance.hello'),
-    ('Inventory','v2.logistics.hello'),
-    ('Resources','v2.resources.hello'),
-    ('Sponsors','v2.sponsors.hello'),
-    ('Ledger','v2.ledger.hello'),
+    ('Customers', 'customers.customers_list_get'),
+    ('Calendar', 'calendar.funding_demand_list'),
+    ('Resources', 'resources.search_resources'),
+    ('Sponsors', 'sponsors.search_sponsors_html'),
   ] %}
   <ul>
     {% for label, ep in slices %}
-      <li><a href="{{ url_for(ep) }}">{{ label }}</a></li>
+      {% if has_endpoint(ep) %}
+        <li><a href="{{ url_for(ep) }}">{{ label }}</a></li>
+      {% endif %}
     {% endfor %}
+    {% if has_endpoint('admin.index') and user_is_admin() %}
       <li><a href="{{ url_for('admin.index') }}">Admin</a></li>
+    {% endif %}
   </ul>
 </nav>

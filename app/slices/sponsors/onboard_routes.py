@@ -23,6 +23,7 @@ from app.lib.request_ctx import (
     set_actor_ulid,
     set_request_id,
 )
+from app.lib.security import rbac
 
 from . import onboard_services as wiz
 from . import services as sp_svc
@@ -125,13 +126,14 @@ def _adopt_request_ctx(
     return rid, actor
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.route(
     "/poc/attach/<person_ulid>",
     methods=["GET", "POST"],
     endpoint="poc_attach",
 )
 @login_required
+@rbac("staff", "admin")
 def poc_attach(person_ulid: str):
     req, _actor = _adopt_request_ctx()
 
@@ -196,9 +198,10 @@ def poc_attach(person_ulid: str):
 # sponsors/onboard_routes.py (or wherever your sponsors bp routes live)
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.post("/poc/attach/confirm", endpoint="poc_attach_confirm")
 @login_required
+@rbac("staff", "admin")
 def poc_attach_confirm():
     req, actor = _adopt_request_ctx()
 
@@ -292,9 +295,10 @@ def poc_attach_confirm():
         )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.route("/onboard/start", methods=["GET", "POST"], endpoint="onboard_start")
 @login_required
+@rbac("staff", "admin")
 def onboard_start():
     """
     Entry point.
@@ -364,13 +368,14 @@ def onboard_start():
         )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.route(
     "/onboard/<entity_ulid>/profile",
     methods=["GET", "POST"],
     endpoint="onboard_profile",
 )
 @login_required
+@rbac("staff", "admin")
 def onboard_profile(entity_ulid: str):
     step = "profile"
     req, actor = _adopt_request_ctx(entity_ulid=entity_ulid)
@@ -436,13 +441,14 @@ def onboard_profile(entity_ulid: str):
         )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.route(
     "/onboard/<entity_ulid>/pocs",
     methods=["GET", "POST"],
     endpoint="onboard_pocs",
 )
 @login_required
+@rbac("staff", "admin")
 def onboard_pocs(entity_ulid: str):
     step = "pocs"
     req, actor = _adopt_request_ctx(entity_ulid=entity_ulid)
@@ -549,13 +555,14 @@ def onboard_pocs(entity_ulid: str):
         )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.route(
     "/onboard/<entity_ulid>/funding_rules",
     methods=["GET", "POST"],
     endpoint="onboard_funding_rules",
 )
 @login_required
+@rbac("staff", "admin")
 def onboard_funding_rules(entity_ulid: str):
     step = "funding_rules"
     req, actor = _adopt_request_ctx(entity_ulid=entity_ulid)
@@ -638,13 +645,14 @@ def onboard_funding_rules(entity_ulid: str):
         )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.route(
     "/onboard/<entity_ulid>/mou",
     methods=["GET", "POST"],
     endpoint="onboard_mou",
 )
 @login_required
+@rbac("staff", "admin")
 def onboard_mou(entity_ulid: str):
     step = "mou"
     req, actor = _adopt_request_ctx(entity_ulid=entity_ulid)
@@ -699,13 +707,14 @@ def onboard_mou(entity_ulid: str):
         )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.route(
     "/onboard/<entity_ulid>/review",
     methods=["GET", "POST"],
     endpoint="onboard_review",
 )
 @login_required
+@rbac("staff", "admin")
 def onboard_review(entity_ulid: str):
     step = "review"
     req, actor = _adopt_request_ctx(entity_ulid=entity_ulid)
@@ -750,13 +759,14 @@ def onboard_review(entity_ulid: str):
         )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.route(
     "/onboard/<entity_ulid>/complete",
     methods=["GET", "POST"],
     endpoint="onboard_complete",
 )
 @login_required
+@rbac("staff", "admin")
 def onboard_complete(entity_ulid: str):
     step = "complete"
     req, actor = _adopt_request_ctx(entity_ulid=entity_ulid)
@@ -804,9 +814,10 @@ def onboard_complete(entity_ulid: str):
         )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.get("/search", endpoint="search_sponsors_html")
 @login_required
+@rbac("staff", "admin")
 def search_sponsors_html():
     any_param = (request.args.get("any") or "").strip()
     readiness = [

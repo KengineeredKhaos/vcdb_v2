@@ -190,7 +190,7 @@ def db_commit() -> None:
     db.session.commit()
 
 
-# VCDB-SEC: ACTIVE entry=admin authority=none reason=blueprint_proof_of_life
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface test=calendar_route_access
 @bp.get("/hello")
 @login_required
 @rbac("admin")
@@ -198,9 +198,10 @@ def hello():
     return render_template("calendar/hello.html", title="Calendar • Hello")
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.get("/projects/<project_ulid>/budget")
 @login_required
+@rbac("staff", "admin")
 def project_budget_workspace(project_ulid: str):
     snapshot_ulid = (request.args.get("snapshot_ulid") or "").strip() or None
     edit_line_ulid = (
@@ -218,9 +219,10 @@ def project_budget_workspace(project_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.post("/projects/<project_ulid>/budget/snapshots/new")
 @login_required
+@rbac("staff", "admin")
 def budget_snapshot_create(project_ulid: str):
     form = BudgetSnapshotForm()
     if not form.validate_on_submit():
@@ -260,9 +262,10 @@ def budget_snapshot_create(project_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.post("/projects/<project_ulid>/budget/snapshots/<snapshot_ulid>/clone")
 @login_required
+@rbac("staff", "admin")
 def budget_snapshot_clone(project_ulid: str, snapshot_ulid: str):
     try:
         budget_svc.clone_snapshot(
@@ -288,11 +291,12 @@ def budget_snapshot_clone(project_ulid: str, snapshot_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.post(
     "/projects/<project_ulid>/budget/snapshots/<snapshot_ulid>/set-current"
 )
 @login_required
+@rbac("staff", "admin")
 def budget_snapshot_set_current(project_ulid: str, snapshot_ulid: str):
     try:
         budget_svc.set_current_snapshot(
@@ -322,8 +326,10 @@ def budget_snapshot_set_current(project_ulid: str, snapshot_ulid: str):
 
 
 # VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.post("/projects/<project_ulid>/budget/snapshots/<snapshot_ulid>/lock")
 @login_required
+@rbac("staff", "admin")
 def budget_snapshot_lock(project_ulid: str, snapshot_ulid: str):
     try:
         budget_svc.lock_snapshot(
@@ -351,11 +357,12 @@ def budget_snapshot_lock(project_ulid: str, snapshot_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.post(
     "/projects/<project_ulid>/budget/snapshots/<snapshot_ulid>/lines/new"
 )
 @login_required
+@rbac("staff", "admin")
 def budget_line_create(project_ulid: str, snapshot_ulid: str):
     form = BudgetLineForm()
     _bind_task_choices(form, project_ulid)
@@ -411,9 +418,10 @@ def budget_line_create(project_ulid: str, snapshot_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.post("/projects/<project_ulid>/budget/lines/<line_ulid>/edit")
 @login_required
+@rbac("staff", "admin")
 def budget_line_update(project_ulid: str, line_ulid: str):
     form = BudgetLineForm()
     _bind_task_choices(form, project_ulid)
@@ -473,9 +481,10 @@ def budget_line_update(project_ulid: str, line_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.post("/projects/<project_ulid>/budget/lines/<line_ulid>/delete")
 @login_required
+@rbac("staff", "admin")
 def budget_line_delete(project_ulid: str, line_ulid: str):
     try:
         line_view = budget_svc.budget_line_view(line_ulid)
@@ -504,9 +513,10 @@ def budget_line_delete(project_ulid: str, line_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.get("/projects/<project_ulid>/demand-drafts/new")
 @login_required
+@rbac("staff", "admin")
 def demand_draft_new(project_ulid: str):
     project = _project_or_404(project_ulid)
     snapshot_ulid = (request.args.get("snapshot_ulid") or "").strip() or ""
@@ -520,9 +530,10 @@ def demand_draft_new(project_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.post("/projects/<project_ulid>/demand-drafts/new")
 @login_required
+@rbac("staff", "admin")
 def demand_draft_create(project_ulid: str):
     project = _project_or_404(project_ulid)
     form = DemandDraftForm()
@@ -576,9 +587,10 @@ def demand_draft_create(project_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.get("/demand-drafts/<draft_ulid>")
 @login_required
+@rbac("staff", "admin")
 def demand_draft_detail(draft_ulid: str):
     draft = drafts_svc.demand_draft_view(draft_ulid)
     project = _project_or_404(draft["project_ulid"])
@@ -624,9 +636,10 @@ def demand_draft_detail(draft_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.post("/demand-drafts/<draft_ulid>/edit")
 @login_required
+@rbac("staff", "admin")
 def demand_draft_update(draft_ulid: str):
     draft = drafts_svc.demand_draft_view(draft_ulid)
     form = DemandDraftForm()
@@ -682,9 +695,10 @@ def demand_draft_update(draft_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.post("/demand-drafts/<draft_ulid>/ready")
 @login_required
+@rbac("staff", "admin")
 def demand_draft_mark_ready(draft_ulid: str):
     try:
         drafts_svc.mark_draft_ready_for_review(
@@ -707,9 +721,10 @@ def demand_draft_mark_ready(draft_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.post("/demand-drafts/<draft_ulid>/submit")
 @login_required
+@rbac("staff", "admin")
 def demand_draft_submit(draft_ulid: str):
     try:
         drafts_svc.submit_draft_for_governance_review(
@@ -732,9 +747,10 @@ def demand_draft_submit(draft_ulid: str):
     )
 
 
-# VCDB-SEC: STAGED entry=authenticated_user authority=pending reason=governance_review_surface
+# VCDB-SEC: STAGED entry=admin authority=pending reason=governance_review_surface test=calendar_draft_review_access
 @bp.post("/demand-drafts/<draft_ulid>/return")
 @login_required
+@rbac("admin")
 def demand_draft_return(draft_ulid: str):
     form = DemandDraftReturnForm()
     if not form.validate_on_submit():
@@ -766,9 +782,10 @@ def demand_draft_return(draft_ulid: str):
     )
 
 
-# VCDB-SEC: STAGED entry=authenticated_user authority=pending reason=governance_review_surface
+# VCDB-SEC: STAGED entry=admin authority=pending reason=governance_review_surface test=calendar_draft_review_access
 @bp.post("/demand-drafts/<draft_ulid>/approve")
 @login_required
+@rbac("admin")
 def demand_draft_approve(draft_ulid: str):
     form = DemandDraftApproveForm()
     _bind_spending_choices(form)
@@ -809,9 +826,10 @@ def demand_draft_approve(draft_ulid: str):
     )
 
 
-# VCDB-SEC: STAGED entry=authenticated_user authority=pending reason=publish_surface
+# VCDB-SEC: STAGED entry=admin authority=pending reason=publish_surface test=calendar_draft_review_access
 @bp.post("/demand-drafts/<draft_ulid>/promote")
 @login_required
+@rbac("admin")
 def demand_draft_promote(draft_ulid: str):
     try:
         view = drafts_svc.promote_draft_to_funding_demand(
@@ -848,9 +866,10 @@ def demand_draft_promote(draft_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.get("/funding-demands/<ulid>")
 @login_required
+@rbac("staff", "admin")
 def funding_demand_detail(ulid: str):
     view = funding_svc.get_funding_demand_view(ulid)
     return render_template(
@@ -860,9 +879,10 @@ def funding_demand_detail(ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=calendar_route_access
 @bp.get("/funding-demands")
 @login_required
+@rbac("staff", "admin")
 def funding_demand_list():
     status = (request.args.get("status") or "").strip() or None
     project_ulid = (request.args.get("project_ulid") or "").strip() or None

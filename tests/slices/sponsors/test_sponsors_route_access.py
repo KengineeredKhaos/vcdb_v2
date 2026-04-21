@@ -18,6 +18,7 @@ from tests.support.real_auth import (
     STAFF_SETTLED_PASSWORD,
     STAFF_TEMP_PASSWORD,
     STAFF_USERNAME,
+    assert_forbidden,
     assert_unauthenticated,
     login_and_settle_password,
     logout_if_possible,
@@ -105,15 +106,56 @@ def test_sponsor_routes_require_authentication(
     assert_unauthenticated(resp)
 
 
+def test_sponsor_operator_surfaces_deny_auditor(
+    client,
+    sponsor_seeded,
+):
+    sponsor_ulid = _first_sponsor_entity_ulid(sponsor_seeded)
+    person_ulid = _first_person_entity_ulid(sponsor_seeded)
+
+    login_and_settle_password(
+        client,
+        username=AUDITOR_USERNAME,
+        temporary_password=AUDITOR_TEMP_PASSWORD,
+        settled_password=AUDITOR_SETTLED_PASSWORD,
+    )
+
+    for path in [
+        "/sponsors",
+        "/sponsors/search",
+        f"/sponsors/{sponsor_ulid}",
+        f"/sponsors/{sponsor_ulid}/detail",
+        "/sponsors/onboard/start",
+        f"/sponsors/onboard/start/{sponsor_ulid}",
+        f"/sponsors/onboard/{sponsor_ulid}/profile",
+        f"/sponsors/poc/attach/{person_ulid}",
+        "/sponsors/funding-opportunities",
+        "/sponsors/funding-intents/new",
+    ]:
+        resp = client.get(path, follow_redirects=False)
+        assert_forbidden(resp)
+
+    resp = client.post("/sponsors", json={}, follow_redirects=False)
+    assert_forbidden(resp)
+
+    resp = client.post(
+        f"/sponsors/{sponsor_ulid}/capabilities",
+        json={},
+        follow_redirects=False,
+    )
+    assert_forbidden(resp)
+
+    logout_if_possible(client)
+
+
 @pytest.mark.parametrize(
     ("username", "temporary_password", "settled_password"),
     [
         (ADMIN_USERNAME, ADMIN_TEMP_PASSWORD, ADMIN_SETTLED_PASSWORD),
         (STAFF_USERNAME, STAFF_TEMP_PASSWORD, STAFF_SETTLED_PASSWORD),
-        (AUDITOR_USERNAME, AUDITOR_TEMP_PASSWORD, AUDITOR_SETTLED_PASSWORD),
     ],
 )
-def test_sponsor_operator_surfaces_allow_authenticated_users(
+def test_sponsor_operator_surfaces_allow_staff_and_admin(
     client,
     sponsor_seeded,
     username: str,

@@ -1,11 +1,37 @@
 from __future__ import annotations
 
+import pytest
+
 from app.extensions import db
 from app.slices.finance import services_grants
 from app.slices.finance.services_journal import ensure_default_accounts, ensure_fund
+from tests.support.real_auth import (
+    ADMIN_SETTLED_PASSWORD,
+    ADMIN_TEMP_PASSWORD,
+    ADMIN_USERNAME,
+    login_and_settle_password,
+    seed_real_auth_world,
+)
 
 
-def test_grant_accountability_route_renders_report(app, client, ulid):
+@pytest.fixture()
+def finance_seeded(app):
+    seed_real_auth_world(
+        app,
+        customers=0,
+        resources=0,
+        sponsors=0,
+        normalize_passwords=False,
+    )
+    return app
+
+
+def test_grant_accountability_route_renders_report(
+    app,
+    client,
+    ulid,
+    finance_seeded,
+):
     with app.app_context():
         ensure_default_accounts()
         ensure_fund(
@@ -30,6 +56,13 @@ def test_grant_accountability_route_renders_report(app, client, ulid):
             }
         )
         db.session.commit()
+
+    login_and_settle_password(
+        client,
+        username=ADMIN_USERNAME,
+        temporary_password=ADMIN_TEMP_PASSWORD,
+        settled_password=ADMIN_SETTLED_PASSWORD,
+    )
 
     res = client.get(f"/finance/grants/{grant['id']}/accountability")
     assert res.status_code == 200

@@ -151,8 +151,10 @@
           {% endif %}
 
           {% if has_endpoint('auth.logout') %}
-          {{ csrf_field() }}
-          <form method="post" {{ csrf_field() }} action="{{ url_for('auth.logout') }}" style="display:block; margin:0;">
+          <form method="post"
+                action="{{ url_for('auth.logout') }}"
+                style="display:block; margin:0;">
+            {{ csrf_field() }}
             <button class="btn" type="submit">Logout</button>
           </form>
           {% endif %}

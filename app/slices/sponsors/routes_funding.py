@@ -11,6 +11,7 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
+from app.lib.security import rbac
 
 from . import services_calendar as cal_handoff_svc
 from . import services_funding as funding_svc
@@ -43,9 +44,10 @@ def _db_commit() -> None:
 
     db.session.commit()
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp_funding.get("/funding-opportunities")
 @login_required
+@rbac("staff", "admin")
 def funding_opportunity_list():
     rows = funding_svc.list_open_funding_opportunities()
     return render_template(
@@ -54,9 +56,10 @@ def funding_opportunity_list():
         rows=rows,
     )
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp_funding.get("/funding-opportunities/<funding_demand_ulid>")
 @login_required
+@rbac("staff", "admin")
 def funding_opportunity_detail(funding_demand_ulid: str):
     demand = funding_svc.get_funding_opportunity(funding_demand_ulid)
     intents = funding_svc.list_funding_intents_for_demand(funding_demand_ulid)
@@ -82,9 +85,10 @@ def funding_opportunity_detail(funding_demand_ulid: str):
         matches=matches,
     )
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp_funding.get("/funding-intents/new")
 @login_required
+@rbac("staff", "admin")
 def funding_intent_new():
     funding_demand_ulid = (
         request.args.get("funding_demand_ulid") or ""
@@ -109,9 +113,10 @@ def funding_intent_new():
         demand=demand,
     )
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp_funding.post("/funding-intents/new")
 @login_required
+@rbac("staff", "admin")
 def funding_intent_create():
     form = SponsorFundingIntentForm()
     _bind_form_choices(form)
@@ -156,9 +161,10 @@ def funding_intent_create():
         )
     )
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp_funding.get("/funding-intents/<intent_ulid>/edit")
 @login_required
+@rbac("staff", "admin")
 def funding_intent_edit(intent_ulid: str):
     intent = funding_svc.get_funding_intent_view(intent_ulid)
     demand = funding_svc.get_funding_opportunity(intent.funding_demand_ulid)
@@ -181,9 +187,10 @@ def funding_intent_edit(intent_ulid: str):
         demand=demand,
     )
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp_funding.post("/funding-intents/<intent_ulid>/edit")
 @login_required
+@rbac("staff", "admin")
 def funding_intent_update(intent_ulid: str):
     intent = funding_svc.get_funding_intent_view(intent_ulid)
 

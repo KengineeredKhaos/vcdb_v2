@@ -97,8 +97,8 @@ def _render_policy_preview_from_form(
 # -----------------
 
 
-# VCDB-SEC: ACTIVE entry=admin authority=admin-only reason=admin_only_surface
 # ad hoc route tests and access for development-only
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface test=admin_route_access
 @bp.get("/")
 @login_required
 @roles_required("admin")
@@ -112,9 +112,9 @@ def index():
 # -----------------
 
 
-# VCDB-SEC: ACTIVE entry=admin authority=admin-dev-only reason=admin_only_surface
 # Admin inbox notifactions of slice admin approval required
 # unimplemented at slice-level yet
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface test=admin_route_access
 @bp.get("/inbox/")
 @login_required
 @roles_required("admin")
@@ -128,8 +128,8 @@ def inbox():
 # -----------------
 
 
-# VCDB-SEC: ACTIVE entry=admin authority=admin-dev-only reason=admin-only-surface
 # Cron Job Stack
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface test=admin_route_access
 @bp.get("/cron/")
 @login_required
 @roles_required("admin")
@@ -143,8 +143,8 @@ def cron():
 # -----------------
 
 
-# VCDB-SEC: ACTIVE entry=admin authority-admin-only reason=admin_only_surface
 # Governance policy edit surface - under development
+# VCDB-SEC: ACTIVE entry=admin authority=pending reason=policy_workflow_surface test=admin_policy_route_access
 @bp.get("/policy/")
 @login_required
 @roles_required("admin")
@@ -153,8 +153,8 @@ def policy_index():
     return render_template("admin/policy/index.html", page=page)
 
 
-# VCDB-SEC: ACTIVE entry=admin authority-admin-only reason=admin_only_surface
 # Governance policy edit surface - undeveloped
+# VCDB-SEC: ACTIVE entry=admin authority=pending reason=policy_workflow_surface test=admin_policy_route_access
 @bp.get("/policy/<string:policy_key>/")
 @login_required
 @roles_required("admin")
@@ -170,8 +170,8 @@ def policy_detail(policy_key: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=admin authority-admin-only reason=admin_only_surface
 # Governance policy edit surface - undeveloped
+# VCDB-SEC: ACTIVE entry=admin authority=pending reason=policy_workflow_surface test=admin_policy_route_access
 @bp.post("/policy/<string:policy_key>/preview")
 @login_required
 @roles_required("admin")
@@ -192,8 +192,8 @@ def policy_preview(policy_key: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=admin authority-admin-only reason=admin_only_surface
 # Governance policy edit surface - undeveloped
+# VCDB-SEC: ACTIVE entry=admin authority=pending reason=policy_workflow_surface test=admin_policy_route_access
 @bp.post("/policy/<string:policy_key>/commit")
 @login_required
 @roles_required("admin")
@@ -255,8 +255,8 @@ def policy_commit(policy_key: str):
 # -----------------
 
 
-# VCDB-SEC: UNTERMINATED entry=admin authority-admin-only reason=admin_only_surface
 # Operator list view/edit surface entry - undeveloped
+# VCDB-SEC: STAGED entry=admin authority=pending reason=operator_admin_surface test=admin_operator_onboard_route_access
 @bp.get("/auth/operators/")
 @login_required
 @roles_required("admin")

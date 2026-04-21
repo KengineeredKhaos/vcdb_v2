@@ -1,11 +1,12 @@
 # app/slices/finance/routes.py
+
 from __future__ import annotations
 
 import re
 
 from flask import (
-    abort,
     Blueprint,
+    abort,
     render_template,
     request,
 )
@@ -13,6 +14,7 @@ from flask_login import login_required
 
 from app.extensions import db
 from app.lib.chrono import utc_year_month
+from app.lib.security import rbac
 from app.slices.finance import services_grants as _grants
 from app.slices.finance.models import Grant
 from app.slices.finance.services_report import statement_of_activities as _soa
@@ -42,15 +44,18 @@ def _normalized_date(value: str | None, fallback: str | None) -> str | None:
     return fallback
 
 
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface test=finance_route_access
 @bp.get("/hello")
 @login_required
+@rbac("admin")
 def hello():
     return render_template("finance/hello.html", title="Finance • Hello")
 
 
-@bp.get(
-    "/journal", endpoint="journal_index"
-)  # name used in Option A fallback
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface test=finance_route_access
+@bp.get("/journal", endpoint="journal_index")
+@login_required
+@rbac("admin")
 # Finance is intentionally not exposing a write-oriented journal UI.
 def journal_index():
     return render_template(
@@ -60,7 +65,10 @@ def journal_index():
     )
 
 
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface test=finance_route_access
 @bp.get("/activities")
+@login_required
+@rbac("admin")
 def activities_report():
     period = _normalized_period(request.args.get("period"))
     report = _soa(period)
@@ -72,10 +80,11 @@ def activities_report():
     )
 
 
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface test=finance_route_access
 @bp.get("/grants/<grant_ulid>/accountability")
+@login_required
+@rbac("admin")
 def grant_accountability_report(grant_ulid: str):
-    # Intentionally left readable in the current test/dev regime.
-    # Access hardening can be revisited in a dedicated surface pass.
     grant = db.session.get(Grant, grant_ulid)
     if grant is None:
         abort(404)

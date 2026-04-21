@@ -16,6 +16,7 @@ from app.extensions import db
 from app.extensions.contracts import entity_v2
 from app.extensions.errors import ContractError
 from app.lib.request_ctx import ensure_request_id, get_actor_ulid
+from app.lib.security import rbac
 
 from . import services as sp_svc
 from . import services_calendar as cal_handoff_svc
@@ -84,9 +85,10 @@ def _actor_ulid() -> str | None:
 # -----------------
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.get("/onboard/start/<entity_ulid>", endpoint="onboard_start_legacy")
 @login_required
+@rbac("staff", "admin")
 def onboard_start_legacy(entity_ulid: str):
     # Legacy helper: bounce to the new onboarding entrypoint.
     return redirect(
@@ -99,9 +101,10 @@ def onboard_start_legacy(entity_ulid: str):
 # -----------------
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.post("")
 @login_required
+@rbac("staff", "admin")
 def ensure_sponsor():
     try:
         payload = request.get_json(force=True, silent=False) or {}
@@ -123,9 +126,10 @@ def ensure_sponsor():
         return _err(e, 400)
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.get("/<sponsor_entity_ulid>")
 @login_required
+@rbac("staff", "admin")
 def get_sponsor(sponsor_entity_ulid: str):
     dto = sp_svc.sponsor_view(sponsor_entity_ulid)
     return (
@@ -135,9 +139,10 @@ def get_sponsor(sponsor_entity_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.get("/<sponsor_entity_ulid>/detail", endpoint="sponsor_detail_html")
 @login_required
+@rbac("staff", "admin")
 def sponsor_detail_html(sponsor_entity_ulid: str):
     sponsor = sp_svc.sponsor_view(sponsor_entity_ulid)
     if not sponsor:
@@ -162,9 +167,10 @@ def sponsor_detail_html(sponsor_entity_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.post("/<sponsor_entity_ulid>/capabilities")
 @login_required
+@rbac("staff", "admin")
 def upsert_caps(sponsor_entity_ulid: str):
     try:
         payload = request.get_json(force=True, silent=False) or {}
@@ -188,9 +194,10 @@ def upsert_caps(sponsor_entity_ulid: str):
         return _err(e, 400)
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.patch("/<sponsor_entity_ulid>/capabilities")
 @login_required
+@rbac("staff", "admin")
 def patch_caps(sponsor_entity_ulid: str):
     try:
         payload = request.get_json(force=True, silent=False) or {}
@@ -214,9 +221,10 @@ def patch_caps(sponsor_entity_ulid: str):
         return _err(e, 400)
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.post("/<sponsor_entity_ulid>/readiness")
 @login_required
+@rbac("staff", "admin")
 def set_readiness(sponsor_entity_ulid: str):
     try:
         payload = request.get_json(force=True, silent=False) or {}
@@ -235,9 +243,10 @@ def set_readiness(sponsor_entity_ulid: str):
         return _err(e, 400)
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.post("/<sponsor_entity_ulid>/mou")
 @login_required
+@rbac("staff", "admin")
 def set_mou(sponsor_entity_ulid: str):
     try:
         payload = request.get_json(force=True, silent=False) or {}
@@ -256,9 +265,10 @@ def set_mou(sponsor_entity_ulid: str):
         return _err(e, 400)
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.post("/<sponsor_entity_ulid>/pledges")
 @login_required
+@rbac("staff", "admin")
 def upsert_pledge(sponsor_entity_ulid: str):
     try:
         pledge = request.get_json(force=True, silent=False) or {}
@@ -282,9 +292,10 @@ def upsert_pledge(sponsor_entity_ulid: str):
         return _err(e, 400)
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.post("/pledges/<pledge_ulid>/status")
 @login_required
+@rbac("staff", "admin")
 def set_pledge_status(pledge_ulid: str):
     try:
         payload = request.get_json(force=True, silent=False) or {}
@@ -306,9 +317,10 @@ def set_pledge_status(pledge_ulid: str):
         return _err(e, 400)
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.get("")
 @login_required
+@rbac("staff", "admin")
 def search_sponsors():
     req = ensure_request_id()
     try:
@@ -357,9 +369,10 @@ def search_sponsors():
         return _err(e, 400)
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.route("/<sponsor_entity_ulid>/crm/edit", methods=["GET", "POST"])
 @login_required
+@rbac("staff", "admin")
 def sponsor_crm_edit(sponsor_entity_ulid: str):
     sponsor = sp_svc.sponsor_view(sponsor_entity_ulid)
     if not sponsor:
@@ -443,9 +456,10 @@ def sponsor_crm_edit(sponsor_entity_ulid: str):
     )
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.post("/<sponsor_entity_ulid>/cultivation-task")
 @login_required
+@rbac("staff", "admin")
 def sponsor_cultivation_task_create(sponsor_entity_ulid: str):
     sponsor = sp_svc.sponsor_view(sponsor_entity_ulid)
     if not sponsor:
@@ -490,12 +504,13 @@ def sponsor_cultivation_task_create(sponsor_entity_ulid: str):
         raise
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.post(
     "/<sponsor_entity_ulid>/cultivation-outcomes/"
     "<task_ulid>/follow-up-task"
 )
 @login_required
+@rbac("staff", "admin")
 def sponsor_cultivation_follow_up_task_create(
     sponsor_entity_ulid: str,
     task_ulid: str,
@@ -545,11 +560,12 @@ def sponsor_cultivation_follow_up_task_create(
         return redirect(next_url)
 
 
-# VCDB-SEC: ACTIVE entry=authenticated_user authority=login_required reason=operator_surface
+# VCDB-SEC: ACTIVE entry=staff|admin authority=none reason=operator_surface test=sponsors_route_access
 @bp.post(
     "/<sponsor_entity_ulid>/cultivation-outcomes/<task_ulid>/promote-relationship-note"
 )
 @login_required
+@rbac("staff", "admin")
 def promote_cultivation_outcome_to_relationship_note(
     sponsor_entity_ulid: str,
     task_ulid: str,
