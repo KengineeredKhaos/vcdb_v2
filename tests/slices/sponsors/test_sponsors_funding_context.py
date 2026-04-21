@@ -170,6 +170,9 @@ def _patch_published_package(
             if bridge_support_possible is None
             else bridge_support_possible
         )
+        receive_posture = "reimbursement"
+        reimbursement_expected = True
+        return_unused_posture = "return_to_source"
     else:
         summary = governance_v2.FundingSourceProfileSummaryDTO(
             key=source_profile_key,
@@ -202,9 +205,31 @@ def _patch_published_package(
             if bridge_support_possible is None
             else bridge_support_possible
         )
+        receive_posture = "direct_support"
+        reimbursement_expected = False
+        return_unused_posture = "not_applicable"
 
     def fake_pkg(funding_demand_ulid: str):
         pkg = real_pkg(funding_demand_ulid)
+
+        patched_policy = replace(
+            pkg.policy,
+            default_restriction_keys=tuple(default_restriction_keys),
+            source_profile_summary=summary,
+            realization_policy=replace(
+                pkg.policy.realization_policy,
+                receive_posture=receive_posture,
+                reserve_on_receive_expected=(reserve_on_receive_expected),
+                reimbursement_expected=reimbursement_expected,
+                bridge_support_possible=bridge_support_possible,
+                return_unused_posture=return_unused_posture,
+                recommended_income_kind=recommended_income_kind,
+                allowed_realization_modes=tuple(
+                    allowed_realization_modes or ()
+                ),
+            ),
+        )
+
         return replace(
             pkg,
             planning=replace(
@@ -212,20 +237,7 @@ def _patch_published_package(
                 source_profile_key=source_profile_key,
                 ops_support_planned=ops_support_planned,
             ),
-            policy=replace(
-                pkg.policy,
-                default_restriction_keys=tuple(default_restriction_keys),
-                source_profile_summary=summary,
-            ),
-            workflow=replace(
-                pkg.workflow,
-                reserve_on_receive_expected=reserve_on_receive_expected,
-                recommended_income_kind=recommended_income_kind,
-                bridge_support_possible=bridge_support_possible,
-                allowed_realization_modes=tuple(
-                    allowed_realization_modes or ()
-                ),
-            ),
+            policy=patched_policy,
         )
 
     def fake_ctx(funding_demand_ulid: str):
@@ -235,7 +247,6 @@ def _patch_published_package(
             demand=pkg.demand,
             planning=pkg.planning,
             policy=pkg.policy,
-            workflow=pkg.workflow,
         )
 
     monkeypatch.setattr(
@@ -526,7 +537,7 @@ def test_realize_funding_intent_merges_context_and_fund_defaults(
             fake_validate_semantic_keys,
         )
         monkeypatch.setattr(
-            governance_v2, "preview_funding_decision", fake_preview
+            governance_v2, "preview_funding_policy", fake_preview
         )
         monkeypatch.setattr(
             governance_v2, "get_fund_code", fake_get_fund_code

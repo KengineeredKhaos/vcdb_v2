@@ -988,7 +988,7 @@ def preview_expense(
 ) -> ExpensePreviewDTO:
     raise _retired_surface(
         "preview_expense",
-        "governance_v2.preview_funding_decision(...) or Finance semantic posting helpers",
+        "Governance policy preview contract or Finance semantic posting helpers",
     )
 
 

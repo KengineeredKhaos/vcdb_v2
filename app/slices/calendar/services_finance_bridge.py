@@ -14,7 +14,7 @@ from app.slices.calendar.mapper import (
     ProjectSpendResult,
 )
 from app.slices.calendar.services_funding import (
-    _build_funding_decision_request_from_context,
+    _build_governance_preview_request_from_context,
     _get_demand_or_raise,
     get_funding_demand_context,
 )
@@ -168,8 +168,8 @@ def encumber_project_funds(
     if not sem.ok:
         raise ValueError("; ".join(sem.errors) or "invalid semantics")
 
-    preview = governance_v2.preview_funding_decision(
-        _build_funding_decision_request_from_context(
+    gov_preview = governance_v2.preview_funding_policy(
+        _build_governance_preview_request_from_context(
             row=row,
             op="encumber",
             amount_cents=amount_cents,
@@ -182,14 +182,14 @@ def encumber_project_funds(
             actor_domain_roles=actor_domain_roles,
         )
     )
-    if not preview.allowed:
+    if not gov_preview.allowed:
         raise PermissionError(
-            "; ".join(preview.reason_codes) or "encumber denied"
+            "; ".join(gov_preview.reason_codes) or "encumber denied"
         )
-    if preview.required_approvals:
+    if gov_preview.required_approvals:
         raise PermissionError(
             "encumber requires approvals: "
-            + ", ".join(preview.required_approvals)
+            + ", ".join(gov_preview.required_approvals)
         )
 
     fund_restriction_type = _derive_restriction_type(
@@ -209,7 +209,7 @@ def encumber_project_funds(
             project_ulid=row.project_ulid,
             source_ref_ulid=source_ref_ulid,
             memo=memo_txt,
-            decision_fingerprint=preview.decision_fingerprint,
+            decision_fingerprint=gov_preview.decision_fingerprint,
             actor_ulid=actor_ulid,
             request_id=request_id,
             dry_run=dry_run,
@@ -234,7 +234,7 @@ def encumber_project_funds(
             "funding_demand_ulid": row.ulid,
             "encumbrance_ulid": out.id,
             "fund_code": fund_code,
-            "decision_fingerprint": preview.decision_fingerprint,
+            "decision_fingerprint": gov_preview.decision_fingerprint,
         },
         changed={"fields": ["status"]} if new_status != old_status else None,
     )
@@ -245,7 +245,7 @@ def encumber_project_funds(
         fund_code=fund_code,
         amount_cents=amount_cents,
         encumbrance_ulid=out.id,
-        decision_fingerprint=preview.decision_fingerprint,
+        decision_fingerprint=gov_preview.decision_fingerprint,
         status=new_status,
         flags=tuple(out.flags or ()),
     )
@@ -310,8 +310,8 @@ def spend_project_funds(
     if not sem.ok:
         raise ValueError("; ".join(sem.errors) or "invalid semantics")
 
-    preview = governance_v2.preview_funding_decision(
-        _build_funding_decision_request_from_context(
+    gov_preview = governance_v2.preview_funding_policy(
+        _build_governance_preview_request_from_context(
             row=row,
             op="spend",
             amount_cents=amount_cents,
@@ -324,14 +324,14 @@ def spend_project_funds(
             actor_domain_roles=actor_domain_roles,
         )
     )
-    if not preview.allowed:
+    if not gov_preview.allowed:
         raise PermissionError(
-            "; ".join(preview.reason_codes) or "spend denied"
+            "; ".join(gov_preview.reason_codes) or "spend denied"
         )
-    if preview.required_approvals:
+    if gov_preview.required_approvals:
         raise PermissionError(
             "spend requires approvals: "
-            + ", ".join(preview.required_approvals)
+            + ", ".join(gov_preview.required_approvals)
         )
 
     fund_restriction_type = _derive_restriction_type(
@@ -382,7 +382,7 @@ def spend_project_funds(
             "encumbrance_ulid": enc.encumbrance_ulid,
             "journal_ulid": out.id,
             "fund_code": enc.fund_code,
-            "decision_fingerprint": preview.decision_fingerprint,
+            "decision_fingerprint": gov_preview.decision_fingerprint,
         },
         changed={"fields": ["status"]} if new_status != old_status else None,
     )
@@ -393,7 +393,7 @@ def spend_project_funds(
         encumbrance_ulid=enc.encumbrance_ulid,
         journal_ulid=out.id,
         amount_cents=amount_cents,
-        decision_fingerprint=preview.decision_fingerprint,
+        decision_fingerprint=gov_preview.decision_fingerprint,
         status=new_status,
         flags=tuple(out.flags or ()),
     )

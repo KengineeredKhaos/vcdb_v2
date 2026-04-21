@@ -1,4 +1,4 @@
-# tests/extensions/contracts/calendar_v2_funding_flow.py
+# tests/extensions/contracts/calendar_contract_funding_flow.py
 
 from __future__ import annotations
 

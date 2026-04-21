@@ -252,6 +252,7 @@ thoroughly.
   - SQLite and future SQLAlchemy versions do not break.
 
 - [x] @TODO: Sweep mutating services for standard guard helpers.
+  
   - Boundary-owned context
     route/bootstrap establishes request_id
     actor originates from auth/session boundary
@@ -361,3 +362,29 @@ thoroughly.
   - exercise `app/lib/pagination.py::paginate()` in app context
   - Evaluate pagination macro (existing) vs `app/lib/pagination.py` for as unified method.
   - run against a trivial `select()` (SQLite) to catch extension wiring drift
+
+- [x] @TODO: Phase 1 — Route access truth and surface integrity
+  
+  **Opener:**  
+  Refresh the route-access matrix and harden route/template integrity so the current authority model, route guards, and UI entry points all match documented system truth.
+  
+  ### Scope
+  
+  - Refresh the route-access matrix to match the current authority model.
+  - Classify routes by:
+    - public
+    - authenticated operator
+    - staff
+    - admin
+    - auditor
+  - Separately note routes that also require Governance authority.
+  - Remove stale use of `governor` as a simple route-access bucket.
+  - Use the matrix as the documentation baseline for route guards and permission tests.
+  - Continue the route/template integrity follow-up:
+    - verify `render_template(...)` targets as UI surfaces evolve
+    - continue scanning layout/nav for stale endpoint names
+    - add a lightweight smoke check for known entry pages
+  
+  ### Why this phase is first
+  
+  This work is already in motion. It is the cheapest time to lock route-access truth and UI surface integrity before more drift accumulates.

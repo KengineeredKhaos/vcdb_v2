@@ -163,7 +163,9 @@ class FundingDemandPolicySnapshotView:
     decision_fingerprint: str
     eligible_fund_codes: tuple[str, ...]
     default_restriction_keys: tuple[str, ...]
+    approved_tag_any: tuple[str, ...]
     source_profile_summary: FundingSourceProfileSummaryView
+    realization_policy: "FundingDemandWorkflowCuesView"
 
 
 @dataclass(frozen=True)
@@ -183,7 +185,10 @@ class FundingDemandContextView:
     demand: FundingDemandPublishedSnapshotView
     planning: FundingDemandPlanningSnapshotView
     policy: FundingDemandPolicySnapshotView
-    workflow: FundingDemandWorkflowCuesView
+
+    @property
+    def workflow(self) -> "FundingDemandWorkflowCuesView":
+        return self.policy.realization_policy
 
 
 # -----------------

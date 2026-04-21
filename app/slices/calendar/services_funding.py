@@ -31,6 +31,16 @@ This module is intentionally read-side only.
 Direct FundingDemand draft/publish mutators are retired.
 The canonical downstream package is the frozen published_context_json
 written at DemandDraft promotion time.
+
+Ownership split inside that payload is deliberate:
+- ``planning`` is Calendar-owned draft/publish planning truth.
+- ``policy`` is Governance-published semantic truth frozen at publish time.
+- ``policy.realization_policy`` carries the downstream receive/reserve
+  posture that Sponsors and Finance may consume later.
+
+The legacy top-level ``workflow`` key is still emitted during the transition
+so existing callers do not break, but new code should treat those values as
+Governance-published realization defaults, not Calendar workflow semantics.
 """
 
 
@@ -161,7 +171,7 @@ def _derive_receive_posture(source_kind: str, support_mode: str) -> str:
     return "direct_support"
 
 
-def _derive_workflow_from_profile(
+def _build_realization_policy_from_profile(
     summary: FundingSourceProfileSummaryView,
 ) -> dict[str, Any]:
     receive_posture = _derive_receive_posture(
@@ -242,7 +252,9 @@ def build_canonical_published_context_payload(
     source_summary = _build_source_profile_summary_view(
         source_profile_key=source_profile_key,
     )
-    workflow = _derive_workflow_from_profile(source_summary)
+    realization_policy = _build_realization_policy_from_profile(
+        source_summary
+    )
 
     approved_tags = _merge_str_tuples(approved_tag_any, tag_any)
     eligible_codes = _normalize_str_tuple(eligible_fund_codes)
@@ -252,7 +264,7 @@ def build_canonical_published_context_payload(
     )
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "demand": {
             "funding_demand_ulid": funding_demand_ulid,
             "project_ulid": project_ulid,
@@ -295,8 +307,10 @@ def build_canonical_published_context_payload(
                 "forgiveness_rule": source_summary.forgiveness_rule,
                 "auto_ops_bridge_on_publish": source_summary.auto_ops_bridge_on_publish,
             },
+            "realization_policy": realization_policy,
         },
-        "workflow": workflow,
+        # Transitional alias; remove after all callers are explicit.
+        "workflow": realization_policy,
     }
 
 
@@ -309,7 +323,9 @@ def _canonicalize_published_context(row: FundingDemand) -> dict[str, Any]:
     origin = dict(payload.get("origin") or {})
     planning = dict(payload.get("planning") or {})
     policy = dict(payload.get("policy") or {})
-    workflow = dict(payload.get("workflow") or {})
+    realization_policy = dict(
+        (policy.get("realization_policy") or payload.get("workflow")) or {}
+    )
 
     project = getattr(row, "project", None)
     project_title = planning.get("project_title")
@@ -347,11 +363,13 @@ def _canonicalize_published_context(row: FundingDemand) -> dict[str, Any]:
             "auto_ops_bridge_on_publish": source_summary.auto_ops_bridge_on_publish,
         }
 
-    if not workflow:
-        workflow = _derive_workflow_from_profile(source_summary)
+    if not realization_policy:
+        realization_policy = _build_realization_policy_from_profile(
+            source_summary
+        )
 
     return {
-        "schema_version": int(payload.get("schema_version") or 1),
+        "schema_version": int(payload.get("schema_version") or 2),
         "demand": {
             "funding_demand_ulid": demand.get("funding_demand_ulid")
             or row.ulid,
@@ -411,30 +429,66 @@ def _canonicalize_published_context(row: FundingDemand) -> dict[str, Any]:
                 )
             ),
             "source_profile_summary": source_summary_json,
+            "approved_tag_any": list(
+                _merge_str_tuples(
+                    policy.get("approved_tag_any"),
+                    planning.get("tag_any"),
+                    row.tag_any_json,
+                )
+            ),
+            "realization_policy": {
+                "receive_posture": realization_policy.get("receive_posture"),
+                "reserve_on_receive_expected": realization_policy.get(
+                    "reserve_on_receive_expected"
+                ),
+                "reimbursement_expected": realization_policy.get(
+                    "reimbursement_expected"
+                ),
+                "bridge_support_possible": realization_policy.get(
+                    "bridge_support_possible"
+                ),
+                "return_unused_posture": realization_policy.get(
+                    "return_unused_posture"
+                ),
+                "recommended_income_kind": realization_policy.get(
+                    "recommended_income_kind"
+                ),
+                "allowed_realization_modes": list(
+                    _normalize_str_tuple(
+                        realization_policy.get("allowed_realization_modes")
+                    )
+                ),
+            },
         },
+        # Transitional alias; remove after all callers read
+        # policy.realization_policy explicitly.
         "workflow": {
-            "receive_posture": workflow.get("receive_posture"),
-            "reserve_on_receive_expected": workflow.get(
+            "receive_posture": realization_policy.get("receive_posture"),
+            "reserve_on_receive_expected": realization_policy.get(
                 "reserve_on_receive_expected"
             ),
-            "reimbursement_expected": workflow.get("reimbursement_expected"),
-            "bridge_support_possible": workflow.get(
+            "reimbursement_expected": realization_policy.get(
+                "reimbursement_expected"
+            ),
+            "bridge_support_possible": realization_policy.get(
                 "bridge_support_possible"
             ),
-            "return_unused_posture": workflow.get("return_unused_posture"),
-            "recommended_income_kind": workflow.get(
+            "return_unused_posture": realization_policy.get(
+                "return_unused_posture"
+            ),
+            "recommended_income_kind": realization_policy.get(
                 "recommended_income_kind"
             ),
             "allowed_realization_modes": list(
                 _normalize_str_tuple(
-                    workflow.get("allowed_realization_modes")
+                    realization_policy.get("allowed_realization_modes")
                 )
             ),
         },
     }
 
 
-def _build_funding_decision_request_from_context(
+def _build_governance_preview_request_from_context(
     *,
     row: FundingDemand,
     op: str,
@@ -581,7 +635,7 @@ def unpublish_funding_demand(*args, **kwargs):
 
 
 __all__ = [
-    "_build_funding_decision_request_from_context",
+    "_build_governance_preview_request_from_context",
     "_get_demand_or_raise",
     "build_canonical_published_context_payload",
     "get_funding_demand",

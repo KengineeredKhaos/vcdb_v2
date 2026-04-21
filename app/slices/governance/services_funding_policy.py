@@ -494,7 +494,7 @@ def _profile_conflicts(
     return tuple(reasons)
 
 
-def preview_funding_decision(raw_req: dict[str, Any]) -> dict[str, Any]:
+def preview_funding_policy(raw_req: dict[str, Any]) -> dict[str, Any]:
     req = _normalize_req(raw_req)
     profile = _get_source_profile_or_raise(req["source_profile_key"])
 

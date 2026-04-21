@@ -623,7 +623,7 @@ def compute_opportunity_match(
     elif "relationship_prior_success" in active_keys:
         positives.append("Prior successful support exists.")
 
-    if bool(context.workflow.reimbursement_expected):
+    if bool(context.policy.realization_policy.reimbursement_expected):
         if (
             "style_reimbursement" in active_keys
             or "restriction_reimbursement_preferred" in active_keys
@@ -676,7 +676,9 @@ def compute_opportunity_match(
             "Documentation expectations may require extra preparation."
         )
 
-    if bool(context.workflow.reimbursement_expected) and (
+    if bool(
+        context.policy.realization_policy.reimbursement_expected
+    ) and (
         "restriction_receipts_required" in active_keys
         or "friction_receipt_packet_sensitive" in active_keys
     ):

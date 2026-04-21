@@ -558,7 +558,7 @@ def test_encumber_project_funds_forwards_source_profile_hint(
 
         monkeypatch.setattr(
             governance_v2,
-            "preview_funding_decision",
+            "preview_funding_policy",
             fake_preview,
         )
 

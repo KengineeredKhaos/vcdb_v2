@@ -188,7 +188,7 @@ def _require_realizable_intent(intent_row) -> None:
 
 
 def _require_realizable_context(
-    context: calendar_v2.FundingDemandContextDTO,
+    context: calendar_v2.PublishedFundingDemandPackageDTO,
 ) -> None:
     if context.demand.status not in _ALLOWED_DEMAND_STATUS:
         raise ValueError(
@@ -269,13 +269,13 @@ def realize_funding_intent(
             "partial realization is not supported in this baseline"
         )
 
-    package = calendar_v2.get_published_funding_demand_package(
+    demand_pkg = calendar_v2.get_published_funding_demand_package(
         intent_row.funding_demand_ulid
     )
-    _require_realizable_context(package)
+    _require_realizable_context(demand_pkg)
 
     defaults = funding_context_to_realization_defaults(
-        package,
+        demand_pkg,
         intent_ulid=intent_row.ulid,
         amount_cents=amount_cents,
     )
@@ -304,7 +304,7 @@ def realize_funding_intent(
     if not sem.ok:
         raise ValueError("; ".join(sem.errors) or "invalid semantics")
 
-    preview = governance_v2.preview_funding_decision(
+    gov_preview = governance_v2.preview_funding_policy(
         governance_v2.FundingDecisionRequestDTO(
             op="receive",
             amount_cents=amount_cents,
@@ -323,14 +323,14 @@ def realize_funding_intent(
         )
     )
 
-    if not preview.allowed:
+    if not gov_preview.allowed:
         raise PermissionError(
-            "; ".join(preview.reason_codes) or "funding receive denied"
+            "; ".join(gov_preview.reason_codes) or "funding receive denied"
         )
-    if preview.required_approvals:
+    if gov_preview.required_approvals:
         raise PermissionError(
             "receive requires approvals: "
-            + ", ".join(preview.required_approvals)
+            + ", ".join(gov_preview.required_approvals)
         )
 
     memo_txt = memo or intent_row.note or f"realized:{income_kind}"
@@ -347,7 +347,7 @@ def realize_funding_intent(
         receipt_method=receipt_method,
         reserve_on_receive=reserve_on_receive,
         restriction_keys=restriction_keys,
-        decision_fingerprint=preview.decision_fingerprint,
+        decision_fingerprint=gov_preview.decision_fingerprint,
         memo=memo_txt,
         happened_at_utc=happened_at_utc,
         actor_ulid=actor_ulid,
@@ -372,7 +372,7 @@ def realize_funding_intent(
             journal_ulid=income_post.id,
             reserve_ulid=None if reserve_post is None else reserve_post.id,
             status=intent_row.status,
-            decision_fingerprint=preview.decision_fingerprint,
+            decision_fingerprint=gov_preview.decision_fingerprint,
             flags=tuple(flags),
         )
 
@@ -395,7 +395,7 @@ def realize_funding_intent(
                 None if reserve_post is None else reserve_post.id
             ),
             "fund_code": fund_code,
-            "decision_fingerprint": preview.decision_fingerprint,
+            "decision_fingerprint": gov_preview.decision_fingerprint,
         },
         changed={"fields": ["status"]},
         meta={
@@ -419,6 +419,6 @@ def realize_funding_intent(
         journal_ulid=income_post.id,
         reserve_ulid=None if reserve_post is None else reserve_post.id,
         status=intent_row.status,
-        decision_fingerprint=preview.decision_fingerprint,
+        decision_fingerprint=gov_preview.decision_fingerprint,
         flags=tuple(flags),
     )

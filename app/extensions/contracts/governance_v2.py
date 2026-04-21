@@ -49,15 +49,15 @@ from app.slices.governance.services_finance_taxonomy import (
 from app.slices.governance.services_finance_taxonomy import (
     validate_semantic_keys as _validate_semantic_keys,
 )
-from app.slices.governance.services_funding_decisions import (
+from app.slices.governance.services_funding_policy import (
     get_funding_source_profile_summary as svc_get_funding_source_profile_summary,
 )
-from app.slices.governance.services_funding_decisions import (
-    preview_funding_decision as svc_preview_funding_decision,
+from app.slices.governance.services_funding_policy import (
+    preview_funding_policy as svc_preview_funding_policy,
 )
 
 # Governance slice service (pure evaluator; no DB)
-from app.slices.governance.services_funding_decisions import (
+from app.slices.governance.services_funding_policy import (
     preview_ops_float as svc_preview_ops_float,
 )
 
@@ -549,7 +549,7 @@ Finance does not call Governance at post time except perhaps to validate keys
 """
 
 
-def preview_funding_decision(
+def preview_funding_policy(
     req: FundingDecisionRequestDTO,
 ) -> FundingDecisionDTO:
     """
@@ -563,7 +563,7 @@ def preview_funding_decision(
     Governance emits no Ledger events here. Caller can store decision_fingerprint
     as a "decision ref" for later encumber/spend calls into Finance.
     """
-    where = "governance_v2.preview_funding_decision"
+    where = "governance_v2.preview_funding_policy"
     try:
         raw_req = {
             "op": req.op,
@@ -583,7 +583,7 @@ def preview_funding_decision(
             "actor_domain_roles": req.actor_domain_roles,
         }
 
-        raw_out = svc_preview_funding_decision(raw_req)
+        raw_out = svc_preview_funding_policy(raw_req)
 
         return FundingDecisionDTO(
             allowed=bool(raw_out.get("allowed")),
@@ -674,7 +674,7 @@ def review_calendar_demand(
                 matched_rule_ids=(),
             )
 
-        preview = preview_funding_decision(
+        preview = preview_funding_policy(
             FundingDecisionRequestDTO(
                 op="encumber",
                 amount_cents=requested_amount_cents,

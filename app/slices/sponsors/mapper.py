@@ -87,6 +87,7 @@ class OpportunityPolicyView:
     decision_fingerprint: str
     eligible_fund_codes: tuple[str, ...]
     default_restriction_keys: tuple[str, ...]
+    approved_tag_any: tuple[str, ...]
     source_profile_summary: OpportunitySourceProfileView
 
 
@@ -354,6 +355,7 @@ def funding_context_to_detail_view(
     unreserved_received_cents = max(received_cents - reserved_cents, 0)
 
     summary = context.policy.source_profile_summary
+    realization = context.policy.realization_policy
 
     return FundingOpportunityDetailView(
         funding_demand_ulid=context.demand.funding_demand_ulid,
@@ -366,7 +368,11 @@ def funding_context_to_detail_view(
         planning=OpportunityPlanningView(
             project_title=context.planning.project_title,
             spending_class=context.planning.spending_class,
-            tag_any=tuple(context.planning.tag_any or ()),
+            tag_any=tuple(
+                context.policy.approved_tag_any
+                or context.planning.tag_any
+                or ()
+            ),
             source_profile_key=context.planning.source_profile_key,
             ops_support_planned=context.planning.ops_support_planned,
             planning_basis=context.planning.planning_basis,
@@ -379,6 +385,7 @@ def funding_context_to_detail_view(
             default_restriction_keys=tuple(
                 context.policy.default_restriction_keys or ()
             ),
+            approved_tag_any=tuple(context.policy.approved_tag_any or ()),
             source_profile_summary=OpportunitySourceProfileView(
                 key=summary.key,
                 source_kind=summary.source_kind,
@@ -396,24 +403,20 @@ def funding_context_to_detail_view(
             ),
         ),
         workflow=OpportunityWorkflowView(
-            receive_posture=context.workflow.receive_posture,
+            receive_posture=realization.receive_posture,
             reserve_on_receive_expected=(
-                context.workflow.reserve_on_receive_expected
+                realization.reserve_on_receive_expected
             ),
-            reimbursement_expected=(context.workflow.reimbursement_expected),
-            bridge_support_possible=(
-                context.workflow.bridge_support_possible
-            ),
-            return_unused_posture=(context.workflow.return_unused_posture),
-            recommended_income_kind=(
-                context.workflow.recommended_income_kind
-            ),
+            reimbursement_expected=(realization.reimbursement_expected),
+            bridge_support_possible=(realization.bridge_support_possible),
+            return_unused_posture=(realization.return_unused_posture),
+            recommended_income_kind=(realization.recommended_income_kind),
             allowed_realization_modes=tuple(
-                context.workflow.allowed_realization_modes or ()
+                realization.allowed_realization_modes or ()
             ),
         ),
         intent_guidance=workflow_to_intent_guidance(
-            tuple(context.workflow.allowed_realization_modes or ())
+            tuple(realization.allowed_realization_modes or ())
         ),
         totals=funding_intent_totals_to_view(totals),
         money=OpportunityMoneyView(
@@ -422,7 +425,7 @@ def funding_context_to_detail_view(
             encumbered_cents=encumbered_cents,
             spent_cents=spent_cents,
             remaining_goal_cents=remaining_goal_cents,
-            uncovered_pipeline_gap_cents=uncovered_pipeline_gap_cents,
+            uncovered_pipeline_gap_cents=(uncovered_pipeline_gap_cents),
             unreserved_received_cents=unreserved_received_cents,
         ),
     )
@@ -445,15 +448,19 @@ def funding_context_to_realization_defaults(
         default_restriction_keys=tuple(
             context.policy.default_restriction_keys or ()
         ),
-        recommended_income_kind=context.workflow.recommended_income_kind,
+        recommended_income_kind=(
+            context.policy.realization_policy.recommended_income_kind
+        ),
         reserve_on_receive_expected=(
-            context.workflow.reserve_on_receive_expected
+            context.policy.realization_policy.reserve_on_receive_expected
         ),
         allowed_realization_modes=tuple(
-            context.workflow.allowed_realization_modes or ()
+            context.policy.realization_policy.allowed_realization_modes or ()
         ),
         spending_class=context.planning.spending_class,
-        tag_any=tuple(context.planning.tag_any or ()),
+        tag_any=tuple(
+            context.policy.approved_tag_any or context.planning.tag_any or ()
+        ),
     )
 
 

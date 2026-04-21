@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, TypedDict
 
 from app.extensions.errors import ContractError
@@ -169,14 +169,35 @@ class FundingDemandOriginSnapshotDTO:
     project_ulid: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class PublishedFundingDemandPackageDTO:
     schema_version: int
     demand: FundingDemandPublishedSnapshotDTO
     origin: FundingDemandOriginSnapshotDTO
     planning: FundingDemandPlanningSnapshotDTO
     policy: FundingDemandPolicySnapshotDTO
-    workflow: FundingDemandWorkflowCuesDTO
+
+    def __init__(
+        self,
+        schema_version: int,
+        demand: FundingDemandPublishedSnapshotDTO,
+        origin: FundingDemandOriginSnapshotDTO,
+        planning: FundingDemandPlanningSnapshotDTO,
+        policy: FundingDemandPolicySnapshotDTO,
+        workflow: "FundingDemandWorkflowCuesDTO | None" = None,
+    ) -> None:
+        if policy.realization_policy is None and workflow is not None:
+            policy = replace(policy, realization_policy=workflow)
+        object.__setattr__(self, "schema_version", schema_version)
+        object.__setattr__(self, "demand", demand)
+        object.__setattr__(self, "origin", origin)
+        object.__setattr__(self, "planning", planning)
+        object.__setattr__(self, "policy", policy)
+
+    @property
+    def workflow(self) -> "FundingDemandWorkflowCuesDTO":
+        """Backward-compat alias for callers still using pkg.workflow."""
+        return self.policy.realization_policy  # type: ignore[return-value]
 
 
 @dataclass(frozen=True)
@@ -195,6 +216,8 @@ class FundingDemandPolicySnapshotDTO:
     eligible_fund_codes: tuple[str, ...]
     default_restriction_keys: tuple[str, ...]
     source_profile_summary: FundingSourceProfileSummaryDTO
+    approved_tag_any: tuple[str, ...] = ()
+    realization_policy: "FundingDemandWorkflowCuesDTO | None" = None
 
 
 @dataclass(frozen=True)
@@ -208,13 +231,32 @@ class FundingDemandWorkflowCuesDTO:
     allowed_realization_modes: tuple[str, ...]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class FundingDemandContextDTO:
     schema_version: int
     demand: FundingDemandPublishedSnapshotDTO
     planning: FundingDemandPlanningSnapshotDTO
     policy: FundingDemandPolicySnapshotDTO
-    workflow: FundingDemandWorkflowCuesDTO
+
+    def __init__(
+        self,
+        schema_version: int,
+        demand: FundingDemandPublishedSnapshotDTO,
+        planning: FundingDemandPlanningSnapshotDTO,
+        policy: FundingDemandPolicySnapshotDTO,
+        workflow: "FundingDemandWorkflowCuesDTO | None" = None,
+    ) -> None:
+        if policy.realization_policy is None and workflow is not None:
+            policy = replace(policy, realization_policy=workflow)
+        object.__setattr__(self, "schema_version", schema_version)
+        object.__setattr__(self, "demand", demand)
+        object.__setattr__(self, "planning", planning)
+        object.__setattr__(self, "policy", policy)
+
+    @property
+    def workflow(self) -> "FundingDemandWorkflowCuesDTO":
+        """Backward-compat alias for callers still using ctx.workflow."""
+        return self.policy.realization_policy  # type: ignore[return-value]
 
 
 @dataclass(frozen=True)
@@ -515,7 +557,6 @@ def get_funding_demand_context(
             demand=pkg.demand,
             planning=pkg.planning,
             policy=pkg.policy,
-            workflow=pkg.workflow,
         )
     except Exception as exc:
         raise _as_contract_error(where, exc) from exc
@@ -535,7 +576,11 @@ def _to_published_funding_demand_package(
     planning_raw = raw["planning"]
     policy_raw = raw["policy"]
     summary_raw = policy_raw["source_profile_summary"]
-    workflow_raw = raw["workflow"]
+    workflow_raw = (
+        policy_raw.get("realization_policy")
+        or raw.get("workflow")
+        or {}
+    )
 
     return PublishedFundingDemandPackageDTO(
         schema_version=int(raw["schema_version"]),
@@ -576,6 +621,10 @@ def _to_published_funding_demand_package(
                 "policy.default_restriction_keys",
                 policy_raw.get("default_restriction_keys"),
             ),
+            approved_tag_any=_require_str_tuple(
+                "policy.approved_tag_any",
+                policy_raw.get("approved_tag_any"),
+            ),
             source_profile_summary=FundingSourceProfileSummaryDTO(
                 key=str(summary_raw["key"]),
                 source_kind=str(summary_raw["source_kind"]),
@@ -594,23 +643,27 @@ def _to_published_funding_demand_package(
                     summary_raw["auto_ops_bridge_on_publish"]
                 ),
             ),
-        ),
-        workflow=FundingDemandWorkflowCuesDTO(
-            receive_posture=workflow_raw.get("receive_posture"),
-            reserve_on_receive_expected=workflow_raw.get(
-                "reserve_on_receive_expected"
-            ),
-            reimbursement_expected=workflow_raw.get("reimbursement_expected"),
-            bridge_support_possible=workflow_raw.get(
-                "bridge_support_possible"
-            ),
-            return_unused_posture=workflow_raw.get("return_unused_posture"),
-            recommended_income_kind=workflow_raw.get(
-                "recommended_income_kind"
-            ),
-            allowed_realization_modes=_require_str_tuple(
-                "workflow.allowed_realization_modes",
-                workflow_raw.get("allowed_realization_modes"),
+            realization_policy=FundingDemandWorkflowCuesDTO(
+                receive_posture=workflow_raw.get("receive_posture"),
+                reserve_on_receive_expected=workflow_raw.get(
+                    "reserve_on_receive_expected"
+                ),
+                reimbursement_expected=workflow_raw.get(
+                    "reimbursement_expected"
+                ),
+                bridge_support_possible=workflow_raw.get(
+                    "bridge_support_possible"
+                ),
+                return_unused_posture=workflow_raw.get(
+                    "return_unused_posture"
+                ),
+                recommended_income_kind=workflow_raw.get(
+                    "recommended_income_kind"
+                ),
+                allowed_realization_modes=_require_str_tuple(
+                    "policy.realization_policy.allowed_realization_modes",
+                    workflow_raw.get("allowed_realization_modes"),
+                ),
             ),
         ),
     )

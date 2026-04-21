@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .services_funding_decisions import load_policy_finance_taxonomy
+from .services_funding_policy import load_policy_finance_taxonomy
 
 
 @dataclass(frozen=True)

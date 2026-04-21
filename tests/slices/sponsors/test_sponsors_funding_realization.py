@@ -161,7 +161,7 @@ def test_realize_funding_intent_posts_income_and_reserve(app):
 
         income_kind = "donation"
 
-        preview = governance_v2.preview_funding_decision(
+        preview = governance_v2.preview_funding_policy(
             governance_v2.FundingDecisionRequestDTO(
                 op="receive",
                 amount_cents=12000,

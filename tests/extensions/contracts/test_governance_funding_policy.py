@@ -1,4 +1,4 @@
-# tests/extensions/contracts/test_governance_funding_decisions.py
+# tests/extensions/contracts/test_governance_funding_policy.py
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def test_finance_taxonomy_contract_returns_values():
     assert tx.spending_classes
 
 
-def test_preview_funding_decision_uses_source_profile_selectors():
+def test_preview_funding_policy_uses_source_profile_selectors():
     req = governance_v2.FundingDecisionRequestDTO(
         op="encumber",
         amount_cents=5000,
@@ -31,7 +31,7 @@ def test_preview_funding_decision_uses_source_profile_selectors():
         actor_domain_roles=(),
     )
 
-    out = governance_v2.preview_funding_decision(req)
+    out = governance_v2.preview_funding_policy(req)
 
     assert out.allowed is True
     assert out.eligible_fund_codes
@@ -39,7 +39,7 @@ def test_preview_funding_decision_uses_source_profile_selectors():
     assert out.decision_fingerprint
 
 
-def test_preview_funding_decision_fingerprint_is_stable():
+def test_preview_funding_policy_fingerprint_is_stable():
     req = governance_v2.FundingDecisionRequestDTO(
         op="encumber",
         amount_cents=5000,
@@ -56,8 +56,8 @@ def test_preview_funding_decision_fingerprint_is_stable():
         actor_domain_roles=(),
     )
 
-    a = governance_v2.preview_funding_decision(req)
-    b = governance_v2.preview_funding_decision(req)
+    a = governance_v2.preview_funding_policy(req)
+    b = governance_v2.preview_funding_policy(req)
 
     assert a.decision_fingerprint == b.decision_fingerprint
 
