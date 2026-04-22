@@ -616,3 +616,60 @@ The demand package lives with Calendar.
 The money trail lives with Finance.
 They meet on `funding_demand_ulid`, and actual spend should usually meet on
 `encumbrance_ulid` too.
+
+---
+
+## Addendum — Published Demand Semantics vs View Workflow
+
+### Canonical rule
+
+For published funding demands, the canonical downstream semantic package lives under:
+
+- `policy.realization_policy`
+
+This is the authoritative publish-time semantic payload attached through
+Governance and carried forward by Calendar.
+
+Examples of fields that belong to this canonical payload include:
+
+- `receive_posture`
+- `reserve_on_receive_expected`
+- `reimbursement_expected`
+- `bridge_support_possible`
+- `return_unused_posture`
+- `recommended_income_kind`
+- `allowed_realization_modes`
+
+### What `workflow` means
+
+A field or DTO named `workflow` may still appear in view/presentation shapes
+for operator convenience, such as Sponsor opportunity detail views.
+
+That `workflow` shape is **derived output only**.
+
+It must not be treated as the canonical stored or contract input for published
+funding-demand semantics.
+
+### Ownership rule
+
+- **Calendar** stores the published funding-demand package.
+- **Governance** owns the semantic meaning of the published downstream cues.
+- **Sponsors** and **Finance** consume explicit published semantics.
+- **Finance** does not reconstruct those semantics from `project_ulid` alone.
+
+### Anti-drift rule
+
+No slice should introduce or rely on a top-level published-demand semantic
+input named `workflow` when the authoritative value belongs under
+`policy.realization_policy`.
+
+If a view exposes `workflow`, it must be derived from
+`policy.realization_policy`, not maintained as a second source of truth.
+
+### Testing rule
+
+Tests and fixtures for published funding-demand context must construct the
+canonical shape under `policy.realization_policy`.
+
+They must not build or patch a separate top-level `workflow` payload as though
+it were canonical input.

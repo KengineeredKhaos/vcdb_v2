@@ -358,5 +358,3 @@ Muted helper text is intentional. It supports infrequent operators without turni
 **Home starts work lanes.**  
 **Lists/search select records.**  
 **Wizards resume entity-specific progress.**
-
-

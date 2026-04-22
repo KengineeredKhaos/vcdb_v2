@@ -363,7 +363,9 @@ thoroughly.
   - Evaluate pagination macro (existing) vs `app/lib/pagination.py` for as unified method.
   - run against a trivial `select()` (SQLite) to catch extension wiring drift
 
-- [x] @TODO: Phase 1 — Route access truth and surface integrity
+- [x] @TODO: 
+  
+  ## Phase 1 — Route access truth and surface integrity
   
   **Opener:**  
   Refresh the route-access matrix and harden route/template integrity so the current authority model, route guards, and UI entry points all match documented system truth.
@@ -388,3 +390,28 @@ thoroughly.
   ### Why this phase is first
   
   This work is already in motion. It is the cheapest time to lock route-access truth and UI surface integrity before more drift accumulates.
+
+---
+
+- [x] @TODO: 
+  
+  ## Phase 4 — Finance/Calendar seam cleanup
+  
+    **Opener:**  
+  
+  Clean the Calendar / Finance / Governance seams before more behavior accretes on stale semantics. 
+  
+  ### Scope
+
+- Remove the `preview_funding_decision` backward-compat shim once DTO callers are explicit.
+- Revisit Calendar task taxonomy and realign finance hints to canonical Governance policy semantics.
+- Stop treating Calendar as a quasi-owner of finance semantics.
+- Restore the focused seam test for encumber preview op after the alignment pass.
+- Revisit Finance handling of `FundingDemandContextDTO`.
+- Revisit Calendar project/task planning, synthesis, and funding-demand development.
+  
+  ### Why this phase matters now
+
+This is seam cleanup at an active boundary. Better to remove drift now than after more downstream logic depends on it.
+
+---

@@ -5,12 +5,18 @@ from app.slices.admin.models import CronRun
 from app.slices.admin.services_cron import get_cron_page
 
 
+def _clear_cron_tables() -> None:
+    db.session.query(CronRun).delete()
+    db.session.commit()
+
+
 def test_get_cron_page_includes_registry_job(app):
     with app.app_context():
+        _clear_cron_tables()
         row = CronRun(
             ulid="01TESTCRONRUN00000000000000",
             job_key="backup.daily",
-            unit_key="2099-03-30",
+            unit_key="2099-03-30-services-page",
             status="succeeded",
             attempt_no=99,
             started_at_utc="2099-03-30T01:00:00Z",

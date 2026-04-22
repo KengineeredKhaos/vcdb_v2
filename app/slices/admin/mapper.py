@@ -25,19 +25,19 @@ class SliceHealthCardDTO:
 @dataclass(frozen=True)
 class InboxSummaryDTO:
     total_open: int
-    high_severity: int
+    failed_count: int
     stale_count: int
 
 
 @dataclass(frozen=True)
 class InboxItemDTO:
     source_slice: str
-    issue_kind: str
-    severity: str
+    reason_code: str
+    alert_family: str
     summary: str
     opened_at_utc: str
     status: str
-    resolution_route: str
+    launch_label: str
     allowed_actions_summary: str
     context_preview: str
 
@@ -198,12 +198,12 @@ def to_slice_health_card(
 def to_inbox_summary(
     *,
     total_open: int,
-    high_severity: int,
+    failed_count: int,
     stale_count: int,
 ) -> InboxSummaryDTO:
     return InboxSummaryDTO(
         total_open=int(total_open),
-        high_severity=int(high_severity),
+        failed_count=int(failed_count),
         stale_count=int(stale_count),
     )
 
@@ -211,23 +211,23 @@ def to_inbox_summary(
 def to_inbox_item(
     *,
     source_slice: str,
-    issue_kind: str,
-    severity: str,
+    reason_code: str,
+    alert_family: str,
     summary: str,
     opened_at_utc: str,
     status: str,
-    resolution_route: str,
+    launch_label: str,
     allowed_actions_summary: str,
     context_preview: str,
 ) -> InboxItemDTO:
     return InboxItemDTO(
         source_slice=source_slice,
-        issue_kind=issue_kind,
-        severity=severity,
+        reason_code=reason_code,
+        alert_family=alert_family,
         summary=summary,
         opened_at_utc=opened_at_utc,
         status=status,
-        resolution_route=resolution_route,
+        launch_label=launch_label,
         allowed_actions_summary=allowed_actions_summary,
         context_preview=context_preview,
     )

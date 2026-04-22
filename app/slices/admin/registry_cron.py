@@ -21,6 +21,10 @@ def _today_unit_key() -> str:
     return datetime.now(_cron_tz()).date().isoformat()
 
 
+# Beta posture:
+# Keep the registry intentionally small.
+# Add new jobs only after the owning slice has real operational evidence
+# and a corresponding Admin intervention path.
 REGISTRY: dict[str, CronJobDef] = {
     "backup.daily": CronJobDef(
         job_key="backup.daily",
@@ -42,7 +46,7 @@ REGISTRY: dict[str, CronJobDef] = {
 def get_job(job_key: str) -> CronJobDef:
     try:
         return REGISTRY[job_key]
-    except KeyError as exc:  # pragma: no cover - tiny helper
+    except KeyError as exc:
         raise KeyError(f"Unknown cron job: {job_key}") from exc
 
 

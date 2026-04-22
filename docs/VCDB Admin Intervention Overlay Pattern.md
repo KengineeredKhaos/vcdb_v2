@@ -1,675 +1,769 @@
-# 
-
 # Admin Intervention Canon
 
+## Core statement
+
 Admin is a **cue, triage, and launch** surface.  
-Admin is **not** the owner of slice truth, business mutation, or repair  
-logic.
+Admin is **not** the owner of slice truth, business mutation, repair logic, or terminal business outcome.
 
 When a slice requires Admin intervention, the owning slice must:
 
-1. raise a cue into the Admin inbox,
-2. provide a real slice-local resolution surface,
-3. perform the actual review, approval, rejection, or corrective action  
-   inside the owning slice,
+1. raise or refresh an `admin_alert`,
+2. provide a real slice-local Admin issue surface,
+3. perform the actual review, approval, rejection, repair, or corrective action inside the owning slice,
 4. record its own truth and audit trail inside the owning slice,
-5. close the Admin inbox item when the slice reaches terminal state.
+5. close the `admin_alert` when the slice reaches terminal state.
 
-**Admin inbox must remain a truthful reflection of slice-owned review state, not a second source of workflow truth.**
+**Admin Inbox must remain a truthful reflection of slice-owned intervention state, not a second source of workflow truth.**
 
-### Ownership Rule
+## Canon sentence
 
-Admin owns:
+**Admin owns visibility, queue posture, and launch.  
+The owning slice owns truth, mutation, audit, and completion.**
 
-- visibility,
-- queueing,
-- launch point,
-- operator triage state.
+### Ghosts of apps-past warning
 
-The owning slice owns:
+This design exists to prevent the return of parallel inboxes, half-owned review flows, and legacy naming drift.
 
-- validation,
-- business rules,
-- state mutation,
-- ledger and audit emission,
-- terminal completion,
-- closure signal back to Admin inbox.
+Do not reintroduce older nouns or half-replacements such as:
 
-No slice may outsource its business mutation to Admin.
-
-### Required Pattern for Every Admin-Reviewable Operation
-
-Every admin-reviewable operation must provide four parts.
-
-**1. Raise seam**  
-A slice-local service that creates or refreshes an Admin inbox item.
-
-The inbox item must carry:
-
-- `source_slice`
-- `issue_kind`
+- inbox item
+- review request
+- issue kind
 - `source_ref_ulid`
-- `subject_ref_ulid` when useful
-- human title and summary
-- machine context payload
-- source status
-- workflow key
-- resolution target
+- `subject_ref_ulid`
+- `resolution_route`
+- `severity`
 
-**Raise seam idempotency rule**  
-`raise_<operation>_admin_issue()` must be idempotent for the active review request.  
-At most one open Admin inbox item may exist for the tuple:
+Those names belonged to earlier transitional designs. Reintroducing them creates translation glue, duplicate concepts, and maintenance confusion.
 
-- `source_slice`
-- `issue_kind`
-- `source_ref_ulid`
+Use the canon nouns:
 
-If an open item already exists for that tuple, the raise seam must refresh or update it rather than create a duplicate.
+- `admin_alert`
+- `request_id`
+- `target_ulid`
+- `reason_code`
+- `resolution_target`
+- `<Slice>AdminIssue`
+- `admin_issue_routes.py`
+- `admin_issue_services.py`
 
-**2. Resolution target**  
-A real, stable way for Admin to enter the owning slice.
+### Why this pattern exists
 
-It must not be a hint, placeholder, dead endpoint, or TODO.  
-It must resolve to a real slice-local review or resolution surface.
+This pattern is intentionally repetitive.
 
-**Resolution target entry rule**  
-The `resolution_target` must point to the owning slice’s **GET review surface**, not directly to a mutating action.  
-Admin launches into a slice-local review page or review detail surface.  
-Approval, rejection, or other terminal actions must occur only through the owning slice’s explicit resolution path.
+That repetition is not accidental. It is how the application prevents Admin from becoming a second business engine and prevents slices from smuggling workflow truth into the Admin overlay.
 
-**3. Resolution service**  
-A slice-local service that executes the actual action.
+Uniform naming and repeated file, module, and table shapes are used here to reduce guesswork, reduce hidden exceptions, and make future slice implementations predictable.
 
-That service must:
+### Do not do these things
 
-- load the source record,
-- verify the issue is still actionable,
-- perform the mutation,
-- emit slice-owned audit and ledger events as appropriate,
-- transition the slice-owned source state,
-- determine terminal outcome.
+Do not store slice business truth only in `admin_alert`.
 
-**Stale-action rule**  
-`resolve_<operation>_admin_issue()` must verify that the review request is still actionable at the time of mutation.
+Do not let Admin routes mutate foreign-slice truth directly.
 
-If the review request is already terminal, superseded, cancelled, or otherwise no longer actionable, the service must refuse mutation and return the appropriate terminal outcome.
+Do not dedupe alerts on `target_ulid` alone.
 
-If the slice truth has changed elsewhere such that the Admin cue is no longer actionable, the owning slice should close the Admin inbox item with `admin_status="source_closed"`.
+Do not store plain-string route targets when a structured `resolution_target` is expected.
 
-**4. Close seam**  
-A slice-local call that tells Admin inbox the item is terminal.
+Do not invent slice-local synonyms for canon nouns unless the canon is formally revised.
 
-Normal closure should come from the owning slice after resolution, not from  
-Admin manually hand-waving the item away.
+Do not rebuild `review_kind` under a new alias when `reason_code` is the canon term.
 
-**Close seam idempotency rule**  
-`close_<operation>_admin_issue()` must be safe to call more than once.  
-If the matching Admin inbox item is already terminal, the close seam must not reopen it, duplicate it, or emit conflicting state.
+Do not create “temporary” compatibility names unless they are scheduled for removal.
 
-### Uniform Lifecycle
+Do not let an unresolved migration leave both old and new concepts alive at once.
 
-Every admin-reviewable issue must follow this loop:
+### When in doubt
 
-slice raises cue  
-→ Admin inbox displays cue  
-→ Admin launches into owning slice  
-→ owning slice resolves  
-→ owning slice closes inbox item  
-→ Admin inbox reflects terminal state
+When adding a new Admin intervention flow, ask these questions in order:
 
-This loop must hold for Resources, Customers, Sponsors, and any future  
-slice that requests Admin intervention.
+1. What is the owning slice?
+2. What is the slice-local `reason_code`?
+3. What is the `request_id` for this logical operation?
+4. What is the `target_ulid`, if any?
+5. What slice-local `<Slice>AdminIssue` row records the issue?
+6. What real GET surface will Admin launch into?
+7. What slice-local service performs the real mutation or repair?
+8. How does the owning slice close the `admin_alert` honestly?
 
-### Uniform Status Discipline
+If any answer is vague, the flow is not ready for implementation.
 
-Closure language must remain boring and consistent.
+### Migration caution
 
-Use:
+During migration, do not leave both the retired review-request pattern and the new Admin-issue pattern active in parallel longer than necessary.
 
-- `resolved` when the requested action completed successfully
-- `source_closed` when slice truth changed elsewhere and the cue is no  
-  longer actionable
-- `dismissed` when Admin explicitly dismisses a bad or non-actionable cue
-- `duplicate` when folded into another item
+A half-migrated system is worse than either old or new in isolation because it produces duplicate concepts, duplicate queries, duplicate routes, and misleading history.
 
-Default rule:
+Retire old names completely once the new pattern is adopted.
 
-**`resolved` and `source_closed` are slice-driven outcomes.  
-`dismissed` and `duplicate` are Admin triage outcomes.**
+Do not keep compatibility wrappers longer than one migration cycle unless they are explicitly documented and tracked for removal.
 
-### Boundary Rule
+### Boring is good here
 
-Admin inbox may point back into a slice.  
-Admin inbox may not become a second business workflow engine.
+This is not a place for clever abstractions.
 
-That means:
+A Future Dev should be able to open any slice and find the same:
 
-- no slice truth stored only in Admin,
-- no approval logic owned by Admin,
-- no cross-slice repair hacks inside Admin routes,
-- no temporary mutation shortcuts in Admin services.
+- table shape
+- file names
+- service seams
+- route posture
+- Admin closure pattern
+- naming conventions
 
-Admin is the mailbox and launch ramp.  
-The slice is the workshop.
+Predictability is the feature.
 
-### Implementation Rule
+### `details_json` caution
 
-For each slice and each admin-reviewable operation, define:
+`details_json` exists to reduce needless schema churn for slice-local, non-PII intervention facts.
 
-- one raise function,
-- one resolution entry surface,
-- one resolution service,
-- one close function.
+It is not permission to dump arbitrary business truth, PII, or narrative history into a generic JSON hole.
 
-Uniform shape.  
-Slice-local logic.  
-No exceptions unless canonized.
+If a fact becomes central to slice logic, querying, validation, or reporting, it may deserve a real column or a dedicated slice-local table later.
 
-### Structural Truth Rule
+### Slice-local vocabulary rule
 
-A route cannot be called secure or hardened until it is:
+Each slice owns its own `reason_code` values, but that freedom is bounded.
 
-- registered,
-- reachable,
-- internally wired,
-- capable of executing its owning-slice resolution path,
-- and capable of closing the Admin cue honestly.
+All `reason_code` values must:
 
-Until then, it is **UNTERMINATED**.
+- begin with `advisory_`, `anomaly_`, or `failed_`
+- include the slice name
+- describe one stable intervention type
+- remain durable enough for reporting and triage
 
-### Canon Sentence
+Do not use informal prose, temporary wording, or user-facing sentence fragments as `reason_code` values.
 
-**Admin owns visibility and launch.  
-The owning slice owns truth, mutation, and completion.**
+### Note to future maintainers, including the original author
+
+If you have forgotten why this structure seems repetitive, that is normal. Read the ownership rule first.
+
+If a proposed shortcut would make Admin own more truth, more mutation, or more repair logic, it is probably the wrong shortcut.
 
 ---
 
-## Naming canon
+## Vocabulary freeze
 
-Use a single slice-local operation stem.
+### Admin overlay nouns
+
+Use these nouns everywhere in the Admin slice and in cross-slice DTOs:
+
+- `admin_alert` = canonical Admin queue storage
+
+- **Admin Inbox** = operator-facing UI view over `admin_alert`
+
+- `request_id` = cradle-to-grave collation key for the logical operation
+
+- `target_ulid` = business object or primary target of the intervention
+
+- `reason_code` = machine classification of the Admin intervention
+
+- `resolution_target` = structured route target for launching into the owning slice
+
+Do **not** introduce parallel nouns such as:
+
+- inbox item
+
+- review message
+
+- admin notification
+
+- generic queue message
+
+- `source_ref_ulid`
+
+- `subject_ref_ulid`
+
+- `issue_kind`
+
+Those were transitional names. The canon nouns are now:
+
+- `request_id`
+
+- `target_ulid`
+
+- `reason_code`
+
+### Slice-local nouns
+
+For slice-local persistence and mechanics, use:
+
+- `<Slice>AdminIssue`
+
+- `admin_issue_routes.py`
+
+- `admin_issue_services.py`
+
+Do **not** use:
+
+- `<Slice>AdminReviewRequest`
+
+- `admin_review_routes.py`
+
+- `admin_review_services.py`
+
+unless grandfathered temporarily during migration.
+
+---
+
+## Ownership rule
+
+Admin owns:
+
+- visibility
+
+- queueing
+
+- operator triage posture
+
+- acknowledgement / snooze / duplicate / dismiss
+
+- launch into owning slice
+
+The owning slice owns:
+
+- validation
+
+- business rules
+
+- state mutation
+
+- local persistence
+
+- repair mechanics
+
+- slice-owned audit and ledger emission
+
+- terminal completion
+
+- closure signal back to Admin
+
+No slice may outsource its business mutation to Admin.
+
+No Admin route may become a second business workflow engine.
+
+No Admin service may perform cross-slice repair hacks, shortcut business mutation, or become a shadow repair layer.
+
+---
+
+## Queue-family canon
+
+Every `reason_code` must begin with one of these families:
+
+- `advisory_`
+
+- `anomaly_`
+
+- `failed_`
+
+### Meaning
+
+`advisory_*`  
+: human attention, decision, review, or business intervention required
+
+`anomaly_*`  
+: slice-local inconsistency, drift, or corrective inspection/repair required
+
+`failed_*`  
+: job, cron, compile, archive, validation, or other process failure requiring Admin awareness
+
+This family prefix replaces the need for a separate `severity` field in the first real queue design.
+
+Do **not** store `severity` on `admin_alert` or `<slice>_admin_issue` unless canonized later by a demonstrated need.
+
+---
+
+## Reason-code naming canon
+
+Each slice owns its own `reason_code` vocabulary inside its own `admin_issue_services.py`.
 
 Pattern:
 
-- `raise_<operation>_admin_issue()`
-- `<operation>_review_get()`
-- `resolve_<operation>_admin_issue()`
-- `close_<operation>_admin_issue()`
+- `advisory_<slice>_<operation>`
 
-The operation stem is **slice-local** and should be short and boring.
+- `anomaly_<slice>_<operation>`
+
+- `failed_<slice>_<operation>`
 
 Examples:
 
-- Resources onboarding:
-  - `raise_onboard_admin_issue()`
-  - `onboard_review_get()`
-  - `resolve_onboard_admin_issue()`
-  - `close_onboard_admin_issue()`
-- Customers referral exception:
-  - `raise_referral_admin_issue()`
-  - `referral_review_get()`
-  - `resolve_referral_admin_issue()`
-  - `close_referral_admin_issue()`
-- Sponsors grant acceptance review:
-  - `raise_grant_acceptance_admin_issue()`
-  - `grant_acceptance_review_get()`
-  - `resolve_grant_acceptance_admin_issue()`
-  - `close_grant_acceptance_admin_issue()`
+- `advisory_resources_onboard`
 
-Do **not** put the slice name in the function stem when the function already  
-lives in that slice module.
+- `advisory_customers_referral_exception`
 
-## Responsibility canon
+- `advisory_sponsors_grant_acceptance`
 
-These four functions each do exactly one thing.
+- `anomaly_ledger_projection_drift`
 
-### `raise_<operation>_admin_issue()`
+- `anomaly_logistics_inventory_reconcile`
 
-Slice-local service.  
-Creates or refreshes the slice-owned review request record, then publishes the  
-cue to Admin inbox through `admin_v2`.
+- `failed_governance_policy_compile`
 
-### `<operation>_review_get()`
+- `failed_admin_archive_sweep`
 
-Slice-local read service.  
-Loads the review page data for the owning slice. No mutation. No approval.  
-No rejection. No Admin inbox close.
+### Naming rules
 
-### `resolve_<operation>_admin_issue()`
+Keep `reason_code`:
 
-Slice-local write service.  
-Performs the real business action inside the owning slice. Updates slice truth,  
-emits slice-owned ledger/audit, terminalizes the slice request, then calls  
-`close_<operation>_admin_issue()`.
+- machine-readable
 
-### `close_<operation>_admin_issue()`
+- stable over time
 
-Slice-local bridge back to `admin_v2`.  
-Tells Admin inbox the slice-owned request is now terminal.
+- short enough for filters and indexes
 
-## admin_v2 contract shape
+- descriptive enough for triage/reporting
 
-I would replace the raw `resolution_route: str` idea with a structured launch  
-target.
+- slice-owned, not globally micromanaged
 
-  
+Do **not** use vague labels like:
 
+- `needs_attention`
 
+- `problem`
 
-    from dataclasses import dataclass  
-    from typing import Any, Mapping
-    
-    @dataclass(frozen=True)  
-    class AdminResolutionTargetDTO:  
-     route_name: str  
-     route_params: Mapping[str, str]  
-     launch_label: str  
-     http_method: str = "GET"
-    
-    @dataclass(frozen=True)  
-    class AdminIssueUpsertDTO:  
-     source_slice: str  
-     issue_kind: str  
-     source_ref_ulid: str  
-     subject_ref_ulid: str | None
-    severity: str  
-    title: str  
-    summary: str  
-    source_status: str  
-    workflow_key: str  
-    resolution_target: AdminResolutionTargetDTO  
-    context: Mapping[str, Any]  
-    opened_at_utc: str | None = None  
-    updated_at_utc: str | None = None  
-    
-    @dataclass(frozen=True)  
-    class AdminIssueCloseDTO:  
-        source_slice: str  
-        issue_kind: str  
-        source_ref_ulid: str
-        source_status: str  
-        close_reason: str  
-        admin_status: str  
-        closed_at_utc: str | None = None  
-    
-    @dataclass(frozen=True)  
-    class AdminIssueReceiptDTO:  
-     inbox_item_ulid: str  
-     source_slice: str  
-     issue_kind: str  
-     source_ref_ulid: str  
-     admin_status: str
+- `warning`
 
- 
+- `review_required`
 
-    
+The family prefix already tells you the broad class. The tail should tell you the slice-specific meaning.
 
+---
 
+## Admin alert overlay canon
 
-## admin_v2 contract functions
+`admin_alert` is the single canonical Admin queue record.
 
-```python
-def upsert_inbox_item(  
- dto: AdminIssueUpsertDTO,  
-) -> AdminIssueReceiptDTO:  
- ...
+Admin Inbox is only the UI view over `admin_alert`, not a separate persistence concept.
 
-def close_inbox_item(  
- dto: AdminIssueCloseDTO,  
-) -> AdminIssueReceiptDTO | None:  
- ...
+`admin_alert` rows must remain PII-free.
 
-def acknowledge_inbox_item(  
- inbox_item_ulid: str,  
- *,  
- actor_ulid: str,  
-) -> AdminIssueReceiptDTO:  
- ...
+Allowed in `admin_alert`:
 
-def set_inbox_item_status(  
- inbox_item_ulid: str,  
- *,  
- admin_status: str,  
-) -> AdminIssueReceiptDTO:  
- ...
-```
+- `request_id`
 
+- `target_ulid`
 
+- `source_slice`
 
-That keeps Admin’s job small:  
-queue posture, visibility, and launch target only.
+- `reason_code`
 
-## Slice v2 contract shape
+- `source_status`
 
-Each slice should own its own review DTOs.
+- `admin_status`
 
-Use this pattern per operation.
+- `title`
 
- 
+- `summary`
 
-    from dataclasses import dataclass  
-    from typing import Any, Mapping
-    
-    @dataclass(frozen=True)  
-    class <Operation>AdminIssueRequestDTO:  
-     source_ref_ulid: str  
-     subject_ref_ulid: str | None  
-     actor_ulid: str | None  
-     request_id: str
-    
-    @dataclass(frozen=True)  
-    class <Operation>AdminReviewPageDTO:  
-     review_request_ulid: str  
-     source_ref_ulid: str  
-     subject_ref_ulid: str | None
-    issue_kind: str  
-    source_status: str  
-    title: str  
-    summary: str  
-    
-    facts: Mapping[str, Any]  
-    allowed_decisions: tuple[str, ...]  
-    as_of_utc: str  
-    
-    
-    @dataclass(frozen=True)  
-    class <Operation>AdminIssueResolveDTO:  
-     review_request_ulid: str  
-     decision: str  
-     actor_ulid: str | None  
-     request_id: str  
-     note: str | None = None
-    
-    @dataclass(frozen=True)  
-    class <Operation>AdminIssueResolutionDTO:  
-     review_request_ulid: str  
-     source_ref_ulid: str  
-     subject_ref_ulid: str | None
-    decision: str  
-    source_status: str  
-    close_reason: str  
-    admin_receipt: AdminIssueReceiptDTO | None  
-    happened_at_utc: str
+- `workflow_key`
 
+- `resolution_target_json`
 
+- non-PII `context_json`
 
-## Slice v2 contract functions
+- triage timestamps / actor references
 
-Per slice, per operation:
+Not allowed in `admin_alert`:
 
-```python
-def raise_<operation>_admin_issue(  
- req: <Operation>AdminIssueRequestDTO,  
-) -> AdminIssueReceiptDTO:  
- ...
+- names
 
-def <operation>_review_get(  
- review_request_ulid: str,  
-) -> <Operation>AdminReviewPageDTO:  
- ...
+- addresses
 
-def resolve_<operation>_admin_issue(  
- req: <Operation>AdminIssueResolveDTO,  
-) -> <Operation>AdminIssueResolutionDTO:  
- ...
+- phone numbers
 
-def close_<operation>_admin_issue(  
- *,  
- review_request_ulid: str,  
- source_status: str,  
- close_reason: str,  
- admin_status: str,  
-) -> AdminIssueReceiptDTO | None:  
- ...
-```
+- emails
 
-## Decision canon
+- DOB
 
-Keep decisions boring and shared.
+- notes text
 
-For `decision` in resolve DTOs, allow only slice-relevant terminal actions.
+- detailed history blobs
 
-Baseline:
+- other protected or slice-private narrative content
 
-- `"approve"`
-- `"reject"`
+If an operator needs richer facts, Admin launches into the owning slice.
 
-Later, if a slice truly needs more:
+---
 
-- `"cancel"`
-- `"send_back"`
-- `"mark_complete_without_action"`
+## Dedupe canon
 
-Do not add more until a real slice requires it.
+Dedupe must be request-first, not business-object-first.
+
+At most one **open** `admin_alert` may exist for the tuple:
+
+- `source_slice`
+
+- `reason_code`
+
+- `request_id`
+
+- `target_ulid`
+
+This allows:
+
+- same `source_slice`
+
+- same `reason_code`
+
+- same `target_ulid`
+
+- different `request_id`
+
+to coexist as distinct Admin alerts when they represent distinct logical operations.
+
+`target_ulid` is for grouping, reporting, and cross-alert visibility.  
+It is **not** the primary dedupe key by itself.
+
+---
 
 ## Status canon
 
-Keep source status and admin status separate.
+Keep `source_status` and `admin_status` separate.
 
-### Source status
+### `source_status`
 
 Owned by the slice.  
 Examples:
 
 - `pending_review`
+
 - `approved`
+
 - `rejected`
+
 - `cancelled`
 
-### Admin status
+- `needs_repair`
 
-Owned by Admin.  
-Use only:
+- `repair_complete`
+
+- `failed`
+
+- `superseded`
+
+### `admin_status`
+
+Owned by Admin. Use only:
 
 - `open`
+
 - `acknowledged`
+
 - `in_review`
+
 - `snoozed`
+
 - `resolved`
+
 - `source_closed`
+
 - `dismissed`
+
 - `duplicate`
 
-Rule:  
-`resolve_*_admin_issue()` should normally close Admin with  
-`admin_status="resolved"`.
+Rule:
 
-`close_*_admin_issue()` may also be called from other slice events when the  
-source becomes non-actionable, in which case use  
-`admin_status="source_closed"`.
+- `resolved` and `source_closed` are normally slice-driven outcomes
 
-## Resolution target canon
+- `dismissed` and `duplicate` are Admin triage outcomes
 
-## Resolution target canon
+`close_*_admin_issue()` should normally close Admin with `admin_status="resolved"`.
 
-The launch target must be a real slice entry surface and must resolve to the  
-owning slice’s **GET review surface**.
+If the slice truth changes elsewhere and the Admin cue is no longer actionable, the owning slice should close the alert with `admin_status="source_closed"`.
 
-Use:
+---
+
+## Resolution-target canon
+
+The launch target must be a real slice entry surface and must resolve to the owning slice’s **GET** Admin issue surface, not directly to a mutating action. This preserves the current boundary and review-entry rule from the earlier canon.
+
+Use a structured route target:
 
 ```python
-AdminResolutionTargetDTO(  
-    route_name="resources.onboard_review_get",  
-    route_params={"review_request_ulid": review.ulid},  
-    launch_label="Open resource onboarding review",  
-)
+@dataclass(frozen=True)
+class AdminResolutionTargetDTO:
+    route_name: str
+    route_params: Mapping[str, str]
+    launch_label: str
+    http_method: str = "GET"
 ```
 
 Do **not** store only a plain URL string if you can avoid it.  
-A structured route target is easier to validate, easier to test, and less  
-fragile during refactors.
+A structured route target is easier to validate, easier to test, and less fragile during refactors.
 
-Do **not** point the resolution target directly at approve/reject POST routes.
+Do **not** point the resolution target directly at approve/reject/repair POST routes.
 
-## Workflow key canon
+---
 
-Use a stable machine key for grouping/reporting.
+## Slice-local Admin issue model template
 
-Examples:
+Each slice that needs Admin intervention should repeat the following documented model-class schema pattern, with slice-local table name and class name substituted.
 
-- `resource_onboard_review`
-- `customer_referral_review`
-- `sponsor_grant_acceptance_review`
-
-That key should stay stable even if the route names later change.
-
-## issue_kind canon
-
-Use operation-specific machine truth, not vague prose.
-
-Examples:
-
-- `onboard_review_required`
-- `referral_review_required`
-- `grant_acceptance_review_required`
-
-That is what Admin uses for dedupe and reporting.
-
-## Concrete Resources example
-
-This is the shape I would move Resources toward:
+This template should be repeated per slice in `models.py`.  
+It is a documented pattern, not a lib-core abstract mixin.
 
 ```python
-@dataclass(frozen=True)  
-class OnboardAdminIssueRequestDTO:  
- source_ref_ulid: str # review_request_ulid  
- subject_ref_ulid: str | None # resource entity ULID  
- actor_ulid: str | None  
- request_id: str
+class <Slice>AdminIssue(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "<slice>_admin_issue"
 
-@dataclass(frozen=True)  
-class OnboardAdminReviewPageDTO:  
- review_request_ulid: str  
- source_ref_ulid: str  
- subject_ref_ulid: str | None  
- issue_kind: str  
- source_status: str  
- title: str  
- summary: str  
- facts: dict[str, object]  
- allowed_decisions: tuple[str, ...]  
- as_of_utc: str
+    request_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    target_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
 
-Functions:
+    reason_code: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    source_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True
+    )
 
-def raise_onboard_admin_issue(  
- req: OnboardAdminIssueRequestDTO,  
-) -> AdminIssueReceiptDTO:  
- ...
+    requested_by_actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+    resolved_by_actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
 
-def onboard_review_get(  
- review_request_ulid: str,  
-) -> OnboardAdminReviewPageDTO:  
- ...
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
 
-def resolve_onboard_admin_issue(  
- req: OnboardAdminIssueResolveDTO,  
-) -> OnboardAdminIssueResolutionDTO:  
- ...
+    details_json: Mapped[dict[str, object] | None] = mapped_column(
+        db.JSON, nullable=True
+    )
 
-def close_onboard_admin_issue(  
- *,  
- review_request_ulid: str,  
- source_status: str,  
- close_reason: str,  
- admin_status: str = "resolved",  
-) -> AdminIssueReceiptDTO | None:  
- ...
+    closed_at_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True, index=True
+    )
+
+    __table_args__ = (
+        db.Index(
+            "ix_<slice>_admin_issue_active",
+            "reason_code",
+            "source_status",
+            "closed_at_utc",
+        ),
+        db.Index(
+            "ix_<slice>_admin_issue_request_reason",
+            "request_id",
+            "reason_code",
+        ),
+        db.Index(
+            "ix_<slice>_admin_issue_target_reason",
+            "target_ulid",
+            "reason_code",
+        ),
+    )
 ```
 
-### `source_ref_ulid` in Admin inbox always points to the slice-owned review request ULID.
+### Template rules
 
-**`source_ref_ulid` = slice-owned review request ULID**  
-**`subject_ref_ulid` = business object ULID**
+- Use `ULIDPK` and `IsoTimestamps` for uniform IDs and timestamps across slice models.
 
-That makes the queue item about the review request itself, which is the thing  
-being opened, resolved, and closed.
+- `request_id` is the logical collation key.
 
-## Final freeze
+- `target_ulid` is the business target when one exists.
 
-**Admin v2 owns inbox DTOs and queue posture.**  
-**Each slice v2 owns review DTOs and resolution services.**  
-**Every admin-reviewable operation exposes raise, review_get, resolve, and close with the same naming pattern.** 
-**Resolution targets launch only into slice-local GET review surfaces.** 
-**Raise and close seams must be idempotent.** 
-**Mappers shape view data only and never mutate workflow truth.**
+- `reason_code` replaces `review_kind`.
 
-That gives you one repeatable admin-review pipeline across the app:  
-cue, launch, resolve in owning slice, close from owning slice.
+- `details_json` exists to reduce future migrations for slice-specific, non-PII intervention facts.
 
-### Function pattern freeze:
+- `closed_at_utc` remains explicit because terminal closure is business truth distinct from row creation/update.
 
-- `raise_<operation>_admin_issue()`
-- `<operation>_review_get()`
-- `resolve_<operation>_admin_issue()`
-- `close_<operation>_admin_issue()`
+### Migration rule
 
-That gives you one repeatable admin-review pipeline across the app:  
-cue, launch, resolve in owning slice, close from owning slice.
+Burn down existing `<Slice>AdminReviewRequest` tables and replace them with `<Slice>AdminIssue` tables rather than carrying narrow review-centric naming forward. The current Resources table is the example of what is being retired.
 
-### Dedicated Routes & Services files:
+---
 
-Admin-review code must live in dedicated `admin_review_routes.py` and  
-`admin_review_services.py` files inside the owning slice so review mechanics  
-do not drift into unrelated service modules or mutate slice truth through  
-side doors.
+## File and module canon
 
-```bash
+Each slice that supports Admin intervention must keep its mechanics in dedicated files:
+
+```text
 app/
-  extensions/
-    contracts/
-      admin_v2.py
-      resources_v2.py
-      customers_v2.py
-      sponsors_v2.py
-
   slices/
     <slice>/
-      admin_review_routes.py
-      admin_review_services.py
+      admin_issue_routes.py
+      admin_issue_services.py
       mapper.py
       models.py
 ```
 
+### Responsibility split
 
+`models.py`  
+: slice-local persistence, including `<Slice>AdminIssue` when needed
 
-### Responsibility split:
+`admin_issue_routes.py`  
+: thin entry points only; GET detail/review surfaces and POST decision/repair actions; auth/RBAC at the route edge; commit/rollback at the route edge
 
-- `extensions/contracts/*.py`
-  - public cross-slice seam only
-  - stable function signatures
-  - contract DTO types
-  - no buried business logic
-- `slices/<slice>/admin_review_routes.py`
-  - thin entry points only
-  - GET review surface
-  - POST decision actions
-  - auth/RBAC at the route edge
-  - call contract or slice-local review service, then respond
-- `slices/<slice>/admin_review_services.py`
-  - all admin-review mechanics for that slice
-  - load review request
-  - validate actionable state
-  - perform slice-owned mutation
-  - emit audit/ledger
-  - close Admin inbox item
-- `slices/<slice>/mapper.py`
-  - DTO assembly
-  - projection/view shaping
-  - response package shaping
-  - keep route/service code from becoming serialization soup
-- `slices/<slice>/models.py`
-  - any review-request tables or related persistence
-  - only if the slice truly needs stored review-request state
+`admin_issue_services.py`  
+: all slice-local Admin intervention mechanics; create/refresh issue rows; validate actionable state; perform slice-owned mutation or repair; emit slice-owned audit/ledger events; close Admin alert
 
-**Mapper boundary rule**  
-`mapper.py` may shape DTO payloads, staged facts, and page-view projections.  
-`mapper.py` must not:
+`mapper.py`  
+: DTO assembly and view shaping only; no mutation, no closure, no ledger emission
 
-- decide review outcomes,
-- mutate review state,
-- emit ledger or audit events,
-- close Admin inbox items,
-- or perform cross-slice workflow actions.
+The current Resources `admin_review_routes.py` and `admin_review_services.py` demonstrate the mechanical split being preserved, even though the names are about to change. Routes are thin, services do the work, and the service emits the slice-owned event after resolution.
 
-Those responsibilities belong only to slice services, especially  
-`admin_review_services.py`.
+---
+
+## Required service pattern
+
+For each slice-specific operation, define four seams with a short, boring, slice-local operation stem.
+
+Pattern:
+
+- `raise_<operation>_admin_issue()`
+
+- `<operation>_issue_get()`
+
+- `resolve_<operation>_admin_issue()`
+
+- `close_<operation>_admin_issue()`
+
+Examples:
+
+- `raise_onboard_admin_issue()`
+
+- `onboard_issue_get()`
+
+- `resolve_onboard_admin_issue()`
+
+- `close_onboard_admin_issue()`
+
+- `raise_referral_exception_admin_issue()`
+
+- `referral_exception_issue_get()`
+
+- `resolve_referral_exception_admin_issue()`
+
+- `close_referral_exception_admin_issue()`
+
+- `raise_projection_drift_admin_issue()`
+
+- `projection_drift_issue_get()`
+
+- `resolve_projection_drift_admin_issue()`
+
+- `close_projection_drift_admin_issue()`
+
+### Responsibility canon
+
+`raise_<operation>_admin_issue()`  
+: create or refresh the slice-local `<Slice>AdminIssue` row, then upsert the `admin_alert`
+
+`<operation>_issue_get()`  
+: read-only page/data loader for the owning slice’s Admin intervention surface
+
+`resolve_<operation>_admin_issue()`  
+: perform the real slice-local business action or repair, update slice truth, emit slice-owned audit/ledger events, terminalize the slice-local issue, then close the Admin alert
+
+`close_<operation>_admin_issue()`  
+: slice-local bridge back to `admin_v2` to mark the Admin alert terminal
+
+### Idempotency rule
+
+Raise and close seams must be safe to call more than once for the same logical issue.
+
+### Stale-action rule
+
+`resolve_<operation>_admin_issue()` must verify that the issue is still actionable at the time of mutation. If already terminal, superseded, cancelled, or otherwise no longer actionable, it must refuse mutation and return the appropriate terminal outcome.
+
+---
+
+## Route-shape canon
+
+`admin_issue_routes.py` should follow this shape:
+
+- one GET route for the slice-local issue surface
+
+- one or more POST routes for explicit terminal actions
+
+- `login_required` and RBAC at the route edge
+
+- `ensure_request_id()` at the route edge for mutating actions
+
+- route owns commit/rollback
+
+- service owns mutation logic
+
+- redirect back to Admin Inbox or the slice detail surface after commit
+
+The current Resources route file is the pattern being generalized: GET loads page data; POST calls the service with `decision` and `request_id`; route commits or rolls back.
+
+---
+
+## Service-shape canon
+
+`admin_issue_services.py` should follow this shape:
+
+- validate actor/request guards
+
+- create or fetch the slice-local `<Slice>AdminIssue`
+
+- build non-PII Admin context payload
+
+- upsert `admin_alert`
+
+- load current slice truth
+
+- apply approval/rejection/repair inside the slice
+
+- mark slice-local issue terminal
+
+- close Admin alert
+
+- emit slice-owned event/ledger facts using `request_id` and `target_ulid`
+
+The current Resources services file already demonstrates the intended service ownership: create local review record, upsert Admin item, load facts, resolve in-slice, close the Admin item, and emit slice-owned event bus data. This revision keeps that ownership split while renaming the nouns and broadening beyond review-only flows.
+
+---
+
+## Workflow-key canon
+
+Each Admin flow should also define a stable `workflow_key` for grouping and reporting.
+
+Examples:
+
+- `resources_onboard_issue`
+
+- `customers_referral_exception_issue`
+
+- `sponsors_grant_acceptance_issue`
+
+- `ledger_projection_drift_issue`
+
+`workflow_key` should stay stable even if route names later change.
+
+---
+
+## Structural truth rule
+
+A route cannot be called secure or hardened until it is:
+
+- registered
+
+- reachable
+
+- internally wired
+
+- capable of executing its owning-slice Admin issue path
+
+- capable of closing the Admin alert honestly
+
+Until then, it is **UNTERMINATED**.
+
+---
+
+## Final freeze
+
+**`admin_alert` is the single canonical Admin queue record.**  
+**Admin Inbox is the UI view over `admin_alert`, not a separate workflow system.**  
+**Each slice may repeat a documented `<Slice>AdminIssue` model template in its own `models.py`.**  
+**Each slice owns its own `reason_code` vocabulary inside `admin_issue_services.py`.**  
+**`reason_code` families are `advisory_*`, `anomaly_*`, and `failed_*`.**  
+**`request_id` and `target_ulid` are the cross-slice collation nouns.**  
+**Routes stay thin, services own mutation, and Admin never becomes the repair engine.**

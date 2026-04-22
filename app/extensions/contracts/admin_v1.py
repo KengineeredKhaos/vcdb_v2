@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 __all__ = [
+    "RetiredAdminV1Error",
     "AdminInboxCloseDTO",
     "AdminInboxReceiptDTO",
     "AdminInboxUpsertDTO",
@@ -16,60 +17,41 @@ __all__ = [
 
 @dataclass(frozen=True)
 class AdminInboxUpsertDTO:
-    source_slice: str
-    issue_kind: str
-    source_ref_ulid: str
-    subject_ref_ulid: str | None
-    severity: str
-    title: str
-    summary: str
-    source_status: str
-    workflow_key: str
-    resolution_route: str
-    context: dict[str, Any]
-    opened_at_utc: str | None = None
-    updated_at_utc: str | None = None
+
+    def __init__(self, *args, **kwargs) -> None:
+        _raise_retired_admin_v1("AdminInboxUpsertDTO")
 
 
 @dataclass(frozen=True)
 class AdminInboxCloseDTO:
-    source_slice: str
-    issue_kind: str
-    source_ref_ulid: str
-    source_status: str
-    close_reason: str
-    admin_status: str
-    closed_at_utc: str | None = None
+    def __init__(self, *args, **kwargs) -> None:
+        _raise_retired_admin_v1("AdminInboxCloseDTO")
 
 
 @dataclass(frozen=True)
 class AdminInboxReceiptDTO:
-    inbox_item_ulid: str
-    source_slice: str
-    issue_kind: str
-    source_ref_ulid: str
-    admin_status: str
+    def __init__(self, *args, **kwargs) -> None:
+        _raise_retired_admin_v1("AdminInboxReceiptDTO")
 
 
+class RetiredAdminV1Error(RuntimeError):
+    """Raised when retired admin_v1 contract paths are used."""
+
+_RETIRED_ADMIN_V1_MESSAGE = (
+    "admin_v1 is retired and must not be used. "
+    "Migrate this caller to app.extensions.contracts.admin_v2."
+)
+
+
+def _raise_retired_admin_v1(symbol_name: str) -> None:
+    raise RetiredAdminV1Error(
+        f"{symbol_name}: {_RETIRED_ADMIN_V1_MESSAGE}"
+    )
 def upsert_inbox_item(dto: AdminInboxUpsertDTO) -> AdminInboxReceiptDTO:
-    """
-    Publish or refresh an Admin inbox notice.
-
-    This is a contract wrapper. It should stay thin and defer to the
-    Admin slice provider/service implementation.
-    """
-    from app.slices.admin import services as provider
-
-    return provider.upsert_inbox_item(dto)
+    _raise_retired_admin_v1("upsert_inbox_item")
 
 
 def close_inbox_item(
     dto: AdminInboxCloseDTO,
 ) -> AdminInboxReceiptDTO | None:
-    """
-    Close an Admin inbox notice from the owning slice once the owning
-    workflow has reached a terminal state.
-    """
-    from app.slices.admin import services as provider
-
-    return provider.close_inbox_item(dto)
+    _raise_retired_admin_v1("close_inbox_item")

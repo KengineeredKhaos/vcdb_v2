@@ -1,5 +1,3 @@
-# app/slices/admin/services_cron.py
-
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -36,12 +34,23 @@ def _latest_runs(*, status: str | None = None) -> dict[str, CronRun]:
 
 
 def get_cron_page():
+    jobs_registry = list_jobs()
+    if not jobs_registry:
+        return to_cron_page(
+            title="Cron and Maintenance Supervision",
+            summary=(
+                "Cron supervision is intentionally staged. "
+                "No recurring jobs are currently registered."
+            ),
+            jobs=(),
+        )
+
     latest_any = _latest_runs()
     latest_success = _latest_runs(status="succeeded")
     latest_failure = _latest_runs(status="failed")
 
     jobs = []
-    for job in list_jobs():
+    for job in jobs_registry:
         current_row = latest_any.get(job.job_key)
         success_row = latest_success.get(job.job_key)
         failure_row = latest_failure.get(job.job_key)
@@ -86,7 +95,8 @@ def get_cron_page():
         title="Cron and Maintenance Supervision",
         summary=(
             "Admin supervises recurring jobs, failure escalation, and "
-            "manual follow-up. Owning code stays in slice-local runners."
+            "manual follow-up. Beta posture keeps this registry small "
+            "until real operational data justifies expansion."
         ),
         jobs=jobs_tuple,
     )

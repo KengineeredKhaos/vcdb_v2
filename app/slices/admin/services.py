@@ -21,6 +21,7 @@ Policy edits work
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from typing import Any
 
 from sqlalchemy import select
@@ -31,10 +32,11 @@ from app.extensions.contracts import (
     entity_v2,
     governance_v2,
 )
-from app.extensions.contracts.admin_v1 import (
-    AdminInboxCloseDTO,
-    AdminInboxReceiptDTO,
-    AdminInboxUpsertDTO,
+from app.extensions.contracts.admin_v2 import (
+    AdminAlertCloseDTO,
+    AdminAlertReceiptDTO,
+    AdminAlertUpsertDTO,
+    AdminResolutionTargetDTO,
 )
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
@@ -66,7 +68,7 @@ from .mapper import (
     to_policy_preview_page,
     to_slice_health_card,
 )
-from .models import AdminInboxArchive, AdminInboxItem
+from .models import AdminAlert, AdminAlertArchive
 
 # -----------------
 # Declared Constants
@@ -103,10 +105,36 @@ TERMINAL_ADMIN_STATUSES = {
 # -----------------
 
 
+def _alert_family(reason_code: str) -> str:
+    if reason_code.startswith("failed_"):
+        return "failed"
+    if reason_code.startswith("anomaly_"):
+        return "anomaly"
+    if reason_code.startswith("advisory_"):
+        return "advisory"
+    return "other"
+
+
+def _family_rank(reason_code: str) -> int:
+    family = _alert_family(reason_code)
+    ranks = {
+        "failed": 0,
+        "anomaly": 1,
+        "advisory": 2,
+        "other": 3,
+    }
+    return ranks.get(family, 3)
+
+
 def _dedupe_key(
-    *, source_slice: str, issue_kind: str, source_ref_ulid: str
-) -> str:
-    return f"{source_slice}:{issue_kind}:{source_ref_ulid}"
+    *,
+    source_slice: str,
+    reason_code: str,
+    request_id: str,
+    target_ulid: str | None,
+):
+    target = target_ulid or "~"
+    return f"{source_slice}:{reason_code}:{request_id}:{target}"
 
 
 def _now() -> str:
@@ -119,12 +147,13 @@ def _validate_admin_status(status: str) -> None:
         raise ValueError(f"Unsupported admin inbox status: {status}")
 
 
-def _receipt(row: AdminInboxItem) -> AdminInboxReceiptDTO:
-    return AdminInboxReceiptDTO(
-        inbox_item_ulid=row.ulid,
+def _receipt(row: AdminAlert) -> AdminAlertReceiptDTO:
+    return AdminAlertReceiptDTO(
+        alert_ulid=row.ulid,
         source_slice=row.source_slice,
-        issue_kind=row.issue_kind,
-        source_ref_ulid=row.source_ref_ulid,
+        reason_code=row.reason_code,
+        request_id=row.request_id,
+        target_ulid=row.target_ulid,
         admin_status=row.admin_status,
     )
 
@@ -234,51 +263,45 @@ no Ledger emit
 """
 
 
-def get_inbox_item_by_ulid(inbox_item_ulid: str) -> AdminInboxItem | None:
-    stmt = select(AdminInboxItem).where(
-        AdminInboxItem.ulid == inbox_item_ulid
-    )
+def get_alert_by_ulid(alert_ulid: str) -> AdminAlert | None:
+    stmt = select(AdminAlert).where(AdminAlert.ulid == alert_ulid)
     return db.session.execute(stmt).scalar_one_or_none()
 
 
-def upsert_inbox_item(
-    dto: AdminInboxUpsertDTO,
-) -> AdminInboxReceiptDTO:
+def upsert_alert(
+    dto: AdminAlertUpsertDTO,
+) -> AdminAlertReceiptDTO:
     """
-    Create or refresh a hot-queue inbox item.
+    Create or refresh a hot-queue admin alert.
 
     No commit here. Caller owns transaction boundary.
     """
     dedupe_key = _dedupe_key(
         source_slice=dto.source_slice,
-        issue_kind=dto.issue_kind,
-        source_ref_ulid=dto.source_ref_ulid,
+        reason_code=dto.reason_code,
+        request_id=dto.request_id,
+        target_ulid=dto.target_ulid,
     )
     now = _now()
 
-    stmt = select(AdminInboxItem).where(
-        AdminInboxItem.dedupe_key == dedupe_key
-    )
+    stmt = select(AdminAlert).where(AdminAlert.dedupe_key == dedupe_key)
 
     row = db.session.execute(stmt).scalar_one_or_none()
 
     if row is None:
-        row = AdminInboxItem(
+        row = AdminAlert(
             ulid=new_ulid(),
             source_slice=dto.source_slice,
-            issue_kind=dto.issue_kind,
-            source_ref_ulid=dto.source_ref_ulid,
-            subject_ref_ulid=dto.subject_ref_ulid,
-            severity=dto.severity,
+            reason_code=dto.reason_code,
+            request_id=dto.request_id,
+            target_ulid=dto.target_ulid,
             title=dto.title,
             summary=dto.summary,
             source_status=dto.source_status,
             admin_status=ADMIN_STATUS_OPEN,
             workflow_key=dto.workflow_key,
-            resolution_route=dto.resolution_route,
+            resolution_target_json=asdict(dto.resolution_target),
             context_json=dict(dto.context or {}),
-            opened_at_utc=dto.opened_at_utc or now,
-            updated_at_utc=dto.updated_at_utc or now,
             acknowledged_by_ulid=None,
             acknowledged_at_utc=None,
             closed_at_utc=None,
@@ -289,15 +312,15 @@ def upsert_inbox_item(
         db.session.flush()
         return _receipt(row)
 
-    row.subject_ref_ulid = dto.subject_ref_ulid
-    row.severity = dto.severity
+    row.request_id = dto.request_id
+    row.target_ulid = dto.target_ulid
     row.title = dto.title
     row.summary = dto.summary
     row.source_status = dto.source_status
     row.workflow_key = dto.workflow_key
-    row.resolution_route = dto.resolution_route
+    row.resolution_target_json = asdict(dto.resolution_target)
     row.context_json = dict(dto.context or {})
-    row.updated_at_utc = dto.updated_at_utc or now
+    row.updated_at_utc = now
 
     if row.admin_status in TERMINAL_ADMIN_STATUSES:
         raise ValueError(
@@ -309,24 +332,23 @@ def upsert_inbox_item(
     return _receipt(row)
 
 
-def close_inbox_item(dto: AdminInboxCloseDTO) -> AdminInboxReceiptDTO | None:
+def close_alert(dto: AdminAlertCloseDTO) -> AdminAlertReceiptDTO | None:
     """
-    Mark a hot-queue item terminal. No reopen path is supported after
+    Mark a hot-queue alert terminal. No reopen path is supported after
     archival; any later intervention should arrive as a new request.
     """
     _validate_admin_status(dto.admin_status)
     if dto.admin_status not in TERMINAL_ADMIN_STATUSES:
-        raise ValueError("close_inbox_item requires a terminal admin_status")
+        raise ValueError("close_alert requires a terminal admin_status")
 
     dedupe_key = _dedupe_key(
         source_slice=dto.source_slice,
-        issue_kind=dto.issue_kind,
-        source_ref_ulid=dto.source_ref_ulid,
+        reason_code=dto.reason_code,
+        request_id=dto.request_id,
+        target_ulid=dto.target_ulid,
     )
 
-    stmt = select(AdminInboxItem).where(
-        AdminInboxItem.dedupe_key == dedupe_key
-    )
+    stmt = select(AdminAlert).where(AdminAlert.dedupe_key == dedupe_key)
     row = db.session.execute(stmt).scalar_one_or_none()
     if row is None:
         return None
@@ -341,16 +363,16 @@ def close_inbox_item(dto: AdminInboxCloseDTO) -> AdminInboxReceiptDTO | None:
     return _receipt(row)
 
 
-def acknowledge_inbox_item(
-    inbox_item_ulid: str,
+def acknowledge_alert(
+    alert_ulid: str,
     *,
     actor_ulid: str,
-) -> AdminInboxReceiptDTO:
-    row = get_inbox_item_by_ulid(inbox_item_ulid)
+) -> AdminAlertReceiptDTO:
+    row = get_alert_by_ulid(alert_ulid)
     if row is None:
-        raise LookupError(f"Admin inbox item not found: {inbox_item_ulid}")
+        raise LookupError(f"Admin alert not found: {alert_ulid}")
     if row.admin_status in TERMINAL_ADMIN_STATUSES:
-        raise ValueError("Cannot acknowledge a terminal admin inbox item")
+        raise ValueError("Cannot acknowledge a terminal admin alert")
 
     row.admin_status = ADMIN_STATUS_ACKNOWLEDGED
     row.acknowledged_by_ulid = actor_ulid
@@ -361,25 +383,25 @@ def acknowledge_inbox_item(
     return _receipt(row)
 
 
-def set_inbox_item_status(
-    inbox_item_ulid: str,
+def set_alert_status(
+    alert_ulid: str,
     *,
     admin_status: str,
-) -> AdminInboxReceiptDTO:
+) -> AdminAlertReceiptDTO:
     """
     Admin-local queue posture update only.
     Intended for states like in_review or snoozed.
     """
     _validate_admin_status(admin_status)
     if admin_status in TERMINAL_ADMIN_STATUSES:
-        raise ValueError("Use close_inbox_item for terminal queue states")
+        raise ValueError("Use close_alert for terminal queue states")
 
-    row = get_inbox_item_by_ulid(inbox_item_ulid)
+    row = get_alert_by_ulid(alert_ulid)
     if row is None:
-        raise LookupError(f"Admin inbox item not found: {inbox_item_ulid}")
+        raise LookupError(f"Admin alert not found: {alert_ulid}")
     if row.admin_status in TERMINAL_ADMIN_STATUSES:
         raise ValueError(
-            "Cannot move a terminal item back into the hot queue"
+            "Cannot move a terminal alert back into the hot queue"
         )
 
     row.admin_status = admin_status
@@ -389,7 +411,7 @@ def set_inbox_item_status(
     return _receipt(row)
 
 
-def archive_terminal_items(*, archive_reason: str = "cron_cycle") -> int:
+def archive_terminal_alerts(*, archive_reason: str = "cron_cycle") -> int:
     """
     Move terminal hot-queue items into archive and delete them from the
     active inbox table.
@@ -397,10 +419,10 @@ def archive_terminal_items(*, archive_reason: str = "cron_cycle") -> int:
     No commit here. Caller owns transaction boundary.
     """
     stmt = (
-        select(AdminInboxItem)
-        .where(AdminInboxItem.admin_status.in_(TERMINAL_ADMIN_STATUSES))
+        select(AdminAlert)
+        .where(AdminAlert.admin_status.in_(TERMINAL_ADMIN_STATUSES))
         .order_by(
-            AdminInboxItem.updated_at_utc.asc(),
+            AdminAlert.updated_at_utc.asc(),
         )
     )
     rows = list(db.session.execute(stmt).scalars().all())
@@ -411,22 +433,21 @@ def archive_terminal_items(*, archive_reason: str = "cron_cycle") -> int:
     moved = 0
 
     for row in rows:
-        archive_row = AdminInboxArchive(
+        archive_row = AdminAlertArchive(
             ulid=new_ulid(),
-            original_inbox_ulid=row.ulid,
+            original_alert_ulid=row.ulid,
             source_slice=row.source_slice,
-            issue_kind=row.issue_kind,
-            source_ref_ulid=row.source_ref_ulid,
-            subject_ref_ulid=row.subject_ref_ulid,
-            severity=row.severity,
+            reason_code=row.reason_code,
+            request_id=row.request_id,
+            target_ulid=row.target_ulid,
             title=row.title,
             summary=row.summary,
             source_status=row.source_status,
             admin_status=row.admin_status,
             workflow_key=row.workflow_key,
-            resolution_route=row.resolution_route,
+            resolution_target_json=dict(row.resolution_target_json or {}),
             context_json=dict(row.context_json or {}),
-            opened_at_utc=row.opened_at_utc,
+            created_at_utc=row.created_at_utc,
             updated_at_utc=row.updated_at_utc,
             acknowledged_by_ulid=row.acknowledged_by_ulid,
             acknowledged_at_utc=row.acknowledged_at_utc,
@@ -443,26 +464,29 @@ def archive_terminal_items(*, archive_reason: str = "cron_cycle") -> int:
     return moved
 
 
-def list_active_inbox_items() -> tuple[InboxItemDTO, ...]:
-    stmt = (
-        select(AdminInboxItem)
-        .where(AdminInboxItem.admin_status.in_(ACTIVE_ADMIN_STATUSES))
-        .order_by(
-            AdminInboxItem.severity.desc(),
-            AdminInboxItem.updated_at_utc.asc(),
-        )
+def list_active_alerts() -> tuple[InboxItemDTO, ...]:
+    stmt = select(AdminAlert).where(
+        AdminAlert.admin_status.in_(ACTIVE_ADMIN_STATUSES)
     )
+
     rows = list(db.session.execute(stmt).scalars().all())
+
+    rows.sort(
+        key=lambda row: (_family_rank(row.reason_code), row.updated_at_utc)
+    )
 
     return tuple(
         to_inbox_item(
             source_slice=row.source_slice,
-            issue_kind=row.issue_kind,
-            severity=row.severity,
+            reason_code=row.reason_code,
+            alert_family=_alert_family(row.reason_code),
             summary=row.summary,
-            opened_at_utc=row.opened_at_utc,
+            opened_at_utc=row.created_at_utc,
             status=row.admin_status,
-            resolution_route=row.resolution_route,
+            launch_label=str(
+                (row.resolution_target_json or {}).get("launch_label")
+                or "Open owning slice"
+            ),
             allowed_actions_summary=(
                 "Launch owning-slice workflow or advisory surface; Admin queue actions only."
             ),
@@ -473,13 +497,13 @@ def list_active_inbox_items() -> tuple[InboxItemDTO, ...]:
 
 
 def get_inbox_page() -> InboxPageDTO:
-    items = list_active_inbox_items()
+    items = list_active_alerts()
 
-    high_severity = sum(1 for item in items if item.severity == "high")
+    failed_count = sum(1 for item in items if item.alert_family == "failed")
 
     inbox_summary = to_inbox_summary(
         total_open=len(items),
-        high_severity=high_severity,
+        failed_count=failed_count,
         stale_count=0,
     )
 
@@ -777,12 +801,14 @@ def get_auth_operators_page() -> AuthOperatorsPageDTO:
 
 
 def get_dashboard() -> DashboardDTO:
-    inbox_items = list_active_inbox_items()
-    high_severity = sum(1 for item in inbox_items if item.severity == "high")
+    inbox_items = list_active_alerts()
+    failed_count = sum(
+        1 for item in inbox_items if item.alert_family == "failed"
+    )
 
     inbox_summary = to_inbox_summary(
         total_open=len(inbox_items),
-        high_severity=high_severity,
+        failed_count=failed_count,
         stale_count=0,
     )
 

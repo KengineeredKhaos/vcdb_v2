@@ -45,7 +45,7 @@ def _job(runner):
 def _reset_cron_tables() -> None:
     db.session.query(CronLock).delete()
     db.session.query(CronRun).delete()
-    db.session.flush()
+    db.session.commit()
 
 
 def test_execute_job_success_then_skip(app):

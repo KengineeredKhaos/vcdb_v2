@@ -9,12 +9,10 @@ from typing import Protocol
 from sqlalchemy import delete, func, select
 
 from app.extensions import db
-from app.extensions.contracts.admin_v1 import AdminInboxUpsertDTO
 from app.lib.chrono import now_iso8601_ms, to_iso8601, utcnow_aware
 from app.lib.ids import new_ulid
 
 from .models import CronLock, CronRun
-from .services import upsert_inbox_item
 
 STATUS_RUNNING = "running"
 STATUS_SUCCEEDED = "succeeded"
@@ -73,19 +71,6 @@ def _latest_attempt_no(job_key: str, unit_key: str) -> int:
         CronRun.unit_key == unit_key,
     )
     return int(db.session.execute(stmt).scalar() or 0)
-
-
-def _latest_status(job_key: str, unit_key: str) -> str | None:
-    stmt = (
-        select(CronRun.status)
-        .where(
-            CronRun.job_key == job_key,
-            CronRun.unit_key == unit_key,
-        )
-        .order_by(CronRun.attempt_no.desc())
-        .limit(1)
-    )
-    return db.session.execute(stmt).scalar_one_or_none()
 
 
 def _already_succeeded(job_key: str, unit_key: str) -> bool:
@@ -155,6 +140,7 @@ def _create_run(
     trigger_mode: str,
     actor_ulid: str | None,
 ) -> CronRun:
+    request_id = f"cron:{job_key}:{unit_key}:attempt:{attempt_no}"
     row = CronRun(
         ulid=new_ulid(),
         job_key=job_key,
@@ -165,7 +151,7 @@ def _create_run(
         finished_at_utc=None,
         summary="Run started.",
         error_text=None,
-        request_id=None,
+        request_id=request_id,
         actor_ulid=actor_ulid,
         trigger_mode=trigger_mode,
         host_name=gethostname(),
@@ -182,20 +168,31 @@ def _flag_second_failure(
     run_ulid: str,
     error_text: str,
 ) -> None:
-    dto = AdminInboxUpsertDTO(
-        source_slice="admin_cron",
-        issue_kind="cron_second_failure",
-        source_ref_ulid=run_ulid,
-        subject_ref_ulid=None,
-        severity="high",
+    from app.extensions.contracts.admin_v2 import (
+        AdminAlertUpsertDTO,
+        AdminResolutionTargetDTO,
+        upsert_alert,
+    )
+
+    request_id = f"cron:{job_key}:{unit_key}:run:{run_ulid}"
+
+    dto = AdminAlertUpsertDTO(
+        source_slice="admin",
+        reason_code="failed_admin_cron_second_failure",
+        request_id=request_id,
+        target_ulid=None,
         title=f"Cron failure: {job_key}",
         summary=(
             f"Job {job_key} failed twice for unit {unit_key}. "
             f"Latest error: {error_text}"
         ),
         source_status="failed",
-        workflow_key="admin_cron_review",
-        resolution_route="/admin/cron/",
+        workflow_key="admin_cron_issue",
+        resolution_target=AdminResolutionTargetDTO(
+            route_name="admin.cron",
+            route_params={},
+            launch_label="Open cron supervision",
+        ),
         context={
             "job_key": job_key,
             "unit_key": unit_key,
@@ -203,7 +200,7 @@ def _flag_second_failure(
             "latest_error": error_text,
         },
     )
-    upsert_inbox_item(dto)
+    upsert_alert(dto)
 
 
 def execute_job(
@@ -267,6 +264,7 @@ def execute_job(
                 run.summary = "Run failed."
                 run.error_text = str(exc)
                 db.session.flush()
+
                 admin_flagged = attempt_no >= MAX_AUTOMATIC_ATTEMPTS
                 if admin_flagged:
                     _flag_second_failure(
@@ -275,6 +273,7 @@ def execute_job(
                         run_ulid=run.ulid,
                         error_text=str(exc),
                     )
+
                 last_result = CronExecutionResult(
                     job_key=job.job_key,
                     unit_key=unit_key,
@@ -294,6 +293,7 @@ def execute_job(
             run.summary = summary
             run.error_text = None
             db.session.flush()
+
             last_result = CronExecutionResult(
                 job_key=job.job_key,
                 unit_key=unit_key,
