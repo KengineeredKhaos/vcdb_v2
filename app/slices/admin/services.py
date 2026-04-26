@@ -115,7 +115,7 @@ TERMINAL_ADMIN_STATUSES = {
 
 
 def _alert_family(reason_code: str) -> str:
-    if reason_code.startswith("failed_"):
+    if reason_code.startswith(("failed_", "failure_")):
         return "failed"
     if reason_code.startswith("anomaly_"):
         return "anomaly"

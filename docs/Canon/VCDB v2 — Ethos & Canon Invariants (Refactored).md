@@ -87,6 +87,10 @@ bug.
 Ledger anomalies are expected operational events. Repairs are expected operational work. The failure is not that something broke; the failure would be letting it break invisibly, repairing it silently, or allowing backup/archive to certify an unreconciled truth state. All committed state changes must remain observable through ledger events,
 logs, or other deliberate audit surfaces. Nothing is silently rewritten.
 
+### Ledger Maintenance & Admin Alerts
+
+Ledger creates Admin alerts only when Ledger needs human awareness, repair, or backup/archive intervention. Clean checks are recorded as evidence, not queued as work.
+
 ---
 
 ## 3) Contracts, DTOs, and mappers

@@ -92,7 +92,7 @@
       {% if "close_no_repair" in page.allowed_actions %}
         <form method="post" action="{{ url_for('ledger.admin_issue_close_no_repair', issue_ulid=page.issue_ulid) }}">
           {{ csrf_field() }}
-          <button class="btn" type="submit">Close no repair required</button>
+          <button class="btn" type="submit">Close as false positive / no repair</button>
         </form>
       {% endif %}
     </div>

@@ -696,8 +696,10 @@ def run_daily_close(
 
     Clean/reconciled checks allow routine backup. Anomaly/failure checks block
     routine backup and allow dirty forensic backup only. Clean advisory checks
-    are recorded in LedgerHashchainCheck; they cue Admin only when explicitly
-    requested by a cron/operator caller.
+    are recorded as evidence; they do not create Admin Inbox items.
+
+    ``alert_on_advisory`` is retained for call-site compatibility. Ledger no
+    longer uses it to create clean-check Admin alerts.
     """
     started = now_iso8601_ms()
     try:
@@ -721,15 +723,18 @@ def run_daily_close(
         )
         result = dict(check.details_json or {})
 
-    should_alert = (not check.ok) or alert_on_advisory
-    if should_alert:
-        from . import admin_issue_services as issues
+    # Admin Inbox is for attention/action, not proof that routine work
+    # succeeded. Clean/advisory checks are evidence rows only, but they may
+    # close an existing Ledger-owned issue if the latest check proves clean.
+    # Anomaly/failure checks create or refresh Ledger-owned issue truth and
+    # cue Admin through admin_alert.
+    from . import admin_issue_services as issues
 
-        issues.raise_hashchain_issue_from_check(
-            check=check,
-            result=result,
-            actor_ulid=actor_ulid,
-        )
+    issues.sync_hashchain_issue_from_check(
+        check=check,
+        result=result,
+        actor_ulid=actor_ulid,
+    )
 
     return {
         "ok": bool(check.ok),
