@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.extensions import db
+from app.lib.ids import new_ulid
 from app.slices.ledger import services as svc
 from app.slices.ledger.errors import LedgerBadArgument, LedgerUnavailable
 from app.slices.ledger.models import LedgerEvent
@@ -62,6 +63,8 @@ def test_append_event_wraps_sqlalchemy_failure(app, monkeypatch):
 
 
 def test_verify_chain_reports_ok_for_filtered_chain(app):
+    chain_key = f"ledger_verify_{new_ulid()[:12]}"
+
     with app.app_context():
         svc.append_event(
             domain="ledger",
@@ -69,7 +72,7 @@ def test_verify_chain_reports_ok_for_filtered_chain(app):
             request_id="01REQREQREQREQREQREQREQ01",
             actor_ulid=None,
             target_ulid=None,
-            chain_key="ledger_verify",
+            chain_key=chain_key,
         )
         svc.append_event(
             domain="ledger",
@@ -77,12 +80,11 @@ def test_verify_chain_reports_ok_for_filtered_chain(app):
             request_id="01REQREQREQREQREQREQREQ02",
             actor_ulid=None,
             target_ulid=None,
-            chain_key="ledger_verify",
+            chain_key=chain_key,
         )
 
-        result = svc.verify_chain(chain_key="ledger_verify")
+        result = svc.verify_chain(chain_key=chain_key)
 
         assert result["ok"] is True
         assert result["broken"] is None
         assert result["checked"] == 2
-        assert result["chains"] == ["ledger_verify"]

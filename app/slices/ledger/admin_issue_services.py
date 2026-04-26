@@ -18,13 +18,22 @@ from app.extensions.contracts.admin_v2 import (
 from app.lib.chrono import now_iso8601_ms
 from app.lib.guards import ensure_request_id
 
-from .models import LedgerAdminIssue
-from .services import verify_chain
+from .models import LedgerAdminIssue, LedgerHashchainCheck
+from .services import (
+    REASON_ADVISORY_HASHCHAIN,
+    REASON_ANOMALY_HASHCHAIN,
+    REASON_FAILURE_CRON_LEDGERCHECK,
+    REASON_FAILURE_HASHCHAIN,
+    verify_chain,
+)
 
 SOURCE_STATUS_OPEN = "open"
 SOURCE_STATUS_INVESTIGATING = "investigating"
 SOURCE_STATUS_RESTORED = "restored"
 SOURCE_STATUS_NO_REPAIR = "closed_no_repair"
+SOURCE_STATUS_ADVISORY = "advisory_recorded"
+SOURCE_STATUS_UNRECONCILED = "unreconciled"
+SOURCE_STATUS_FUBAR = "fubar"
 
 ADMIN_STATUS_RESOLVED = "resolved"
 ADMIN_STATUS_SOURCE_CLOSED = "source_closed"
@@ -43,9 +52,11 @@ def raise_ledger_admin_issue(
     title: str,
     summary: str,
     context: dict[str, Any] | None = None,
-) -> AdminAlertReceiptDTO:
+    source_status: str = SOURCE_STATUS_OPEN,
+    upsert_admin_alert: bool = True,
+) -> AdminAlertReceiptDTO | None:
     """
-    Create or refresh Ledger-owned issue truth and cue Admin.
+    Create or refresh Ledger-owned issue truth and optionally cue Admin.
 
     No commit here. Caller owns the transaction boundary.
     """
@@ -67,16 +78,102 @@ def raise_ledger_admin_issue(
             title=title,
             summary=summary,
             context=context,
+            source_status=source_status,
         )
     else:
         issue.title = title
         issue.summary = summary
+        issue.source_status = source_status
         issue.event_ulid = event_ulid or issue.event_ulid
         issue.details_json = dict(context or issue.details_json or {})
         issue.updated_at_utc = now_iso8601_ms()
         db.session.flush()
 
+    if not upsert_admin_alert:
+        return None
     return _upsert_admin_alert(issue)
+
+
+def raise_hashchain_issue_from_check(
+    *,
+    check: LedgerHashchainCheck,
+    result: dict[str, Any],
+    actor_ulid: str | None,
+) -> AdminAlertReceiptDTO | None:
+    """Raise/refresh the right Ledger Admin alert for a verify result."""
+    reason_code = check.reason_code
+    if reason_code in {
+        REASON_FAILURE_HASHCHAIN,
+        REASON_FAILURE_CRON_LEDGERCHECK,
+    }:
+        title = "Ledger hash-chain failure"
+        summary = (
+            "Ledger cannot currently verify hash-chain integrity. "
+            "Routine backup/archive must remain blocked until resolved."
+        )
+        status = SOURCE_STATUS_FUBAR
+    elif reason_code == REASON_ANOMALY_HASHCHAIN:
+        title = "Ledger hash-chain anomaly"
+        summary = (
+            "Ledger detected a survivable hash-chain anomaly. "
+            "Operations may continue, but daily close must reconcile or "
+            "explicitly preserve the dirty state before routine archive."
+        )
+        status = SOURCE_STATUS_UNRECONCILED
+    else:
+        title = "Ledger hash-chain advisory"
+        summary = "Ledger hash-chain check completed with advisory status."
+        status = SOURCE_STATUS_ADVISORY
+
+    return raise_ledger_admin_issue(
+        reason_code=reason_code,
+        request_id=check.request_id,
+        target_ulid=None,
+        chain_key=check.chain_key,
+        event_ulid=None,
+        actor_ulid=actor_ulid,
+        title=title,
+        summary=summary,
+        source_status=status,
+        context={
+            "check_ulid": check.ulid,
+            "reason_code": reason_code,
+            "check_kind": check.check_kind,
+            "source_status": check.source_status,
+            "routine_backup_allowed": check.routine_backup_allowed,
+            "dirty_forensic_backup_only": check.dirty_forensic_backup_only,
+            "checked": check.checked_count,
+            "anomaly_count": check.anomaly_count,
+            "failure_count": check.failure_count,
+            "anomalies": result.get("anomalies") or [],
+            "failures": result.get("failures") or [],
+            "broken": result.get("broken"),
+        },
+    )
+
+
+def raise_hashchain_advisory(
+    *,
+    request_id: str | None,
+    actor_ulid: str | None,
+    chain_key: str | None,
+    title: str,
+    summary: str,
+    context: dict[str, Any] | None = None,
+) -> AdminAlertReceiptDTO | None:
+    """Record a resolved/reconciled hash-chain advisory."""
+    return raise_ledger_admin_issue(
+        reason_code=REASON_ADVISORY_HASHCHAIN,
+        request_id=request_id,
+        target_ulid=None,
+        chain_key=chain_key,
+        event_ulid=None,
+        actor_ulid=actor_ulid,
+        title=title,
+        summary=summary,
+        source_status=SOURCE_STATUS_ADVISORY,
+        context=context,
+    )
 
 
 def ledger_issue_get(issue_ulid: str) -> dict[str, Any]:
@@ -252,11 +349,12 @@ def _create_issue(
     title: str,
     summary: str,
     context: dict[str, Any] | None,
+    source_status: str,
 ) -> LedgerAdminIssue:
     now = now_iso8601_ms()
     issue = LedgerAdminIssue(
         reason_code=reason_code,
-        source_status=SOURCE_STATUS_OPEN,
+        source_status=source_status,
         request_id=request_id,
         target_ulid=target_ulid,
         chain_key=chain_key,

@@ -35,3 +35,11 @@ class EventHashConflict(LedgerIntegrityError):
     Use this for idempotency conflicts, hash-chain fork/collision conditions,
     or append races that could not be resolved safely inside the provider.
     """
+
+
+class LedgerHashchainFailure(LedgerIntegrityError):
+    """
+    Ledger hash-chain state is too broken for routine operation.
+
+    This is for failure posture, not ordinary survivable anomalies.
+    """

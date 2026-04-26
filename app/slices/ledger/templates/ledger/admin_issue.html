@@ -1,0 +1,102 @@
+{% extends "layout/base.html" %}
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
+
+{% block title %}{{ page.title }}{% endblock %}
+
+{% block content %}
+<section class="hero" style="margin-top: 18px;">
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+    <a class="btn" href="{{ url_for('admin.inbox') }}">Back to Admin Inbox</a>
+    <a class="btn" href="{{ url_for('ledger.verify_endpoint') }}">Run Ledger Verify</a>
+  </div>
+
+  <div class="hero-card">
+    <div class="glow"></div>
+    <h1>{{ page.title }}</h1>
+    <p class="muted">{{ page.summary }}</p>
+  </div>
+</section>
+
+<section class="features" style="margin-top: 14px;">
+  <div class="card">
+    <h3 style="margin-top: 0;">Reason</h3>
+    <p><code>{{ page.reason_code }}</code></p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top: 0;">Status</h3>
+    <p><code>{{ page.source_status }}</code></p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top: 0;">As of</h3>
+    <p><code>{{ page.as_of_utc }}</code></p>
+  </div>
+</section>
+
+<section style="margin-top: 18px;">
+  <div class="card">
+    <h2 style="margin-top: 0;">Ledger issue facts</h2>
+    <dl>
+      <dt>Issue ULID</dt>
+      <dd><code>{{ page.issue_ulid }}</code></dd>
+
+      <dt>Request ID</dt>
+      <dd><code>{{ page.request_id }}</code></dd>
+
+      <dt>Target ULID</dt>
+      <dd><code>{{ page.target_ulid or "—" }}</code></dd>
+
+      <dt>Chain key</dt>
+      <dd><code>{{ page.chain_key or "—" }}</code></dd>
+
+      <dt>Event ULID</dt>
+      <dd><code>{{ page.event_ulid or "—" }}</code></dd>
+
+      {% if page.closed_at_utc %}
+        <dt>Closed</dt>
+        <dd><code>{{ page.closed_at_utc }}</code></dd>
+        <dt>Close reason</dt>
+        <dd><code>{{ page.close_reason or "—" }}</code></dd>
+      {% endif %}
+    </dl>
+  </div>
+</section>
+
+<section style="margin-top: 18px;">
+  <div class="card">
+    <h2 style="margin-top: 0;">Diagnostics</h2>
+    <pre style="white-space: pre-wrap;">{{ page.details | tojson(indent=2) }}</pre>
+  </div>
+</section>
+
+{% if page.allowed_actions %}
+<section style="margin-top: 18px;">
+  <div class="card">
+    <h2 style="margin-top: 0;">Ledger-owned actions</h2>
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+      {% if "run_verify" in page.allowed_actions %}
+        <form method="post" action="{{ url_for('ledger.admin_issue_run_verify', issue_ulid=page.issue_ulid) }}">
+          {{ csrf_field() }}
+          <button class="btn" type="submit">Run verify for this issue</button>
+        </form>
+      {% endif %}
+
+      {% if "close_restored" in page.allowed_actions %}
+        <form method="post" action="{{ url_for('ledger.admin_issue_close_restored', issue_ulid=page.issue_ulid) }}">
+          {{ csrf_field() }}
+          <button class="btn" type="submit">Close as restored</button>
+        </form>
+      {% endif %}
+
+      {% if "close_no_repair" in page.allowed_actions %}
+        <form method="post" action="{{ url_for('ledger.admin_issue_close_no_repair', issue_ulid=page.issue_ulid) }}">
+          {{ csrf_field() }}
+          <button class="btn" type="submit">Close no repair required</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
