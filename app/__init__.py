@@ -264,7 +264,10 @@ def create_app(config_object="config.DevConfig"):
     from app.slices.entity import bp as entity_bp
     from app.slices.finance import bp as finance_bp
     from app.slices.governance import bp as governance_bp
-    from app.slices.ledger import bp as ledger_bp
+
+    # Ledger slice uses a unique blueprint model because
+    # event_bus is a unique circumstance.
+    from app.slices.ledger.routes import bp as ledger_bp
     from app.slices.logistics import bp as logistics_bp
     from app.slices.resources import bp as resources_bp
     from app.slices.sponsors import bp as sponsors_bp

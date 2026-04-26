@@ -1,16 +1,14 @@
 {% extends "layout/base.html" %}
 {# templates/macros.html #}
-{% macro csrf_field() -%}
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-{%- endmacro %}
+
 {% block title %}Entity Wizard — Start{% endblock %}
 
 {% block content %}
   <h1>New Entity Wizard</h1>
   <p>Select what you are creating.</p>
 
-  <form method="post" {{ csrf_field() }} action="{{ url_for('entity.wizard_start_post') }}" class="card" style="padding:1rem;max-width:38rem;">
-
+  <form method="post" action="{{ url_for('entity.wizard_start_post') }}" class="card" style="padding:1rem;max-width:38rem;">
+    {{ csrf_field() }}
     <p>
       <label>
         <input type="radio" name="kind" value="person"> Person

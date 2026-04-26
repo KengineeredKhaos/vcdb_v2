@@ -14,6 +14,7 @@ from flask import (
     flash,
     redirect,
     render_template,
+    request,
     url_for,
 )
 from flask_login import current_user, login_required
@@ -30,6 +31,33 @@ bp = Blueprint(
     url_prefix="/admin",
     template_folder="templates",
 )
+
+
+def _inbox_view() -> str:
+    view = request.form.get("view") or request.args.get("view") or "active"
+    return str(view).strip().lower() or "active"
+
+
+def _redirect_inbox():
+    view = _inbox_view()
+    if view == "active":
+        return redirect(url_for("admin.inbox"))
+    return redirect(url_for("admin.inbox", view=view))
+
+
+def _optional_note() -> str | None:
+    note = (request.form.get("note") or "").strip()
+    return note or None
+
+
+def _optional_snooze_until() -> str | None:
+    value = (request.form.get("snoozed_until_utc") or "").strip()
+    return value or None
+
+
+def _optional_duplicate_of() -> str | None:
+    value = (request.form.get("duplicate_of_alert_ulid") or "").strip()
+    return value or None
 
 
 def _actor_ulid() -> str:
@@ -119,8 +147,130 @@ def index():
 @login_required
 @roles_required("admin")
 def inbox():
-    page = svc.get_inbox_page()
+    page = svc.get_inbox_page(view=_inbox_view())
     return render_template("admin/inbox.html", page=page)
+
+
+# -----------------
+# Unified Admin Inbox
+# queue posture actions only
+# -----------------
+
+
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface test=admin_route_access
+@bp.post("/inbox/<string:alert_ulid>/acknowledge")
+@login_required
+@roles_required("admin")
+def inbox_acknowledge(alert_ulid: str):
+    try:
+        svc.acknowledge_alert(
+            alert_ulid,
+            actor_ulid=_actor_ulid(),
+            note=_optional_note(),
+        )
+        db.session.commit()
+        flash("Alert acknowledged.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    return _redirect_inbox()
+
+
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface test=admin_route_access
+@bp.post("/inbox/<string:alert_ulid>/start-review")
+@login_required
+@roles_required("admin")
+def inbox_start_review(alert_ulid: str):
+    try:
+        svc.mark_alert_in_review(
+            alert_ulid,
+            actor_ulid=_actor_ulid(),
+            note=_optional_note(),
+        )
+        db.session.commit()
+        flash("Alert moved to in review.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    return _redirect_inbox()
+
+
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface test=admin_route_access
+@bp.post("/inbox/<string:alert_ulid>/snooze")
+@login_required
+@roles_required("admin")
+def inbox_snooze(alert_ulid: str):
+    try:
+        svc.snooze_alert(
+            alert_ulid,
+            actor_ulid=_actor_ulid(),
+            snoozed_until_utc=_optional_snooze_until(),
+            note=_optional_note(),
+        )
+        db.session.commit()
+        flash("Alert snoozed.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    return _redirect_inbox()
+
+
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface test=admin_route_access
+@bp.post("/inbox/<string:alert_ulid>/unsnooze")
+@login_required
+@roles_required("admin")
+def inbox_unsnooze(alert_ulid: str):
+    try:
+        svc.unsnooze_alert(
+            alert_ulid,
+            actor_ulid=_actor_ulid(),
+            note=_optional_note(),
+        )
+        db.session.commit()
+        flash("Alert returned to active queue.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    return _redirect_inbox()
+
+
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface test=admin_route_access
+@bp.post("/inbox/<string:alert_ulid>/dismiss")
+@login_required
+@roles_required("admin")
+def inbox_dismiss(alert_ulid: str):
+    try:
+        svc.dismiss_alert(
+            alert_ulid,
+            actor_ulid=_actor_ulid(),
+            note=_optional_note(),
+        )
+        db.session.commit()
+        flash("Alert dismissed.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    return _redirect_inbox()
+
+
+# VCDB-SEC: ACTIVE entry=admin authority=none reason=admin_only_surface test=admin_route_access
+@bp.post("/inbox/<string:alert_ulid>/mark-duplicate")
+@login_required
+@roles_required("admin")
+def inbox_mark_duplicate(alert_ulid: str):
+    try:
+        svc.mark_alert_duplicate(
+            alert_ulid,
+            actor_ulid=_actor_ulid(),
+            duplicate_of_alert_ulid=_optional_duplicate_of(),
+            note=_optional_note(),
+        )
+        db.session.commit()
+        flash("Alert marked duplicate.", "success")
+    except Exception as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    return _redirect_inbox()
 
 
 # -----------------

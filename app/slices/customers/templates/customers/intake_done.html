@@ -22,6 +22,12 @@
     <tr><th>Tier 3</th><td>{{ dash.tier3_min if dash.tier3_min is not none else "unknown" }}</td></tr>
     <tr><th>Watchlist</th><td>{{ "yes" if dash.watchlist else "no" }}</td></tr>
   </table>
+  {% if dash.watchlist %}
+  <p style="margin-top:12px;">
+    <strong>Admin follow-up:</strong>
+    Immediate Tier 1 needs were flagged and an Admin issue cue was raised.
+  </p>
+  {% endif %}
 
   <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:12px;">
     <a class="btn" href="{{ url_for('customers.customer_overview_get', entity_ulid=entity_ulid) }}">Open Overview</a>

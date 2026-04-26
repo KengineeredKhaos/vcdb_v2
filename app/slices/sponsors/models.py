@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint,
     Index,
     Integer,
+    JSON,
     String,
     UniqueConstraint,
 )
@@ -509,5 +510,60 @@ class SponsorPOC(db.Model, ULIDPK, IsoTimestamps):
         ),
         CheckConstraint(
             "rank >= 0 AND rank <= 99", name="ck_sponsor_poc_rank_range"
+        ),
+    )
+
+
+class SponsorAdminIssue(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "sponsor_admin_issue"
+
+    request_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    target_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+
+    reason_code: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    source_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True
+    )
+
+    requested_by_actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+    resolved_by_actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    summary: Mapped[str] = mapped_column(String, nullable=False)
+
+    details_json: Mapped[dict[str, object] | None] = mapped_column(
+        JSON, nullable=True
+    )
+
+    closed_at_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True, index=True
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_sponsor_admin_issue_active",
+            "reason_code",
+            "source_status",
+            "closed_at_utc",
+        ),
+        Index(
+            "ix_sponsor_admin_issue_request_reason",
+            "request_id",
+            "reason_code",
+        ),
+        Index(
+            "ix_sponsor_admin_issue_target_reason",
+            "target_ulid",
+            "reason_code",
         ),
     )

@@ -38,17 +38,17 @@ def test_public_index_renders(anon_client):
     assert resp.status_code == 200
 
 
-def test_admin_toolbox_renders_for_admin(admin_client):
-    resp = admin_client.get("/admin/toolbox/")
+def test_admin_dev_toolbox_renders_for_admin(admin_client):
+    resp = admin_client.get("/admin/dev_toolbox/")
     assert resp.status_code == 200
-    assert b"Admin Toolbox" in resp.data
+    assert b"Development Toolbox" in resp.data
 
 
-def test_admin_toolbox_blocks_anonymous(anon_client):
-    resp = anon_client.get("/admin/toolbox/")
+def test_admin_dev_toolbox_blocks_anonymous(anon_client):
+    resp = anon_client.get("/admin/dev_toolbox/")
     assert resp.status_code in {302, 401, 403}
 
 
-def test_admin_toolbox_blocks_staff(staff_client):
-    resp = staff_client.get("/admin/toolbox/")
+def test_admin_dev_toolbox_blocks_staff(staff_client):
+    resp = staff_client.get("/admin/dev_toolbox/")
     assert resp.status_code in {302, 401, 403}

@@ -1,13 +1,171 @@
 {% extends "layout/base.html" %}
-{% import "_macros.html" as _macros %}
 
 {% block title %}{{ page.title }}{% endblock %}
 
 {% block content %}
-<h1>{{ page.title }}</h1>
-<p>{{ page.summary or "" }}</p>
-<h2>Inbox</h2>
-<p>Open: {{ page.inbox_summary.total_open }}</p>
-<p>Failed-family alerts: {{ page.inbox_summary.failed_count }}</p>
-<p>Stale: {{ page.inbox_summary.stale_count }}</p>
+<section class="hero" style="margin-top: 18px;">
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+    <a class="btn" href="{{ url_for('admin.index') }}">Back to Admin Dashboard</a>
+  </div>
+
+  <div class="hero-card">
+    <div class="glow"></div>
+    <h1>{{ page.title }}</h1>
+    <p class="muted">{{ page.summary or "" }}</p>
+
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.75rem;">
+      <a
+        class="btn"
+        href="{{ url_for('admin.inbox') }}"
+        {% if page.current_view == 'active' %}aria-current="page"{% endif %}>
+        Active
+      </a>
+      <a
+        class="btn"
+        href="{{ url_for('admin.inbox', view='snoozed') }}"
+        {% if page.current_view == 'snoozed' %}aria-current="page"{% endif %}>
+        Snoozed
+      </a>
+      <a
+        class="btn"
+        href="{{ url_for('admin.inbox', view='closed') }}"
+        {% if page.current_view == 'closed' %}aria-current="page"{% endif %}>
+        Closed
+      </a>
+      <a
+        class="btn"
+        href="{{ url_for('admin.inbox', view='all') }}"
+        {% if page.current_view == 'all' %}aria-current="page"{% endif %}>
+        All
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="features" style="margin-top: 14px;">
+  <div class="card">
+    <h3 style="margin-top: 0;">Items shown</h3>
+    <p><span class="kbd">{{ page.inbox_summary.total_open }}</span></p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top: 0;">Failed-family alerts</h3>
+    <p><span class="kbd">{{ page.inbox_summary.failed_count }}</span></p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top: 0;">Stale</h3>
+    <p><span class="kbd">{{ page.inbox_summary.stale_count }}</span></p>
+  </div>
+</section>
+
+<section style="margin-top: 18px;">
+  <h2>
+    {% if page.current_view == 'active' %}
+      Active alerts
+    {% elif page.current_view == 'snoozed' %}
+      Snoozed alerts
+    {% elif page.current_view == 'closed' %}
+      Closed alerts
+    {% else %}
+      All alerts
+    {% endif %}
+  </h2>
+
+  {% if page.items %}
+    <div style="display:grid; gap:1rem;">
+      {% for item in page.items %}
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
+            <div>
+              <h3 style="margin-top:0; margin-bottom:.35rem;">
+                {{ item.source_slice }} — {{ item.reason_code }}
+              </h3>
+              <p class="muted" style="margin:.2rem 0;">
+                family={{ item.alert_family }}
+                — status={{ item.status }}
+                — opened={{ item.opened_at_utc }}
+              </p>
+            </div>
+            <div>
+              <span class="kbd">{{ item.status }}</span>
+            </div>
+          </div>
+
+          <p style="margin-top:.6rem; margin-bottom:.35rem;">
+            {{ item.summary }}
+          </p>
+          <p class="muted" style="margin-top:.2rem;">
+            {{ item.context_preview }}
+          </p>
+          <p class="muted" style="margin-top:.2rem;">
+            {{ item.allowed_actions_summary }}
+          </p>
+
+          <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.8rem;">
+            {% if item.launch_href %}
+              <a class="btn" href="{{ item.launch_href }}">
+                {{ item.launch_label }}
+              </a>
+            {% else %}
+              <span class="muted">{{ item.launch_label }}</span>
+            {% endif %}
+
+            {% if item.can_acknowledge %}
+              <form method="post" action="{{ url_for('admin.inbox_acknowledge', alert_ulid=item.alert_ulid) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="view" value="{{ page.current_view }}">
+                <button class="btn" type="submit">Acknowledge</button>
+              </form>
+            {% endif %}
+
+            {% if item.can_start_review %}
+              <form method="post" action="{{ url_for('admin.inbox_start_review', alert_ulid=item.alert_ulid) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="view" value="{{ page.current_view }}">
+                <button class="btn" type="submit">Start review</button>
+              </form>
+            {% endif %}
+
+            {% if item.can_snooze %}
+              <form method="post" action="{{ url_for('admin.inbox_snooze', alert_ulid=item.alert_ulid) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="view" value="{{ page.current_view }}">
+                <button class="btn" type="submit">Snooze</button>
+              </form>
+            {% endif %}
+
+            {% if item.status == 'snoozed' %}
+              <form method="post" action="{{ url_for('admin.inbox_unsnooze', alert_ulid=item.alert_ulid) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="view" value="{{ page.current_view }}">
+                <button class="btn" type="submit">Return to active</button>
+              </form>
+            {% endif %}
+
+            {% if item.can_dismiss %}
+              <form method="post" action="{{ url_for('admin.inbox_dismiss', alert_ulid=item.alert_ulid) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="view" value="{{ page.current_view }}">
+                <button class="btn" type="submit">Dismiss as info-only</button>
+              </form>
+            {% endif %}
+
+            {% if item.can_mark_duplicate %}
+              <form method="post" action="{{ url_for('admin.inbox_mark_duplicate', alert_ulid=item.alert_ulid) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="view" value="{{ page.current_view }}">
+                <button class="btn" type="submit">Mark duplicate</button>
+              </form>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="card">
+      <p class="muted" style="margin:0;">
+        No alerts in this view.
+      </p>
+    </div>
+  {% endif %}
+</section>
 {% endblock %}

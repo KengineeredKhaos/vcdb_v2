@@ -162,19 +162,16 @@ def review_snapshot(*, entity_ulid: str) -> dict[str, Any]:
     }
 
 
-def submit_onboard_for_admin_review(
+def submit_onboard_admin_issue(
     *,
     entity_ulid: str,
     request_id: str,
     actor_ulid: str | None,
 ):
     """
-    Advance onboarding to complete and publish the Admin review request.
-
-    Wizard owns step progression.
-    Resources admin_review_services owns the review request lifecycle.
+    Complete wizard progression and hand off to the Resources Admin issue flow.
     """
-    from .admin_review_services import request_onboard_admin_review
+    from .admin_issue_services import raise_onboard_admin_issue
 
     mark_step(
         entity_ulid=entity_ulid,
@@ -183,7 +180,7 @@ def submit_onboard_for_admin_review(
         actor_ulid=actor_ulid,
     )
 
-    return request_onboard_admin_review(
+    return raise_onboard_admin_issue(
         entity_ulid=entity_ulid,
         actor_ulid=actor_ulid,
         request_id=request_id,

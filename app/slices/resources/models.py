@@ -37,6 +37,22 @@ Models:
     Governance-constrained metadata such as relation, scope, rank, and org_role,
     along with validity windows and primary/active flags. This lets Resources
     expose and order POCs without duplicating names, emails, or phone numbers.
+* ResourceAdminIssue
+    Slice-owned link between Resources and Admin Intervention functinality.
+
+    Meaning in order of escalating precedence:
+
+    advisory_*
+    human attention, decision, review, or business intervention required
+
+    anomaly_*
+    slice-local inconsistency, drift, or corrective inspection/repair required
+
+    failed_*
+    job, compile, archive, validation, or other process failure
+    requiring Admin awareness
+
+
 
 Ownership and boundaries:
 
@@ -269,18 +285,22 @@ class ResourcePOC(db.Model, ULIDPK, IsoTimestamps):
     )
 
 
-class ResourceAdminReviewRequest(db.Model, ULIDPK, IsoTimestamps):
-    __tablename__ = "resource_admin_review_request"
+class ResourceAdminIssue(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "resource_admin_issue"
 
-    entity_ulid: Mapped[str] = mapped_column(String(26), nullable=False)
-    review_kind: Mapped[str] = mapped_column(String(64), nullable=False)
-    # Example:
-    # resource_onboard_review
-    # resource_mou_status_review
-    # resource_sla_status_review
+    request_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    target_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
 
-    source_status: Mapped[str] = mapped_column(String(32), nullable=False)
-    # pending_review | approved | rejected | cancelled
+    reason_code: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    source_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True
+    )
 
     requested_by_actor_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True
@@ -289,19 +309,32 @@ class ResourceAdminReviewRequest(db.Model, ULIDPK, IsoTimestamps):
         String(26), nullable=True
     )
 
-    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
+
+    details_json: Mapped[dict[str, object] | None] = mapped_column(
+        db.JSON, nullable=True
+    )
+
     closed_at_utc: Mapped[str | None] = mapped_column(
-        String(30), nullable=True
+        String(30), nullable=True, index=True
     )
 
     __table_args__ = (
         db.Index(
-            "ix_resource_admin_review_request_active",
-            "entity_ulid",
-            "review_kind",
+            "ix_resource_admin_issue_active",
+            "reason_code",
             "source_status",
+            "closed_at_utc",
+        ),
+        db.Index(
+            "ix_resource_admin_issue_request_reason",
+            "request_id",
+            "reason_code",
+        ),
+        db.Index(
+            "ix_resource_admin_issue_target_reason",
+            "target_ulid",
+            "reason_code",
         ),
     )

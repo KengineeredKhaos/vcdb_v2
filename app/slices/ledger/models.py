@@ -106,3 +106,61 @@ class LedgerEvent(db.Model, ULIDPK, IsoTimestamps):
         Index("ix_ledger_event_request_id", "request_id"),
         Index("ix_ledger_event_event_type", "event_type"),
     )
+
+
+class LedgerAdminIssue(db.Model, ULIDPK, IsoTimestamps):
+    """
+    Slice-local Ledger issue truth for Admin/Auditor visibility.
+
+    Admin owns queue posture and launch. Ledger owns the issue facts,
+    diagnostic context, verification posture, resolution mechanics, and
+    terminal state.
+    """
+
+    __tablename__ = "ledger_admin_issue"
+
+    reason_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_status: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_ulid: Mapped[str | None] = mapped_column(String(26), nullable=True)
+    chain_key: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    event_ulid: Mapped[str | None] = mapped_column(String(26), nullable=True)
+
+    requested_by_actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+    resolved_by_actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    details_json: Mapped[dict[str, object]] = mapped_column(
+        db.JSON, nullable=False, default=dict
+    )
+
+    closed_at_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )
+    close_reason: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+
+    __table_args__ = (
+        db.Index(
+            "ix_ledger_admin_issue_open",
+            "source_status",
+            "updated_at_utc",
+        ),
+        db.Index(
+            "ix_ledger_admin_issue_request_reason",
+            "request_id",
+            "reason_code",
+        ),
+        db.Index(
+            "ix_ledger_admin_issue_chain",
+            "chain_key",
+            "reason_code",
+        ),
+    )

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from . import (
-    admin_review_routes,  # noqa: F401
+    admin_issue_routes,  # noqa: F401
     onboard_routes,  # noqa: F401
 )
 from .routes import bp

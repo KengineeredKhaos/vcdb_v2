@@ -1,7 +1,5 @@
 # Development Disciplines
 
-
-
 - Frontend
 - Backend
 - UI
@@ -12,8 +10,6 @@
 - DevOps / operations
 - Security
 - Product design
-
-
 
 **Frontend development**  
 What the operator sees and clicks. Templates, pages, forms, CSS, layout, interaction feel.

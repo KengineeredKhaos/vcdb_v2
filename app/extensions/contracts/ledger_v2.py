@@ -13,8 +13,11 @@ from typing import Any
 from app.extensions.errors import ContractError
 from app.slices.ledger import services as ledger_svc
 from app.slices.ledger.errors import (
+    EventHashConflict,
     LedgerBadArgument,
+    LedgerIntegrityError,
     LedgerUnavailable,
+    ProviderTemporarilyDown,
 )
 
 # -*- coding: utf-8 -*-
@@ -73,6 +76,20 @@ def emit(
             message=str(exc),
             http_status=400,
         ) from exc
+    except EventHashConflict as exc:
+        raise ContractError(
+            code="event_hash_conflict",
+            where=where,
+            message=str(exc) or "ledger event hash conflict",
+            http_status=409,
+        ) from exc
+    except ProviderTemporarilyDown as exc:
+        raise ContractError(
+            code="provider_temporarily_down",
+            where=where,
+            message=str(exc) or "ledger provider temporarily down",
+            http_status=503,
+        ) from exc
     except LedgerUnavailable as exc:
         raise ContractError(
             code="ledger_unavailable",
@@ -107,6 +124,20 @@ def verify(chain_key: str | None = None) -> dict[str, Any]:
             where=where,
             message=str(exc),
             http_status=400,
+        ) from exc
+    except LedgerIntegrityError as exc:
+        raise ContractError(
+            code="ledger_integrity_error",
+            where=where,
+            message=str(exc) or "ledger integrity error",
+            http_status=409,
+        ) from exc
+    except ProviderTemporarilyDown as exc:
+        raise ContractError(
+            code="provider_temporarily_down",
+            where=where,
+            message=str(exc) or "ledger provider temporarily down",
+            http_status=503,
         ) from exc
     except LedgerUnavailable as exc:
         raise ContractError(

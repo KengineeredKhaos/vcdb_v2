@@ -6,7 +6,7 @@ from typing import Any, Final
 
 from app.extensions import db, event_bus
 from app.lib.chrono import now_iso8601_ms
-from app.lib.request_ctx import ensure_request_id, get_actor_ulid
+from app.lib.guards import ensure_actor_ulid, ensure_request_id
 
 from . import services as sp_svc
 from .models import Sponsor
@@ -76,9 +76,15 @@ def wizard_next_step(*, entity_ulid: str) -> str:
     return STEP_ENDPOINTS[STEPS[nxt]]
 
 
-def mark_step(*, entity_ulid: str, step: str) -> bool:
-    rid = ensure_request_id()
-    actor = get_actor_ulid()
+def mark_step(
+    *,
+    entity_ulid: str,
+    step: str,
+    request_id: str,
+    actor_ulid: str | None,
+) -> bool:
+    rid = ensure_request_id(request_id)
+    actor = ensure_actor_ulid(actor_ulid)
     step_key = str(step or "").strip().lower()
     if step_key not in STEPS:
         raise ValueError(f"invalid onboard step: {step!r}")
@@ -109,6 +115,31 @@ def mark_step(*, entity_ulid: str, step: str) -> bool:
         meta={"origin": "onboard"},
     )
     return True
+
+
+def submit_onboard_admin_issue(
+    *,
+    entity_ulid: str,
+    request_id: str,
+    actor_ulid: str | None,
+):
+    """
+    Complete wizard progression and hand off to the Sponsors Admin issue flow.
+    """
+    from .admin_issue_services import raise_onboard_admin_issue
+
+    mark_step(
+        entity_ulid=entity_ulid,
+        step="complete",
+        request_id=request_id,
+        actor_ulid=actor_ulid,
+    )
+
+    return raise_onboard_admin_issue(
+        entity_ulid=entity_ulid,
+        actor_ulid=actor_ulid,
+        request_id=request_id,
+    )
 
 
 def review_snapshot(*, entity_ulid: str) -> dict[str, Any]:

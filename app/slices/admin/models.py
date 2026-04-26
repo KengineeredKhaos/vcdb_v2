@@ -58,6 +58,20 @@ class AdminAlert(db.Model, ULIDPK, IsoTimestamps):
         String(30), nullable=True
     )
 
+    triaged_by_actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+    triaged_at_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )
+    snoozed_until_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )
+    duplicate_of_alert_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+    triage_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     closed_at_utc: Mapped[str | None] = mapped_column(
         String(30), nullable=True
     )
@@ -125,6 +139,20 @@ class AdminAlertArchive(db.Model, ULIDPK):
     acknowledged_at_utc: Mapped[str | None] = mapped_column(
         String(30), nullable=True
     )
+
+    triaged_by_actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+    triaged_at_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )
+    snoozed_until_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )
+    duplicate_of_alert_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+    triage_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     closed_at_utc: Mapped[str | None] = mapped_column(
         String(30), nullable=True

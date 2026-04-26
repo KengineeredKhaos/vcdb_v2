@@ -790,15 +790,14 @@ def onboard_complete(entity_ulid: str):
         )
 
     try:
-        wiz.mark_step(
+        wiz.submit_onboard_admin_issue(
             entity_ulid=entity_ulid,
-            step=step,
             request_id=req,
             actor_ulid=actor,
         )
         db.session.commit()
         _consume_nonce(step, entity_ulid)
-        flash("Submitted for Admin review.", "success")
+        flash("Submitted for Admin approval.", "success")
         return redirect(
             url_for(
                 "sponsors.search_sponsors_html",

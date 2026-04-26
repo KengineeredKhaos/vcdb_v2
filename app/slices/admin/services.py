@@ -20,8 +20,8 @@ Policy edits work
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict
+from flask import url_for
 from typing import Any
 
 from sqlalchemy import select
@@ -36,7 +36,6 @@ from app.extensions.contracts.admin_v2 import (
     AdminAlertCloseDTO,
     AdminAlertReceiptDTO,
     AdminAlertUpsertDTO,
-    AdminResolutionTargetDTO,
 )
 from app.lib.chrono import now_iso8601_ms
 from app.lib.ids import new_ulid
@@ -89,6 +88,16 @@ ACTIVE_ADMIN_STATUSES = {
     ADMIN_STATUS_OPEN,
     ADMIN_STATUS_ACKNOWLEDGED,
     ADMIN_STATUS_IN_REVIEW,
+    ADMIN_STATUS_SNOOZED,
+}
+
+DEFAULT_INBOX_STATUSES = {
+    ADMIN_STATUS_OPEN,
+    ADMIN_STATUS_ACKNOWLEDGED,
+    ADMIN_STATUS_IN_REVIEW,
+}
+
+SNOOZED_INBOX_STATUSES = {
     ADMIN_STATUS_SNOOZED,
 }
 
@@ -147,6 +156,19 @@ def _validate_admin_status(status: str) -> None:
         raise ValueError(f"Unsupported admin inbox status: {status}")
 
 
+def _view_statuses(view: str) -> tuple[str, set[str]]:
+    normalized = (view or "active").strip().lower()
+    mapping = {
+        "active": DEFAULT_INBOX_STATUSES,
+        "snoozed": SNOOZED_INBOX_STATUSES,
+        "closed": TERMINAL_ADMIN_STATUSES,
+        "all": ACTIVE_ADMIN_STATUSES | TERMINAL_ADMIN_STATUSES,
+    }
+    if normalized not in mapping:
+        raise ValueError(f"Unsupported inbox view: {view}")
+    return normalized, mapping[normalized]
+
+
 def _receipt(row: AdminAlert) -> AdminAlertReceiptDTO:
     return AdminAlertReceiptDTO(
         alert_ulid=row.ulid,
@@ -156,6 +178,75 @@ def _receipt(row: AdminAlert) -> AdminAlertReceiptDTO:
         target_ulid=row.target_ulid,
         admin_status=row.admin_status,
     )
+
+
+def _resolution_href(row: AdminAlert) -> str | None:
+    target = dict(row.resolution_target_json or {})
+    route_name = str(target.get("route_name") or "").strip()
+    route_params = dict(target.get("route_params") or {})
+    if not route_name:
+        return None
+    try:
+        return url_for(route_name, **route_params)
+    except Exception:
+        return None
+
+
+def _inbox_summary_text(view: str) -> str:
+    mapping = {
+        "active": "Admin triage surface for slice-owned review items and advisory notices with truthful launch paths.",
+        "snoozed": "Snoozed Admin notices. Return items to the active queue when they need attention again.",
+        "closed": "Closed Admin notices preserved for audit visibility. These are no longer actionable.",
+        "all": "All Admin notices across active, snoozed, and closed queue posture.",
+    }
+    return mapping.get(view, mapping["active"])
+
+
+def _set_triage_fields(
+    row: AdminAlert,
+    *,
+    actor_ulid: str,
+    note: str | None = None,
+) -> str:
+    now = _now()
+    row.triaged_by_actor_ulid = actor_ulid
+    row.triaged_at_utc = now
+    if note is not None:
+        row.triage_note = note
+    return now
+
+
+def _require_hot_queue(row: AdminAlert) -> None:
+    if row.admin_status in TERMINAL_ADMIN_STATUSES:
+        raise ValueError(
+            "Cannot change queue posture for a terminal admin alert"
+        )
+
+
+def _alert_allows_dismiss(row: AdminAlert) -> bool:
+    if row.reason_code.startswith("failed_"):
+        return True
+    if row.reason_code == "advisory_customers_assessment_completed":
+        return True
+    return False
+
+
+def _build_actions_summary(row: AdminAlert) -> str:
+    parts = ["Open owning-slice issue"]
+    if row.admin_status in {ADMIN_STATUS_OPEN, ADMIN_STATUS_SNOOZED}:
+        parts.append("Acknowledge")
+    if row.admin_status in {
+        ADMIN_STATUS_OPEN,
+        ADMIN_STATUS_ACKNOWLEDGED,
+        ADMIN_STATUS_SNOOZED,
+    }:
+        parts.append("Start review")
+    if row.admin_status in DEFAULT_INBOX_STATUSES:
+        parts.append("Snooze")
+    if _alert_allows_dismiss(row):
+        parts.append("Dismiss info-only")
+    parts.append("Mark duplicate")
+    return " · ".join(parts)
 
 
 def _policy_issue_from_mapping(item: dict[str, Any]) -> PolicyIssueDTO:
@@ -302,6 +393,11 @@ def upsert_alert(
             workflow_key=dto.workflow_key,
             resolution_target_json=asdict(dto.resolution_target),
             context_json=dict(dto.context or {}),
+            triaged_by_actor_ulid=None,
+            triaged_at_utc=None,
+            snoozed_until_utc=None,
+            duplicate_of_alert_ulid=None,
+            triage_note=None,
             acknowledged_by_ulid=None,
             acknowledged_at_utc=None,
             closed_at_utc=None,
@@ -367,17 +463,129 @@ def acknowledge_alert(
     alert_ulid: str,
     *,
     actor_ulid: str,
+    note: str | None = None,
 ) -> AdminAlertReceiptDTO:
     row = get_alert_by_ulid(alert_ulid)
     if row is None:
         raise LookupError(f"Admin alert not found: {alert_ulid}")
-    if row.admin_status in TERMINAL_ADMIN_STATUSES:
-        raise ValueError("Cannot acknowledge a terminal admin alert")
+    _require_hot_queue(row)
 
+    now = _set_triage_fields(row, actor_ulid=actor_ulid, note=note)
     row.admin_status = ADMIN_STATUS_ACKNOWLEDGED
     row.acknowledged_by_ulid = actor_ulid
-    row.acknowledged_at_utc = _now()
-    row.updated_at_utc = row.acknowledged_at_utc
+    row.acknowledged_at_utc = now
+    row.updated_at_utc = now
+
+    db.session.flush()
+    return _receipt(row)
+
+
+def mark_alert_in_review(
+    alert_ulid: str,
+    *,
+    actor_ulid: str,
+    note: str | None = None,
+) -> AdminAlertReceiptDTO:
+    row = get_alert_by_ulid(alert_ulid)
+    if row is None:
+        raise LookupError(f"Admin alert not found: {alert_ulid}")
+    _require_hot_queue(row)
+
+    now = _set_triage_fields(row, actor_ulid=actor_ulid, note=note)
+    row.admin_status = ADMIN_STATUS_IN_REVIEW
+    row.updated_at_utc = now
+
+    db.session.flush()
+    return _receipt(row)
+
+
+def snooze_alert(
+    alert_ulid: str,
+    *,
+    actor_ulid: str,
+    snoozed_until_utc: str | None = None,
+    note: str | None = None,
+) -> AdminAlertReceiptDTO:
+    row = get_alert_by_ulid(alert_ulid)
+    if row is None:
+        raise LookupError(f"Admin alert not found: {alert_ulid}")
+    _require_hot_queue(row)
+
+    now = _set_triage_fields(row, actor_ulid=actor_ulid, note=note)
+    row.admin_status = ADMIN_STATUS_SNOOZED
+    row.snoozed_until_utc = snoozed_until_utc
+    row.updated_at_utc = now
+
+    db.session.flush()
+    return _receipt(row)
+
+
+def unsnooze_alert(
+    alert_ulid: str,
+    *,
+    actor_ulid: str,
+    note: str | None = None,
+) -> AdminAlertReceiptDTO:
+    row = get_alert_by_ulid(alert_ulid)
+    if row is None:
+        raise LookupError(f"Admin alert not found: {alert_ulid}")
+    _require_hot_queue(row)
+    if row.admin_status != ADMIN_STATUS_SNOOZED:
+        raise ValueError("Only snoozed alerts may be unsnoozed")
+
+    now = _set_triage_fields(row, actor_ulid=actor_ulid, note=note)
+    row.admin_status = ADMIN_STATUS_OPEN
+    row.snoozed_until_utc = None
+    row.updated_at_utc = now
+
+    db.session.flush()
+    return _receipt(row)
+
+
+def dismiss_alert(
+    alert_ulid: str,
+    *,
+    actor_ulid: str,
+    note: str | None = None,
+    close_reason: str = "admin_dismissed",
+) -> AdminAlertReceiptDTO:
+    row = get_alert_by_ulid(alert_ulid)
+    if row is None:
+        raise LookupError(f"Admin alert not found: {alert_ulid}")
+    _require_hot_queue(row)
+    if not _alert_allows_dismiss(row):
+        raise ValueError(f"Admin alert is not dismissible: {row.reason_code}")
+
+    now = _set_triage_fields(row, actor_ulid=actor_ulid, note=note)
+    row.admin_status = ADMIN_STATUS_DISMISSED
+    row.closed_at_utc = now
+    row.close_reason = close_reason
+    row.updated_at_utc = now
+
+    db.session.flush()
+    return _receipt(row)
+
+
+def mark_alert_duplicate(
+    alert_ulid: str,
+    *,
+    actor_ulid: str,
+    duplicate_of_alert_ulid: str | None = None,
+    note: str | None = None,
+) -> AdminAlertReceiptDTO:
+    row = get_alert_by_ulid(alert_ulid)
+    if row is None:
+        raise LookupError(f"Admin alert not found: {alert_ulid}")
+    _require_hot_queue(row)
+    if duplicate_of_alert_ulid and duplicate_of_alert_ulid == row.ulid:
+        raise ValueError("Alert cannot be marked duplicate of itself")
+
+    now = _set_triage_fields(row, actor_ulid=actor_ulid, note=note)
+    row.admin_status = ADMIN_STATUS_DUPLICATE
+    row.duplicate_of_alert_ulid = duplicate_of_alert_ulid
+    row.closed_at_utc = now
+    row.close_reason = "admin_duplicate"
+    row.updated_at_utc = now
 
     db.session.flush()
     return _receipt(row)
@@ -387,25 +595,33 @@ def set_alert_status(
     alert_ulid: str,
     *,
     admin_status: str,
+    actor_ulid: str | None = None,
+    note: str | None = None,
 ) -> AdminAlertReceiptDTO:
     """
-    Admin-local queue posture update only.
-    Intended for states like in_review or snoozed.
+    Backward-compatible admin-local posture update for nonterminal states.
+    Prefer explicit queue posture helpers in new code.
     """
     _validate_admin_status(admin_status)
     if admin_status in TERMINAL_ADMIN_STATUSES:
-        raise ValueError("Use close_alert for terminal queue states")
+        raise ValueError("Use close_alert for slice-owned terminal states")
 
     row = get_alert_by_ulid(alert_ulid)
     if row is None:
         raise LookupError(f"Admin alert not found: {alert_ulid}")
-    if row.admin_status in TERMINAL_ADMIN_STATUSES:
-        raise ValueError(
-            "Cannot move a terminal alert back into the hot queue"
-        )
+    _require_hot_queue(row)
 
+    now = _now()
     row.admin_status = admin_status
-    row.updated_at_utc = _now()
+
+    row.updated_at_utc = now
+    if actor_ulid:
+        row.triaged_by_actor_ulid = actor_ulid
+        row.triaged_at_utc = now
+    if note is not None:
+        row.triage_note = note
+    if admin_status != ADMIN_STATUS_SNOOZED:
+        row.snoozed_until_utc = None
 
     db.session.flush()
     return _receipt(row)
@@ -451,6 +667,11 @@ def archive_terminal_alerts(*, archive_reason: str = "cron_cycle") -> int:
             updated_at_utc=row.updated_at_utc,
             acknowledged_by_ulid=row.acknowledged_by_ulid,
             acknowledged_at_utc=row.acknowledged_at_utc,
+            triaged_by_actor_ulid=row.triaged_by_actor_ulid,
+            triaged_at_utc=row.triaged_at_utc,
+            snoozed_until_utc=row.snoozed_until_utc,
+            duplicate_of_alert_ulid=row.duplicate_of_alert_ulid,
+            triage_note=row.triage_note,
             closed_at_utc=row.closed_at_utc,
             close_reason=row.close_reason,
             archived_at_utc=archived_at,
@@ -464,10 +685,10 @@ def archive_terminal_alerts(*, archive_reason: str = "cron_cycle") -> int:
     return moved
 
 
-def list_active_alerts() -> tuple[InboxItemDTO, ...]:
-    stmt = select(AdminAlert).where(
-        AdminAlert.admin_status.in_(ACTIVE_ADMIN_STATUSES)
-    )
+def list_inbox_alerts(*, view: str = "active") -> tuple[InboxItemDTO, ...]:
+    _, statuses = _view_statuses(view)
+
+    stmt = select(AdminAlert).where(AdminAlert.admin_status.in_(statuses))
 
     rows = list(db.session.execute(stmt).scalars().all())
 
@@ -477,6 +698,7 @@ def list_active_alerts() -> tuple[InboxItemDTO, ...]:
 
     return tuple(
         to_inbox_item(
+            alert_ulid=row.ulid,
             source_slice=row.source_slice,
             reason_code=row.reason_code,
             alert_family=_alert_family(row.reason_code),
@@ -487,17 +709,37 @@ def list_active_alerts() -> tuple[InboxItemDTO, ...]:
                 (row.resolution_target_json or {}).get("launch_label")
                 or "Open owning slice"
             ),
-            allowed_actions_summary=(
-                "Launch owning-slice workflow or advisory surface; Admin queue actions only."
-            ),
+            launch_href=_resolution_href(row),
+            allowed_actions_summary=_build_actions_summary(row),
             context_preview=row.title,
+            can_acknowledge=row.admin_status
+            in {
+                ADMIN_STATUS_OPEN,
+                ADMIN_STATUS_SNOOZED,
+            },
+            can_start_review=row.admin_status
+            in {
+                ADMIN_STATUS_OPEN,
+                ADMIN_STATUS_ACKNOWLEDGED,
+                ADMIN_STATUS_SNOOZED,
+            },
+            can_snooze=row.admin_status in DEFAULT_INBOX_STATUSES,
+            can_dismiss=_alert_allows_dismiss(row),
+            can_mark_duplicate=(
+                row.admin_status not in TERMINAL_ADMIN_STATUSES
+            ),
         )
         for row in rows
     )
 
 
-def get_inbox_page() -> InboxPageDTO:
-    items = list_active_alerts()
+def list_active_alerts() -> tuple[InboxItemDTO, ...]:
+    return list_inbox_alerts(view="active")
+
+
+def get_inbox_page(*, view: str = "active") -> InboxPageDTO:
+    normalized_view, _ = _view_statuses(view)
+    items = list_inbox_alerts(view=normalized_view)
 
     failed_count = sum(1 for item in items if item.alert_family == "failed")
 
@@ -509,11 +751,9 @@ def get_inbox_page() -> InboxPageDTO:
 
     return to_inbox_page(
         title="Unified Admin Inbox",
-        summary=(
-            "Admin triage surface for slice-owned review items and advisory "
-            "notices with truthful launch paths."
-        ),
+        summary=_inbox_summary_text(normalized_view),
         inbox_summary=inbox_summary,
+        current_view=normalized_view,
         items=items,
     )
 

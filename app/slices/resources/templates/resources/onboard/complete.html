@@ -1,8 +1,6 @@
 {% extends "layout/base.html" %}
 {# templates/macros.html #}
-{% macro csrf_field() -%}
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-{%- endmacro %}
+
 {% block title %}Resource Onboarding · Complete{% endblock %}
 {% include "resources/onboard/_entity_card.html" %}
 {% block content %}
@@ -19,7 +17,8 @@
     Admin will review, adjust drafts, and activate later.
   </div>
 
-  <form method="post" {{ csrf_field() }} action="{{ url_for('resources.onboard_complete', entity_ulid=entity_ulid) }}">
+  <form method="post" action="{{ url_for('resources.onboard_complete', entity_ulid=entity_ulid) }}">
+    {{ csrf_field() }}
     <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
     <button class="btn" type="submit">Submit</button>
   </form>

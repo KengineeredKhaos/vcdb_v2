@@ -8,8 +8,8 @@ import pytest
 from sqlalchemy import select
 
 from app.extensions import db
-from app.slices.admin.models import AdminInboxItem
-from app.slices.customers.models import Customer
+from app.slices.admin.models import AdminAlert
+from app.slices.customers.models import Customer, CustomerAdminIssue
 from tests.support.real_auth import (
     ADMIN_SETTLED_PASSWORD,
     ADMIN_TEMP_PASSWORD,
@@ -29,9 +29,6 @@ from tests.support.real_auth import (
 
 @pytest.fixture()
 def customer_seeded(app):
-    """
-    Seed only the customer rows this file actually needs.
-    """
     seed_real_auth_world(
         app,
         customers=2,
@@ -84,19 +81,37 @@ def _extract_wiz_nonce(html: str) -> str:
     raise AssertionError("wiz_nonce not found in response HTML")
 
 
-def _count_customer_admin_items(
+def _count_customer_alerts(
     app,
     *,
     entity_ulid: str,
-    issue_kind: str,
+    reason_code: str,
 ) -> int:
     with app.app_context():
         return len(
             db.session.execute(
-                select(AdminInboxItem)
-                .where(AdminInboxItem.source_slice == "customers")
-                .where(AdminInboxItem.issue_kind == issue_kind)
-                .where(AdminInboxItem.subject_ref_ulid == entity_ulid)
+                select(AdminAlert)
+                .where(AdminAlert.source_slice == "customers")
+                .where(AdminAlert.reason_code == reason_code)
+                .where(AdminAlert.target_ulid == entity_ulid)
+            )
+            .scalars()
+            .all()
+        )
+
+
+def _count_customer_issues(
+    app,
+    *,
+    entity_ulid: str,
+    reason_code: str,
+) -> int:
+    with app.app_context():
+        return len(
+            db.session.execute(
+                select(CustomerAdminIssue)
+                .where(CustomerAdminIssue.reason_code == reason_code)
+                .where(CustomerAdminIssue.target_ulid == entity_ulid)
             )
             .scalars()
             .all()
@@ -109,7 +124,6 @@ def _drive_customer_to_review(
     entity_ulid: str,
     tier1_food: str,
 ) -> None:
-    # eligibility
     resp = client.get(
         f"/customers/intake/{entity_ulid}/eligibility",
         follow_redirects=False,
@@ -129,7 +143,6 @@ def _drive_customer_to_review(
     )
     assert resp.status_code in {302, 303}
 
-    # tier 1
     resp = client.get(
         f"/customers/intake/{entity_ulid}/needs/tier1",
         follow_redirects=False,
@@ -151,7 +164,6 @@ def _drive_customer_to_review(
     )
     assert resp.status_code in {302, 303}
 
-    # tier 2
     resp = client.get(
         f"/customers/intake/{entity_ulid}/needs/tier2",
         follow_redirects=False,
@@ -172,7 +184,6 @@ def _drive_customer_to_review(
     )
     assert resp.status_code in {302, 303}
 
-    # tier 3
     resp = client.get(
         f"/customers/intake/{entity_ulid}/needs/tier3",
         follow_redirects=False,
@@ -246,10 +257,10 @@ def test_customer_legacy_admin_inbox_route_is_gone(client):
     assert resp.status_code == 404
 
 
-def test_customer_complete_sets_watchlist_and_publishes_admin_advisories(
+def test_customer_complete_sets_watchlist_and_raises_admin_issues(
     client,
     app,
-    customer_seeded,  # only here so seeding runs
+    customer_seeded,
 ):
     entity_ulid = _customer_entity_ulids(app)[0]
 
@@ -272,15 +283,26 @@ def test_customer_complete_sets_watchlist_and_publishes_admin_advisories(
         assert customer.tier1_min == 1
         assert customer.watchlist is True
 
-    before_watchlist_count = _count_customer_admin_items(
+    before_watchlist_alerts = _count_customer_alerts(
         app,
         entity_ulid=entity_ulid,
-        issue_kind="customer_watchlist_notice",
+        reason_code="advisory_customers_watchlist",
     )
-    before_assessment_count = _count_customer_admin_items(
+    before_assessment_alerts = _count_customer_alerts(
         app,
         entity_ulid=entity_ulid,
-        issue_kind="customer_assessment_completed_notice",
+        reason_code="advisory_customers_assessment_completed",
+    )
+
+    before_watchlist_issues = _count_customer_issues(
+        app,
+        entity_ulid=entity_ulid,
+        reason_code="advisory_customers_watchlist",
+    )
+    before_assessment_issues = _count_customer_issues(
+        app,
+        entity_ulid=entity_ulid,
+        reason_code="advisory_customers_assessment_completed",
     )
 
     _complete_customer_review(client, entity_ulid=entity_ulid)
@@ -291,65 +313,87 @@ def test_customer_complete_sets_watchlist_and_publishes_admin_advisories(
         assert customer.intake_step == "complete"
         assert customer.intake_completed_at_iso is not None
 
-    after_watchlist_count = _count_customer_admin_items(
+    after_watchlist_alerts = _count_customer_alerts(
         app,
         entity_ulid=entity_ulid,
-        issue_kind="customer_watchlist_notice",
+        reason_code="advisory_customers_watchlist",
     )
-    after_assessment_count = _count_customer_admin_items(
+    after_assessment_alerts = _count_customer_alerts(
         app,
         entity_ulid=entity_ulid,
-        issue_kind="customer_assessment_completed_notice",
+        reason_code="advisory_customers_assessment_completed",
     )
 
-    assert after_watchlist_count >= 1
-    assert after_watchlist_count in {
-        before_watchlist_count,
-        before_watchlist_count + 1,
+    after_watchlist_issues = _count_customer_issues(
+        app,
+        entity_ulid=entity_ulid,
+        reason_code="advisory_customers_watchlist",
+    )
+    after_assessment_issues = _count_customer_issues(
+        app,
+        entity_ulid=entity_ulid,
+        reason_code="advisory_customers_assessment_completed",
+    )
+
+    assert after_watchlist_alerts >= 1
+    assert after_watchlist_alerts in {
+        before_watchlist_alerts,
+        before_watchlist_alerts + 1,
     }
-    assert after_assessment_count == before_assessment_count + 1
+    assert after_assessment_alerts == before_assessment_alerts + 1
+
+    assert after_watchlist_issues >= 1
+    assert after_watchlist_issues in {
+        before_watchlist_issues,
+        before_watchlist_issues + 1,
+    }
+    assert after_assessment_issues == before_assessment_issues + 1
 
     with app.app_context():
-        watchlist_rows = (
+        watchlist_alerts = (
             db.session.execute(
-                select(AdminInboxItem)
-                .where(AdminInboxItem.source_slice == "customers")
+                select(AdminAlert)
+                .where(AdminAlert.source_slice == "customers")
                 .where(
-                    AdminInboxItem.issue_kind == "customer_watchlist_notice"
+                    AdminAlert.reason_code == "advisory_customers_watchlist"
                 )
-                .where(AdminInboxItem.subject_ref_ulid == entity_ulid)
+                .where(AdminAlert.target_ulid == entity_ulid)
             )
             .scalars()
             .all()
         )
-        assert watchlist_rows
-        assert all(row.admin_status == "open" for row in watchlist_rows)
+        assert watchlist_alerts
+        assert all(row.admin_status == "open" for row in watchlist_alerts)
         assert all(
-            row.workflow_key == "customer_advisory" for row in watchlist_rows
+            row.workflow_key == "customers_watchlist_issue"
+            for row in watchlist_alerts
         )
 
-        assessment_rows = (
+        assessment_alerts = (
             db.session.execute(
-                select(AdminInboxItem)
-                .where(AdminInboxItem.source_slice == "customers")
+                select(AdminAlert)
+                .where(AdminAlert.source_slice == "customers")
                 .where(
-                    AdminInboxItem.issue_kind
-                    == "customer_assessment_completed_notice"
+                    AdminAlert.reason_code
+                    == "advisory_customers_assessment_completed"
                 )
-                .where(AdminInboxItem.subject_ref_ulid == entity_ulid)
+                .where(AdminAlert.target_ulid == entity_ulid)
             )
             .scalars()
             .all()
         )
-        assert assessment_rows
-        assert assessment_rows[-1].admin_status == "open"
-        assert assessment_rows[-1].workflow_key == "customer_advisory"
+        assert assessment_alerts
+        assert assessment_alerts[-1].admin_status == "open"
+        assert (
+            assessment_alerts[-1].workflow_key
+            == "customers_assessment_completed_issue"
+        )
 
 
-def test_customer_complete_without_watchlist_publishes_only_assessment_advisory(
+def test_customer_complete_without_watchlist_raises_only_assessment_issue(
     client,
     app,
-    customer_seeded,  # only here so seeding runs
+    customer_seeded,
 ):
     entity_ulid = _customer_entity_ulids(app)[1]
 
@@ -372,15 +416,26 @@ def test_customer_complete_without_watchlist_publishes_only_assessment_advisory(
         assert customer.tier1_min != 1
         assert customer.watchlist is False
 
-    before_watchlist_count = _count_customer_admin_items(
+    before_watchlist_alerts = _count_customer_alerts(
         app,
         entity_ulid=entity_ulid,
-        issue_kind="customer_watchlist_notice",
+        reason_code="advisory_customers_watchlist",
     )
-    before_assessment_count = _count_customer_admin_items(
+    before_assessment_alerts = _count_customer_alerts(
         app,
         entity_ulid=entity_ulid,
-        issue_kind="customer_assessment_completed_notice",
+        reason_code="advisory_customers_assessment_completed",
+    )
+
+    before_watchlist_issues = _count_customer_issues(
+        app,
+        entity_ulid=entity_ulid,
+        reason_code="advisory_customers_watchlist",
+    )
+    before_assessment_issues = _count_customer_issues(
+        app,
+        entity_ulid=entity_ulid,
+        reason_code="advisory_customers_assessment_completed",
     )
 
     _complete_customer_review(client, entity_ulid=entity_ulid)
@@ -391,37 +446,54 @@ def test_customer_complete_without_watchlist_publishes_only_assessment_advisory(
         assert customer.intake_step == "complete"
         assert customer.intake_completed_at_iso is not None
 
-    after_watchlist_count = _count_customer_admin_items(
+    after_watchlist_alerts = _count_customer_alerts(
         app,
         entity_ulid=entity_ulid,
-        issue_kind="customer_watchlist_notice",
+        reason_code="advisory_customers_watchlist",
     )
-    after_assessment_count = _count_customer_admin_items(
+    after_assessment_alerts = _count_customer_alerts(
         app,
         entity_ulid=entity_ulid,
-        issue_kind="customer_assessment_completed_notice",
+        reason_code="advisory_customers_assessment_completed",
     )
 
-    assert after_watchlist_count == before_watchlist_count
-    assert after_assessment_count == before_assessment_count + 1
+    after_watchlist_issues = _count_customer_issues(
+        app,
+        entity_ulid=entity_ulid,
+        reason_code="advisory_customers_watchlist",
+    )
+    after_assessment_issues = _count_customer_issues(
+        app,
+        entity_ulid=entity_ulid,
+        reason_code="advisory_customers_assessment_completed",
+    )
+
+    assert after_watchlist_alerts == before_watchlist_alerts
+    assert after_assessment_alerts == before_assessment_alerts + 1
+
+    assert after_watchlist_issues == before_watchlist_issues
+    assert after_assessment_issues == before_assessment_issues + 1
 
     with app.app_context():
-        assessment_rows = (
+        assessment_alerts = (
             db.session.execute(
-                select(AdminInboxItem)
-                .where(AdminInboxItem.source_slice == "customers")
+                select(AdminAlert)
+                .where(AdminAlert.source_slice == "customers")
                 .where(
-                    AdminInboxItem.issue_kind
-                    == "customer_assessment_completed_notice"
+                    AdminAlert.reason_code
+                    == "advisory_customers_assessment_completed"
                 )
-                .where(AdminInboxItem.subject_ref_ulid == entity_ulid)
+                .where(AdminAlert.target_ulid == entity_ulid)
             )
             .scalars()
             .all()
         )
-        assert assessment_rows
-        assert assessment_rows[-1].admin_status == "open"
-        assert assessment_rows[-1].workflow_key == "customer_advisory"
+        assert assessment_alerts
+        assert assessment_alerts[-1].admin_status == "open"
+        assert (
+            assessment_alerts[-1].workflow_key
+            == "customers_assessment_completed_issue"
+        )
 
 
 @pytest.mark.parametrize(
@@ -448,7 +520,6 @@ def test_customer_operator_surfaces_allow_authenticated_users(
         settled_password=settled_password,
     )
 
-    # Representative read surfaces
     resp = client.get("/customers/", follow_redirects=False)
     assert resp.status_code == 200
 
@@ -479,9 +550,6 @@ def test_customer_operator_surfaces_allow_authenticated_users(
     )
     assert resp.status_code == 200
 
-    # Representative mutate surface:
-    # stale/missing nonce should redirect within the customer flow,
-    # but it should not fail as unauthenticated/forbidden.
     resp = client.post(
         f"/customers/intake/{entity_ulid}/eligibility",
         data={},

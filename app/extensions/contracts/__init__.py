@@ -4,7 +4,7 @@
 """
 Canonical naming:
 
-extensions.contracts.admin_v1
+extensions.contracts.admin_v2
 
 extensions.contracts.auth_v2
 

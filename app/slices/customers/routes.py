@@ -8,6 +8,7 @@ from typing import Any
 from flask import (
     Blueprint,
     abort,
+    current_app,
     flash,
     redirect,
     render_template,
@@ -28,7 +29,7 @@ from app.lib.request_ctx import (
 )
 from app.lib.security import rbac
 
-from . import admin_review_services as admin_review_svc
+from . import admin_issue_services as admin_issue_svc
 from . import services as svc
 from .models import Customer, CustomerEligibility
 from .taxonomy import (
@@ -757,15 +758,26 @@ def intake_complete_post(entity_ulid: str):
         return _goto_step(entity_ulid, wizard_next_step(entity_ulid))
 
     rid, actor = _ctx_mut()
+
+    dto = None
     try:
         dto = svc.needs_complete(
             entity_ulid=entity_ulid,
             request_id=rid,
             actor_ulid=actor,
         )
+        db.session.commit()
+        _wiz_consume_nonce(STEP_REVIEW, entity_ulid)
+    except Exception as exc:
+        print("INTAKE COMPLETE ERROR:", repr(exc))
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _goto_step(entity_ulid, STEP_REVIEW)
 
-        if dto.history_ulid:
-            admin_review_svc.publish_assessment_completed_admin_advisory(
+    advisory_error = None
+    try:
+        if dto and dto.history_ulid:
+            admin_issue_svc.raise_assessment_completed_admin_issue(
                 entity_ulid=entity_ulid,
                 history_ulid=dto.history_ulid,
                 actor_ulid=actor,
@@ -774,20 +786,30 @@ def intake_complete_post(entity_ulid: str):
 
         dash = svc.get_customer_dashboard(entity_ulid)
         if dash.watchlist:
-            admin_review_svc.publish_watchlist_admin_advisory(
+            admin_issue_svc.raise_watchlist_admin_issue(
                 entity_ulid=entity_ulid,
                 actor_ulid=actor,
                 request_id=rid,
-                source_ref_ulid=entity_ulid,
             )
 
         db.session.commit()
-        _wiz_consume_nonce(STEP_REVIEW, entity_ulid)
     except Exception as exc:
-        print("INTAKE COMPLETE ERROR:", repr(exc))
+        print("CUSTOMER ADMIN ISSUE ERROR:", repr(exc))
         db.session.rollback()
-        flash(str(exc), "error")
-        return _goto_step(entity_ulid, STEP_REVIEW)
+        advisory_error = str(exc)
+
+    if advisory_error:
+        flash(
+            "Assessment completed, but Admin follow-up cue could not be raised.",
+            "warning",
+        )
+        current_app.logger.exception(
+            "customer_admin_issue_raise_failed",
+            extra={
+                "entity_ulid": entity_ulid,
+                "request_id": rid,
+            },
+        )
 
     return _goto_step(entity_ulid, STEP_DONE)
 

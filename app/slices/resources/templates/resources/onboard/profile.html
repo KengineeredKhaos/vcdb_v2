@@ -1,8 +1,6 @@
 {% extends "layout/base.html" %}
 {# templates/macros.html #}
-{% macro csrf_field() -%}
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-{%- endmacro %}
+
 {% block title %}Resource Onboarding · Profile{% endblock title %}
 {% include "resources/onboard/_entity_card.html" %}
 {% block content %}
@@ -17,7 +15,8 @@
 
 <section class="card">
   <h2>Profile hints (draft)</h2>
-  <form method="post" {{ csrf_field() }} action="{{ url_for('resources.onboard_profile', entity_ulid=entity_ulid) }}">
+  <form method="post" action="{{ url_for('resources.onboard_profile', entity_ulid=entity_ulid) }}">
+    {{ csrf_field() }}
     <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
 
     <label class="fld">

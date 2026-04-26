@@ -137,7 +137,7 @@ def test_get_funding_demand_context_returns_snapshot_from_new_pipeline(app):
         dto = get_funding_demand(funding_ulid)
         view = get_funding_demand_view(funding_ulid)
 
-        assert payload["schema_version"] == 1
+        assert payload["schema_version"] == 2
         assert (
             payload["origin"]["demand_draft_ulid"] == built["draft"]["ulid"]
         )

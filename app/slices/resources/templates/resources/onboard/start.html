@@ -1,8 +1,5 @@
 {% extends "layout/base.html" %}
 {# templates/macros.html #}
-{% macro csrf_field() -%}
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-{%- endmacro %}
 {% import "_forms.html" as forms %}
 
 {% block title %}Resource Onboarding{% endblock %}
@@ -29,7 +26,8 @@
 
 <section class="card">
   <h2>Start (or resume) onboarding</h2>
-  <form method="post" {{ csrf_field() }} action="{{ url_for('resources.onboard_start') }}">
+  <form method="post" action="{{ url_for('resources.onboard_start') }}">
+    {{ csrf_field() }}
     <div class="row">
       {{ forms.text(
       'entity_ulid',

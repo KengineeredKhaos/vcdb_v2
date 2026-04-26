@@ -12,6 +12,48 @@ from dataclasses import dataclass
 from typing import Any
 
 
+# -----------------
+# Dashboard
+# -----------------
+
+
+@dataclass(frozen=True)
+class DashboardDTO:
+    title: str
+    summary: str
+    inbox_summary: InboxSummaryDTO
+    policy_summary: PolicyHealthSummaryDTO
+    auth_summary: AuthOperatorSummaryDTO
+    slice_cards: tuple[SliceHealthCardDTO, ...]
+    recent_activity_summary: tuple[str, ...]
+
+
+def to_dashboard(
+    *,
+    title: str,
+    summary: str,
+    inbox_summary: InboxSummaryDTO,
+    policy_summary: PolicyHealthSummaryDTO,
+    auth_summary: AuthOperatorSummaryDTO,
+    slice_cards: tuple[SliceHealthCardDTO, ...],
+    recent_activity_summary: tuple[str, ...],
+) -> DashboardDTO:
+    return DashboardDTO(
+        title=title,
+        summary=summary,
+        inbox_summary=inbox_summary,
+        policy_summary=policy_summary,
+        auth_summary=auth_summary,
+        slice_cards=slice_cards,
+        recent_activity_summary=recent_activity_summary,
+    )
+
+
+# -----------------
+# Slice Health
+# -----------------
+
+
 @dataclass(frozen=True)
 class SliceHealthCardDTO:
     slice_key: str
@@ -20,6 +62,81 @@ class SliceHealthCardDTO:
     summary: str
     attention_count: int
     launch_route: str
+
+
+def to_slice_health_card(
+    *,
+    slice_key: str,
+    label: str,
+    status: str,
+    summary: str,
+    attention_count: int,
+    launch_route: str,
+) -> SliceHealthCardDTO:
+    return SliceHealthCardDTO(
+        slice_key=slice_key,
+        label=label,
+        status=status,
+        summary=summary,
+        attention_count=int(attention_count),
+        launch_route=launch_route,
+    )
+
+
+# -----------------
+# Operators
+# -----------------
+
+
+@dataclass(frozen=True)
+class AuthOperatorSummaryDTO:
+    active_operator_count: int
+    disabled_operator_count: int
+    locked_operator_count: int
+    attention_count: int
+
+
+@dataclass(frozen=True)
+class AuthOperatorsPageDTO:
+    title: str
+    summary: str
+    auth_summary: AuthOperatorSummaryDTO
+    items: tuple[dict[str, object], ...]
+
+
+def to_auth_operator_summary(
+    *,
+    active_operator_count: int,
+    disabled_operator_count: int,
+    locked_operator_count: int,
+    attention_count: int,
+) -> AuthOperatorSummaryDTO:
+    return AuthOperatorSummaryDTO(
+        active_operator_count=int(active_operator_count),
+        disabled_operator_count=int(disabled_operator_count),
+        locked_operator_count=int(locked_operator_count),
+        attention_count=int(attention_count),
+    )
+
+
+def to_auth_operators_page(
+    *,
+    title: str,
+    summary: str,
+    auth_summary: AuthOperatorSummaryDTO,
+    items: tuple[dict[str, object], ...],
+) -> AuthOperatorsPageDTO:
+    return AuthOperatorsPageDTO(
+        title=title,
+        summary=summary,
+        auth_summary=auth_summary,
+        items=items,
+    )
+
+
+# -----------------
+# Admin Inbox bits
+# -----------------
 
 
 @dataclass(frozen=True)
@@ -31,6 +148,7 @@ class InboxSummaryDTO:
 
 @dataclass(frozen=True)
 class InboxItemDTO:
+    alert_ulid: str
     source_slice: str
     reason_code: str
     alert_family: str
@@ -38,8 +156,103 @@ class InboxItemDTO:
     opened_at_utc: str
     status: str
     launch_label: str
+    launch_href: str | None
     allowed_actions_summary: str
     context_preview: str
+    can_acknowledge: bool
+    can_start_review: bool
+    can_snooze: bool
+    can_dismiss: bool
+    can_mark_duplicate: bool
+
+
+@dataclass(frozen=True)
+class InboxPageDTO:
+    title: str
+    summary: str
+    inbox_summary: InboxSummaryDTO
+    current_view: str
+    items: tuple[InboxItemDTO, ...]
+    status_legend: tuple[str, ...] = (
+        "open",
+        "acknowledged",
+        "in_review",
+        "snoozed",
+    )
+
+
+def to_inbox_summary(
+    *,
+    total_open: int,
+    failed_count: int,
+    stale_count: int,
+) -> InboxSummaryDTO:
+    return InboxSummaryDTO(
+        total_open=int(total_open),
+        failed_count=int(failed_count),
+        stale_count=int(stale_count),
+    )
+
+
+def to_inbox_item(
+    *,
+    alert_ulid: str,
+    source_slice: str,
+    reason_code: str,
+    alert_family: str,
+    summary: str,
+    opened_at_utc: str,
+    status: str,
+    launch_label: str,
+    launch_href: str | None,
+    allowed_actions_summary: str,
+    context_preview: str,
+    can_acknowledge: bool,
+    can_start_review: bool,
+    can_snooze: bool,
+    can_dismiss: bool,
+    can_mark_duplicate: bool,
+) -> InboxItemDTO:
+    return InboxItemDTO(
+        alert_ulid=alert_ulid,
+        source_slice=source_slice,
+        reason_code=reason_code,
+        alert_family=alert_family,
+        summary=summary,
+        opened_at_utc=opened_at_utc,
+        status=status,
+        launch_label=launch_label,
+        launch_href=launch_href,
+        allowed_actions_summary=allowed_actions_summary,
+        context_preview=context_preview,
+        can_acknowledge=bool(can_acknowledge),
+        can_start_review=bool(can_start_review),
+        can_snooze=bool(can_snooze),
+        can_dismiss=bool(can_dismiss),
+        can_mark_duplicate=bool(can_mark_duplicate),
+    )
+
+
+def to_inbox_page(
+    *,
+    title: str,
+    summary: str,
+    inbox_summary: InboxSummaryDTO,
+    current_view: str,
+    items: tuple[InboxItemDTO, ...],
+) -> InboxPageDTO:
+    return InboxPageDTO(
+        title=title,
+        summary=summary,
+        inbox_summary=inbox_summary,
+        current_view=current_view,
+        items=items,
+    )
+
+
+# -----------------
+# Cron bits
+# -----------------
 
 
 @dataclass(frozen=True)
@@ -51,6 +264,52 @@ class CronJobStatusDTO:
     last_failure_utc: str | None
     stale: bool
     note: str
+
+
+@dataclass(frozen=True)
+class CronPageDTO:
+    title: str
+    summary: str
+    jobs: tuple[CronJobStatusDTO, ...]
+
+
+def to_cron_job_status(
+    *,
+    job_key: str,
+    label: str,
+    status: str,
+    last_success_utc: str | None,
+    last_failure_utc: str | None,
+    stale: bool,
+    note: str,
+) -> CronJobStatusDTO:
+    return CronJobStatusDTO(
+        job_key=job_key,
+        label=label,
+        status=status,
+        last_success_utc=last_success_utc,
+        last_failure_utc=last_failure_utc,
+        stale=bool(stale),
+        note=note,
+    )
+
+
+def to_cron_page(
+    *,
+    title: str,
+    summary: str,
+    jobs: tuple[CronJobStatusDTO, ...],
+) -> CronPageDTO:
+    return CronPageDTO(
+        title=title,
+        summary=summary,
+        jobs=jobs,
+    )
+
+
+# -----------------
+# Policy Bits
+# -----------------
 
 
 @dataclass(frozen=True)
@@ -126,132 +385,6 @@ class PolicyIndexPageDTO:
     summary: str
     health: PolicyHealthSummaryDTO
     items: tuple[PolicyIndexItemDTO, ...]
-
-
-@dataclass(frozen=True)
-class AuthOperatorSummaryDTO:
-    active_operator_count: int
-    disabled_operator_count: int
-    locked_operator_count: int
-    attention_count: int
-
-
-@dataclass(frozen=True)
-class DashboardDTO:
-    title: str
-    summary: str
-    inbox_summary: InboxSummaryDTO
-    policy_summary: PolicyHealthSummaryDTO
-    auth_summary: AuthOperatorSummaryDTO
-    slice_cards: tuple[SliceHealthCardDTO, ...]
-    recent_activity_summary: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class InboxPageDTO:
-    title: str
-    summary: str
-    inbox_summary: InboxSummaryDTO
-    items: tuple[InboxItemDTO, ...]
-    status_legend: tuple[str, ...] = (
-        "open",
-        "in_review",
-        "dismissed",
-        "escalated",
-    )
-
-
-@dataclass(frozen=True)
-class CronPageDTO:
-    title: str
-    summary: str
-    jobs: tuple[CronJobStatusDTO, ...]
-
-
-@dataclass(frozen=True)
-class AuthOperatorsPageDTO:
-    title: str
-    summary: str
-    auth_summary: AuthOperatorSummaryDTO
-    items: tuple[dict[str, object], ...]
-
-
-def to_slice_health_card(
-    *,
-    slice_key: str,
-    label: str,
-    status: str,
-    summary: str,
-    attention_count: int,
-    launch_route: str,
-) -> SliceHealthCardDTO:
-    return SliceHealthCardDTO(
-        slice_key=slice_key,
-        label=label,
-        status=status,
-        summary=summary,
-        attention_count=int(attention_count),
-        launch_route=launch_route,
-    )
-
-
-def to_inbox_summary(
-    *,
-    total_open: int,
-    failed_count: int,
-    stale_count: int,
-) -> InboxSummaryDTO:
-    return InboxSummaryDTO(
-        total_open=int(total_open),
-        failed_count=int(failed_count),
-        stale_count=int(stale_count),
-    )
-
-
-def to_inbox_item(
-    *,
-    source_slice: str,
-    reason_code: str,
-    alert_family: str,
-    summary: str,
-    opened_at_utc: str,
-    status: str,
-    launch_label: str,
-    allowed_actions_summary: str,
-    context_preview: str,
-) -> InboxItemDTO:
-    return InboxItemDTO(
-        source_slice=source_slice,
-        reason_code=reason_code,
-        alert_family=alert_family,
-        summary=summary,
-        opened_at_utc=opened_at_utc,
-        status=status,
-        launch_label=launch_label,
-        allowed_actions_summary=allowed_actions_summary,
-        context_preview=context_preview,
-    )
-
-
-def to_cron_job_status(
-    *,
-    job_key: str,
-    label: str,
-    status: str,
-    last_success_utc: str | None,
-    last_failure_utc: str | None,
-    stale: bool,
-    note: str,
-) -> CronJobStatusDTO:
-    return CronJobStatusDTO(
-        job_key=job_key,
-        label=label,
-        status=status,
-        last_success_utc=last_success_utc,
-        last_failure_utc=last_failure_utc,
-        stale=bool(stale),
-        note=note,
-    )
 
 
 def to_policy_health_summary(
@@ -375,70 +508,6 @@ def to_policy_preview_page(
     )
 
 
-def to_auth_operator_summary(
-    *,
-    active_operator_count: int,
-    disabled_operator_count: int,
-    locked_operator_count: int,
-    attention_count: int,
-) -> AuthOperatorSummaryDTO:
-    return AuthOperatorSummaryDTO(
-        active_operator_count=int(active_operator_count),
-        disabled_operator_count=int(disabled_operator_count),
-        locked_operator_count=int(locked_operator_count),
-        attention_count=int(attention_count),
-    )
-
-
-def to_dashboard(
-    *,
-    title: str,
-    summary: str,
-    inbox_summary: InboxSummaryDTO,
-    policy_summary: PolicyHealthSummaryDTO,
-    auth_summary: AuthOperatorSummaryDTO,
-    slice_cards: tuple[SliceHealthCardDTO, ...],
-    recent_activity_summary: tuple[str, ...],
-) -> DashboardDTO:
-    return DashboardDTO(
-        title=title,
-        summary=summary,
-        inbox_summary=inbox_summary,
-        policy_summary=policy_summary,
-        auth_summary=auth_summary,
-        slice_cards=slice_cards,
-        recent_activity_summary=recent_activity_summary,
-    )
-
-
-def to_inbox_page(
-    *,
-    title: str,
-    summary: str,
-    inbox_summary: InboxSummaryDTO,
-    items: tuple[InboxItemDTO, ...],
-) -> InboxPageDTO:
-    return InboxPageDTO(
-        title=title,
-        summary=summary,
-        inbox_summary=inbox_summary,
-        items=items,
-    )
-
-
-def to_cron_page(
-    *,
-    title: str,
-    summary: str,
-    jobs: tuple[CronJobStatusDTO, ...],
-) -> CronPageDTO:
-    return CronPageDTO(
-        title=title,
-        summary=summary,
-        jobs=jobs,
-    )
-
-
 def to_policy_index_page(
     *,
     title: str,
@@ -450,20 +519,5 @@ def to_policy_index_page(
         title=title,
         summary=summary,
         health=health,
-        items=items,
-    )
-
-
-def to_auth_operators_page(
-    *,
-    title: str,
-    summary: str,
-    auth_summary: AuthOperatorSummaryDTO,
-    items: tuple[dict[str, object], ...],
-) -> AuthOperatorsPageDTO:
-    return AuthOperatorsPageDTO(
-        title=title,
-        summary=summary,
-        auth_summary=auth_summary,
         items=items,
     )

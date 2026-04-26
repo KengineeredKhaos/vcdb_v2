@@ -13,11 +13,23 @@ This file is NOT:
 The real app factory lives in app/__init__.py.
 Apache/mod_wsgi should eventually use a separate wsgi.py.
 
-In the case where test.db needs to be upgraded to the  latest migration:
+Before running any migration/upgrade operations, ensure which db you're on:
 
-export VCDB_ENV=testing
-unset VCDB_DB
-flask --app manage_vcdb.py db upgrade
+    flask --app manage_vcdb.py shell
+
+Then, at the python prompt ( >>> ) paste:
+
+    from flask import current_app
+    print(current_app.config.get("SQLALCHEMY_DATABASE_URI"))
+
+In the case where dev.db needs to be upgraded to the latest migration:
+
+    flask --app manage_vcdb.py db migrate
+    flask --app manage_vcdb.py db upgrade
+    export VCDB_ENV=testing
+    unset VCDB_DB
+    flask --app manage_vcdb.py db upgrade
+
 
 If test.db grows too large to parse effectively or turns into a bag of snakes:
 
@@ -25,6 +37,8 @@ export VCDB_ENV=testing
 unset VCDB_DB
 rm -f app/instance/test.db
 flask --app manage_vcdb.py db upgrade
+
+Be sure you get back on the dev environment
 
 """
 

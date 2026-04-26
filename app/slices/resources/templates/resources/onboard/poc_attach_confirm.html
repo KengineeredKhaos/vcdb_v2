@@ -1,8 +1,5 @@
 {% extends "layout/base.html" %}
 {# templates/macros.html #}
-{% macro csrf_field() -%}
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-{%- endmacro %}
 {% block title %}Link POC to Resource{% endblock title %}
 
 {% block content %}
@@ -17,8 +14,8 @@
   <div>{{ org_card.display_name }} ({{ org_ulid }})</div>
 </div>
 
-<form method="post" {{ csrf_field() }} action="{{ url_for('resources.poc_attach_confirm') }}">
-
+<form method="post" action="{{ url_for('resources.poc_attach_confirm') }}">
+  {{ csrf_field() }}
   <input type="hidden" name="person_ulid" value="{{ person_ulid }}">
   <input type="hidden" name="org_ulid" value="{{ org_ulid }}">
   <input type="hidden" name="scope" value="{{ scope }}">

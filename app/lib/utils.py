@@ -52,6 +52,7 @@ from app.lib.utils import (
 from __future__ import annotations
 
 import re
+from datetime import date
 from email.utils import parseaddr
 
 from app.lib.chrono import utc_today

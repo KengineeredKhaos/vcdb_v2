@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import desc, select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from app.extensions import db
 from app.lib.chrono import now_iso8601_ms
@@ -23,7 +23,12 @@ from app.lib.jsonutil import (
     try_parse_json,
 )
 
-from .errors import LedgerBadArgument, LedgerUnavailable
+from .errors import (
+    EventHashConflict,
+    LedgerBadArgument,
+    LedgerUnavailable,
+    ProviderTemporarilyDown,
+)
 from .models import LedgerEvent
 
 # -*- coding: utf-8 -*-
@@ -109,10 +114,9 @@ def _canon_envelope(
         or clean_domain
     )
 
-    event_type = f"{domain}.{operation}"
+    event_type = f"{clean_domain}.{clean_operation}"
     if len(event_type) > 120:
         raise LedgerBadArgument("event_type exceeds max length 120")
-    ck = chain_key or domain
 
     env = {
         "chain_key": clean_chain_key,
@@ -157,6 +161,139 @@ def _digest(envelope: dict[str, Any]) -> bytes:
     return hashlib.sha256(s.encode("utf-8")).digest()
 
 
+def _event_to_env(ev: LedgerEvent) -> dict[str, Any]:
+    """Rebuild the canonical event envelope from a stored row."""
+    return {
+        "chain_key": ev.chain_key,
+        "event_type": ev.event_type,
+        "domain": ev.domain,
+        "operation": ev.operation,
+        "request_id": ev.request_id,
+        "actor_ulid": ev.actor_ulid,
+        "target_ulid": ev.target_ulid,
+        "happened_at_utc": ev.happened_at_utc,
+        "refs": try_parse_json(ev.refs_json),
+        "changed": try_parse_json(ev.changed_json),
+        "meta": try_parse_json(ev.meta_json),
+    }
+
+
+def _extract_idempotency_key(env: dict[str, Any]) -> str | None:
+    """
+    Pull an explicit replay key from meta/refs.
+
+    Ledger does not guess based only on request_id + event_type because one
+    request may legitimately emit more than one event of the same type.
+    """
+    for bucket_name in ("meta", "refs"):
+        bucket = env.get(bucket_name)
+        if not isinstance(bucket, Mapping):
+            continue
+        for key_name in ("idempotency_key", "source_action_ulid"):
+            value = bucket.get(key_name)
+            clean = str(value or "").strip()
+            if clean:
+                return clean[:128]
+    return None
+
+
+def _logical_payload_hash(env: dict[str, Any]) -> str:
+    """
+    Hash the logical event payload for idempotent replay comparison.
+
+    happened_at_utc is intentionally excluded. A replay attempt may happen at
+    a different clock time while still representing the same logical write.
+    """
+    logical = dict(env)
+    logical.pop("happened_at_utc", None)
+    payload = json.dumps(
+        logical,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _find_idempotent_event(
+    *,
+    env: dict[str, Any],
+    idempotency_key: str,
+) -> LedgerEvent | None:
+    """Find a prior event with the same explicit idempotency key."""
+    stmt = (
+        select(LedgerEvent)
+        .where(
+            LedgerEvent.chain_key == env["chain_key"],
+            LedgerEvent.event_type == env["event_type"],
+            LedgerEvent.request_id == env["request_id"],
+        )
+        .order_by(LedgerEvent.ulid)
+    )
+    if env.get("target_ulid"):
+        stmt = stmt.where(LedgerEvent.target_ulid == env["target_ulid"])
+
+    for row in db.session.execute(stmt).scalars():
+        old_env = _event_to_env(row)
+        if _extract_idempotency_key(old_env) == idempotency_key:
+            return row
+    return None
+
+
+def _handle_idempotent_replay(env: dict[str, Any]) -> LedgerEvent | None:
+    """
+    Accept exact logical replays and reject conflicting replays.
+
+    Return an existing event when the replay is safe. Return None when no
+    prior matching idempotency key exists.
+    """
+    idempotency_key = _extract_idempotency_key(env)
+    if not idempotency_key:
+        return None
+
+    existing = _find_idempotent_event(
+        env=env,
+        idempotency_key=idempotency_key,
+    )
+    if existing is None:
+        return None
+
+    attempted_hash = _logical_payload_hash(env)
+    existing_hash = _logical_payload_hash(_event_to_env(existing))
+    if attempted_hash == existing_hash:
+        return existing
+
+    raise EventHashConflict(
+        "idempotency key replay conflicts with existing ledger event; "
+        f"event_ulid={existing.ulid} chain_key={existing.chain_key}"
+    )
+
+
+def _is_transient_provider_error(exc: SQLAlchemyError) -> bool:
+    """Best-effort classification for retryable provider conditions."""
+    if isinstance(exc, OperationalError):
+        return True
+    text = str(exc).lower()
+    transient_markers = (
+        "database is locked",
+        "database table is locked",
+        "connection reset",
+        "connection refused",
+        "connection timed out",
+        "server closed the connection",
+        "temporarily unavailable",
+        "timeout",
+    )
+    return any(marker in text for marker in transient_markers)
+
+
+def _raise_provider_error(*, during: str, exc: SQLAlchemyError) -> None:
+    message = f"ledger provider unavailable during {during}"
+    if _is_transient_provider_error(exc):
+        raise ProviderTemporarilyDown(message) from exc
+    raise LedgerUnavailable(message) from exc
+
+
 def append_event(
     *,
     domain: str,
@@ -188,6 +325,10 @@ def append_event(
     )
 
     try:
+        replay = _handle_idempotent_replay(env)
+        if replay is not None:
+            return replay
+
         stmt = (
             select(LedgerEvent.curr_hash_hex)
             .where(LedgerEvent.chain_key == env["chain_key"])
@@ -223,12 +364,10 @@ def append_event(
         db.session.add(row)
         db.session.flush()
         return row
-    except LedgerBadArgument:
+    except (EventHashConflict, LedgerBadArgument):
         raise
     except SQLAlchemyError as exc:
-        raise LedgerUnavailable(
-            "ledger storage unavailable during append"
-        ) from exc
+        _raise_provider_error(during="append", exc=exc)
 
 
 def verify_chain(chain_key: str | None = None) -> dict[str, Any]:
@@ -277,11 +416,22 @@ def verify_chain(chain_key: str | None = None) -> dict[str, Any]:
                 "changed": try_parse_json(ev.changed_json),
                 "meta": try_parse_json(ev.meta_json),
             }
+            if ev.prev_hash_hex != prev:
+                broken = {
+                    "chain_key": ev.chain_key,
+                    "event_id": ev.ulid,
+                    "kind": "prev_hash_mismatch",
+                    "expected_prev": prev,
+                    "observed_prev": ev.prev_hash_hex,
+                }
+                break
+
             calc = _hash_env(prev, env)
             if calc != ev.curr_hash_hex:
                 broken = {
                     "chain_key": ev.chain_key,
                     "event_id": ev.ulid,
+                    "kind": "curr_hash_mismatch",
                     "expected": ev.curr_hash_hex,
                     "recomputed": calc,
                 }
@@ -298,6 +448,4 @@ def verify_chain(chain_key: str | None = None) -> dict[str, Any]:
     except LedgerBadArgument:
         raise
     except SQLAlchemyError as exc:
-        raise LedgerUnavailable(
-            "ledger storage unavailable during verify"
-        ) from exc
+        _raise_provider_error(during="verify", exc=exc)

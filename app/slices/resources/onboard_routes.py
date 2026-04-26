@@ -289,13 +289,8 @@ def onboard_start():
         db.session.commit()
         _set_active_entity_ulid(entity_ulid)
 
-        return redirect(
-            url_for(
-                "resources.onboard_start",
-                entity_ulid=entity_ulid,
-                request_id=req,
-            )
-        )
+        nxt = wiz.wizard_next_step(entity_ulid=entity_ulid)
+        return redirect(url_for(nxt, entity_ulid=entity_ulid, request_id=req))
 
     except Exception as exc:
         db.session.rollback()
@@ -831,7 +826,7 @@ def onboard_complete(entity_ulid: str):
         )
 
     try:
-        wiz.submit_onboard_for_admin_review(
+        wiz.submit_onboard_admin_issue(
             entity_ulid=entity_ulid,
             request_id=req,
             actor_ulid=actor,
@@ -839,7 +834,7 @@ def onboard_complete(entity_ulid: str):
         db.session.commit()
         _consume_nonce(step, entity_ulid)
 
-        flash("Submitted for Admin review.", "success")
+        flash("Submitted for Admin approval.", "success")
         return redirect(
             url_for(
                 "resources.search_resources",

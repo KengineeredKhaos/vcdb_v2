@@ -1,0 +1,41 @@
+{# app/slices/resources/templates/resources/admin_issue_onboard.html #}
+{% extends "layout/base.html" %}
+{# templates/macros.html #}
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
+{% block title %}{{ page.title }}{% endblock %}
+
+{% block content %}
+<h1>{{ page.title }}</h1>
+<p>{{ page.summary }}</p>
+
+<table>
+  <tr>
+    <th>Issue ID</th>
+    <td>{{ page.issue_ulid }}</td>
+  </tr>
+  <tr>
+    <th>Resource</th>
+    <td>{{ page.target_ulid }}</td>
+  </tr>
+  <tr>
+    <th>Status</th>
+    <td>{{ page.source_status }}</td>
+  </tr>
+  <tr>
+    <th>Reason for Admin intervention</th>
+    <td>{{ page.reason_code }}</td>
+  </tr>
+</table>
+
+<form method="post" {{ csrf_field() }} action="{{ url_for('resources.admin_issue_onboard_approve',
+                     issue_ulid=page.issue_ulid) }}">
+  <button type="submit">Approve</button>
+</form>
+
+<form method="post" {{ csrf_field() }} action="{{ url_for('resources.admin_issue_onboard_reject',
+                     issue_ulid=page.issue_ulid) }}">
+  <button type="submit">Reject</button>
+</form>
+{% endblock %}

@@ -1,4 +1,4 @@
-# app/slices/admin/admin_toolbox.py
+# app/slices/admin/toolbox.py
 
 from __future__ import annotations
 
@@ -74,7 +74,10 @@ def _probe_routes(
             bpname = row.get("blueprint") or endpoint.split(".", 1)[0]
             href = _as_path(row["href"])
 
-            if endpoint == "admin.toolbox" or href == "/admin/toolbox/":
+            if (
+                endpoint == "admin.dev_toolbox"
+                or href == "/admin/dev_toolbox/"
+            ):
                 continue
             if bpname in PROBE_EXCLUDE_BLUEPRINTS:
                 out[endpoint] = {
@@ -114,10 +117,10 @@ def _probe_routes(
 
 
 # VCDB-SEC: ACTIVE entry=admin authority=admin-only reason=admin_only_surface
-@bp.get("/toolbox/")
+@bp.get("/dev_toolbox/")
 @login_required
 @roles_required("admin")
-def toolbox():
+def dev_toolbox():
     env = (current_app.config.get("ENV") or "").lower()
     routes = _paramfree_get_routes()
     probes = None
@@ -125,7 +128,7 @@ def toolbox():
         probes = _probe_routes(routes)
 
     return render_template(
-        "layout/index_dev.html",
+        "admin/dev_toolbox.html",
         env=env,
         routes=routes,
         probes=probes,

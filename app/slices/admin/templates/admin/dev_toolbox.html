@@ -1,18 +1,17 @@
 {% extends "layout/base.html" %}
-{% block title %}VCDB · Admin Toolbox{% endblock %}
+{% block title %}VCDB · Development Toolbox{% endblock %}
 
 {% block content %}
 <section class="hero" style="margin-top:18px;">
   <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
-  <a class="btn" href="{{ url_for('admin.toolbox', probe=1) }}">Probe all</a>
-  <a class="btn" href="{{ url_for('admin.toolbox') }}">Clear</a>
-  <a class="btn" href="{{ url_for('admin.index') }}">Dashboard</a>
 
-  {# existing “Known good” buttons stay here #}
+    <a class="btn" href="{{ url_for('admin.index') }}">Back to the Future</a>
+
+    {# existing “Known good” buttons stay here #}
   </div>
   <div class="hero-card">
     <div class="glow"></div>
-    <h1>VCDB v2 — Admin Toolbox</h1>
+    <h1>VCDB v2 — Development Toolbox</h1>
     <p class="muted">
       Environment: <span class="kbd">{{ env|default('dev') }}</span>
       · Live sitemap of param-free GET routes.
@@ -20,33 +19,33 @@
 
     <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
       {% if has_endpoint('customers.customers_list_get') %}
-        <a class="btn" href="{{ url_for('customers.customers_list_get') }}">
-          Customers
-        </a>
+      <a class="btn" href="{{ url_for('customers.customers_list_get') }}">
+        Customers
+      </a>
       {% endif %}
 
       {% if has_endpoint('resources.search_resources') %}
-        <a class="btn" href="{{ url_for('resources.search_resources') }}">
-          Resources
-        </a>
+      <a class="btn" href="{{ url_for('resources.search_resources') }}">
+        Resources
+      </a>
       {% endif %}
 
       {% if has_endpoint('sponsors.search_sponsors') %}
-        <a class="btn" href="{{ url_for('sponsors.search_sponsors') }}">
-          Sponsors
-        </a>
+      <a class="btn" href="{{ url_for('sponsors.search_sponsors') }}">
+        Sponsors
+      </a>
       {% endif %}
 
       {% if has_endpoint('governance.roles') %}
-        <a class="btn" href="{{ url_for('governance.roles') }}">
-          Governance
-        </a>
+      <a class="btn" href="{{ url_for('governance.roles') }}">
+        Governance
+      </a>
       {% endif %}
 
       {% if has_endpoint('logistics.hello') %}
-        <a class="btn" href="{{ url_for('logistics.hello') }}">
-          Logistics
-        </a>
+      <a class="btn" href="{{ url_for('logistics.hello') }}">
+        Logistics
+      </a>
       {% endif %}
       <p class="muted" style="margin-top:.35rem;">
         Buttons above only appear when the endpoint exists.<br>
@@ -60,19 +59,19 @@
       <h3 style="margin-top:0;">Ledger Repair</h3>
       <h4>(Future Home)</h4>
 
-        <ul style="margin:.5rem 0 0 1rem;">
-          <li>First rule of Admin Club</li>
-          <li>Keep yer paws off of the Ledger</li>
-          <li>or Ledger may self-immolate</li>
+      <ul style="margin:.5rem 0 0 1rem;">
+        <li>First rule of Club Dev</li>
+        <li>Keep yer paws off of the Ledger</li>
+        <li>or Ledger may self-immolate</li>
 
-        </ul>
+      </ul>
     </div>
 
     <div class="card">
       <h3 style="margin-top:0;">Finance Journal Repair</h3>
       <h4>(Future Home)</h4>
       <ul style="margin:.5rem 0 0 1rem;">
-        <li>Second rule of Admin Club</li>
+        <li>Second rule of Club Dev</li>
         <li>Keep yer paws off of the Journal</li>
         <li>or Journal may self-immolate</li>
       </ul>
@@ -93,8 +92,19 @@
   </div>
 
   <h2 style="margin-top:18px;">All param-free GET routes</h2>
-  <div class="card" style="overflow:auto;">
+
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+    <a class="btn" href="{{ url_for('admin.dev_toolbox', probe=1) }}">
+      Probe all
+    </a>
+    <a class="btn" href="{{ url_for('admin.dev_toolbox') }}">
+      Clear
+    </a>
+  </div>
+
+  <div class="card" style="overflow:auto; margin-top:.5rem;">
     <table style="width:100%; border-collapse:collapse;">
+
       <thead>
         <tr>
           <th style="text-align:left; padding:.35rem .4rem;">Path</th>
@@ -105,31 +115,31 @@
       </thead>
       <tbody>
         {% for r in routes %}
-          {% set p = probes.get(r.endpoint) if probes is not none else none %}
-          <tr>
-            <td style="padding:.25rem .4rem;">
-              <a href="{{ r.href }}"><code>{{ r.path }}</code></a>
-            </td>
-            <td style="padding:.25rem .4rem;"><code>{{ r.endpoint }}</code></td>
-            <td style="padding:.25rem .4rem;"><span class="muted">{{ r.blueprint }}</span></td>
-            <td style="padding:.25rem .4rem;">
-              {% if probes is none %}
-                <span class="muted">—</span>
-              {% elif p is none %}
-                <span class="muted">n/a</span>
-              {% elif p.status == -1 %}
-                <span class="muted">SKIP</span>
-              {% elif p.ok %}
-                ✅ <span class="kbd">{{ p.status }}</span>
-              {% elif p.status in [301,302,303,307,308] %}
-                ↪ <span class="kbd">{{ p.status }}</span>
-                {% if p.location %}<span class="muted">{{ p.location }}</span>{% endif %}
-              {% else %}
-                ❌ <span class="kbd">{{ p.status }}</span>
-                {% if p.location %}<span class="muted">{{ p.location }}</span>{% endif %}
-              {% endif %}
-            </td>
-          </tr>
+        {% set p = probes.get(r.endpoint) if probes is not none else none %}
+        <tr>
+          <td style="padding:.25rem .4rem;">
+            <a href="{{ r.href }}"><code>{{ r.path }}</code></a>
+          </td>
+          <td style="padding:.25rem .4rem;"><code>{{ r.endpoint }}</code></td>
+          <td style="padding:.25rem .4rem;"><span class="muted">{{ r.blueprint }}</span></td>
+          <td style="padding:.25rem .4rem;">
+            {% if probes is none %}
+            <span class="muted">—</span>
+            {% elif p is none %}
+            <span class="muted">n/a</span>
+            {% elif p.status == -1 %}
+            <span class="muted">SKIP</span>
+            {% elif p.ok %}
+            ✅ <span class="kbd">{{ p.status }}</span>
+            {% elif p.status in [301,302,303,307,308] %}
+            ↪ <span class="kbd">{{ p.status }}</span>
+            {% if p.location %}<span class="muted">{{ p.location }}</span>{% endif %}
+            {% else %}
+            ❌ <span class="kbd">{{ p.status }}</span>
+            {% if p.location %}<span class="muted">{{ p.location }}</span>{% endif %}
+            {% endif %}
+          </td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>

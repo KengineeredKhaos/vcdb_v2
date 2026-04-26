@@ -15,5 +15,23 @@ class LedgerUnavailable(LedgerError):
     """Ledger persistence backend is unavailable."""
 
 
+class ProviderTemporarilyDown(LedgerUnavailable):
+    """
+    Ledger provider/storage is temporarily unavailable.
+
+    Use this for retryable/transient provider conditions such as database
+    locks, connection interruptions, or temporary storage unavailability.
+    """
+
+
 class LedgerIntegrityError(LedgerError):
     """Ledger chain verification found broken integrity."""
+
+
+class EventHashConflict(LedgerIntegrityError):
+    """
+    Ledger append/replay would create an inconsistent or conflicting event.
+
+    Use this for idempotency conflicts, hash-chain fork/collision conditions,
+    or append races that could not be resolved safely inside the provider.
+    """

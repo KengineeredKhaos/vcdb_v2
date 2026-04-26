@@ -1,53 +1,109 @@
 {% extends "layout/base.html" %}
-{% import "_macros.html" as _macros %}
 
 {% block title %}{{ page.title }}{% endblock %}
 
 {% block content %}
-<h1>{{ page.title }}</h1>
-<p>{{ page.summary }}</p>
+<section class="hero" style="margin-top: 18px;">
+  <h1>{{ page.title }}</h1>
+  <p>{{ page.summary or "Admin oversight, queue posture, and launch surface." }}</p>
+</section>
 
+<section class="features" style="margin-top: 14px;">
+  <div class="card">
+    <h2 style="margin-top: 0;">Admin Inbox</h2>
+    <p>Open: {{ page.inbox_summary.total_open }}</p>
+    <p>Failed-family alerts: {{ page.inbox_summary.failed_count }}</p>
+    <p>Stale: {{ page.inbox_summary.stale_count }}</p>
+    <p>
+      <a class="btn" href="{{ url_for('admin.inbox') }}">
+        Open Admin Inbox
+      </a>
+    </p>
+  </div>
 
+  <div class="card">
+    <h2 style="margin-top: 0;">Policy</h2>
+    <p>Policies: {{ page.policy_summary.policy_count }}</p>
+    <p>Valid: {{ page.policy_summary.valid_count }}</p>
+    <p>Warnings: {{ page.policy_summary.warning_count }}</p>
+    <p>Errors: {{ page.policy_summary.error_count }}</p>
+    <p>
+      <a class="btn" href="{{ url_for('admin.policy_index') }}">
+        Open Policy Index
+      </a>
+    </p>
+  </div>
 
-{% if has_endpoint('admin.toolbox') %}
+  <div class="card">
+    <h2 style="margin-top: 0;">Auth</h2>
+    <p>Active: {{ page.auth_summary.active_operator_count }}</p>
+    <p>Disabled: {{ page.auth_summary.disabled_operator_count }}</p>
+    <p>Locked: {{ page.auth_summary.locked_operator_count }}</p>
+    <p>Attention: {{ page.auth_summary.attention_count }}</p>
+    <p>
+      <a class="btn" href="{{ url_for('admin.auth_operators') }}">
+        Open Auth User List
+      </a>
+    </p>
+  </div>
+</section>
 
-<p><a href="{{ url_for('admin.toolbox') }}">Open Admin Toolbox</a></p>
+<section style="margin-top: 18px;">
+  <h2>Slice health</h2>
+  {% if page.slice_cards %}
+    <div class="card">
+      <ul style="margin: 0; padding-left: 1.2rem;">
+        {% for card in page.slice_cards %}
+          <li style="margin-bottom: .65rem;">
+            <strong>{{ card.label }}</strong>
+            — {{ card.status }}
+            — {{ card.summary }}
+            — attention={{ card.attention_count }}
+            {% if card.launch_route %}
+              — <code>{{ card.launch_route }}</code>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% else %}
+    <div class="card">
+      <p class="muted">No slice health cards available.</p>
+    </div>
+  {% endif %}
+</section>
 
+<section style="margin-top: 18px;">
+  <h2>Recent activity</h2>
+  {% if page.recent_activity_summary %}
+    <div class="card">
+      <ul style="margin: 0; padding-left: 1.2rem;">
+        {% for line in page.recent_activity_summary %}
+          <li>{{ line }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% else %}
+    <div class="card">
+      <p class="muted">No recent activity to display.</p>
+    </div>
+  {% endif %}
+</section>
+
+{% if has_endpoint('admin.dev_toolbox') %}
+<section style="margin-top: 18px;">
+  <h2>Diagnostics</h2>
+  <div class="card">
+    <p class="muted">
+      Development-only inspection and route-probe tooling.
+      Not part of Admin intervention workflow.
+    </p>
+    <p>
+      <a class="btn" href="{{ url_for('admin.dev_toolbox') }}">
+        Open Dev Toolbox
+      </a>
+    </p>
+  </div>
+</section>
 {% endif %}
-<h2>Inbox</h2>
-<p>Open: {{ page.inbox_summary.total_open }}</p>
-<p>Failed-family alerts: {{ page.inbox_summary.failed_count }}</p>
-<p>Stale: {{ page.inbox_summary.stale_count }}</p>
-
-<h2>Policy</h2>
-<p>Policies: {{ page.policy_summary.policy_count }}</p>
-<p>Valid: {{ page.policy_summary.valid_count }}</p>
-<p>Warnings: {{ page.policy_summary.warning_count }}</p>
-<p>Errors: {{ page.policy_summary.error_count }}</p>
-
-<h2>Auth</h2>
-<p>Active: {{ page.auth_summary.active_operator_count }}</p>
-<p>Disabled: {{ page.auth_summary.disabled_operator_count }}</p>
-<p>Locked: {{ page.auth_summary.locked_operator_count }}</p>
-<p>Attention: {{ page.auth_summary.attention_count }}</p>
-
-<h2>Slice health</h2>
-<ul>
-  {% for card in page.slice_cards %}
-    <li>
-      <strong>{{ card.label }}</strong> —
-      {{ card.status }} —
-      {{ card.summary }} —
-      attention={{ card.attention_count }} —
-      route={{ card.launch_route }}
-    </li>
-  {% endfor %}
-</ul>
-
-<h2>Recent activity</h2>
-<ul>
-  {% for line in page.recent_activity_summary %}
-    <li>{{ line }}</li>
-  {% endfor %}
-</ul>
 {% endblock %}

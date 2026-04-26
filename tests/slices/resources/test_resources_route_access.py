@@ -104,13 +104,13 @@ def test_resources_admin_review_requires_admin_for_anonymous(
     fake_ulid = "01H00000000000000000000000"
 
     resp = client.post(
-        f"/resources/admin-review/{fake_ulid}/approve",
+        f"/resources/admin-issue/{fake_ulid}/approve",
         follow_redirects=False,
     )
     assert_unauthenticated(resp)
 
     resp = client.post(
-        f"/resources/admin-review/{fake_ulid}/reject",
+        f"/resources/admin-issue/{fake_ulid}/reject",
         follow_redirects=False,
     )
     assert_unauthenticated(resp)
@@ -140,13 +140,13 @@ def test_resources_admin_review_denies_non_admin_users(
     )
 
     resp = client.post(
-        f"/resources/admin-review/{fake_ulid}/approve",
+        f"/resources/admin-issue/{fake_ulid}/approve",
         follow_redirects=False,
     )
     assert_forbidden(resp)
 
     resp = client.post(
-        f"/resources/admin-review/{fake_ulid}/reject",
+        f"/resources/admin-issue/{fake_ulid}/reject",
         follow_redirects=False,
     )
     assert_forbidden(resp)

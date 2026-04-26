@@ -1,0 +1,73 @@
+
+{# app/slices/customers/templates/customers/admin_issue_detail.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}Customer Admin Issue{% endblock %}
+
+{% block content %}
+<section class="card" style="margin-top:18px;">
+  <h1 style="margin:0 0 8px;">Customer Admin Issue</h1>
+  {% if page.target_ulid %}
+    {% set entity_ulid = page.target_ulid %}
+    {% include "customers/_entity_card.html" %}
+  {% else %}
+    <p class="muted">Entity context unavailable.</p>
+  {% endif %}
+</section>
+<section class="card">
+  <h2 style="margin-top:0;">Issue</h2>
+  <table class="table">
+    <tr><th>Issue ULID</th><td><code>{{ page.issue_ulid }}</code></td></tr>
+    <tr><th>Request ID</th><td><code>{{ page.request_id }}</code></td></tr>
+    <tr><th>Target ULID</th><td><code>{{ page.target_ulid }}</code></td></tr>
+    <tr><th>Reason code</th><td><code>{{ page.reason_code }}</code></td></tr>
+    <tr><th>Source status</th><td><code>{{ page.source_status }}</code></td></tr>
+  </table>
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0;">Summary</h2>
+  <p><strong>{{ page.title }}</strong></p>
+  <p>{{ page.summary }}</p>
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0;">Facts</h2>
+  <table class="table">
+    {% for key, value in (page.facts or {}).items() %}
+    <tr>
+      <th>{{ key }}</th>
+      <td>
+        {% if value is sequence and value is not string %}
+          {{ value | join(", ") }}
+        {% else %}
+          {{ value }}
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+
+<section class="card">
+  <h2 style="margin-top:0;">Decision</h2>
+
+  <form
+    method="post"
+    action="{{ url_for(approve_endpoint, issue_ulid=page.issue_ulid) }}"
+    style="display:inline-block; margin-right: 1rem;"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn" type="submit">Approve</button>
+  </form>
+
+  <form
+    method="post"
+    action="{{ url_for(reject_endpoint, issue_ulid=page.issue_ulid) }}"
+    style="display:inline-block;"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn--danger" type="submit">Reject</button>
+  </form>
+</section>
+{% endblock %}

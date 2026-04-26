@@ -1,0 +1,58 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Sponsor Admin Issue · Onboarding{% endblock %}
+
+{% block content %}
+<h1>Sponsor Onboarding Admin Issue</h1>
+
+<section class="card">
+  <p><strong>Issue ULID:</strong> <span class="mono">{{ page.issue_ulid }}</span></p>
+  <p><strong>Request ID:</strong> <span class="mono">{{ page.request_id }}</span></p>
+  <p><strong>Target ULID:</strong> <span class="mono">{{ page.target_ulid }}</span></p>
+  <p><strong>Reason code:</strong> <span class="mono">{{ page.reason_code }}</span></p>
+  <p><strong>Source status:</strong> <span class="mono">{{ page.source_status }}</span></p>
+</section>
+
+<section class="card">
+  <h2>{{ page.title }}</h2>
+  <p>{{ page.summary }}</p>
+</section>
+
+<section class="card">
+  <h2>Facts</h2>
+  <dl>
+    {% for key, value in (page.facts or {}).items() %}
+      <dt><strong>{{ key }}</strong></dt>
+      <dd>
+        {% if value is sequence and value is not string %}
+          {{ value | join(", ") }}
+        {% else %}
+          {{ value }}
+        {% endif %}
+      </dd>
+    {% endfor %}
+  </dl>
+</section>
+
+<section class="card">
+  <h2>Decision</h2>
+
+  <form
+    method="post"
+    action="{{ url_for('sponsors.admin_issue_onboard_approve', issue_ulid=page.issue_ulid) }}"
+    style="display:inline-block; margin-right: 1rem;"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn" type="submit">Approve</button>
+  </form>
+
+  <form
+    method="post"
+    action="{{ url_for('sponsors.admin_issue_onboard_reject', issue_ulid=page.issue_ulid) }}"
+    style="display:inline-block;"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn--danger" type="submit">Reject</button>
+  </form>
+</section>
+{% endblock %}

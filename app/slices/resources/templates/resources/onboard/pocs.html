@@ -60,7 +60,8 @@
 
 <section class="card">
   <h2>Add a POC (Entity person ULID)</h2>
-  <form method="post" {{ csrf_field() }} action="{{ url_for('resources.onboard_pocs', entity_ulid=entity_ulid) }}">
+  <form method="post" action="{{ url_for('resources.onboard_pocs', entity_ulid=entity_ulid) }}">
+    {{ csrf_field() }}
     <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
 
     <div class="row">

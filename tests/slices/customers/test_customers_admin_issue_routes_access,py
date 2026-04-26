@@ -1,0 +1,175 @@
+# tests/slices/customers/test_customers_admin_issue_routes_access.py
+
+from __future__ import annotations
+
+import pytest
+
+from app.extensions import db
+from app.lib.chrono import now_iso8601_ms
+from app.slices.customers.models import Customer, CustomerAdminIssue
+from tests.support.real_auth import (
+    ADMIN_SETTLED_PASSWORD,
+    ADMIN_TEMP_PASSWORD,
+    ADMIN_USERNAME,
+    AUDITOR_SETTLED_PASSWORD,
+    AUDITOR_TEMP_PASSWORD,
+    AUDITOR_USERNAME,
+    STAFF_SETTLED_PASSWORD,
+    STAFF_TEMP_PASSWORD,
+    STAFF_USERNAME,
+    assert_forbidden,
+    assert_unauthenticated,
+    login_and_settle_password,
+    logout_if_possible,
+    seed_real_auth_world,
+)
+
+
+@pytest.fixture()
+def customer_seeded(app):
+    seed_real_auth_world(
+        app,
+        customers=1,
+        resources=0,
+        sponsors=0,
+        normalize_passwords=False,
+    )
+    return app
+
+
+def _first_customer_entity_ulid(app) -> str:
+    with app.app_context():
+        value = db.session.query(Customer.entity_ulid).first()
+        assert value, "expected at least one seeded customer"
+        return str(value[0])
+
+
+def _insert_issue(
+    app,
+    *,
+    reason_code: str,
+    request_id: str,
+) -> str:
+    entity_ulid = _first_customer_entity_ulid(app)
+    now = now_iso8601_ms()
+
+    with app.app_context():
+        issue = CustomerAdminIssue(
+            target_ulid=entity_ulid,
+            reason_code=reason_code,
+            source_status="pending_review",
+            requested_by_actor_ulid=None,
+            resolved_by_actor_ulid=None,
+            request_id=request_id,
+            title="Customer issue",
+            summary="Admin review required.",
+            details_json={"target_ulid": entity_ulid},
+            created_at_utc=now,
+            updated_at_utc=now,
+            closed_at_utc=None,
+        )
+        db.session.add(issue)
+        db.session.commit()
+        return str(issue.ulid)
+
+
+def test_customers_admin_issue_requires_admin_for_anonymous(
+    client,
+    customer_seeded,
+):
+    fake_ulid = "01H00000000000000000000000"
+
+    paths = [
+        f"/customers/admin-issue/assessment-completed/{fake_ulid}",
+        f"/customers/admin-issue/assessment-completed/{fake_ulid}/approve",
+        f"/customers/admin-issue/assessment-completed/{fake_ulid}/reject",
+        f"/customers/admin-issue/watchlist/{fake_ulid}",
+        f"/customers/admin-issue/watchlist/{fake_ulid}/approve",
+        f"/customers/admin-issue/watchlist/{fake_ulid}/reject",
+    ]
+
+    for path in paths:
+        if path.endswith("/approve") or path.endswith("/reject"):
+            resp = client.post(path, follow_redirects=False)
+        else:
+            resp = client.get(path, follow_redirects=False)
+        assert_unauthenticated(resp)
+
+
+@pytest.mark.parametrize(
+    ("username", "temporary_password", "settled_password"),
+    [
+        (STAFF_USERNAME, STAFF_TEMP_PASSWORD, STAFF_SETTLED_PASSWORD),
+        (AUDITOR_USERNAME, AUDITOR_TEMP_PASSWORD, AUDITOR_SETTLED_PASSWORD),
+    ],
+)
+def test_customers_admin_issue_denies_non_admin_users(
+    client,
+    customer_seeded,
+    username: str,
+    temporary_password: str,
+    settled_password: str,
+):
+    fake_ulid = "01H00000000000000000000000"
+
+    login_and_settle_password(
+        client,
+        username=username,
+        temporary_password=temporary_password,
+        settled_password=settled_password,
+    )
+
+    paths = [
+        f"/customers/admin-issue/assessment-completed/{fake_ulid}",
+        f"/customers/admin-issue/assessment-completed/{fake_ulid}/approve",
+        f"/customers/admin-issue/assessment-completed/{fake_ulid}/reject",
+        f"/customers/admin-issue/watchlist/{fake_ulid}",
+        f"/customers/admin-issue/watchlist/{fake_ulid}/approve",
+        f"/customers/admin-issue/watchlist/{fake_ulid}/reject",
+    ]
+
+    for path in paths:
+        if path.endswith("/approve") or path.endswith("/reject"):
+            resp = client.post(path, follow_redirects=False)
+        else:
+            resp = client.get(path, follow_redirects=False)
+        assert_forbidden(resp)
+
+    logout_if_possible(client)
+
+
+def test_customers_admin_issue_allows_admin_route_surface(
+    client,
+    customer_seeded,
+):
+    assessment_issue_ulid = _insert_issue(
+        customer_seeded,
+        reason_code="advisory_customers_assessment_completed",
+        request_id="req-customers-assessment-access-001",
+    )
+    watchlist_issue_ulid = _insert_issue(
+        customer_seeded,
+        reason_code="advisory_customers_watchlist",
+        request_id="req-customers-watchlist-access-001",
+    )
+
+    login_and_settle_password(
+        client,
+        username=ADMIN_USERNAME,
+        temporary_password=ADMIN_TEMP_PASSWORD,
+        settled_password=ADMIN_SETTLED_PASSWORD,
+    )
+
+    resp = client.get(
+        f"/customers/admin-issue/assessment-completed/{assessment_issue_ulid}",
+        follow_redirects=False,
+    )
+    assert resp.status_code == 200
+
+    resp = client.get(
+        f"/customers/admin-issue/watchlist/{watchlist_issue_ulid}",
+        follow_redirects=False,
+    )
+    assert resp.status_code == 200
+
+    logout_if_possible(client)

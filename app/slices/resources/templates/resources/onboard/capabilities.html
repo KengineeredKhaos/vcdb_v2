@@ -1,8 +1,5 @@
 {% extends "layout/base.html" %}
 {# templates/macros.html #}
-{% macro csrf_field() -%}
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-{%- endmacro %}
 {% block title %}Resource Onboarding · Capabilities{% endblock %}
 {% include "resources/onboard/_entity_card.html" %}
 {% block content %}
@@ -25,8 +22,9 @@
     <b>admin_review_required</b>.
   </div>
 
-  <form method="post" {{ csrf_field() }}
+  <form method="post"
     action="{{ url_for('resources.onboard_capabilities', entity_ulid=entity_ulid) }}">
+    {{ csrf_field() }}
     <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
 
     {% for domain, keys in cap_tree.items() %}

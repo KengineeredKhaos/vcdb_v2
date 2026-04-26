@@ -1,0 +1,1489 @@
+# VCDB_V2 db schema
+
+user@zbook-17:~/Documents/App_Dev/vcdb-v2$ sqlite3 /home/user/Documents/App_Dev/vcdb-v2/app/instance/dev.db ".schema"
+CREATE TABLE alembic_version (
+	version_num VARCHAR(32) NOT NULL, 
+	CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
+);
+CREATE TABLE admin_cron_lock (
+	lock_key VARCHAR(255) NOT NULL, 
+	job_key VARCHAR(120) NOT NULL, 
+	unit_key VARCHAR(120) NOT NULL, 
+	owner_run_ulid VARCHAR(26) NOT NULL, 
+	acquired_at_utc VARCHAR(30) NOT NULL, 
+	expires_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (lock_key)
+);
+CREATE INDEX ix_admin_cron_lock_job_unit ON admin_cron_lock (job_key, unit_key);
+CREATE TABLE admin_cron_run (
+	job_key VARCHAR(120) NOT NULL, 
+	unit_key VARCHAR(120) NOT NULL, 
+	status VARCHAR(32) NOT NULL, 
+	attempt_no INTEGER NOT NULL, 
+	started_at_utc VARCHAR(30) NOT NULL, 
+	finished_at_utc VARCHAR(30), 
+	summary TEXT NOT NULL, 
+	error_text TEXT, 
+	request_id VARCHAR(64), 
+	actor_ulid VARCHAR(26), 
+	trigger_mode VARCHAR(32) NOT NULL, 
+	host_name VARCHAR(255), 
+	ulid VARCHAR(26) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT uq_admin_cron_run_job_unit_attempt UNIQUE (job_key, unit_key, attempt_no)
+);
+CREATE INDEX ix_admin_cron_run_job_started ON admin_cron_run (job_key, started_at_utc);
+CREATE INDEX ix_admin_cron_run_status_started ON admin_cron_run (status, started_at_utc);
+CREATE TABLE admin_cron_status (
+	job_name VARCHAR(120) NOT NULL, 
+	last_success_utc VARCHAR(30), 
+	last_error_utc VARCHAR(30), 
+	last_error VARCHAR, 
+	PRIMARY KEY (job_name)
+);
+CREATE TABLE attachment_attachment (
+	sha256 VARCHAR(64) NOT NULL, 
+	size_bytes INTEGER NOT NULL, 
+	mime VARCHAR(100) NOT NULL, 
+	original_filename VARCHAR(255), 
+	storage_key VARCHAR(300) NOT NULL, 
+	privacy_level VARCHAR(1) NOT NULL, 
+	retention_policy_code VARCHAR(32), 
+	status VARCHAR(16) NOT NULL, 
+	created_by_actor VARCHAR(26), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_ulid_len_26 CHECK (length(ulid) = 26)
+);
+CREATE UNIQUE INDEX ix_attachment_attachment_sha256 ON attachment_attachment (sha256);
+CREATE TABLE auth_role (
+	code VARCHAR(32) NOT NULL, 
+	description VARCHAR(200), 
+	is_active BOOLEAN NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_ulid_len_26 CHECK (length(ulid) = 26)
+);
+CREATE UNIQUE INDEX ix_auth_role_code ON auth_role (code);
+CREATE TABLE auth_user (
+	entity_ulid VARCHAR(26), 
+	username VARCHAR(64) NOT NULL, 
+	email VARCHAR(254), 
+	password_hash VARCHAR(255) NOT NULL, 
+	is_active BOOLEAN NOT NULL, 
+	is_locked BOOLEAN NOT NULL, 
+	must_change_password BOOLEAN NOT NULL, 
+	failed_login_attempts INTEGER NOT NULL, 
+	locked_at_utc VARCHAR(30), 
+	locked_by_ulid VARCHAR(26), 
+	last_login_at_utc VARCHAR(30), 
+	password_changed_at_utc VARCHAR(30), 
+	reset_issued_at_utc VARCHAR(30), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_ulid_len_26 CHECK (length(ulid) = 26)
+);
+CREATE UNIQUE INDEX ix_auth_user_email ON auth_user (email);
+CREATE INDEX ix_auth_user_entity_ulid ON auth_user (entity_ulid);
+CREATE UNIQUE INDEX ix_auth_user_username ON auth_user (username);
+CREATE TABLE entity_entity (
+	kind VARCHAR(16) NOT NULL, 
+	archived_at VARCHAR(30), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, intake_step VARCHAR(32), intake_request_id VARCHAR(26), 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_ulid_len_26 CHECK (length(ulid) = 26)
+);
+CREATE TABLE finance_account (
+	code VARCHAR(24) NOT NULL, 
+	name VARCHAR(120) NOT NULL, 
+	type VARCHAR(16) NOT NULL, 
+	active BOOLEAN NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_account_type CHECK (type in ('asset','liability','net_assets','revenue','expense'))
+);
+CREATE INDEX ix_finance_account_active ON finance_account (active);
+CREATE UNIQUE INDEX ix_finance_account_code ON finance_account (code);
+CREATE INDEX ix_finance_account_type ON finance_account (type);
+CREATE TABLE finance_balance_monthly (
+	account_code VARCHAR(24) NOT NULL, 
+	fund_code VARCHAR(32) NOT NULL, 
+	project_ulid VARCHAR(26), 
+	period_key VARCHAR(7) NOT NULL, 
+	debits_cents INTEGER NOT NULL, 
+	credits_cents INTEGER NOT NULL, 
+	net_cents INTEGER NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT uq_balance_key UNIQUE (account_code, fund_code, project_ulid, period_key)
+);
+CREATE INDEX ix_finance_balance_monthly_account_code ON finance_balance_monthly (account_code);
+CREATE INDEX ix_finance_balance_monthly_fund_code ON finance_balance_monthly (fund_code);
+CREATE INDEX ix_finance_balance_monthly_period_key ON finance_balance_monthly (period_key);
+CREATE INDEX ix_finance_balance_monthly_project_ulid ON finance_balance_monthly (project_ulid);
+CREATE TABLE finance_encumbrance (
+	funding_demand_ulid VARCHAR(26) NOT NULL, 
+	project_ulid VARCHAR(26), 
+	grant_ulid VARCHAR(26), 
+	fund_code VARCHAR(32) NOT NULL, 
+	amount_cents INTEGER NOT NULL, 
+	relieved_cents INTEGER NOT NULL, 
+	status VARCHAR(16) NOT NULL, 
+	decision_fingerprint VARCHAR(64), 
+	source VARCHAR(32) NOT NULL, 
+	source_ref_ulid VARCHAR(26), 
+	memo VARCHAR(160), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_enc_status CHECK (status in ('active','relieved','void')), 
+	CONSTRAINT ck_enc_nonneg CHECK (amount_cents >= 0), 
+	CONSTRAINT ck_enc_rel_le_amount CHECK (relieved_cents <= amount_cents), 
+	CONSTRAINT ck_enc_rel_nonneg CHECK (relieved_cents >= 0)
+);
+CREATE INDEX ix_finance_encumbrance_decision_fingerprint ON finance_encumbrance (decision_fingerprint);
+CREATE INDEX ix_finance_encumbrance_fund_code ON finance_encumbrance (fund_code);
+CREATE INDEX ix_finance_encumbrance_funding_demand_ulid ON finance_encumbrance (funding_demand_ulid);
+CREATE INDEX ix_finance_encumbrance_grant_ulid ON finance_encumbrance (grant_ulid);
+CREATE INDEX ix_finance_encumbrance_project_ulid ON finance_encumbrance (project_ulid);
+CREATE INDEX ix_finance_encumbrance_source ON finance_encumbrance (source);
+CREATE INDEX ix_finance_encumbrance_source_ref_ulid ON finance_encumbrance (source_ref_ulid);
+CREATE INDEX ix_finance_encumbrance_status ON finance_encumbrance (status);
+CREATE TABLE finance_fund (
+	code VARCHAR(32) NOT NULL, 
+	name VARCHAR(120) NOT NULL, 
+	restriction VARCHAR(32) NOT NULL, 
+	active BOOLEAN NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_fund_restriction CHECK (restriction in ('unrestricted','temporarily_restricted','permanently_restricted'))
+);
+CREATE INDEX ix_finance_fund_active ON finance_fund (active);
+CREATE UNIQUE INDEX ix_finance_fund_code ON finance_fund (code);
+CREATE INDEX ix_finance_fund_restriction ON finance_fund (restriction);
+CREATE TABLE finance_grant (
+	fund_code VARCHAR(32) NOT NULL, 
+	restriction_type VARCHAR(32) NOT NULL, 
+	sponsor_ulid VARCHAR(26) NOT NULL, 
+	project_ulid VARCHAR(26), 
+	award_number VARCHAR(64), 
+	award_name VARCHAR(160) NOT NULL, 
+	funding_mode VARCHAR(16) NOT NULL, 
+	amount_awarded_cents INTEGER NOT NULL, 
+	match_required_cents INTEGER NOT NULL, 
+	start_on VARCHAR(10) NOT NULL, 
+	end_on VARCHAR(10) NOT NULL, 
+	reporting_frequency VARCHAR(16) NOT NULL, 
+	program_income_allowed BOOLEAN NOT NULL, 
+	allowable_expense_kinds_raw VARCHAR(255) NOT NULL, 
+	conditions_summary VARCHAR(255), 
+	source_document_ref VARCHAR(255), 
+	status VARCHAR(16) NOT NULL, 
+	notes VARCHAR(255), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_grant_funding_mode CHECK (funding_mode in ('reimbursement','advance')), 
+	CONSTRAINT ck_grant_reporting_frequency CHECK (reporting_frequency in ('monthly','quarterly','semiannual','annual','end_of_term')), 
+	CONSTRAINT ck_grant_restriction_type CHECK (restriction_type in ('unrestricted','temporarily_restricted','permanently_restricted')), 
+	CONSTRAINT ck_grant_status CHECK (status in ('draft','active','closed','terminated')), 
+	CONSTRAINT ck_grant_award_nonneg CHECK (amount_awarded_cents >= 0), 
+	CONSTRAINT ck_grant_match_nonneg CHECK (match_required_cents >= 0), 
+	CONSTRAINT uq_grant_sponsor_award_number UNIQUE (sponsor_ulid, award_number)
+);
+CREATE INDEX ix_finance_grant_award_number ON finance_grant (award_number);
+CREATE INDEX ix_finance_grant_fund_code ON finance_grant (fund_code);
+CREATE INDEX ix_finance_grant_funding_mode ON finance_grant (funding_mode);
+CREATE INDEX ix_finance_grant_project_ulid ON finance_grant (project_ulid);
+CREATE INDEX ix_finance_grant_reporting_frequency ON finance_grant (reporting_frequency);
+CREATE INDEX ix_finance_grant_restriction_type ON finance_grant (restriction_type);
+CREATE INDEX ix_finance_grant_sponsor_ulid ON finance_grant (sponsor_ulid);
+CREATE INDEX ix_finance_grant_status ON finance_grant (status);
+CREATE TABLE finance_journal (
+	source VARCHAR(32) NOT NULL, 
+	funding_demand_ulid VARCHAR(26) NOT NULL, 
+	project_ulid VARCHAR(26), 
+	grant_ulid VARCHAR(26), 
+	external_ref_ulid VARCHAR(26), 
+	currency VARCHAR(8) NOT NULL, 
+	period_key VARCHAR(7) NOT NULL, 
+	happened_at_utc VARCHAR(30) NOT NULL, 
+	posted_at_utc VARCHAR(30) NOT NULL, 
+	memo VARCHAR(160), 
+	created_by_actor VARCHAR(26), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_ulid_len_26 CHECK (length(ulid) = 26)
+);
+CREATE INDEX ix_finance_journal_external_ref_ulid ON finance_journal (external_ref_ulid);
+CREATE INDEX ix_finance_journal_funding_demand_ulid ON finance_journal (funding_demand_ulid);
+CREATE INDEX ix_finance_journal_grant_ulid ON finance_journal (grant_ulid);
+CREATE INDEX ix_finance_journal_period_key ON finance_journal (period_key);
+CREATE INDEX ix_finance_journal_project_ulid ON finance_journal (project_ulid);
+CREATE INDEX ix_finance_journal_source ON finance_journal (source);
+CREATE TABLE finance_ops_float (
+	action VARCHAR(16) NOT NULL, 
+	support_mode VARCHAR(16) NOT NULL, 
+	source_funding_demand_ulid VARCHAR(26) NOT NULL, 
+	source_project_ulid VARCHAR(26), 
+	dest_funding_demand_ulid VARCHAR(26) NOT NULL, 
+	dest_project_ulid VARCHAR(26), 
+	fund_code VARCHAR(32) NOT NULL, 
+	amount_cents INTEGER NOT NULL, 
+	status VARCHAR(16) NOT NULL, 
+	parent_ops_float_ulid VARCHAR(26), 
+	decision_fingerprint VARCHAR(64), 
+	source_ref_ulid VARCHAR(26), 
+	memo VARCHAR(160), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_ops_float_action CHECK (action in ('allocate','repay','forgive')), 
+	CONSTRAINT ck_ops_float_status CHECK (status in ('active','void')), 
+	CONSTRAINT ck_ops_float_mode CHECK (support_mode in ('seed','backfill','bridge')), 
+	CONSTRAINT ck_ops_float_nonneg CHECK (amount_cents >= 0)
+);
+CREATE INDEX ix_finance_ops_float_action ON finance_ops_float (action);
+CREATE INDEX ix_finance_ops_float_decision_fingerprint ON finance_ops_float (decision_fingerprint);
+CREATE INDEX ix_finance_ops_float_dest_funding_demand_ulid ON finance_ops_float (dest_funding_demand_ulid);
+CREATE INDEX ix_finance_ops_float_dest_project_ulid ON finance_ops_float (dest_project_ulid);
+CREATE INDEX ix_finance_ops_float_fund_code ON finance_ops_float (fund_code);
+CREATE INDEX ix_finance_ops_float_parent_ops_float_ulid ON finance_ops_float (parent_ops_float_ulid);
+CREATE INDEX ix_finance_ops_float_source_funding_demand_ulid ON finance_ops_float (source_funding_demand_ulid);
+CREATE INDEX ix_finance_ops_float_source_project_ulid ON finance_ops_float (source_project_ulid);
+CREATE INDEX ix_finance_ops_float_source_ref_ulid ON finance_ops_float (source_ref_ulid);
+CREATE INDEX ix_finance_ops_float_status ON finance_ops_float (status);
+CREATE INDEX ix_finance_ops_float_support_mode ON finance_ops_float (support_mode);
+CREATE TABLE finance_period (
+	period_key VARCHAR(7) NOT NULL, 
+	status VARCHAR(16) NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_period_status CHECK (status in ('open','soft_closed','closed'))
+);
+CREATE UNIQUE INDEX ix_finance_period_period_key ON finance_period (period_key);
+CREATE INDEX ix_finance_period_status ON finance_period (status);
+CREATE TABLE finance_reserve (
+	funding_demand_ulid VARCHAR(26) NOT NULL, 
+	project_ulid VARCHAR(26), 
+	grant_ulid VARCHAR(26), 
+	fund_code VARCHAR(32) NOT NULL, 
+	amount_cents INTEGER NOT NULL, 
+	status VARCHAR(16) NOT NULL, 
+	decision_fingerprint VARCHAR(64), 
+	source VARCHAR(32) NOT NULL, 
+	source_ref_ulid VARCHAR(26), 
+	memo VARCHAR(160), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_reserve_status CHECK (status in ('active','released','void')), 
+	CONSTRAINT ck_reserve_nonneg CHECK (amount_cents >= 0)
+);
+CREATE INDEX ix_finance_reserve_decision_fingerprint ON finance_reserve (decision_fingerprint);
+CREATE INDEX ix_finance_reserve_fund_code ON finance_reserve (fund_code);
+CREATE INDEX ix_finance_reserve_funding_demand_ulid ON finance_reserve (funding_demand_ulid);
+CREATE INDEX ix_finance_reserve_grant_ulid ON finance_reserve (grant_ulid);
+CREATE INDEX ix_finance_reserve_project_ulid ON finance_reserve (project_ulid);
+CREATE INDEX ix_finance_reserve_source ON finance_reserve (source);
+CREATE INDEX ix_finance_reserve_source_ref_ulid ON finance_reserve (source_ref_ulid);
+CREATE INDEX ix_finance_reserve_status ON finance_reserve (status);
+CREATE TABLE finance_stat_metric (
+	period_key VARCHAR(7) NOT NULL, 
+	metric_code VARCHAR(32) NOT NULL, 
+	quantity INTEGER NOT NULL, 
+	unit VARCHAR(16) NOT NULL, 
+	source VARCHAR(32) NOT NULL, 
+	source_ref_ulid VARCHAR(26), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT uq_stat_dedupe UNIQUE (period_key, metric_code, source, source_ref_ulid)
+);
+CREATE INDEX ix_finance_stat_metric_metric_code ON finance_stat_metric (metric_code);
+CREATE INDEX ix_finance_stat_metric_period_key ON finance_stat_metric (period_key);
+CREATE TABLE gov_canonical_state (
+	code VARCHAR(2) NOT NULL, 
+	name VARCHAR(64) NOT NULL, 
+	is_active BOOLEAN NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_ulid_len_26 CHECK (length(ulid) = 26)
+);
+CREATE UNIQUE INDEX ix_gov_canonical_state_code ON gov_canonical_state (code);
+CREATE TABLE gov_role_code (
+	code VARCHAR(32) NOT NULL, 
+	description VARCHAR(200) NOT NULL, 
+	is_active BOOLEAN NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_ulid_len_26 CHECK (length(ulid) = 26)
+);
+CREATE UNIQUE INDEX ix_gov_role_code_code ON gov_role_code (code);
+CREATE TABLE gov_service_class (
+	code VARCHAR(32) NOT NULL, 
+	label VARCHAR(128) NOT NULL, 
+	sort INTEGER NOT NULL, 
+	is_active BOOLEAN NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid)
+);
+CREATE UNIQUE INDEX ix_gov_service_class_code ON gov_service_class (code);
+CREATE INDEX ix_gov_service_class_sort ON gov_service_class (sort);
+CREATE TABLE governance_policy (
+	namespace VARCHAR(40) NOT NULL, 
+	"key" VARCHAR(60) NOT NULL, 
+	version INTEGER NOT NULL, 
+	value_json VARCHAR NOT NULL, 
+	schema_json VARCHAR NOT NULL, 
+	is_active BOOLEAN NOT NULL, 
+	updated_by_actor_ulid VARCHAR(26), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT uq_governance_policy_version UNIQUE (namespace, "key", version)
+);
+CREATE INDEX ix_governance_policy_active ON governance_policy (namespace, "key", is_active);
+CREATE INDEX ix_governance_policy_is_active ON governance_policy (is_active);
+CREATE INDEX ix_governance_policy_key ON governance_policy ("key");
+CREATE INDEX ix_governance_policy_namespace ON governance_policy (namespace);
+CREATE TABLE ledger_event (
+	chain_key VARCHAR(40) NOT NULL, 
+	domain VARCHAR(40) NOT NULL, 
+	operation VARCHAR(60) NOT NULL, 
+	event_type VARCHAR(120) NOT NULL, 
+	actor_ulid VARCHAR(26), 
+	target_ulid VARCHAR(26), 
+	request_id VARCHAR(26) NOT NULL, 
+	happened_at_utc VARCHAR(30), 
+	refs_json TEXT, 
+	changed_json TEXT, 
+	meta_json TEXT, 
+	prev_hash_hex VARCHAR(64), 
+	curr_hash_hex VARCHAR(64) NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid)
+);
+CREATE INDEX ix_ledger_event_chain_key_id ON ledger_event (chain_key);
+CREATE INDEX ix_ledger_event_event_type ON ledger_event (event_type);
+CREATE INDEX ix_ledger_event_request_id ON ledger_event (request_id);
+CREATE TABLE logi_item (
+	category VARCHAR(64) NOT NULL, 
+	name VARCHAR(120) NOT NULL, 
+	unit VARCHAR(16) NOT NULL, 
+	condition VARCHAR(16) NOT NULL, 
+	sku VARCHAR(64) NOT NULL, 
+	sku_cat VARCHAR(2) NOT NULL, 
+	sku_sub VARCHAR(3) NOT NULL, 
+	sku_src VARCHAR(2) NOT NULL, 
+	sku_size VARCHAR(3) NOT NULL, 
+	sku_color VARCHAR(3) NOT NULL, 
+	sku_issuance_class VARCHAR(1) NOT NULL, 
+	sku_seq INTEGER NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	PRIMARY KEY (ulid)
+);
+CREATE INDEX ix_item_sku_family ON logi_item (sku_cat, sku_sub, sku_src, sku_size, sku_color, sku_issuance_class);
+CREATE INDEX ix_logi_item_category ON logi_item (category);
+CREATE UNIQUE INDEX ix_logi_item_sku ON logi_item (sku);
+CREATE INDEX ix_logi_item_sku_cat ON logi_item (sku_cat);
+CREATE INDEX ix_logi_item_sku_color ON logi_item (sku_color);
+CREATE INDEX ix_logi_item_sku_issuance_class ON logi_item (sku_issuance_class);
+CREATE INDEX ix_logi_item_sku_size ON logi_item (sku_size);
+CREATE INDEX ix_logi_item_sku_src ON logi_item (sku_src);
+CREATE INDEX ix_logi_item_sku_sub ON logi_item (sku_sub);
+CREATE TABLE logi_location (
+	code VARCHAR(16) NOT NULL, 
+	name VARCHAR(80) NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_ulid_len_26 CHECK (length(ulid) = 26), 
+	UNIQUE (code)
+);
+CREATE TABLE attachment_link (
+	attachment_ulid VARCHAR(26) NOT NULL, 
+	slice VARCHAR(32) NOT NULL, 
+	domain VARCHAR(32) NOT NULL, 
+	target_ulid VARCHAR(26) NOT NULL, 
+	note VARCHAR(120), 
+	created_by_actor VARCHAR(26), 
+	archived_at_utc VARCHAR(30), 
+	archived_by_actor VARCHAR(26), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	FOREIGN KEY(attachment_ulid) REFERENCES attachment_attachment (ulid) ON DELETE RESTRICT, 
+	CONSTRAINT uq_active_link UNIQUE (attachment_ulid, slice, domain, target_ulid, archived_at_utc)
+);
+CREATE INDEX ix_attachment_link_attachment_ulid ON attachment_link (attachment_ulid);
+CREATE INDEX ix_attachment_link_domain ON attachment_link (domain);
+CREATE INDEX ix_attachment_link_slice ON attachment_link (slice);
+CREATE INDEX ix_attachment_link_target_ulid ON attachment_link (target_ulid);
+CREATE INDEX ix_links_target_domain ON attachment_link (slice, domain, target_ulid);
+CREATE TABLE auth_user_role (
+	user_ulid VARCHAR(26) NOT NULL, 
+	role_ulid VARCHAR(26) NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	FOREIGN KEY(role_ulid) REFERENCES auth_role (ulid) ON DELETE RESTRICT, 
+	FOREIGN KEY(user_ulid) REFERENCES auth_user (ulid) ON DELETE RESTRICT, 
+	CONSTRAINT uq_auth_user_role_pair UNIQUE (user_ulid, role_ulid)
+);
+CREATE INDEX ix_auth_user_role_role ON auth_user_role (role_ulid);
+CREATE INDEX ix_auth_user_role_role_ulid ON auth_user_role (role_ulid);
+CREATE INDEX ix_auth_user_role_user ON auth_user_role (user_ulid);
+CREATE INDEX ix_auth_user_role_user_ulid ON auth_user_role (user_ulid);
+CREATE TABLE customer_customer (
+	entity_ulid VARCHAR(26) NOT NULL, 
+	status VARCHAR(24) NOT NULL, 
+	intake_step VARCHAR(32) NOT NULL, 
+	intake_completed_at_iso VARCHAR(30), 
+	eligibility_complete BOOLEAN NOT NULL, 
+	entity_package_incomplete BOOLEAN NOT NULL, 
+	tier1_assessed BOOLEAN NOT NULL, 
+	tier2_assessed BOOLEAN NOT NULL, 
+	tier3_assessed BOOLEAN NOT NULL, 
+	tier1_unlocked BOOLEAN NOT NULL, 
+	tier2_unlocked BOOLEAN NOT NULL, 
+	tier3_unlocked BOOLEAN NOT NULL, 
+	assessment_complete BOOLEAN NOT NULL, 
+	watchlist BOOLEAN NOT NULL, 
+	tier1_min INTEGER, 
+	tier2_min INTEGER, 
+	tier3_min INTEGER, 
+	flag_tier1_immediate BOOLEAN NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (entity_ulid), 
+	CONSTRAINT ck_customer_intake_step_enum CHECK (intake_step IN ('ensure','eligibility','needs_tier1','needs_tier2','needs_tier3','review','complete')), 
+	CONSTRAINT ck_customer_status_enum CHECK (status IN ('intake','active','inactive','archived')), 
+	CONSTRAINT ck_customer_tier1_range CHECK (tier1_min IS NULL OR (tier1_min BETWEEN 1 AND 3)), 
+	CONSTRAINT ck_customer_tier2_range CHECK (tier2_min IS NULL OR (tier2_min BETWEEN 1 AND 3)), 
+	CONSTRAINT ck_customer_tier3_range CHECK (tier3_min IS NULL OR (tier3_min BETWEEN 1 AND 3)), 
+	FOREIGN KEY(entity_ulid) REFERENCES entity_entity (ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_customer_customer_assessment_complete ON customer_customer (assessment_complete);
+CREATE INDEX ix_customer_customer_eligibility_complete ON customer_customer (eligibility_complete);
+CREATE INDEX ix_customer_customer_entity_package_incomplete ON customer_customer (entity_package_incomplete);
+CREATE INDEX ix_customer_customer_flag_tier1_immediate ON customer_customer (flag_tier1_immediate);
+CREATE INDEX ix_customer_customer_intake_step ON customer_customer (intake_step);
+CREATE INDEX ix_customer_customer_status ON customer_customer (status);
+CREATE INDEX ix_customer_customer_tier1_assessed ON customer_customer (tier1_assessed);
+CREATE INDEX ix_customer_customer_tier1_min ON customer_customer (tier1_min);
+CREATE INDEX ix_customer_customer_tier1_unlocked ON customer_customer (tier1_unlocked);
+CREATE INDEX ix_customer_customer_tier2_assessed ON customer_customer (tier2_assessed);
+CREATE INDEX ix_customer_customer_tier2_min ON customer_customer (tier2_min);
+CREATE INDEX ix_customer_customer_tier2_unlocked ON customer_customer (tier2_unlocked);
+CREATE INDEX ix_customer_customer_tier3_assessed ON customer_customer (tier3_assessed);
+CREATE INDEX ix_customer_customer_tier3_unlocked ON customer_customer (tier3_unlocked);
+CREATE INDEX ix_customer_customer_watchlist ON customer_customer (watchlist);
+CREATE TABLE entity_address (
+	entity_ulid VARCHAR(26) NOT NULL, 
+	is_physical BOOLEAN NOT NULL, 
+	is_postal BOOLEAN NOT NULL, 
+	address1 VARCHAR(80) NOT NULL, 
+	address2 VARCHAR(80), 
+	city VARCHAR(60) NOT NULL, 
+	state VARCHAR(2) NOT NULL, 
+	postal_code VARCHAR(10) NOT NULL, 
+	archived_at VARCHAR(30), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_state_len_2 CHECK (length(state) = 2), 
+	FOREIGN KEY(entity_ulid) REFERENCES entity_entity (ulid) ON DELETE RESTRICT
+);
+CREATE INDEX ix_entity_address_entity_ulid ON entity_address (entity_ulid);
+CREATE TABLE entity_contact (
+	entity_ulid VARCHAR(26) NOT NULL, 
+	email VARCHAR(254), 
+	phone VARCHAR(32), 
+	is_primary BOOLEAN NOT NULL, 
+	archived_at VARCHAR(30), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_ulid_len_26 CHECK (length(ulid) = 26), 
+	FOREIGN KEY(entity_ulid) REFERENCES entity_entity (ulid) ON DELETE RESTRICT
+);
+CREATE INDEX ix_entity_contact_entity_ulid ON entity_contact (entity_ulid);
+CREATE TABLE entity_org (
+	entity_ulid VARCHAR(26) NOT NULL, 
+	legal_name VARCHAR(120) NOT NULL, 
+	dba_name VARCHAR(120), 
+	ein VARCHAR(9), 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (entity_ulid), 
+	FOREIGN KEY(entity_ulid) REFERENCES entity_entity (ulid) ON DELETE CASCADE, 
+	CONSTRAINT uq_org_ein UNIQUE (ein)
+);
+CREATE TABLE entity_person (
+	entity_ulid VARCHAR(26) NOT NULL, 
+	first_name VARCHAR(40) NOT NULL, 
+	last_name VARCHAR(60) NOT NULL, 
+	preferred_name VARCHAR(60), 
+	last_4 VARCHAR(4), 
+	dob VARCHAR(10), 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (entity_ulid), 
+	FOREIGN KEY(entity_ulid) REFERENCES entity_entity (ulid) ON DELETE CASCADE
+);
+CREATE TABLE entity_role (
+	entity_ulid VARCHAR(26) NOT NULL, 
+	role VARCHAR(50) NOT NULL, 
+	archived_at VARCHAR(30), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	FOREIGN KEY(entity_ulid) REFERENCES entity_entity (ulid) ON DELETE RESTRICT, 
+	CONSTRAINT uq_entity_role_pair UNIQUE (entity_ulid, role)
+);
+CREATE INDEX ix_entity_role_entity_ulid ON entity_role (entity_ulid);
+CREATE INDEX ix_entity_role_role ON entity_role (role);
+CREATE TABLE finance_disbursement (
+	expense_journal_ulid VARCHAR(26) NOT NULL, 
+	grant_ulid VARCHAR(26), 
+	project_ulid VARCHAR(26) NOT NULL, 
+	funding_demand_ulid VARCHAR(26), 
+	amount_cents INTEGER NOT NULL, 
+	disbursed_on VARCHAR(10) NOT NULL, 
+	method VARCHAR(16) NOT NULL, 
+	reference VARCHAR(64), 
+	status VARCHAR(16) NOT NULL, 
+	notes VARCHAR(255), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_disbursement_method CHECK (method in ('check','ach','card','cash_external','other')), 
+	CONSTRAINT ck_disbursement_status CHECK (status in ('recorded','voided')), 
+	CONSTRAINT ck_disbursement_amount_nonneg CHECK (amount_cents >= 0), 
+	FOREIGN KEY(expense_journal_ulid) REFERENCES finance_journal (ulid), 
+	FOREIGN KEY(grant_ulid) REFERENCES finance_grant (ulid)
+);
+CREATE INDEX ix_finance_disbursement_expense_journal_ulid ON finance_disbursement (expense_journal_ulid);
+CREATE INDEX ix_finance_disbursement_funding_demand_ulid ON finance_disbursement (funding_demand_ulid);
+CREATE INDEX ix_finance_disbursement_grant_ulid ON finance_disbursement (grant_ulid);
+CREATE INDEX ix_finance_disbursement_method ON finance_disbursement (method);
+CREATE INDEX ix_finance_disbursement_project_ulid ON finance_disbursement (project_ulid);
+CREATE INDEX ix_finance_disbursement_reference ON finance_disbursement (reference);
+CREATE INDEX ix_finance_disbursement_status ON finance_disbursement (status);
+CREATE TABLE finance_journal_line (
+	journal_ulid VARCHAR(26) NOT NULL, 
+	funding_demand_ulid VARCHAR(26) NOT NULL, 
+	project_ulid VARCHAR(26), 
+	grant_ulid VARCHAR(26), 
+	seq INTEGER NOT NULL, 
+	account_code VARCHAR(24) NOT NULL, 
+	fund_code VARCHAR(32) NOT NULL, 
+	amount_cents INTEGER NOT NULL, 
+	memo VARCHAR(160), 
+	period_key VARCHAR(7) NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_line_nonzero CHECK (amount_cents != 0), 
+	FOREIGN KEY(journal_ulid) REFERENCES finance_journal (ulid), 
+	CONSTRAINT uq_journalline_seq UNIQUE (journal_ulid, seq)
+);
+CREATE INDEX ix_finance_journal_line_account_code ON finance_journal_line (account_code);
+CREATE INDEX ix_finance_journal_line_fund_code ON finance_journal_line (fund_code);
+CREATE INDEX ix_finance_journal_line_funding_demand_ulid ON finance_journal_line (funding_demand_ulid);
+CREATE INDEX ix_finance_journal_line_grant_ulid ON finance_journal_line (grant_ulid);
+CREATE INDEX ix_finance_journal_line_journal_ulid ON finance_journal_line (journal_ulid);
+CREATE INDEX ix_finance_journal_line_period_key ON finance_journal_line (period_key);
+CREATE INDEX ix_finance_journal_line_project_ulid ON finance_journal_line (project_ulid);
+CREATE TABLE finance_reimbursement (
+	grant_ulid VARCHAR(26) NOT NULL, 
+	project_ulid VARCHAR(26) NOT NULL, 
+	funding_demand_ulid VARCHAR(26), 
+	claim_number VARCHAR(64), 
+	period_start VARCHAR(10) NOT NULL, 
+	period_end VARCHAR(10) NOT NULL, 
+	submitted_on VARCHAR(10), 
+	decided_on VARCHAR(10), 
+	received_on VARCHAR(10), 
+	claimed_amount_cents INTEGER NOT NULL, 
+	approved_amount_cents INTEGER NOT NULL, 
+	received_amount_cents INTEGER NOT NULL, 
+	status VARCHAR(16) NOT NULL, 
+	notes VARCHAR(255), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_reimbursement_status CHECK (status in ('draft','submitted','approved','denied','paid','closed','void')), 
+	CONSTRAINT ck_reimbursement_approved_le_claimed CHECK (approved_amount_cents <= claimed_amount_cents), 
+	CONSTRAINT ck_reimbursement_approved_nonneg CHECK (approved_amount_cents >= 0), 
+	CONSTRAINT ck_reimbursement_claimed_nonneg CHECK (claimed_amount_cents >= 0), 
+	CONSTRAINT ck_reimbursement_received_le_approved CHECK (received_amount_cents <= approved_amount_cents), 
+	CONSTRAINT ck_reimbursement_received_nonneg CHECK (received_amount_cents >= 0), 
+	FOREIGN KEY(grant_ulid) REFERENCES finance_grant (ulid), 
+	CONSTRAINT uq_reimbursement_grant_claim_number UNIQUE (grant_ulid, claim_number)
+);
+CREATE INDEX ix_finance_reimbursement_claim_number ON finance_reimbursement (claim_number);
+CREATE INDEX ix_finance_reimbursement_funding_demand_ulid ON finance_reimbursement (funding_demand_ulid);
+CREATE INDEX ix_finance_reimbursement_grant_ulid ON finance_reimbursement (grant_ulid);
+CREATE INDEX ix_finance_reimbursement_project_ulid ON finance_reimbursement (project_ulid);
+CREATE INDEX ix_finance_reimbursement_status ON finance_reimbursement (status);
+CREATE TABLE logi_batch (
+	item_ulid VARCHAR(26) NOT NULL, 
+	location_ulid VARCHAR(26) NOT NULL, 
+	quantity INTEGER NOT NULL, 
+	unit VARCHAR(16) NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_ulid_len_26 CHECK (length(ulid) = 26), 
+	FOREIGN KEY(item_ulid) REFERENCES logi_item (ulid) ON DELETE RESTRICT, 
+	FOREIGN KEY(location_ulid) REFERENCES logi_location (ulid) ON DELETE RESTRICT
+);
+CREATE INDEX ix_logi_batch_item_ulid ON logi_batch (item_ulid);
+CREATE INDEX ix_logi_batch_location_ulid ON logi_batch (location_ulid);
+CREATE TABLE logi_stock (
+	item_ulid VARCHAR(26) NOT NULL, 
+	location_ulid VARCHAR(26) NOT NULL, 
+	quantity INTEGER NOT NULL, 
+	unit VARCHAR(16) NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_ulid_len_26 CHECK (length(ulid) = 26), 
+	FOREIGN KEY(item_ulid) REFERENCES logi_item (ulid) ON DELETE RESTRICT, 
+	FOREIGN KEY(location_ulid) REFERENCES logi_location (ulid) ON DELETE RESTRICT
+);
+CREATE INDEX ix_logi_stock_item_ulid ON logi_stock (item_ulid);
+CREATE INDEX ix_logi_stock_location_ulid ON logi_stock (location_ulid);
+CREATE TABLE project_project (
+	project_title VARCHAR(100) NOT NULL, 
+	fund_ulid VARCHAR(26), 
+	funding_profile_key VARCHAR(32), 
+	owner_ulid VARCHAR(26), 
+	phase_code VARCHAR(32), 
+	status VARCHAR(24) NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	FOREIGN KEY(owner_ulid) REFERENCES entity_entity (ulid) ON DELETE SET NULL
+);
+CREATE INDEX ix_project_fund ON project_project (fund_ulid);
+CREATE INDEX ix_project_funding_profile ON project_project (funding_profile_key);
+CREATE INDEX ix_project_owner ON project_project (owner_ulid);
+CREATE INDEX ix_project_project_owner_ulid ON project_project (owner_ulid);
+CREATE INDEX ix_project_status ON project_project (status);
+CREATE INDEX ix_project_title ON project_project (project_title);
+CREATE TABLE resource_resource (
+	entity_ulid VARCHAR(26) NOT NULL, 
+	onboard_step VARCHAR(16), 
+	admin_review_required BOOLEAN NOT NULL, 
+	readiness_status VARCHAR(16) NOT NULL, 
+	mou_status VARCHAR(16) NOT NULL, 
+	first_seen_utc VARCHAR(30), 
+	last_touch_utc VARCHAR(30), 
+	capability_last_update_utc VARCHAR(30), 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (entity_ulid), 
+	FOREIGN KEY(entity_ulid) REFERENCES entity_entity (ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_resource_entity_ulid ON resource_resource (entity_ulid);
+CREATE INDEX ix_resource_resource_admin_review_required ON resource_resource (admin_review_required);
+CREATE INDEX ix_resource_resource_mou_status ON resource_resource (mou_status);
+CREATE INDEX ix_resource_resource_onboard_step ON resource_resource (onboard_step);
+CREATE INDEX ix_resource_resource_readiness_status ON resource_resource (readiness_status);
+CREATE TABLE sponsor_sponsor (
+	entity_ulid VARCHAR(26) NOT NULL, 
+	onboard_step VARCHAR(16), 
+	admin_review_required BOOLEAN NOT NULL, 
+	readiness_status VARCHAR(16) NOT NULL, 
+	mou_status VARCHAR(16) NOT NULL, 
+	first_seen_utc VARCHAR(30), 
+	last_touch_utc VARCHAR(30), 
+	capability_last_update_utc VARCHAR(30), 
+	pledge_last_update_utc VARCHAR(30), 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (entity_ulid), 
+	FOREIGN KEY(entity_ulid) REFERENCES entity_entity (ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_sponsor_entity_ulid ON sponsor_sponsor (entity_ulid);
+CREATE INDEX ix_sponsor_sponsor_admin_review_required ON sponsor_sponsor (admin_review_required);
+CREATE INDEX ix_sponsor_sponsor_mou_status ON sponsor_sponsor (mou_status);
+CREATE INDEX ix_sponsor_sponsor_onboard_step ON sponsor_sponsor (onboard_step);
+CREATE INDEX ix_sponsor_sponsor_readiness_status ON sponsor_sponsor (readiness_status);
+CREATE TABLE customer_eligibility (
+	entity_ulid VARCHAR(26) NOT NULL, 
+	veteran_status VARCHAR(16) NOT NULL, 
+	veteran_method VARCHAR(32), 
+	branch VARCHAR(4), 
+	era VARCHAR(16), 
+	housing_status VARCHAR(16) NOT NULL, 
+	approved_by_ulid VARCHAR(26), 
+	approved_at_iso VARCHAR(30), 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (entity_ulid), 
+	CONSTRAINT ck_cel_unverified_requires_nulls CHECK (NOT (veteran_status != 'verified' AND (veteran_method IS NOT NULL OR approved_by_ulid IS NOT NULL OR approved_at_iso IS NOT NULL))), 
+	CONSTRAINT ck_cel_other_requires_approval CHECK (NOT (veteran_status = 'verified' AND veteran_method = 'other' AND approved_by_ulid IS NULL)), 
+	CONSTRAINT ck_cel_verified_requires_method CHECK (NOT (veteran_status = 'verified' AND veteran_method IS NULL)), 
+	CONSTRAINT ck_customer_elig_housing_status CHECK (housing_status IN ('unknown', 'housed', 'unhoused')), 
+	CONSTRAINT ck_cel_timestamp_requires_approver CHECK (NOT (approved_at_iso IS NOT NULL AND approved_by_ulid IS NULL)), 
+	CONSTRAINT ck_cel_approval_requires_timestamp CHECK (NOT (approved_by_ulid IS NOT NULL AND approved_at_iso IS NULL)), 
+	FOREIGN KEY(entity_ulid) REFERENCES customer_customer (entity_ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_customer_eligibility_branch ON customer_eligibility (branch);
+CREATE INDEX ix_customer_eligibility_era ON customer_eligibility (era);
+CREATE INDEX ix_customer_eligibility_veteran_method ON customer_eligibility (veteran_method);
+CREATE INDEX ix_customer_eligibility_veteran_status ON customer_eligibility (veteran_status);
+CREATE TABLE customer_history (
+	entity_ulid VARCHAR(26) NOT NULL, 
+	kind VARCHAR(64) NOT NULL, 
+	happened_at_iso VARCHAR(30) NOT NULL, 
+	source_slice VARCHAR(32) NOT NULL, 
+	source_ref_ulid VARCHAR(26), 
+	schema_name VARCHAR(64), 
+	schema_version INTEGER, 
+	title VARCHAR(140), 
+	summary VARCHAR(512), 
+	severity VARCHAR(12) NOT NULL, 
+	public_tags_csv VARCHAR(240), 
+	has_admin_tags BOOLEAN NOT NULL, 
+	admin_tags_csv VARCHAR(240), 
+	created_by_actor_ulid VARCHAR(26), 
+	data_json TEXT NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_chist_severity_enum CHECK (severity IN ('info','warn')), 
+	FOREIGN KEY(entity_ulid) REFERENCES customer_customer (entity_ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_customer_history_entity_ulid ON customer_history (entity_ulid);
+CREATE INDEX ix_customer_history_happened_at_iso ON customer_history (happened_at_iso);
+CREATE INDEX ix_customer_history_has_admin_tags ON customer_history (has_admin_tags);
+CREATE INDEX ix_customer_history_kind ON customer_history (kind);
+CREATE INDEX ix_customer_history_schema_name ON customer_history (schema_name);
+CREATE INDEX ix_customer_history_severity ON customer_history (severity);
+CREATE INDEX ix_customer_history_source_ref_ulid ON customer_history (source_ref_ulid);
+CREATE INDEX ix_customer_history_source_slice ON customer_history (source_slice);
+CREATE TABLE customer_profile (
+	entity_ulid VARCHAR(26) NOT NULL, 
+	assessment_version INTEGER NOT NULL, 
+	last_assessed_at_iso VARCHAR(30), 
+	last_assessed_by_ulid VARCHAR(26), 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (entity_ulid), 
+	CONSTRAINT ck_cprof_assessment_version_nonneg CHECK (assessment_version >= 0), 
+	FOREIGN KEY(entity_ulid) REFERENCES customer_customer (entity_ulid) ON DELETE CASCADE
+);
+CREATE TABLE finance_reimbursement_line (
+	claim_ulid VARCHAR(26) NOT NULL, 
+	expense_journal_ulid VARCHAR(26) NOT NULL, 
+	claimed_amount_cents INTEGER NOT NULL, 
+	approved_amount_cents INTEGER NOT NULL, 
+	received_amount_cents INTEGER NOT NULL, 
+	status VARCHAR(16) NOT NULL, 
+	notes VARCHAR(255), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_reimbursement_line_status CHECK (status in ('included','approved','denied','paid','void')), 
+	CONSTRAINT ck_reimbursement_line_approved_le_claimed CHECK (approved_amount_cents <= claimed_amount_cents), 
+	CONSTRAINT ck_reimbursement_line_approved_nonneg CHECK (approved_amount_cents >= 0), 
+	CONSTRAINT ck_reimbursement_line_claimed_nonneg CHECK (claimed_amount_cents >= 0), 
+	CONSTRAINT ck_reimbursement_line_received_le_approved CHECK (received_amount_cents <= approved_amount_cents), 
+	CONSTRAINT ck_reimbursement_line_received_nonneg CHECK (received_amount_cents >= 0), 
+	FOREIGN KEY(claim_ulid) REFERENCES finance_reimbursement (ulid), 
+	FOREIGN KEY(expense_journal_ulid) REFERENCES finance_journal (ulid), 
+	CONSTRAINT uq_reimbursement_line_claim_expense UNIQUE (claim_ulid, expense_journal_ulid)
+);
+CREATE INDEX ix_finance_reimbursement_line_claim_ulid ON finance_reimbursement_line (claim_ulid);
+CREATE INDEX ix_finance_reimbursement_line_expense_journal_ulid ON finance_reimbursement_line (expense_journal_ulid);
+CREATE INDEX ix_finance_reimbursement_line_status ON finance_reimbursement_line (status);
+CREATE TABLE funding_plan (
+	label VARCHAR(80) NOT NULL, 
+	source_kind VARCHAR(32), 
+	fund_archetype_key VARCHAR(32), 
+	expected_amount_cents INTEGER, 
+	is_in_kind BOOLEAN NOT NULL, 
+	expected_sponsor_hint VARCHAR(120), 
+	notes VARCHAR(255), 
+	project_ulid VARCHAR(26) NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_funding_plan_expected_nonneg CHECK (expected_amount_cents IS NULL OR expected_amount_cents >= 0), 
+	FOREIGN KEY(project_ulid) REFERENCES project_project (ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_funding_plan_archetype ON funding_plan (fund_archetype_key);
+CREATE INDEX ix_funding_plan_is_in_kind ON funding_plan (is_in_kind);
+CREATE INDEX ix_funding_plan_project ON funding_plan (project_ulid);
+CREATE INDEX ix_funding_plan_project_ulid ON funding_plan (project_ulid);
+CREATE INDEX ix_funding_plan_source_kind ON funding_plan (source_kind);
+CREATE TABLE logi_movement (
+	item_ulid VARCHAR(26) NOT NULL, 
+	location_ulid VARCHAR(26) NOT NULL, 
+	batch_ulid VARCHAR(26), 
+	kind VARCHAR(16) NOT NULL, 
+	quantity INTEGER NOT NULL, 
+	unit VARCHAR(16) NOT NULL, 
+	happened_at_utc VARCHAR(30) NOT NULL, 
+	source_ref_ulid VARCHAR(26), 
+	target_ref_ulid VARCHAR(26), 
+	created_by_actor VARCHAR(26), 
+	note VARCHAR(160), 
+	ulid VARCHAR(26) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_move_pos_qty CHECK (quantity>0), 
+	FOREIGN KEY(batch_ulid) REFERENCES logi_batch (ulid) ON DELETE RESTRICT, 
+	FOREIGN KEY(item_ulid) REFERENCES logi_item (ulid) ON DELETE RESTRICT, 
+	FOREIGN KEY(location_ulid) REFERENCES logi_location (ulid) ON DELETE RESTRICT
+);
+CREATE INDEX ix_logi_movement_batch_ulid ON logi_movement (batch_ulid);
+CREATE INDEX ix_logi_movement_item_ulid ON logi_movement (item_ulid);
+CREATE INDEX ix_logi_movement_location_ulid ON logi_movement (location_ulid);
+CREATE TABLE project_budget_snapshot (
+	project_ulid VARCHAR(26) NOT NULL, 
+	snapshot_label VARCHAR(100) NOT NULL, 
+	scope_summary VARCHAR(255), 
+	gross_cost_cents INTEGER NOT NULL, 
+	expected_offset_cents INTEGER NOT NULL, 
+	net_need_cents INTEGER NOT NULL, 
+	assumptions_note VARCHAR(255), 
+	based_on_snapshot_ulid VARCHAR(26), 
+	is_current BOOLEAN NOT NULL, 
+	is_locked BOOLEAN NOT NULL, 
+	locked_at_utc VARCHAR(30), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_budget_snapshot_offset_nonneg CHECK (expected_offset_cents >= 0), 
+	CONSTRAINT ck_budget_snapshot_gross_nonneg CHECK (gross_cost_cents >= 0), 
+	CONSTRAINT ck_budget_snapshot_offset_le_gross CHECK (gross_cost_cents >= expected_offset_cents), 
+	CONSTRAINT ck_budget_snapshot_ulid_len_26 CHECK (length(ulid) = 26), 
+	CONSTRAINT ck_budget_snapshot_net_matches_parts CHECK (net_need_cents = gross_cost_cents - expected_offset_cents), 
+	CONSTRAINT ck_budget_snapshot_need_nonneg CHECK (net_need_cents >= 0), 
+	FOREIGN KEY(based_on_snapshot_ulid) REFERENCES project_budget_snapshot (ulid) ON DELETE SET NULL, 
+	FOREIGN KEY(project_ulid) REFERENCES project_project (ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_budget_snapshot_project ON project_budget_snapshot (project_ulid);
+CREATE INDEX ix_budget_snapshot_project_current ON project_budget_snapshot (project_ulid, is_current);
+CREATE INDEX ix_budget_snapshot_project_locked ON project_budget_snapshot (project_ulid, is_locked);
+CREATE INDEX ix_project_budget_snapshot_based_on_snapshot_ulid ON project_budget_snapshot (based_on_snapshot_ulid);
+CREATE INDEX ix_project_budget_snapshot_project_ulid ON project_budget_snapshot (project_ulid);
+CREATE TABLE project_tag (
+	project_ulid VARCHAR(26) NOT NULL, 
+	tag_key VARCHAR(64) NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_ulid_len_26 CHECK (length(ulid) = 26), 
+	FOREIGN KEY(project_ulid) REFERENCES project_project (ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_project_tag_project_ulid ON project_tag (project_ulid);
+CREATE INDEX ix_project_tag_tag_key ON project_tag (tag_key);
+CREATE TABLE project_task (
+	project_ulid VARCHAR(26) NOT NULL, 
+	task_title VARCHAR(100) NOT NULL, 
+	task_detail VARCHAR(254), 
+	task_kind VARCHAR(32), 
+	estimate_cents INTEGER, 
+	hours_est_minutes INTEGER, 
+	notes VARCHAR(255), 
+	requirements_json JSON, 
+	assigned_to_ulid VARCHAR(26), 
+	due_at_utc VARCHAR(30), 
+	done_at_utc VARCHAR(30), 
+	status VARCHAR(24) NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_task_estimate_nonneg CHECK (estimate_cents IS NULL OR estimate_cents >= 0), 
+	CONSTRAINT ck_task_hours_nonneg CHECK (hours_est_minutes IS NULL OR hours_est_minutes >= 0), 
+	FOREIGN KEY(assigned_to_ulid) REFERENCES entity_entity (ulid) ON DELETE SET NULL, 
+	FOREIGN KEY(project_ulid) REFERENCES project_project (ulid) ON DELETE RESTRICT
+);
+CREATE INDEX ix_project_task_assigned_to_ulid ON project_task (assigned_to_ulid);
+CREATE INDEX ix_project_task_project_ulid ON project_task (project_ulid);
+CREATE INDEX ix_task_assignee ON project_task (assigned_to_ulid);
+CREATE INDEX ix_task_kind ON project_task (task_kind);
+CREATE INDEX ix_task_project ON project_task (project_ulid);
+CREATE INDEX ix_task_status ON project_task (status);
+CREATE INDEX ix_task_title ON project_task (task_title);
+CREATE TABLE resource_capability_index (
+	resource_entity_ulid VARCHAR(26) NOT NULL, 
+	domain VARCHAR(48) NOT NULL, 
+	"key" VARCHAR(64) NOT NULL, 
+	active BOOLEAN NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	FOREIGN KEY(resource_entity_ulid) REFERENCES resource_resource (entity_ulid) ON DELETE CASCADE, 
+	CONSTRAINT uq_res_cap_idx_triplet UNIQUE (resource_entity_ulid, domain, "key")
+);
+CREATE INDEX ix_resource_capability_index_active ON resource_capability_index (active);
+CREATE INDEX ix_resource_capability_index_domain ON resource_capability_index (domain);
+CREATE INDEX ix_resource_capability_index_key ON resource_capability_index ("key");
+CREATE INDEX ix_resource_capability_index_resource_entity_ulid ON resource_capability_index (resource_entity_ulid);
+CREATE TABLE resource_history (
+	resource_entity_ulid VARCHAR(26) NOT NULL, 
+	section VARCHAR(64) NOT NULL, 
+	version INTEGER NOT NULL, 
+	data_json VARCHAR NOT NULL, 
+	created_by_actor VARCHAR(26), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_res_history_version_pos CHECK (version >= 1), 
+	FOREIGN KEY(resource_entity_ulid) REFERENCES resource_resource (entity_ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_resource_history_resource_entity_ulid ON resource_history (resource_entity_ulid);
+CREATE INDEX ix_resource_history_section ON resource_history (section);
+CREATE TABLE resource_poc (
+	resource_entity_ulid VARCHAR(26) NOT NULL, 
+	person_entity_ulid VARCHAR(26) NOT NULL, 
+	relation VARCHAR(16) NOT NULL, 
+	scope VARCHAR(24), 
+	rank INTEGER NOT NULL, 
+	org_role VARCHAR(64), 
+	valid_from_utc VARCHAR(30), 
+	valid_to_utc VARCHAR(30), 
+	is_primary BOOLEAN NOT NULL, 
+	active BOOLEAN NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_resource_poc_rank_range CHECK (rank >= 0 AND rank <= 99), 
+	FOREIGN KEY(person_entity_ulid) REFERENCES entity_entity (ulid) ON DELETE RESTRICT, 
+	FOREIGN KEY(resource_entity_ulid) REFERENCES resource_resource (entity_ulid) ON DELETE CASCADE, 
+	CONSTRAINT uq_resource_poc_resource_person_scope UNIQUE (resource_entity_ulid, person_entity_ulid, relation, scope)
+);
+CREATE INDEX ix_resource_poc_org_scope_rank ON resource_poc (resource_entity_ulid, relation, scope, rank);
+CREATE INDEX ix_resource_poc_person_entity_ulid ON resource_poc (person_entity_ulid);
+CREATE INDEX ix_resource_poc_primary ON resource_poc (resource_entity_ulid, relation, scope, is_primary);
+CREATE INDEX ix_resource_poc_resource_entity_ulid ON resource_poc (resource_entity_ulid);
+CREATE TABLE sponsor_capability_index (
+	sponsor_entity_ulid VARCHAR(26) NOT NULL, 
+	domain VARCHAR(48) NOT NULL, 
+	"key" VARCHAR(64) NOT NULL, 
+	active BOOLEAN NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	FOREIGN KEY(sponsor_entity_ulid) REFERENCES sponsor_sponsor (entity_ulid) ON DELETE CASCADE, 
+	CONSTRAINT uq_sponsor_cap_idx_triplet UNIQUE (sponsor_entity_ulid, domain, "key")
+);
+CREATE INDEX ix_sponsor_capability_index_active ON sponsor_capability_index (active);
+CREATE INDEX ix_sponsor_capability_index_domain ON sponsor_capability_index (domain);
+CREATE INDEX ix_sponsor_capability_index_key ON sponsor_capability_index ("key");
+CREATE INDEX ix_sponsor_capability_index_sponsor_entity_ulid ON sponsor_capability_index (sponsor_entity_ulid);
+CREATE TABLE sponsor_crm_factor_index (
+	sponsor_entity_ulid VARCHAR(26) NOT NULL, 
+	bucket VARCHAR(24) NOT NULL, 
+	"key" VARCHAR(64) NOT NULL, 
+	active BOOLEAN NOT NULL, 
+	strength VARCHAR(24) NOT NULL, 
+	source VARCHAR(24) NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_sponsor_crm_factor_source CHECK (source IN ('operator','observed','inferred')), 
+	CONSTRAINT ck_sponsor_crm_factor_strength CHECK (strength IN ('observed','recurring','strong_pattern')), 
+	FOREIGN KEY(sponsor_entity_ulid) REFERENCES sponsor_sponsor (entity_ulid) ON DELETE CASCADE, 
+	CONSTRAINT uq_sponsor_crm_factor_triplet UNIQUE (sponsor_entity_ulid, bucket, "key")
+);
+CREATE INDEX ix_sponsor_crm_factor_bucket_key_active ON sponsor_crm_factor_index (bucket, "key", active);
+CREATE INDEX ix_sponsor_crm_factor_index_active ON sponsor_crm_factor_index (active);
+CREATE INDEX ix_sponsor_crm_factor_index_bucket ON sponsor_crm_factor_index (bucket);
+CREATE INDEX ix_sponsor_crm_factor_index_key ON sponsor_crm_factor_index ("key");
+CREATE INDEX ix_sponsor_crm_factor_index_sponsor_entity_ulid ON sponsor_crm_factor_index (sponsor_entity_ulid);
+CREATE TABLE sponsor_funding_intent (
+	sponsor_entity_ulid VARCHAR(26) NOT NULL, 
+	funding_demand_ulid VARCHAR(26) NOT NULL, 
+	intent_kind VARCHAR(24) NOT NULL, 
+	amount_cents INTEGER NOT NULL, 
+	status VARCHAR(32) NOT NULL, 
+	note VARCHAR(255), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_sfi_intent_kind CHECK (intent_kind IN ('pledge','donation','pass_through')), 
+	CONSTRAINT ck_sfi_status CHECK (status IN ('draft','committed','withdrawn','fulfilled')), 
+	CONSTRAINT ck_sfi_amount_nonneg CHECK (amount_cents >= 0), 
+	FOREIGN KEY(sponsor_entity_ulid) REFERENCES sponsor_sponsor (entity_ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_sfi_demand_status ON sponsor_funding_intent (funding_demand_ulid, status);
+CREATE INDEX ix_sfi_sponsor_demand ON sponsor_funding_intent (sponsor_entity_ulid, funding_demand_ulid);
+CREATE INDEX ix_sponsor_funding_intent_funding_demand_ulid ON sponsor_funding_intent (funding_demand_ulid);
+CREATE INDEX ix_sponsor_funding_intent_intent_kind ON sponsor_funding_intent (intent_kind);
+CREATE INDEX ix_sponsor_funding_intent_sponsor_entity_ulid ON sponsor_funding_intent (sponsor_entity_ulid);
+CREATE INDEX ix_sponsor_funding_intent_status ON sponsor_funding_intent (status);
+CREATE TABLE sponsor_funding_prospect (
+	sponsor_entity_ulid VARCHAR(26) NOT NULL, 
+	project_type_key VARCHAR(32) NOT NULL, 
+	fund_archetype_key VARCHAR(32) NOT NULL, 
+	label VARCHAR(80) NOT NULL, 
+	est_min_cents INTEGER, 
+	est_max_cents INTEGER, 
+	confidence INTEGER NOT NULL, 
+	status VARCHAR(16) NOT NULL, 
+	realized_total_cents INTEGER NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_funding_prospect_confidence_range CHECK (confidence >= 0 AND confidence <= 100), 
+	CONSTRAINT ck_funding_prospect_max_nonneg CHECK (est_max_cents IS NULL OR est_max_cents >= 0), 
+	CONSTRAINT ck_funding_prospect_min_le_max CHECK (est_min_cents IS NULL OR est_max_cents IS NULL OR est_min_cents <= est_max_cents), 
+	CONSTRAINT ck_funding_prospect_min_nonneg CHECK (est_min_cents IS NULL OR est_min_cents >= 0), 
+	FOREIGN KEY(sponsor_entity_ulid) REFERENCES sponsor_sponsor (entity_ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_sponsor_funding_prospect_fund_archetype_key ON sponsor_funding_prospect (fund_archetype_key);
+CREATE INDEX ix_sponsor_funding_prospect_project_type_key ON sponsor_funding_prospect (project_type_key);
+CREATE INDEX ix_sponsor_funding_prospect_sponsor_entity_ulid ON sponsor_funding_prospect (sponsor_entity_ulid);
+CREATE INDEX ix_sponsor_funding_prospect_status ON sponsor_funding_prospect (status);
+CREATE TABLE sponsor_history (
+	sponsor_entity_ulid VARCHAR(26) NOT NULL, 
+	section VARCHAR(64) NOT NULL, 
+	version INTEGER NOT NULL, 
+	data_json VARCHAR NOT NULL, 
+	created_by_actor VARCHAR(26), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_sponsor_hist_version_pos CHECK (version >= 1), 
+	FOREIGN KEY(sponsor_entity_ulid) REFERENCES sponsor_sponsor (entity_ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_sponsor_history_section ON sponsor_history (section);
+CREATE INDEX ix_sponsor_history_sponsor_entity_ulid ON sponsor_history (sponsor_entity_ulid);
+CREATE TABLE sponsor_pledge_index (
+	sponsor_entity_ulid VARCHAR(26) NOT NULL, 
+	pledge_ulid VARCHAR(26) NOT NULL, 
+	type VARCHAR(16) NOT NULL, 
+	status VARCHAR(16) NOT NULL, 
+	has_restriction BOOLEAN NOT NULL, 
+	est_value_number INTEGER, 
+	currency VARCHAR(8), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_ulid_len_26 CHECK (length(ulid) = 26), 
+	FOREIGN KEY(sponsor_entity_ulid) REFERENCES sponsor_sponsor (entity_ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_sponsor_pledge_index_has_restriction ON sponsor_pledge_index (has_restriction);
+CREATE UNIQUE INDEX ix_sponsor_pledge_index_pledge_ulid ON sponsor_pledge_index (pledge_ulid);
+CREATE INDEX ix_sponsor_pledge_index_sponsor_entity_ulid ON sponsor_pledge_index (sponsor_entity_ulid);
+CREATE INDEX ix_sponsor_pledge_index_status ON sponsor_pledge_index (status);
+CREATE INDEX ix_sponsor_pledge_index_type ON sponsor_pledge_index (type);
+CREATE TABLE sponsor_poc (
+	sponsor_entity_ulid VARCHAR(26) NOT NULL, 
+	person_entity_ulid VARCHAR(26) NOT NULL, 
+	relation VARCHAR(16) NOT NULL, 
+	scope VARCHAR(24), 
+	rank INTEGER NOT NULL, 
+	org_role VARCHAR(64), 
+	valid_from_utc VARCHAR(30), 
+	valid_to_utc VARCHAR(30), 
+	is_primary BOOLEAN NOT NULL, 
+	active BOOLEAN NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_sponsor_poc_rank_range CHECK (rank >= 0 AND rank <= 99), 
+	FOREIGN KEY(person_entity_ulid) REFERENCES entity_entity (ulid) ON DELETE RESTRICT, 
+	FOREIGN KEY(sponsor_entity_ulid) REFERENCES sponsor_sponsor (entity_ulid) ON DELETE CASCADE, 
+	CONSTRAINT uq_sponsor_poc_sponsor_person_scope UNIQUE (sponsor_entity_ulid, person_entity_ulid, relation, scope)
+);
+CREATE INDEX ix_sponsor_poc_org_scope_rank ON sponsor_poc (sponsor_entity_ulid, relation, scope, rank);
+CREATE INDEX ix_sponsor_poc_person_entity_ulid ON sponsor_poc (person_entity_ulid);
+CREATE INDEX ix_sponsor_poc_primary ON sponsor_poc (sponsor_entity_ulid, relation, scope, is_primary);
+CREATE INDEX ix_sponsor_poc_sponsor_entity_ulid ON sponsor_poc (sponsor_entity_ulid);
+CREATE TABLE calendar (
+	kind VARCHAR(24) NOT NULL, 
+	status VARCHAR(32) NOT NULL, 
+	event_title VARCHAR(100) NOT NULL, 
+	location_txt VARCHAR(100), 
+	notes_txt VARCHAR(255), 
+	color_label VARCHAR(16), 
+	starts_at_utc VARCHAR(30), 
+	ends_at_utc VARCHAR(30), 
+	all_day BOOLEAN NOT NULL, 
+	recurrence_rrule VARCHAR(200), 
+	recurrence_exdates_json JSON, 
+	project_ulid VARCHAR(26), 
+	task_ulid VARCHAR(26), 
+	owner_ulid VARCHAR(26), 
+	assigned_to_ulid VARCHAR(26), 
+	visibility VARCHAR(16) NOT NULL, 
+	reminder_minutes_before INTEGER, 
+	reminders_json JSON, 
+	done_at_utc VARCHAR(30), 
+	canceled_at_utc VARCHAR(30), 
+	archived_at_utc VARCHAR(30), 
+	archived_by_actor VARCHAR(26), 
+	request_id VARCHAR(36), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_calendar_time_window_valid CHECK ((starts_at_utc IS NULL OR ends_at_utc IS NULL) OR (starts_at_utc <= ends_at_utc)), 
+	FOREIGN KEY(assigned_to_ulid) REFERENCES entity_entity (ulid) ON DELETE SET NULL, 
+	FOREIGN KEY(owner_ulid) REFERENCES entity_entity (ulid) ON DELETE SET NULL, 
+	FOREIGN KEY(project_ulid) REFERENCES project_project (ulid) ON DELETE SET NULL, 
+	FOREIGN KEY(task_ulid) REFERENCES project_task (ulid) ON DELETE SET NULL
+);
+CREATE INDEX ix_calendar_assigned_to_ulid ON calendar (assigned_to_ulid);
+CREATE INDEX ix_calendar_assignee ON calendar (assigned_to_ulid);
+CREATE INDEX ix_calendar_event ON calendar (event_title);
+CREATE INDEX ix_calendar_owner ON calendar (owner_ulid);
+CREATE INDEX ix_calendar_owner_ulid ON calendar (owner_ulid);
+CREATE INDEX ix_calendar_project ON calendar (project_ulid);
+CREATE INDEX ix_calendar_project_ulid ON calendar (project_ulid);
+CREATE INDEX ix_calendar_status ON calendar (status);
+CREATE INDEX ix_calendar_task_ulid ON calendar (task_ulid);
+CREATE INDEX ix_calendar_time_window ON calendar (starts_at_utc, ends_at_utc);
+CREATE TABLE customer_profile_rating (
+	entity_ulid VARCHAR(26) NOT NULL, 
+	assessment_version INTEGER NOT NULL, 
+	category_key VARCHAR(24) NOT NULL, 
+	is_assessed BOOLEAN NOT NULL, 
+	rating_value VARCHAR(16), 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (entity_ulid, assessment_version, category_key), 
+	CONSTRAINT ck_cpr_rating_value_enum CHECK (rating_value IS NULL OR rating_value IN ('immediate','marginal','sufficient','unknown','not_applicable')), 
+	CONSTRAINT ck_cpr_unassessed_requires_null_rating CHECK (NOT (is_assessed = 0 AND rating_value IS NOT NULL)), 
+	CONSTRAINT ck_cpr_assessment_version_pos CHECK (assessment_version >= 1), 
+	FOREIGN KEY(entity_ulid) REFERENCES customer_profile (entity_ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_customer_profile_rating_is_assessed ON customer_profile_rating (is_assessed);
+CREATE INDEX ix_customer_profile_rating_rating_value ON customer_profile_rating (rating_value);
+CREATE TABLE demand_draft (
+	project_ulid VARCHAR(26) NOT NULL, 
+	budget_snapshot_ulid VARCHAR(26) NOT NULL, 
+	status VARCHAR(32) NOT NULL, 
+	title VARCHAR(120) NOT NULL, 
+	summary VARCHAR(255), 
+	scope_summary VARCHAR(255), 
+	requested_amount_cents INTEGER NOT NULL, 
+	deadline_date VARCHAR(30), 
+	spending_class_candidate VARCHAR(32), 
+	source_profile_key VARCHAR(32), 
+	ops_support_planned BOOLEAN, 
+	tag_any_json JSON, 
+	governance_note VARCHAR(255), 
+	approved_semantics_json JSON, 
+	ready_for_review_at_utc VARCHAR(30), 
+	review_decided_at_utc VARCHAR(30), 
+	approved_for_publish_at_utc VARCHAR(30), 
+	promoted_at_utc VARCHAR(30), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_demand_draft_status CHECK (status IN ('draft','ready_for_review','governance_review_pending','returned_for_revision','approved_for_publish')), 
+	CONSTRAINT ck_demand_draft_ulid_len_26 CHECK (length(ulid) = 26), 
+	CONSTRAINT ck_demand_draft_amount_nonneg CHECK (requested_amount_cents >= 0), 
+	FOREIGN KEY(budget_snapshot_ulid) REFERENCES project_budget_snapshot (ulid) ON DELETE RESTRICT, 
+	FOREIGN KEY(project_ulid) REFERENCES project_project (ulid) ON DELETE CASCADE
+);
+CREATE INDEX ix_demand_draft_budget_snapshot_ulid ON demand_draft (budget_snapshot_ulid);
+CREATE INDEX ix_demand_draft_project_status ON demand_draft (project_ulid, status);
+CREATE INDEX ix_demand_draft_project_ulid ON demand_draft (project_ulid);
+CREATE INDEX ix_demand_draft_snapshot ON demand_draft (budget_snapshot_ulid);
+CREATE INDEX ix_demand_draft_status ON demand_draft (status);
+CREATE TABLE logi_issue (
+	customer_ulid VARCHAR(26) NOT NULL, 
+	classification_key VARCHAR(64), 
+	sku_code VARCHAR(64), 
+	quantity INTEGER NOT NULL, 
+	issued_at VARCHAR(30) NOT NULL, 
+	project_ulid VARCHAR(26), 
+	movement_ulid VARCHAR(26), 
+	created_by_actor VARCHAR(26), 
+	decision_json TEXT, 
+	ulid VARCHAR(26) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_issue_pos_qty CHECK (quantity>0), 
+	FOREIGN KEY(movement_ulid) REFERENCES logi_movement (ulid) ON DELETE RESTRICT
+);
+CREATE INDEX ix_issue_customer_class_time ON logi_issue (customer_ulid, classification_key, issued_at);
+CREATE INDEX ix_issue_customer_issued_at ON logi_issue (customer_ulid, issued_at);
+CREATE INDEX ix_issue_customer_sku_time ON logi_issue (customer_ulid, sku_code, issued_at);
+CREATE INDEX ix_logi_issue_classification_key ON logi_issue (classification_key);
+CREATE INDEX ix_logi_issue_customer_ulid ON logi_issue (customer_ulid);
+CREATE INDEX ix_logi_issue_movement_ulid ON logi_issue (movement_ulid);
+CREATE INDEX ix_logi_issue_project_ulid ON logi_issue (project_ulid);
+CREATE INDEX ix_logi_issue_sku_code ON logi_issue (sku_code);
+CREATE TABLE project_budget_line (
+	budget_snapshot_ulid VARCHAR(26) NOT NULL, 
+	task_ulid VARCHAR(26), 
+	line_kind VARCHAR(32) NOT NULL, 
+	label VARCHAR(100) NOT NULL, 
+	detail VARCHAR(255), 
+	basis_qty INTEGER, 
+	basis_unit VARCHAR(24), 
+	unit_cost_cents INTEGER, 
+	estimated_total_cents INTEGER NOT NULL, 
+	is_offset BOOLEAN NOT NULL, 
+	offset_kind VARCHAR(32), 
+	sort_order INTEGER NOT NULL, 
+	copied_from_line_ulid VARCHAR(26), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_budget_line_offset_kind_consistent CHECK ((is_offset = 0 AND offset_kind IS NULL) OR (is_offset = 1 AND offset_kind IS NOT NULL)), 
+	CONSTRAINT ck_budget_line_qty_nonneg CHECK (basis_qty IS NULL OR basis_qty >= 0), 
+	CONSTRAINT ck_budget_line_total_nonneg CHECK (estimated_total_cents >= 0), 
+	CONSTRAINT ck_budget_line_ulid_len_26 CHECK (length(ulid) = 26), 
+	CONSTRAINT ck_budget_line_sort_nonneg CHECK (sort_order >= 0), 
+	CONSTRAINT ck_budget_line_unit_cost_nonneg CHECK (unit_cost_cents IS NULL OR unit_cost_cents >= 0), 
+	FOREIGN KEY(budget_snapshot_ulid) REFERENCES project_budget_snapshot (ulid) ON DELETE CASCADE, 
+	FOREIGN KEY(copied_from_line_ulid) REFERENCES project_budget_line (ulid) ON DELETE SET NULL, 
+	FOREIGN KEY(task_ulid) REFERENCES project_task (ulid) ON DELETE SET NULL
+);
+CREATE INDEX ix_budget_line_kind ON project_budget_line (line_kind);
+CREATE INDEX ix_budget_line_snapshot ON project_budget_line (budget_snapshot_ulid);
+CREATE INDEX ix_budget_line_snapshot_sort ON project_budget_line (budget_snapshot_ulid, sort_order);
+CREATE INDEX ix_budget_line_task ON project_budget_line (task_ulid);
+CREATE INDEX ix_project_budget_line_budget_snapshot_ulid ON project_budget_line (budget_snapshot_ulid);
+CREATE INDEX ix_project_budget_line_copied_from_line_ulid ON project_budget_line (copied_from_line_ulid);
+CREATE INDEX ix_project_budget_line_task_ulid ON project_budget_line (task_ulid);
+CREATE TABLE funding_demand (
+	project_ulid VARCHAR(26), 
+	title VARCHAR(120) NOT NULL, 
+	status VARCHAR(32) NOT NULL, 
+	goal_cents INTEGER NOT NULL, 
+	deadline_date VARCHAR(30), 
+	spending_class VARCHAR(32), 
+	eligible_fund_codes_json JSON, 
+	tag_any_json JSON, 
+	published_at_utc VARCHAR(30), 
+	closed_at_utc VARCHAR(30), 
+	published_context_json JSON, 
+	origin_draft_ulid VARCHAR(26), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_funding_demand_status CHECK (status IN ('draft','published','funding_in_progress','funded','executing','closed')), 
+	CONSTRAINT ck_funding_demand_goal_nonneg CHECK (goal_cents >= 0), 
+	FOREIGN KEY(origin_draft_ulid) REFERENCES demand_draft (ulid) ON DELETE RESTRICT, 
+	FOREIGN KEY(project_ulid) REFERENCES project_project (ulid) ON DELETE SET NULL, 
+	CONSTRAINT uq_funding_demand_origin_draft UNIQUE (origin_draft_ulid)
+);
+CREATE INDEX ix_funding_demand_origin_draft_ulid ON funding_demand (origin_draft_ulid);
+CREATE INDEX ix_funding_demand_project_status ON funding_demand (project_ulid, status);
+CREATE INDEX ix_funding_demand_project_ulid ON funding_demand (project_ulid);
+CREATE INDEX ix_funding_demand_status ON funding_demand (status);
+CREATE TABLE finance_posting_fact (
+	journal_ulid VARCHAR(26) NOT NULL, 
+	request_id VARCHAR(26) NOT NULL, 
+	posting_family VARCHAR(16) NOT NULL, 
+	semantic_key VARCHAR(64) NOT NULL, 
+	method_key VARCHAR(32) NOT NULL, 
+	funding_demand_ulid VARCHAR(26) NOT NULL, 
+	project_ulid VARCHAR(26), 
+	fund_code VARCHAR(32) NOT NULL, 
+	amount_cents INTEGER NOT NULL, 
+	source VARCHAR(32) NOT NULL, 
+	source_ref_ulid VARCHAR(26), 
+	happened_at_utc VARCHAR(30) NOT NULL, 
+	actor_ulid VARCHAR(26), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid), 
+	CONSTRAINT ck_postfact_family CHECK (posting_family in ('income','expense')), 
+	CONSTRAINT ck_postfact_nonneg CHECK (amount_cents >= 0), 
+	FOREIGN KEY(journal_ulid) REFERENCES finance_journal (ulid), 
+	CONSTRAINT uq_postfact_journal UNIQUE (journal_ulid)
+);
+CREATE INDEX ix_finance_posting_fact_actor_ulid ON finance_posting_fact (actor_ulid);
+CREATE INDEX ix_finance_posting_fact_fund_code ON finance_posting_fact (fund_code);
+CREATE INDEX ix_finance_posting_fact_funding_demand_ulid ON finance_posting_fact (funding_demand_ulid);
+CREATE INDEX ix_finance_posting_fact_happened_at_utc ON finance_posting_fact (happened_at_utc);
+CREATE INDEX ix_finance_posting_fact_journal_ulid ON finance_posting_fact (journal_ulid);
+CREATE INDEX ix_finance_posting_fact_method_key ON finance_posting_fact (method_key);
+CREATE INDEX ix_finance_posting_fact_posting_family ON finance_posting_fact (posting_family);
+CREATE INDEX ix_finance_posting_fact_project_ulid ON finance_posting_fact (project_ulid);
+CREATE INDEX ix_finance_posting_fact_request_id ON finance_posting_fact (request_id);
+CREATE INDEX ix_finance_posting_fact_semantic_key ON finance_posting_fact (semantic_key);
+CREATE INDEX ix_finance_posting_fact_source ON finance_posting_fact (source);
+CREATE INDEX ix_finance_posting_fact_source_ref_ulid ON finance_posting_fact (source_ref_ulid);
+CREATE TABLE admin_alert (
+	source_slice VARCHAR(64) NOT NULL, 
+	reason_code VARCHAR(128) NOT NULL, 
+	request_id VARCHAR(64) NOT NULL, 
+	target_ulid VARCHAR(26), 
+	title VARCHAR(200) NOT NULL, 
+	summary TEXT NOT NULL, 
+	source_status VARCHAR(64) NOT NULL, 
+	admin_status VARCHAR(32) NOT NULL, 
+	workflow_key VARCHAR(128) NOT NULL, 
+	resolution_target_json JSON NOT NULL, 
+	context_json JSON NOT NULL, 
+	acknowledged_by_ulid VARCHAR(26), 
+	acknowledged_at_utc VARCHAR(30), 
+	closed_at_utc VARCHAR(30), 
+	close_reason VARCHAR(64), 
+	dedupe_key VARCHAR(255) NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, triaged_by_actor_ulid VARCHAR(26), triaged_at_utc VARCHAR(30), snoozed_until_utc VARCHAR(30), duplicate_of_alert_ulid VARCHAR(26), triage_note TEXT, 
+	PRIMARY KEY (ulid), 
+	UNIQUE (dedupe_key)
+);
+CREATE INDEX ix_admin_alert_active ON admin_alert (admin_status, updated_at_utc);
+CREATE INDEX ix_admin_alert_request_reason ON admin_alert (request_id, reason_code);
+CREATE INDEX ix_admin_alert_target_reason ON admin_alert (target_ulid, reason_code);
+CREATE TABLE admin_alert_archive (
+	original_alert_ulid VARCHAR(26) NOT NULL, 
+	source_slice VARCHAR(64) NOT NULL, 
+	reason_code VARCHAR(128) NOT NULL, 
+	request_id VARCHAR(64) NOT NULL, 
+	target_ulid VARCHAR(26), 
+	title VARCHAR(200) NOT NULL, 
+	summary TEXT NOT NULL, 
+	source_status VARCHAR(64) NOT NULL, 
+	admin_status VARCHAR(32) NOT NULL, 
+	workflow_key VARCHAR(128) NOT NULL, 
+	resolution_target_json JSON NOT NULL, 
+	context_json JSON NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	acknowledged_by_ulid VARCHAR(26), 
+	acknowledged_at_utc VARCHAR(30), 
+	closed_at_utc VARCHAR(30), 
+	close_reason VARCHAR(64), 
+	archived_at_utc VARCHAR(30) NOT NULL, 
+	archive_reason VARCHAR(64) NOT NULL, 
+	ulid VARCHAR(26) NOT NULL, triaged_by_actor_ulid VARCHAR(26), triaged_at_utc VARCHAR(30), snoozed_until_utc VARCHAR(30), duplicate_of_alert_ulid VARCHAR(26), triage_note TEXT, 
+	PRIMARY KEY (ulid), 
+	UNIQUE (original_alert_ulid)
+);
+CREATE INDEX ix_admin_alert_archive_archived_at ON admin_alert_archive (archived_at_utc);
+CREATE INDEX ix_admin_alert_archive_request_id ON admin_alert_archive (request_id);
+CREATE INDEX ix_admin_alert_archive_source_reason ON admin_alert_archive (source_slice, reason_code);
+CREATE TABLE resource_admin_issue (
+	request_id VARCHAR(64), 
+	target_ulid VARCHAR(26), 
+	reason_code VARCHAR(128) NOT NULL, 
+	source_status VARCHAR(32) NOT NULL, 
+	requested_by_actor_ulid VARCHAR(26), 
+	resolved_by_actor_ulid VARCHAR(26), 
+	title VARCHAR(200) NOT NULL, 
+	summary TEXT NOT NULL, 
+	details_json JSON, 
+	closed_at_utc VARCHAR(30), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid)
+);
+CREATE INDEX ix_resource_admin_issue_active ON resource_admin_issue (reason_code, source_status, closed_at_utc);
+CREATE INDEX ix_resource_admin_issue_closed_at_utc ON resource_admin_issue (closed_at_utc);
+CREATE INDEX ix_resource_admin_issue_reason_code ON resource_admin_issue (reason_code);
+CREATE INDEX ix_resource_admin_issue_request_id ON resource_admin_issue (request_id);
+CREATE INDEX ix_resource_admin_issue_request_reason ON resource_admin_issue (request_id, reason_code);
+CREATE INDEX ix_resource_admin_issue_source_status ON resource_admin_issue (source_status);
+CREATE INDEX ix_resource_admin_issue_target_reason ON resource_admin_issue (target_ulid, reason_code);
+CREATE INDEX ix_resource_admin_issue_target_ulid ON resource_admin_issue (target_ulid);
+CREATE TABLE sponsor_admin_issue (
+	request_id VARCHAR(64), 
+	target_ulid VARCHAR(26), 
+	reason_code VARCHAR(128) NOT NULL, 
+	source_status VARCHAR(32) NOT NULL, 
+	requested_by_actor_ulid VARCHAR(26), 
+	resolved_by_actor_ulid VARCHAR(26), 
+	title VARCHAR(200) NOT NULL, 
+	summary VARCHAR NOT NULL, 
+	details_json JSON, 
+	closed_at_utc VARCHAR(30), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid)
+);
+CREATE INDEX ix_sponsor_admin_issue_active ON sponsor_admin_issue (reason_code, source_status, closed_at_utc);
+CREATE INDEX ix_sponsor_admin_issue_closed_at_utc ON sponsor_admin_issue (closed_at_utc);
+CREATE INDEX ix_sponsor_admin_issue_reason_code ON sponsor_admin_issue (reason_code);
+CREATE INDEX ix_sponsor_admin_issue_request_id ON sponsor_admin_issue (request_id);
+CREATE INDEX ix_sponsor_admin_issue_request_reason ON sponsor_admin_issue (request_id, reason_code);
+CREATE INDEX ix_sponsor_admin_issue_source_status ON sponsor_admin_issue (source_status);
+CREATE INDEX ix_sponsor_admin_issue_target_reason ON sponsor_admin_issue (target_ulid, reason_code);
+CREATE INDEX ix_sponsor_admin_issue_target_ulid ON sponsor_admin_issue (target_ulid);
+CREATE TABLE customer_admin_issue (
+	request_id VARCHAR(64), 
+	target_ulid VARCHAR(26), 
+	reason_code VARCHAR(128) NOT NULL, 
+	source_status VARCHAR(32) NOT NULL, 
+	requested_by_actor_ulid VARCHAR(26), 
+	resolved_by_actor_ulid VARCHAR(26), 
+	title VARCHAR(200) NOT NULL, 
+	summary TEXT NOT NULL, 
+	details_json JSON, 
+	closed_at_utc VARCHAR(30), 
+	ulid VARCHAR(26) NOT NULL, 
+	created_at_utc VARCHAR(30) NOT NULL, 
+	updated_at_utc VARCHAR(30) NOT NULL, 
+	PRIMARY KEY (ulid)
+);
+CREATE INDEX ix_customer_admin_issue_active ON customer_admin_issue (reason_code, source_status, closed_at_utc);
+CREATE INDEX ix_customer_admin_issue_closed_at_utc ON customer_admin_issue (closed_at_utc);
+CREATE INDEX ix_customer_admin_issue_reason_code ON customer_admin_issue (reason_code);
+CREATE INDEX ix_customer_admin_issue_request_id ON customer_admin_issue (request_id);
+CREATE INDEX ix_customer_admin_issue_request_reason ON customer_admin_issue (request_id, reason_code);
+CREATE INDEX ix_customer_admin_issue_source_status ON customer_admin_issue (source_status);
+CREATE INDEX ix_customer_admin_issue_target_reason ON customer_admin_issue (target_ulid, reason_code);
+CREATE INDEX ix_customer_admin_issue_target_ulid ON customer_admin_issue (target_ulid);

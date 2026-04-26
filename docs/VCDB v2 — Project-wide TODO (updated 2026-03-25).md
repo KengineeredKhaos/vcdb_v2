@@ -58,13 +58,6 @@ thoroughly.
   - ensure no spam:
     - snapshot only on reassessment start (not on every needs_set_block())
 
-- [ ] @TODO: Implement Admin sweep job for CustomerHistory admin tags.
-  
-  - CustomerHistory stores `has_admin_tags` + `admin_tags_csv`
-  - Admin job scans new history rows (cursor-based, idempotent)
-  - create admin-only alerts/tasks (no PII; ULIDs + reason codes only)
-  - avoid duplicates via unique key (history_ulid + reason_code)
-
 - [ ] @TODO: Define minimal Admin alert storage & UI (v1).
   
   - table: `admin_alert` (target_entity_ulid, reason_code, happened_at, status)
@@ -75,13 +68,6 @@ thoroughly.
   
   - Dataset #7 “Admin Inbox” is v0 (directly reads CustomerHistory flags)
   - v1: Admin Inbox becomes a view over `admin_alert` (produced by sweep)
-
-- [ ] @TODO: Consolidate slice-specific Admin inboxes into the Admin slice.
-  
-  - replace per-slice admin inbox pages with a unified Admin inbox/queue surface
-  - wire via versioned Extensions contracts (read-only providers per slice)
-  - keep queue rows PII-free (ULIDs + reason codes only; names via Entity name
-    cards at render)
 
 - [ ] @TODO: Ledger hardening
   
@@ -149,13 +135,6 @@ thoroughly.
   - define owning-slice contract providers
   - define status lifecycle and audit expectations
   - keep queue rows PII-free
-
-- [~] @TODO: Route/template integrity follow-up.
-  
-  - major stale endpoint issues found during the access sweep were corrected
-  - continue verifying `render_template(...)` targets as UI surfaces evolve
-  - continue scanning layout/nav for stale endpoint names
-  - add a lightweight smoke check for known entry pages
 
 ---
 
@@ -404,14 +383,31 @@ thoroughly.
   ### Scope
 
 - Remove the `preview_funding_decision` backward-compat shim once DTO callers are explicit.
+
 - Revisit Calendar task taxonomy and realign finance hints to canonical Governance policy semantics.
+
 - Stop treating Calendar as a quasi-owner of finance semantics.
+
 - Restore the focused seam test for encumber preview op after the alignment pass.
+
 - Revisit Finance handling of `FundingDemandContextDTO`.
+
 - Revisit Calendar project/task planning, synthesis, and funding-demand development.
   
   ### Why this phase matters now
 
 This is seam cleanup at an active boundary. Better to remove drift now than after more downstream logic depends on it.
 
+- [x] @TODO: Route/template integrity follow-up.
+  
+  - major stale endpoint issues found during the access sweep were corrected
+  
+  - continue verifying `render_template(...)` targets as UI surfaces evolve
+  
+  - continue scanning layout/nav for stale endpoint names
+  
+  - add a lightweight smoke check for known entry pages
+
 ---
+
+
