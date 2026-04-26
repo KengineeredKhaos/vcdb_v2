@@ -23,6 +23,8 @@ from app.lib.jsonutil import dumps_compact, try_parse_json
 from .errors import (
     EventHashConflict,
     LedgerBadArgument,
+    LedgerBackupGateBlocked,
+    LedgerError,
     LedgerUnavailable,
     ProviderTemporarilyDown,
 )
@@ -325,7 +327,9 @@ def _make_event_row(
         request_id=env["request_id"],
         happened_at_utc=env["happened_at_utc"],
         refs_json=(
-            dumps_compact(env["refs"]) if env["refs"] is not None else None
+            dumps_compact(env["refs"])
+            if env["refs"] is not None
+            else None
         ),
         changed_json=(
             dumps_compact(env["changed"])
@@ -333,7 +337,9 @@ def _make_event_row(
             else None
         ),
         meta_json=(
-            dumps_compact(env["meta"]) if env["meta"] is not None else None
+            dumps_compact(env["meta"])
+            if env["meta"] is not None
+            else None
         ),
         prev_hash_hex=prev_hash_hex,
         curr_hash_hex=_hash_env(prev_hash_hex, env),
@@ -429,19 +435,19 @@ def _event_public(ev: LedgerEvent) -> dict[str, Any]:
     }
 
 
-def _iter_events(chain_key: str | None = None) -> list[LedgerEvent]:
-    stmt = select(LedgerEvent)
-
-    if chain_key is not None:
-        stmt = stmt.where(LedgerEvent.chain_key == chain_key)
-
-    stmt = stmt.order_by(
-        LedgerEvent.chain_key.asc(),
-        LedgerEvent.chain_seq.asc(),
-        LedgerEvent.ulid.asc(),
+def _iter_events(key: str | None) -> Iterable[LedgerEvent]:
+    q = select(LedgerEvent).order_by(
+        LedgerEvent.chain_key,
+        LedgerEvent.chain_seq,
+        LedgerEvent.ulid,
     )
-
-    return list(db.session.execute(stmt).scalars())
+    if key:
+        q = (
+            select(LedgerEvent)
+            .where(LedgerEvent.chain_key == key)
+            .order_by(LedgerEvent.chain_seq, LedgerEvent.ulid)
+        )
+    return (x[0] for x in db.session.execute(q).all())
 
 
 def verify_chain(chain_key: str | None = None) -> dict[str, Any]:
@@ -517,10 +523,7 @@ def verify_chain(chain_key: str | None = None) -> dict[str, Any]:
             prev_seq_for[ev.chain_key] = ev.chain_seq
             checked += 1
 
-        for (
-            claim_chain,
-            claim_prev,
-        ), event_ulids in prev_hash_claims.items():
+        for (claim_chain, claim_prev), event_ulids in prev_hash_claims.items():
             if len(event_ulids) <= 1:
                 continue
             anomalies.append(
@@ -620,32 +623,106 @@ def record_hashchain_check(
     return row
 
 
+def _record_failed_check(
+    *,
+    check_kind: str,
+    request_id: str,
+    actor_ulid: str | None,
+    chain_key: str | None,
+    started_at_utc: str,
+    exc: BaseException,
+) -> LedgerHashchainCheck:
+    """
+    Persist a failed daily-close/cron check when verification itself fails.
+
+    This is best effort. If the provider is down hard enough that this row
+    cannot be written, the caller still gets the original visible failure.
+    """
+    now = now_iso8601_ms()
+    reason = (
+        REASON_FAILURE_CRON_LEDGERCHECK
+        if check_kind == CHECK_KIND_CRON_LEDGERCHECK
+        else REASON_FAILURE_HASHCHAIN
+    )
+    row = LedgerHashchainCheck(
+        check_kind=check_kind,
+        reason_code=reason,
+        source_status=STATUS_FAILURE,
+        request_id=request_id,
+        actor_ulid=actor_ulid,
+        chain_key=chain_key,
+        started_at_utc=started_at_utc,
+        completed_at_utc=now,
+        ok=False,
+        checked_count=0,
+        anomaly_count=0,
+        failure_count=1,
+        routine_backup_allowed=False,
+        dirty_forensic_backup_only=True,
+        details_json={
+            "ok": False,
+            "status": STATUS_FAILURE,
+            "checked": 0,
+            "broken": {
+                "kind": "ledger_check_exception",
+                "error_class": exc.__class__.__name__,
+            },
+            "anomalies": [],
+            "failures": [
+                {
+                    "kind": "ledger_check_exception",
+                    "error_class": exc.__class__.__name__,
+                }
+            ],
+            "chains": [chain_key] if chain_key else [],
+            "as_of_utc": now,
+        },
+    )
+    db.session.add(row)
+    db.session.flush()
+    return row
+
+
 def run_daily_close(
     *,
     request_id: str,
     actor_ulid: str | None,
     chain_key: str | None = None,
     check_kind: str = CHECK_KIND_DAILY_CLOSE,
+    alert_on_advisory: bool = False,
 ) -> dict[str, Any]:
     """
     Verify Ledger before routine backup/archive.
 
-    Clean result allows routine backup/archive. Anomaly/failure records
-    Ledger-owned issue truth and blocks routine backup. Dirty forensic backup
-    remains allowed and must be clearly marked as such by the backup job.
+    Clean/reconciled checks allow routine backup. Anomaly/failure checks block
+    routine backup and allow dirty forensic backup only. Clean advisory checks
+    are recorded in LedgerHashchainCheck; they cue Admin only when explicitly
+    requested by a cron/operator caller.
     """
     started = now_iso8601_ms()
-    result = verify_chain(chain_key=chain_key)
-    check = record_hashchain_check(
-        check_kind=check_kind,
-        result=result,
-        request_id=request_id,
-        actor_ulid=actor_ulid,
-        chain_key=chain_key,
-        started_at_utc=started,
-    )
+    try:
+        result = verify_chain(chain_key=chain_key)
+        check = record_hashchain_check(
+            check_kind=check_kind,
+            result=result,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+            chain_key=chain_key,
+            started_at_utc=started,
+        )
+    except LedgerError as exc:
+        check = _record_failed_check(
+            check_kind=check_kind,
+            request_id=request_id,
+            actor_ulid=actor_ulid,
+            chain_key=chain_key,
+            started_at_utc=started,
+            exc=exc,
+        )
+        result = dict(check.details_json or {})
 
-    if not result.get("ok"):
+    should_alert = (not check.ok) or alert_on_advisory
+    if should_alert:
         from . import admin_issue_services as issues
 
         issues.raise_hashchain_issue_from_check(
@@ -655,8 +732,8 @@ def run_daily_close(
         )
 
     return {
-        "ok": bool(result.get("ok")),
-        "status": result.get("status"),
+        "ok": bool(check.ok),
+        "status": check.source_status,
         "reason_code": check.reason_code,
         "check_ulid": check.ulid,
         "routine_backup_allowed": bool(check.routine_backup_allowed),
@@ -668,8 +745,16 @@ def run_daily_close(
     }
 
 
-def latest_daily_close_status() -> dict[str, Any]:
+def latest_daily_close_status(
+    *,
+    chain_key: str | None = None,
+) -> dict[str, Any]:
     """Return the most recent daily-close/cron check status."""
+    clean_chain_key = _clean_optional_str(
+        "chain_key",
+        chain_key,
+        max_len=40,
+    )
     stmt = (
         select(LedgerHashchainCheck)
         .where(
@@ -680,6 +765,9 @@ def latest_daily_close_status() -> dict[str, Any]:
         .order_by(desc(LedgerHashchainCheck.created_at_utc))
         .limit(1)
     )
+    if clean_chain_key is not None:
+        stmt = stmt.where(LedgerHashchainCheck.chain_key == clean_chain_key)
+
     row = db.session.execute(stmt).scalar_one_or_none()
     if row is None:
         return {
@@ -687,6 +775,7 @@ def latest_daily_close_status() -> dict[str, Any]:
             "routine_backup_allowed": False,
             "dirty_forensic_backup_only": True,
             "reason": "no_daily_close_recorded",
+            "chain_key": clean_chain_key,
         }
     return {
         "has_daily_close": True,
@@ -697,4 +786,41 @@ def latest_daily_close_status() -> dict[str, Any]:
         "routine_backup_allowed": bool(row.routine_backup_allowed),
         "dirty_forensic_backup_only": bool(row.dirty_forensic_backup_only),
         "completed_at_utc": row.completed_at_utc,
+        "chain_key": row.chain_key,
     }
+
+
+def backup_gate_status(*, chain_key: str | None = None) -> dict[str, Any]:
+    """
+    Public Ledger-owned backup gate status.
+
+    Routine backup/archive callers should consult this before making an
+    archive-of-record. Dirty forensic backup remains a separate explicit path.
+    """
+    status = latest_daily_close_status(chain_key=chain_key)
+    status["gate"] = (
+        "routine_backup_allowed"
+        if status.get("routine_backup_allowed")
+        else "routine_backup_blocked"
+    )
+    return status
+
+
+def require_routine_backup_allowed(
+    *,
+    chain_key: str | None = None,
+) -> dict[str, Any]:
+    """
+    Fail closed for routine backup/archive when daily close is not clean.
+
+    Backup/archive code should call this before routine archive-of-record. If
+    it raises, the caller may still take an explicitly named dirty forensic
+    snapshot, but it must not certify the backup as routine/verified.
+    """
+    status = backup_gate_status(chain_key=chain_key)
+    if status.get("routine_backup_allowed"):
+        return status
+    raise LedgerBackupGateBlocked(
+        "routine backup/archive blocked by Ledger daily-close status: "
+        f"{status.get('reason_code') or status.get('reason')}"
+    )

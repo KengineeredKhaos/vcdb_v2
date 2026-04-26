@@ -43,3 +43,7 @@ class LedgerHashchainFailure(LedgerIntegrityError):
 
     This is for failure posture, not ordinary survivable anomalies.
     """
+
+
+class LedgerBackupGateBlocked(LedgerHashchainFailure):
+    """Routine backup/archive is blocked by Ledger daily-close state."""
