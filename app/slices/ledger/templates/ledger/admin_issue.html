@@ -82,6 +82,15 @@
         </form>
       {% endif %}
 
+
+
+      {% if "repair_hashchain" in page.allowed_actions %}
+        <form method="post" action="{{ url_for('ledger.admin_issue_repair_hashchain', issue_ulid=page.issue_ulid) }}">
+          {{ csrf_field() }}
+          <button class="btn" type="submit">Repair hash-chain</button>
+        </form>
+      {% endif %}
+
       {% if "close_restored" in page.allowed_actions %}
         <form method="post" action="{{ url_for('ledger.admin_issue_close_restored', issue_ulid=page.issue_ulid) }}">
           {{ csrf_field() }}

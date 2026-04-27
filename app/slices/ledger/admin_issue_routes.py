@@ -56,6 +56,36 @@ def admin_issue_run_verify(issue_ulid: str):
 
 # VCDB-SEC: ACTIVE entry=admin authority=rbac reason=admin_only_surface
 @bp.post(
+    "/admin-issue/<issue_ulid>/repair-hashchain",
+    endpoint="admin_issue_repair_hashchain",
+)
+@login_required
+@rbac("admin")
+def admin_issue_repair_hashchain(issue_ulid: str):
+    req = ensure_request_id()
+    actor = auth_ctx.current_actor_ulid()
+
+    try:
+        result = issue_svc.repair_hashchain_for_issue(
+            issue_ulid=issue_ulid,
+            actor_ulid=actor,
+            request_id=req,
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+
+    if result.get("ok"):
+        flash("Ledger hash-chain repaired and verified clean.", "success")
+        return redirect(url_for("admin.inbox"))
+
+    flash("Ledger hash-chain repair ran, but verification still fails.", "warning")
+    return redirect(url_for("ledger.admin_issue_get", issue_ulid=issue_ulid))
+
+
+# VCDB-SEC: ACTIVE entry=admin authority=rbac reason=admin_only_surface
+@bp.post(
     "/admin-issue/<issue_ulid>/close-restored",
     endpoint="admin_issue_close_restored",
 )
@@ -99,10 +129,10 @@ def admin_issue_close_no_repair(issue_ulid: str):
             actor_ulid=actor,
             request_id=req,
             source_status=issue_svc.SOURCE_STATUS_NO_REPAIR,
-            close_reason="closed_no_repair_required",
+            close_reason="false_positive_no_repair",
         )
         db.session.commit()
-        flash("Ledger issue closed with no repair required.", "success")
+        flash("Ledger issue closed as false positive / no repair.", "success")
     except Exception:
         db.session.rollback()
         raise

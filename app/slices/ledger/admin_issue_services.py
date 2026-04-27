@@ -25,6 +25,7 @@ from .services import (
     REASON_ANOMALY_HASHCHAIN,
     REASON_FAILURE_CRON_LEDGERCHECK,
     REASON_FAILURE_HASHCHAIN,
+    repair_hashchain,
     verify_chain,
 )
 
@@ -311,6 +312,57 @@ def run_verify_for_issue(
         chain_key="ledger.health",
     )
     db.session.flush()
+    return result
+
+
+def repair_hashchain_for_issue(
+    *,
+    issue_ulid: str,
+    actor_ulid: str | None,
+    request_id: str | None,
+) -> dict[str, Any]:
+    """Repair the issue chain, record evidence, and close if restored."""
+    rid = ensure_request_id(request_id)
+    issue = _get_issue_or_raise(issue_ulid)
+    if issue.closed_at_utc:
+        raise ValueError("Ledger admin issue is already closed")
+    if not issue.chain_key:
+        raise ValueError("Ledger hash-chain repair requires chain_key")
+
+    details = dict(issue.details_json or {})
+    check_ulid = str(details.get("check_ulid") or "") or None
+
+    result = repair_hashchain(
+        chain_key=issue.chain_key,
+        actor_ulid=actor_ulid,
+        request_id=rid,
+        issue_ulid=issue.ulid,
+        check_ulid=check_ulid,
+    )
+
+    updated_details = dict(issue.details_json or {})
+    updated_details["last_repair"] = result
+    updated_details["last_repair_at_utc"] = now_iso8601_ms()
+    issue.details_json = updated_details
+    issue.event_ulid = issue.event_ulid or _first_failure_event_ulid(
+        updated_details
+    )
+    issue.updated_at_utc = now_iso8601_ms()
+
+    if result.get("ok"):
+        close_ledger_admin_issue(
+            issue_ulid=issue.ulid,
+            actor_ulid=actor_ulid,
+            request_id=rid,
+            source_status=SOURCE_STATUS_RESTORED,
+            close_reason="hashchain_repaired",
+        )
+    else:
+        issue.source_status = SOURCE_STATUS_FAILURE
+        issue.updated_at_utc = now_iso8601_ms()
+        _upsert_admin_alert(issue)
+        db.session.flush()
+
     return result
 
 
@@ -714,4 +766,8 @@ def _backup_posture(issue: LedgerAdminIssue) -> dict[str, Any]:
 def _allowed_actions(issue: LedgerAdminIssue) -> tuple[str, ...]:
     if issue.closed_at_utc:
         return ()
-    return ("run_verify", "close_restored", "close_no_repair")
+    actions = ["run_verify"]
+    if issue.chain_key and issue.reason_code in HASHCHAIN_ATTENTION_REASONS:
+        actions.append("repair_hashchain")
+    actions.extend(["close_restored", "close_no_repair"])
+    return tuple(actions)

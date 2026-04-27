@@ -28,7 +28,11 @@ from .errors import (
     LedgerUnavailable,
     ProviderTemporarilyDown,
 )
-from .models import LedgerEvent, LedgerHashchainCheck
+from .models import (
+    LedgerEvent,
+    LedgerHashchainCheck,
+    LedgerHashchainRepair,
+)
 
 # -*- coding: utf-8 -*-
 # VCDB Canon — DO NOT MODIFY WITHOUT GOVERNANCE APPROVAL
@@ -51,6 +55,7 @@ STATUS_RECONCILED = "reconciled"
 CHECK_KIND_VERIFY = "verify"
 CHECK_KIND_DAILY_CLOSE = "daily_close"
 CHECK_KIND_CRON_LEDGERCHECK = "cron_ledgercheck"
+CHECK_KIND_POST_REPAIR = "post_repair"
 
 
 def _clean_required_str(
@@ -750,11 +755,160 @@ def run_daily_close(
     }
 
 
+def _chain_events(chain_key: str) -> list[LedgerEvent]:
+    """Return one chain in canonical sequence order."""
+    clean_chain_key = _clean_required_str(
+        "chain_key",
+        chain_key,
+        max_len=40,
+    )
+    stmt = (
+        select(LedgerEvent)
+        .where(LedgerEvent.chain_key == clean_chain_key)
+        .order_by(LedgerEvent.chain_seq, LedgerEvent.ulid)
+    )
+    return list(db.session.execute(stmt).scalars())
+
+
+def _chain_snapshot(events: Iterable[LedgerEvent]) -> list[dict[str, Any]]:
+    """Capture PII-free hash-chain evidence for repair records."""
+    return [_event_public(ev) for ev in events]
+
+
+def repair_hashchain(
+    *,
+    chain_key: str,
+    actor_ulid: str | None,
+    request_id: str,
+    issue_ulid: str | None = None,
+    check_ulid: str | None = None,
+) -> dict[str, Any]:
+    """
+    Recompute one chain's prev/curr hashes in chain_seq order.
+
+    This is Ledger-owned repair, not hidden cleanup. Event rows remain in
+    place. The repair records before/after evidence in LedgerHashchainRepair
+    so Admin and Auditor can see exactly what was touched.
+    """
+    clean_chain_key = _clean_required_str(
+        "chain_key",
+        chain_key,
+        max_len=40,
+    )
+    rid = _clean_required_str("request_id", request_id, max_len=64)
+    started = now_iso8601_ms()
+
+    try:
+        before_verify = verify_chain(chain_key=clean_chain_key)
+        events = _chain_events(clean_chain_key)
+        if not events:
+            raise LedgerBadArgument(
+                f"no ledger events found for chain_key={clean_chain_key}"
+            )
+
+        before_rows = _chain_snapshot(events)
+        affected: list[str] = []
+        prev_hash_hex: str | None = None
+
+        for ev in events:
+            env = _event_to_env(ev)
+            repaired_hash = _hash_env(prev_hash_hex, env)
+            if (
+                ev.prev_hash_hex != prev_hash_hex
+                or ev.curr_hash_hex != repaired_hash
+            ):
+                affected.append(ev.ulid)
+
+            ev.prev_hash_hex = prev_hash_hex
+            ev.curr_hash_hex = repaired_hash
+            ev.updated_at_utc = now_iso8601_ms()
+            prev_hash_hex = repaired_hash
+
+        db.session.flush()
+
+        after_events = _chain_events(clean_chain_key)
+        after_rows = _chain_snapshot(after_events)
+        after_verify = verify_chain(chain_key=clean_chain_key)
+        completed = now_iso8601_ms()
+
+        post_repair_check = record_hashchain_check(
+            check_kind=CHECK_KIND_POST_REPAIR,
+            result=after_verify,
+            request_id=rid,
+            actor_ulid=actor_ulid,
+            chain_key=clean_chain_key,
+            started_at_utc=completed,
+        )
+
+        repair = LedgerHashchainRepair(
+            repair_kind="recompute_hashchain",
+            reason_code=(
+                REASON_ADVISORY_HASHCHAIN
+                if after_verify.get("ok")
+                else REASON_FAILURE_HASHCHAIN
+            ),
+            source_status=(
+                STATUS_RECONCILED
+                if after_verify.get("ok")
+                else STATUS_FAILURE
+            ),
+            request_id=rid,
+            actor_ulid=actor_ulid,
+            issue_ulid=issue_ulid,
+            check_ulid=post_repair_check.ulid,
+            chain_key=clean_chain_key,
+            started_at_utc=started,
+            completed_at_utc=completed,
+            before_json={
+                "verify": before_verify,
+                "events": before_rows,
+            },
+            after_json={
+                "verify": after_verify,
+                "events": after_rows,
+                "post_repair_check_ulid": post_repair_check.ulid,
+            },
+            affected_event_ulids_json=affected,
+            summary=(
+                "Recomputed Ledger hash-chain in chain_seq order for "
+                f"chain_key={clean_chain_key}."
+            ),
+        )
+        db.session.add(repair)
+        db.session.flush()
+
+        return {
+            "ok": bool(after_verify.get("ok")),
+            "repair_ulid": repair.ulid,
+            "repair_kind": repair.repair_kind,
+            "reason_code": repair.reason_code,
+            "source_status": repair.source_status,
+            "chain_key": clean_chain_key,
+            "issue_ulid": issue_ulid,
+            "check_ulid": check_ulid,
+            "post_repair_check_ulid": post_repair_check.ulid,
+            "affected_event_ulids": affected,
+            "before": before_verify,
+            "after": after_verify,
+            "routine_backup_allowed": bool(after_verify.get("ok")),
+            "dirty_forensic_backup_only": not bool(after_verify.get("ok")),
+        }
+    except LedgerBadArgument:
+        raise
+    except SQLAlchemyError as exc:
+        _raise_provider_error(during="hashchain repair", exc=exc)
+
+
 def latest_daily_close_status(
     *,
     chain_key: str | None = None,
 ) -> dict[str, Any]:
-    """Return the most recent daily-close/cron check status."""
+    """Return the most recent backup-gating check status.
+
+    Daily close and cron checks can open or block the gate. A successful
+    post-repair verification can reopen the gate immediately because repair
+    means Ledger is ready for action, not merely waiting for the next close.
+    """
     clean_chain_key = _clean_optional_str(
         "chain_key",
         chain_key,
@@ -764,7 +918,11 @@ def latest_daily_close_status(
         select(LedgerHashchainCheck)
         .where(
             LedgerHashchainCheck.check_kind.in_(
-                [CHECK_KIND_DAILY_CLOSE, CHECK_KIND_CRON_LEDGERCHECK]
+                [
+                    CHECK_KIND_DAILY_CLOSE,
+                    CHECK_KIND_CRON_LEDGERCHECK,
+                    CHECK_KIND_POST_REPAIR,
+                ]
             )
         )
         .order_by(desc(LedgerHashchainCheck.created_at_utc))
