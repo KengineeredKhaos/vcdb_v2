@@ -83,6 +83,12 @@ def staff_client(client):
 
 
 @pytest.fixture
+def admin_client(client):
+    client.environ_base.update({"HTTP_X_AUTH_STUB": "admin"})
+    return client
+
+
+@pytest.fixture
 def ulid() -> Callable[[], str]:
     def _make() -> str:
         return new_ulid()

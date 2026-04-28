@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     ForeignKey,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -426,6 +428,9 @@ class FinancePostingFact(db.Model, ULIDPK, IsoTimestamps):
     source_ref_ulid: Mapped[str | None] = mapped_column(
         String(26), nullable=True, index=True
     )
+    idempotency_key: Mapped[str] = mapped_column(
+        String(200), nullable=False, unique=True, index=True
+    )
     happened_at_utc: Mapped[str] = mapped_column(
         String(30), nullable=False, index=True
     )
@@ -475,6 +480,100 @@ class BalanceMonthly(db.Model, ULIDPK):
             "project_ulid",
             "period_key",
             name="uq_balance_key",
+        ),
+    )
+
+
+# -----------------
+# Finance-owned
+# Admin Issue Spine
+# -----------------
+
+
+class FinanceAdminIssue(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "finance_admin_issue"
+
+    reason_code: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    source_status: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    issue_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True, default="open"
+    )
+    workflow_key: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+
+    target_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+    request_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+
+    detection_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    preview_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    resolution_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+
+    opened_at_utc: Mapped[str] = mapped_column(String(30), nullable=False)
+
+    review_started_at_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )
+    review_started_by_actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+
+    resolved_at_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )
+    resolved_by_actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+    close_reason: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+
+    admin_alert_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+
+    dedupe_key: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True, index=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "issue_status in "
+            "('open','in_review','resolved','false_positive',"
+            "'manual_resolution_required')",
+            name="ck_finance_admin_issue_status",
+        ),
+        db.Index(
+            "ix_finance_admin_issue_status_updated",
+            "issue_status",
+            "updated_at_utc",
+        ),
+        db.Index(
+            "ix_finance_admin_issue_reason_status",
+            "reason_code",
+            "issue_status",
+        ),
+        db.Index(
+            "ix_finance_admin_issue_request_reason",
+            "request_id",
+            "reason_code",
         ),
     )
 

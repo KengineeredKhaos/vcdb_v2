@@ -447,8 +447,13 @@ def post_journal(
           -amount_cents => credit
       - Journal must balance: sum(amount_cents) == 0
       - fund_code + account_code are *codes* (human-stable), not ULIDs.
-      - At least one line must carry funding_demand_ulid, and all lines
-        must agree on that value when provided.
+      - Every line must carry the same funding_demand_ulid.
+
+    Canon note for Future Dev:
+      Journal/JournalLine are Finance's authoritative money facts. Do not
+      allow open-ended or guessed funding demand linkage here. Calendar,
+      Sponsors, Admin drill-down, and Auditor review all depend on this
+      shared ULID to trace money from planning demand through posted fact.
     """
     if not source:
         raise ValueError("source is required")
@@ -488,20 +493,19 @@ def post_journal(
         except Exception as exc:
             raise ValueError(f"line {i}: amount_cents must be int") from exc
 
-        if fd is not None:
-            if not isinstance(fd, str) or not fd.strip():
-                raise ValueError(
-                    f"line {i}: funding_demand_ulid must be a "
-                    "non-empty string when provided"
-                )
-            fd = fd.strip()
-            if funding_demand_ulid is None:
-                funding_demand_ulid = fd
-            elif funding_demand_ulid != fd:
-                raise ValueError(
-                    "all journal lines must use the same "
-                    "funding_demand_ulid"
-                )
+        if not isinstance(fd, str) or not fd.strip():
+            raise ValueError(f"line {i}: funding_demand_ulid is required")
+        fd = fd.strip()
+        if len(fd) != 26:
+            raise ValueError(
+                f"line {i}: funding_demand_ulid must be a 26-char ULID"
+            )
+        if funding_demand_ulid is None:
+            funding_demand_ulid = fd
+        elif funding_demand_ulid != fd:
+            raise ValueError(
+                "all journal lines must use the same funding_demand_ulid"
+            )
 
         if amt_i == 0:
             raise ValueError(f"line {i}: amount_cents cannot be 0")
@@ -552,16 +556,7 @@ def post_journal(
     db.session.flush()  # assign j.ulid
 
     for seq, line in enumerate(lines, start=1):
-        line_fd = line.get("funding_demand_ulid")
-        if line_fd is None:
-            line_fd = funding_demand_ulid
-        else:
-            line_fd = str(line_fd).strip()
-
-        if line_fd is None:
-            line_fd = funding_demand_ulid
-        else:
-            line_fd = str(line_fd).strip()
+        line_fd = str(line["funding_demand_ulid"]).strip()
 
         db.session.add(
             JournalLine(
@@ -614,9 +609,19 @@ def post_journal(
 
 
 def reverse_journal(
-    *, journal_ulid: str, created_by_actor: str | None
+    *,
+    journal_ulid: str,
+    created_by_actor: str | None,
+    request_id: str | None = None,
 ) -> str:
-    """Create an exact reversal of an existing journal."""
+    """Create an exact reversal of an existing journal.
+
+    Canon note for Future Dev:
+      Reversal is not an edit. It is a new posted money fact that negates
+      the original JournalLine rows. Preserve request_id when a reversal is
+      part of a larger operator workflow, and preserve funding_demand_ulid so
+      Calendar/Admin/Auditor drill-down stays cradle-to-grave traceable.
+    """
     j = db.session.get(Journal, journal_ulid)
     if not j:
         raise ValueError("journal not found")
@@ -637,6 +642,7 @@ def reverse_journal(
             {
                 "account_code": orig_line.account_code,
                 "fund_code": orig_line.fund_code,
+                "funding_demand_ulid": orig_line.funding_demand_ulid,
                 "project_ulid": orig_line.project_ulid,
                 "grant_ulid": orig_line.grant_ulid,
                 "amount_cents": -orig_line.amount_cents,  # reverse
@@ -652,6 +658,7 @@ def reverse_journal(
         memo=f"Reversal of {j.ulid}",
         lines=lines,
         created_by_actor=created_by_actor,
+        request_id=request_id,
         project_ulid=j.project_ulid,
         grant_ulid=j.grant_ulid,
     )

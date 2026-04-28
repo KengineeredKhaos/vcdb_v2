@@ -19,6 +19,7 @@ Bootstrap behavior:
     * Link POCs via slice-owned POC link tables using slice services
     * Customers (Entity(person) + Customer + CustomerEligibility)
     * Logistics baseline (MAIN, MOBILE, SATELLITE_1 + stocked SKUs)
+    * Finance baseline reference data (COA, funds, current open period)
 
 Operational guarantees:
 - Single transaction boundary: all writes are staged and committed once at the end.
@@ -230,6 +231,12 @@ def seed_bootstrap_impl(
     from app.slices.resources.services import resource_link_poc
     from app.slices.sponsors.services import sponsor_link_poc
 
+    # Finance reference baseline.
+    # This seeds no Journal rows and no fake money facts.
+    finance = seed_core.seed_finance_baseline(
+        sess=db.session,
+    )
+
     # Resources + POCs
     for i in range(resources):
         label = f"Resource Org {i + 1}"
@@ -308,6 +315,9 @@ def seed_bootstrap_impl(
         f"domain_roles_seeded={n_domain},\n  "
         f"bootstrap_operators={n_bootstrap_ops},\n  "
         f"resources={resources}, sponsors={sponsors}, customers={customers},\n  "
+        f"finance_accounts={finance.account_count},\n  "
+        f"finance_funds={finance.fund_count},\n  "
+        f"finance_periods={finance.open_period_count},\n  "
         f"logistics_locations={logistics.location_count},\n  "
         f"logistics_skus={logistics.sku_count},\n  "
         f"logistics_stock_pairs={logistics.stocked_pairs_count})"

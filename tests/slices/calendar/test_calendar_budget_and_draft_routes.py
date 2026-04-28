@@ -382,6 +382,7 @@ def test_demand_draft_create_route_rejects_unlocked_snapshot(
 def test_demand_draft_route_lifecycle_promotes_to_funding_demand(
     app,
     staff_client,
+    admin_client,
     monkeypatch,
 ):
     _patch_governance_ok(monkeypatch)
@@ -441,9 +442,11 @@ def test_demand_draft_route_lifecycle_promotes_to_funding_demand(
     assert resp.status_code == 302
 
     detail_path = f"/calendar/demand-drafts/{draft_ulid}"
-    csrf = _get_csrf_token(staff_client, detail_path)
+    csrf = _get_csrf_token(admin_client, detail_path)
 
-    resp = staff_client.post(
+    # Demand draft return is an Admin-only governance review action.
+    # Staff owns drafting and submission; Admin owns review return.
+    resp = admin_client.post(
         f"/calendar/demand-drafts/{draft_ulid}/return",
         data={
             "note": "Tighten the narrative and source posture.",
@@ -454,9 +457,9 @@ def test_demand_draft_route_lifecycle_promotes_to_funding_demand(
     assert resp.status_code == 302
 
     detail_path = f"/calendar/demand-drafts/{draft_ulid}"
-    csrf = _get_csrf_token(staff_client, detail_path)
-
-    resp = staff_client.post(
+    csrf = _get_csrf_token(admin_client, detail_path)
+    # Approval is also part of the Admin/governance review surface.
+    resp = admin_client.post(
         f"/calendar/demand-drafts/{draft_ulid}/edit",
         data={
             "csrf_token": csrf,
@@ -510,9 +513,10 @@ def test_demand_draft_route_lifecycle_promotes_to_funding_demand(
     assert resp.status_code == 302
 
     detail_path = f"/calendar/demand-drafts/{draft_ulid}"
-    csrf = _get_csrf_token(staff_client, detail_path)
+    csrf = _get_csrf_token(admin_client, detail_path)
 
-    resp = staff_client.post(
+    # Promote publishes the reviewed demand into FundingDemand.
+    resp = admin_client.post(
         f"/calendar/demand-drafts/{draft_ulid}/promote",
         data={"csrf_token": csrf},
         follow_redirects=False,

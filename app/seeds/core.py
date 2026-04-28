@@ -95,6 +95,13 @@ class SeedLogisticsResult:
     stocked_pairs_count: int
 
 
+@dataclass(frozen=True)
+class SeedFinanceResult:
+    account_count: int
+    fund_count: int
+    open_period_count: int
+
+
 # -----------------------------------------------------------------------------
 # Code-table seeding from policy (NO commit)
 # -----------------------------------------------------------------------------
@@ -527,6 +534,80 @@ def seed_org_poc_pair(
         )
         ulids.append(e_ulid)
     return ulids
+
+
+# -----------------------------------------------------------------------------
+# Finance seed
+# -----------------------------------------------------------------------------
+_FINANCE_BASELINE_FUNDS = (
+    (
+        "unrestricted",
+        "Unrestricted Operating Fund",
+        "unrestricted",
+    ),
+    (
+        "temporarily_restricted",
+        "Temporarily Restricted Fund",
+        "temporarily_restricted",
+    ),
+    (
+        "ops_float",
+        "Ops Float / Bridge Support",
+        "unrestricted",
+    ),
+)
+
+
+def seed_finance_baseline(
+    *,
+    sess: Session | None = None,
+) -> SeedFinanceResult:
+    """
+    Seed Finance reference data without committing.
+
+    Canon note for Future Dev:
+      This creates reference data only. It must not create Journal,
+      JournalLine, FinancePostingFact, BalanceMonthly, Reserve,
+      Encumbrance, or OpsFloat rows.
+
+      Money facts must enter Finance through the normal posting services
+      so request_id, funding_demand_ulid, idempotency_key, Ledger events,
+      and later integrity scans all tell the same story.
+    """
+    sess = sess or db.session
+
+    # Late imports keep the seed package resilient during slice refactors.
+    from app.slices.finance.models import Account, Fund, Period
+    from app.slices.finance.services_journal import (
+        ensure_default_accounts,
+        ensure_fund,
+    )
+
+    ensure_default_accounts()
+
+    for code, name, restriction in _FINANCE_BASELINE_FUNDS:
+        ensure_fund(
+            code=code,
+            name=name,
+            restriction=restriction,
+        )
+
+    current_period = now_iso8601_ms()[:7]
+    period = sess.execute(
+        select(Period).where(Period.period_key == current_period)
+    ).scalar_one_or_none()
+    if period is None:
+        period = Period(period_key=current_period, status="open")
+        sess.add(period)
+    elif period.status == "closed":
+        period.status = "soft_closed"
+
+    sess.flush()
+    return SeedFinanceResult(
+        account_count=sess.query(Account).count(),
+        fund_count=sess.query(Fund).count(),
+        open_period_count=sess.query(Period).count(),
+    )
 
 
 # -----------------------------------------------------------------------------

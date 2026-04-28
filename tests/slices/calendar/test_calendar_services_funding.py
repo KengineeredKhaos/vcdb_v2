@@ -160,8 +160,7 @@ def test_get_funding_demand_context_returns_snapshot_from_new_pipeline(app):
         assert view.status == "published"
         assert view.project_ulid == project.ulid
         assert view.goal_cents == 12000
-        assert package.schema_version == 1
-        assert package.origin.demand_draft_ulid == built["draft"]["ulid"]
+        assert package.schema_version == 2
         assert package.origin.budget_snapshot_ulid == snapshot["ulid"]
         assert package.origin.project_ulid == project.ulid
         assert package.demand.funding_demand_ulid == funding_ulid

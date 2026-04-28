@@ -134,8 +134,6 @@ Valuable, but it should follow the system hardening work it is meant to describe
 4. Phase 7 — Logistics physical inventory reconciliation  
 5. Phase 8 — Future Dev documentation cleanup
 
-
-
 That’s a solid pre-beta slate, and the framing is much cleaner now.
 
 I’d treat them as five separate workstreams with this order:
@@ -167,4 +165,28 @@ The nice thing is that each thread now has a different question at its core:
 
 - **Thread 5:** What anomaly, drift, and audit views do Admin/Auditor need for Logistics?
 
-
+- **Thread 6:** Ledger Slice Mop-up
+  
+  1. Ledger cron integration
+     
+     - scheduled daily close
+     - cron tattle-tail
+     - failure_cron_ledgercheck owned by cron/runtime status
+  
+  2. Auditor drill-down
+     
+     - read-only views for LedgerAdminIssue
+     - LedgerHashchainCheck
+     - LedgerHashchainRepair
+     - LedgerEvent chain views
+  
+  3. Backup/archive integration
+     
+     - actual backup command calls require_routine_backup_allowed()
+     - dirty forensic backup naming and logging
+  
+  4. Route access tests for Ledger admin/auditor surfaces
+     
+     - admin can repair/close
+     - auditor can inspect only
+     - staff cannot access
