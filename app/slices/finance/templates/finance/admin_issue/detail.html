@@ -1,0 +1,152 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<section class="hero" style="margin-top: 18px;">
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+    <a class="btn" href="{{ url_for('finance.admin_issue_index') }}">
+      Back to Finance issues
+    </a>
+  </div>
+
+  <div class="hero-card">
+    <div class="glow"></div>
+    <h1>{{ issue.title }}</h1>
+    <p class="muted">{{ issue.summary }}</p>
+
+    <p class="muted">
+      reason={{ issue.reason_code }}
+      — issue_status={{ issue.issue_status }}
+      — source_status={{ issue.source_status }}
+      — request_id={{ issue.request_id }}
+    </p>
+  </div>
+</section>
+
+<section class="features" style="margin-top: 14px;">
+  <div class="card">
+    <h3 style="margin-top:0;">Findings</h3>
+    <p><span class="kbd">{{ issue.detection.get("finding_count", 0) }}</span></p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0;">Workflow</h3>
+    <p><span class="kbd">{{ issue.workflow_key }}</span></p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0;">Admin alert</h3>
+    <p><span class="kbd">{{ issue.admin_alert_ulid or "none" }}</span></p>
+  </div>
+</section>
+
+{% if can_mutate %}
+<section style="margin-top:18px;">
+  <h2>Admin controls</h2>
+  <div class="card">
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+      {% if issue.issue_status not in ["resolved", "false_positive", "manual_resolution_required"] %}
+        <form
+          method="post"
+          action="{{ url_for('finance.admin_issue_start_review', issue_ulid=issue.issue_ulid) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn" type="submit">Start review</button>
+        </form>
+
+        <form
+          method="post"
+          action="{{ url_for('finance.admin_issue_close', issue_ulid=issue.issue_ulid) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="issue_status" value="resolved">
+          <input
+            type="hidden"
+            name="close_reason"
+            value="closed_from_finance_issue_detail">
+          <button class="btn" type="submit">Close as resolved</button>
+        </form>
+
+        {% if issue.reason_code == "anomaly_finance_balance_projection_drift" %}
+          <form
+            method="post"
+            action="{{ url_for('finance.admin_issue_balance_preview', issue_ulid=issue.issue_ulid) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">
+              Preview balance rebuild
+            </button>
+          </form>
+
+          {% if issue.preview.get("kind") == "balance_projection_rebuild_preview" %}
+            <form
+              method="post"
+              action="{{ url_for('finance.admin_issue_balance_rebuild', issue_ulid=issue.issue_ulid) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn" type="submit">
+                Commit balance rebuild
+              </button>
+            </form>
+          {% endif %}
+        {% endif %}
+
+        <form
+          method="post"
+          action="{{ url_for('finance.admin_issue_close', issue_ulid=issue.issue_ulid) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="issue_status" value="false_positive">
+          <input type="hidden" name="close_reason" value="false_positive">
+          <button class="btn" type="submit">Close false positive</button>
+        </form>
+
+        <form
+          method="post"
+          action="{{ url_for('finance.admin_issue_close', issue_ulid=issue.issue_ulid) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input
+            type="hidden"
+            name="issue_status"
+            value="manual_resolution_required">
+          <input
+            type="hidden"
+            name="close_reason"
+            value="manual_resolution_required">
+          <button class="btn" type="submit">Manual resolution required</button>
+        </form>
+      {% else %}
+        <p class="muted" style="margin:0;">
+          This Finance issue is closed.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% else %}
+<section style="margin-top:18px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Read-only auditor view</h2>
+    <p class="muted" style="margin-bottom:0;">
+      Mutation controls are hidden. Auditor access is for evidence,
+      traceability, and drill-down only.
+    </p>
+  </div>
+</section>
+{% endif %}
+
+<section style="margin-top:18px;">
+  <h2>Detection evidence</h2>
+  <div class="card">
+    <pre style="white-space:pre-wrap;">{{ issue.detection | tojson(indent=2) }}</pre>
+  </div>
+</section>
+
+<section style="margin-top:18px;">
+  <h2>Preview evidence</h2>
+  <div class="card">
+    <pre style="white-space:pre-wrap;">{{ issue.preview | tojson(indent=2) }}</pre>
+  </div>
+</section>
+
+<section style="margin-top:18px;">
+  <h2>Resolution evidence</h2>
+  <div class="card">
+    <pre style="white-space:pre-wrap;">{{ issue.resolution | tojson(indent=2) }}</pre>
+  </div>
+</section>
+{% endblock %}

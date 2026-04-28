@@ -96,15 +96,27 @@ def test_raise_integrity_admin_issue_is_deduped_by_request_reason_target(app):
 
         assert second.issue_ulid == first.issue_ulid
 
-        rows = db.session.query(FinanceAdminIssue).all()
+        rows = (
+            db.session.query(FinanceAdminIssue)
+            .filter(
+                FinanceAdminIssue.reason_code
+                == "anomaly_finance_posting_fact_drift"
+            )
+            .filter(FinanceAdminIssue.request_id == request_id)
+            .filter(FinanceAdminIssue.target_ulid == target_ulid)
+            .all()
+        )
         assert len(rows) == 1
         assert rows[0].title == "Updated title"
         assert rows[0].detection_json["finding_count"] == 2
 
         alerts = (
-            db.session.query(AdminAlert)
-            .filter(AdminAlert.source_slice == "finance")
-            .all()
+            db.session.query(AdminAlert).filter(
+                AdminAlert.source_slice == "finance",
+                AdminAlert.reason_code == "anomaly_finance_posting_fact_drift",
+                AdminAlert.request_id == request_id,
+                AdminAlert.target_ulid == target_ulid,
+            ).all()
         )
         assert len(alerts) == 1
         assert alerts[0].title == "Updated title"

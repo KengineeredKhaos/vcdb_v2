@@ -319,6 +319,42 @@ def integrity_review_get(issue_ulid: str) -> FinanceAdminIssueView:
     return _to_view(_get_issue_row(issue_ulid))
 
 
+def list_integrity_admin_issues(
+    *,
+    view: str = "active",
+) -> tuple[FinanceAdminIssueView, ...]:
+    """List Finance-owned Admin issues for Admin/Auditor drill-down.
+
+    The Admin slice owns queue posture. Finance owns this slice-local
+    issue evidence and resolution state. This list is intentionally useful
+    for both Admin Dashboard launch paths and the future read-only Auditor
+    Dashboard.
+    """
+    view = str(view or "active").strip().lower()
+    stmt = select(FinanceAdminIssue)
+
+    if view == "active":
+        stmt = stmt.where(
+            FinanceAdminIssue.issue_status.not_in(
+                sorted(TERMINAL_ISSUE_STATUSES)
+            )
+        )
+    elif view == "closed":
+        stmt = stmt.where(
+            FinanceAdminIssue.issue_status.in_(
+                sorted(TERMINAL_ISSUE_STATUSES)
+            )
+        )
+    elif view != "all":
+        stmt = stmt.where(FinanceAdminIssue.issue_status == view)
+
+    stmt = stmt.order_by(
+        FinanceAdminIssue.updated_at_utc.desc(),
+        FinanceAdminIssue.ulid.desc(),
+    )
+    return tuple(_to_view(row) for row in db.session.execute(stmt).scalars())
+
+
 def start_integrity_review(
     issue_ulid: str,
     *,
@@ -507,6 +543,7 @@ __all__ = [
     "ISSUE_STATUS_FALSE_POSITIVE",
     "ISSUE_STATUS_MANUAL_RESOLUTION_REQUIRED",
     "raise_integrity_admin_issue",
+    "list_integrity_admin_issues",
     "integrity_review_get",
     "start_integrity_review",
     "close_integrity_admin_issue",

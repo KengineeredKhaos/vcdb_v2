@@ -3,6 +3,11 @@ from __future__ import annotations
 
 from .routes import bp
 
+# Register Finance-owned admin/auditor issue routes on the same blueprint.
+# Import is intentionally side-effect-only; routes remain slice-local.
+from . import admin_issue_routes as _admin_issue_routes  # noqa: F401,E402
+
+
 __all__ = ["bp"]
 """
 ======

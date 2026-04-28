@@ -1,0 +1,91 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<section class="hero" style="margin-top: 18px;">
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+    <a class="btn" href="{{ url_for('finance.hello') }}">
+      Back to Finance
+    </a>
+  </div>
+
+  <div class="hero-card">
+    <div class="glow"></div>
+    <h1>Finance issue drill-down</h1>
+    <p class="muted">
+      Finance-owned integrity and repair issues. Admin may operate mutation
+      controls. Auditor users receive read-only evidence views.
+    </p>
+
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.75rem;">
+      <a
+        class="btn"
+        href="{{ url_for('finance.admin_issue_index') }}"
+        {% if current_view == 'active' %}aria-current="page"{% endif %}>
+        Active
+      </a>
+      <a
+        class="btn"
+        href="{{ url_for('finance.admin_issue_index', view='closed') }}"
+        {% if current_view == 'closed' %}aria-current="page"{% endif %}>
+        Closed
+      </a>
+      <a
+        class="btn"
+        href="{{ url_for('finance.admin_issue_index', view='all') }}"
+        {% if current_view == 'all' %}aria-current="page"{% endif %}>
+        All
+      </a>
+    </div>
+  </div>
+</section>
+
+<section style="margin-top: 18px;">
+  {% if issues %}
+    <div style="display:grid; gap:1rem;">
+      {% for issue in issues %}
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
+            <div>
+              <h3 style="margin-top:0; margin-bottom:.35rem;">
+                {{ issue.title }}
+              </h3>
+              <p class="muted" style="margin:.2rem 0;">
+                {{ issue.reason_code }}
+                — status={{ issue.issue_status }}
+                — source={{ issue.source_status }}
+              </p>
+            </div>
+            <div>
+              <span class="kbd">{{ issue.issue_status }}</span>
+            </div>
+          </div>
+
+          <p style="margin-top:.6rem; margin-bottom:.35rem;">
+            {{ issue.summary }}
+          </p>
+          <p class="muted" style="margin-top:.2rem;">
+            findings={{ issue.detection.get("finding_count", 0) }}
+            — opened={{ issue.opened_at_utc }}
+          </p>
+
+          <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.8rem;">
+            <a
+              class="btn"
+              href="{{ url_for('finance.admin_issue_detail', issue_ulid=issue.issue_ulid) }}">
+              Open evidence
+            </a>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="card">
+      <p class="muted" style="margin:0;">
+        No Finance issues in this view.
+      </p>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}
