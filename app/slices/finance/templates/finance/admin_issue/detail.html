@@ -26,45 +26,224 @@
 
 <section class="features" style="margin-top: 14px;">
   <div class="card">
+    <h3 style="margin-top:0;">Current posture</h3>
+    <p><span class="kbd">{{ detail_summary.current_posture }}</span></p>
+    <p class="muted" style="margin-bottom:0;">
+      {{ detail_summary.posture_detail }}
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Recommended next step</h3>
+    <p><span class="kbd">{{ detail_summary.recommended_next_step }}</span></p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Repair available</h3>
+    <p><span class="kbd">{{ detail_summary.repair_available }}</span></p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Quarantine scope</h3>
+    <p><span class="kbd">{{ detail_summary.quarantine_scope }}</span></p>
+  </div>
+</section>
+
+<section class="features" style="margin-top: 14px;">
+  <div class="card">
     <h3 style="margin-top:0;">Findings</h3>
     <p><span class="kbd">{{ issue.detection.get("finding_count", 0) }}</span></p>
   </div>
+
   <div class="card">
     <h3 style="margin-top:0;">Workflow</h3>
     <p><span class="kbd">{{ issue.workflow_key }}</span></p>
   </div>
+
   <div class="card">
     <h3 style="margin-top:0;">Admin alert</h3>
     <p><span class="kbd">{{ issue.admin_alert_ulid or "none" }}</span></p>
   </div>
 </section>
 
+<section style="margin-top:18px;">
+  <h2>Operator note</h2>
+  {% if can_mutate %}
+    <div class="card">
+      <form
+        method="post"
+        action="{{ url_for('finance.admin_issue_oper_note', issue_ulid=issue.issue_ulid) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="oper_note"><strong>Current status / handoff note</strong></label>
+        <textarea
+          id="oper_note"
+          name="oper_note"
+          rows="3"
+          maxlength="255"
+          style="width:100%; margin-top:.5rem;">{{ issue.oper_note or "" }}</textarea>
+        <p class="muted" style="margin:.5rem 0;">
+          Keep this terse. Examples: current status, outside contact, callback
+          number, or next handoff clue. Max 255 characters.
+        </p>
+        <button class="btn" type="submit">Save operator note</button>
+      </form>
+    </div>
+  {% else %}
+    <div class="card">
+      {% if issue.oper_note %}
+        <p style="margin:0;">{{ issue.oper_note }}</p>
+      {% else %}
+        <p class="muted" style="margin:0;">No operator note recorded.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+</section>
+
+<section style="margin-top:18px;">
+  <h2>Finance safety posture</h2>
+
+  {% if quarantines %}
+    <div style="display:grid; gap:1rem;">
+      {% for quarantine in quarantines %}
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
+            <div>
+              <h3 style="margin-top:0; margin-bottom:.35rem;">
+                {% if quarantine.status == "active" %}
+                  Active quarantine
+                {% else %}
+                  Quarantine {{ quarantine.status }}
+                {% endif %}
+              </h3>
+              <p class="muted" style="margin:.2rem 0;">
+                scope={{ quarantine.scope_type }}
+                {% if quarantine.scope_label %}
+                  — {{ quarantine.scope_label }}
+                {% endif %}
+              </p>
+            </div>
+            <div>
+              <span class="kbd">{{ quarantine.status }}</span>
+            </div>
+          </div>
+
+          <p style="margin-top:.6rem;">
+            {{ quarantine.message }}
+          </p>
+
+          <p class="muted" style="margin-bottom:0;">
+            posture={{ quarantine.posture }}
+            — opened={{ quarantine.opened_at_utc }}
+            {% if quarantine.closed_at_utc %}
+              — closed={{ quarantine.closed_at_utc }}
+            {% endif %}
+          </p>
+
+          {% if quarantine.notes %}
+            <details style="margin-top:.75rem;">
+              <summary>Quarantine notes</summary>
+              <pre style="white-space:pre-wrap;">{{ quarantine.notes | tojson(indent=2) }}</pre>
+            </details>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="card">
+      <p class="muted" style="margin:0;">
+        No active or historical Finance quarantine is attached to this issue.
+      </p>
+    </div>
+  {% endif %}
+</section>
+
+{% if issue.reason_code == "failure_finance_journal_integrity" %}
+<section style="margin-top:18px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Journal integrity guidance</h2>
+    <p>
+      Finance found a Journal integrity failure.
+    </p>
+    <p>
+      <strong>Current safety posture:</strong>
+      Staff-facing financial projection is blocked for the quarantined scope.
+    </p>
+    <p>
+      <strong>What Finance can do automatically:</strong>
+      Detect the issue, keep the scope quarantined, and document the review path.
+    </p>
+    <p>
+      <strong>What Finance cannot do automatically:</strong>
+      Rewrite Journal truth. Journal corrections must come from external
+      accounting review or a future reversal/adjustment workflow.
+    </p>
+    <p class="muted" style="margin-bottom:0;">
+      Recommended operator path:
+      confirm the block, classify for manual review or reversal/adjustment,
+      and close only after a clean rescan.
+    </p>
+  </div>
+</section>
+{% endif %}
+
 {% if can_mutate %}
 <section style="margin-top:18px;">
   <h2>Admin controls</h2>
-  <div class="card">
-    <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
-      {% if issue.issue_status not in ["resolved", "false_positive", "manual_resolution_required"] %}
-        <form
-          method="post"
-          action="{{ url_for('finance.admin_issue_start_review', issue_ulid=issue.issue_ulid) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn" type="submit">Start review</button>
-        </form>
 
-        <form
-          method="post"
-          action="{{ url_for('finance.admin_issue_close', issue_ulid=issue.issue_ulid) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="issue_status" value="resolved">
-          <input
-            type="hidden"
-            name="close_reason"
-            value="closed_from_finance_issue_detail">
-          <button class="btn" type="submit">Close as resolved</button>
-        </form>
+  {% if issue.issue_status not in ["resolved", "false_positive", "manual_resolution_required"] %}
+    <div style="display:grid; gap:1rem;">
+      <div class="card">
+        <h3 style="margin-top:0;">Issue lifecycle</h3>
+        <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+          <form
+            method="post"
+            action="{{ url_for('finance.admin_issue_start_review', issue_ulid=issue.issue_ulid) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">Start review</button>
+          </form>
 
-        {% if issue.reason_code == "anomaly_finance_balance_projection_drift" %}
+          <form
+            method="post"
+            action="{{ url_for('finance.admin_issue_close', issue_ulid=issue.issue_ulid) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="issue_status" value="resolved">
+            <input
+              type="hidden"
+              name="close_reason"
+              value="closed_from_finance_issue_detail">
+            <button class="btn" type="submit">Close as resolved</button>
+          </form>
+
+          <form
+            method="post"
+            action="{{ url_for('finance.admin_issue_close', issue_ulid=issue.issue_ulid) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="issue_status" value="false_positive">
+            <input type="hidden" name="close_reason" value="false_positive">
+            <button class="btn" type="submit">Close false positive</button>
+          </form>
+
+          <form
+            method="post"
+            action="{{ url_for('finance.admin_issue_close', issue_ulid=issue.issue_ulid) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input
+              type="hidden"
+              name="issue_status"
+              value="manual_resolution_required">
+            <input
+              type="hidden"
+              name="close_reason"
+              value="manual_resolution_required">
+            <button class="btn" type="submit">Manual resolution required</button>
+          </form>
+        </div>
+      </div>
+
+      {% if issue.reason_code == "anomaly_finance_balance_projection_drift" %}
+      <div class="card">
+        <h3 style="margin-top:0;">Balance projection repair tools</h3>
+        <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
           <form
             method="post"
             action="{{ url_for('finance.admin_issue_balance_preview', issue_ulid=issue.issue_ulid) }}">
@@ -84,38 +263,113 @@
               </button>
             </form>
           {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if issue.reason_code == "anomaly_finance_posting_fact_drift" %}
+      <div class="card">
+        <h3 style="margin-top:0;">PostingFact repair tools</h3>
+
+        {% if issue.preview.get("kind") == "posting_fact_drift_repair_preview" %}
+          <p class="muted">
+            repairable={{ issue.preview.get("repairable_count", 0) }}
+            — manual_review={{ issue.preview.get("manual_review_count", 0) }}
+          </p>
         {% endif %}
 
-        <form
-          method="post"
-          action="{{ url_for('finance.admin_issue_close', issue_ulid=issue.issue_ulid) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="issue_status" value="false_positive">
-          <input type="hidden" name="close_reason" value="false_positive">
-          <button class="btn" type="submit">Close false positive</button>
-        </form>
+        <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+          <form
+            method="post"
+            action="{{ url_for('finance.admin_issue_posting_fact_preview', issue_ulid=issue.issue_ulid) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">
+              Preview PostingFact repair
+            </button>
+          </form>
 
-        <form
-          method="post"
-          action="{{ url_for('finance.admin_issue_close', issue_ulid=issue.issue_ulid) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input
-            type="hidden"
-            name="issue_status"
-            value="manual_resolution_required">
-          <input
-            type="hidden"
-            name="close_reason"
-            value="manual_resolution_required">
-          <button class="btn" type="submit">Manual resolution required</button>
-        </form>
-      {% else %}
-        <p class="muted" style="margin:0;">
-          This Finance issue is closed.
-        </p>
+          {% if issue.preview.get("kind") == "posting_fact_drift_repair_preview"
+                and issue.preview.get("repairable_count", 0) > 0 %}
+            <form
+              method="post"
+              action="{{ url_for('finance.admin_issue_posting_fact_repair', issue_ulid=issue.issue_ulid) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn" type="submit">
+                Commit PostingFact repair
+              </button>
+            </form>
+          {% endif %}
+        </div>
+
+        {% if issue.preview.get("kind") == "posting_fact_drift_repair_preview"
+              and issue.preview.get("repairable_count", 0) == 0 %}
+          <p class="muted" style="margin-bottom:0;">
+            No deterministic PostingFact repair is available. Manual
+            review remains required.
+          </p>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if issue.reason_code == "failure_finance_journal_integrity" %}
+      <div class="card">
+        <h3 style="margin-top:0;">Journal integrity workflow</h3>
+        <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+          <form
+            method="post"
+            action="{{ url_for('finance.admin_issue_journal_confirm_blocked', issue_ulid=issue.issue_ulid) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">
+              Confirm still blocked
+            </button>
+          </form>
+
+          <form
+            method="post"
+            action="{{ url_for('finance.admin_issue_journal_manual_review', issue_ulid=issue.issue_ulid) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">
+              Mark manual accounting review required
+            </button>
+          </form>
+
+          <form
+            method="post"
+            action="{{ url_for('finance.admin_issue_journal_reversal_required', issue_ulid=issue.issue_ulid) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">
+              Mark reversal/adjustment required
+            </button>
+          </form>
+
+          <form
+            method="post"
+            action="{{ url_for('finance.admin_issue_journal_false_positive', issue_ulid=issue.issue_ulid) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">
+              Mark false positive after clean rescan
+            </button>
+          </form>
+
+          <form
+            method="post"
+            action="{{ url_for('finance.admin_issue_journal_close_clean', issue_ulid=issue.issue_ulid) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn" type="submit">
+              Close after clean rescan
+            </button>
+          </form>
+        </div>
+      </div>
       {% endif %}
     </div>
-  </div>
+  {% else %}
+    <div class="card">
+      <p class="muted" style="margin:0;">
+        This Finance issue is closed.
+      </p>
+    </div>
+  {% endif %}
 </section>
 {% else %}
 <section style="margin-top:18px;">

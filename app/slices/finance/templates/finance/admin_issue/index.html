@@ -5,8 +5,8 @@
 {% block content %}
 <section class="hero" style="margin-top: 18px;">
   <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
-    <a class="btn" href="{{ url_for('finance.hello') }}">
-      Back to Finance
+    <a class="btn" href="{{ back_dashboard_href }}">
+      {{ back_dashboard_label }}
     </a>
   </div>
 
@@ -38,13 +38,55 @@
         All
       </a>
     </div>
+
+    {% if can_mutate %}
+      <div style="margin-top:1rem;">
+        <form
+          method="post"
+          action="{{ url_for('finance.admin_issue_run_sweep') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn" type="submit">
+            Run Finance integrity sweep
+          </button>
+        </form>
+        <p class="muted" style="margin-top:.5rem;">
+          Runs Finance self-checks and opens or refreshes scoped issues.
+        </p>
+      </div>
+    {% endif %}
   </div>
 </section>
 
 <section style="margin-top: 18px;">
-  {% if issues %}
+  <div class="card">
+    <h2 style="margin-top:0;">Latest sweep</h2>
+    {% if latest_sweep %}
+      <p class="muted" style="margin:.2rem 0;">
+        ran={{ latest_sweep.ran_at_utc }}
+        {% if latest_sweep.actor_ulid %}
+          — actor={{ latest_sweep.actor_ulid }}
+        {% endif %}
+      </p>
+      <p style="margin:.4rem 0 0 0;">
+        <strong>{{ latest_sweep.scans_run }}</strong> scans
+        — <strong>{{ latest_sweep.dirty_count }}</strong> dirty
+        — <strong>{{ latest_sweep.issue_count }}</strong> issues
+        — <strong>{{ latest_sweep.quarantine_count }}</strong> quarantines
+      </p>
+    {% else %}
+      <p class="muted" style="margin:0;">
+        No Finance integrity sweep has been recorded yet.
+      </p>
+    {% endif %}
+  </div>
+</section>
+
+<section style="margin-top: 18px;">
+  {% if issue_rows %}
     <div style="display:grid; gap:1rem;">
-      {% for issue in issues %}
+      {% for row in issue_rows %}
+        {% set issue = row.issue %}
+        {% set summary = row.summary %}
         <div class="card">
           <div style="display:flex; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
             <div>
@@ -65,10 +107,34 @@
           <p style="margin-top:.6rem; margin-bottom:.35rem;">
             {{ issue.summary }}
           </p>
-          <p class="muted" style="margin-top:.2rem;">
+
+          <p class="muted" style="margin:.2rem 0;">
             findings={{ issue.detection.get("finding_count", 0) }}
             — opened={{ issue.opened_at_utc }}
           </p>
+
+          <div style="display:grid; gap:.35rem; margin-top:.75rem;">
+            <p class="muted" style="margin:0;">
+              <strong>Posture:</strong> {{ summary.current_posture }}
+            </p>
+            <p class="muted" style="margin:0;">
+              <strong>Next:</strong> {{ summary.recommended_next_step }}
+            </p>
+            <p class="muted" style="margin:0;">
+              <strong>Repair:</strong> {{ summary.repair_available }}
+            </p>
+            <p class="muted" style="margin:0;">
+              <strong>Scope:</strong> {{ summary.quarantine_scope }}
+            </p>
+          </div>
+
+          {% if issue.oper_note %}
+            <div class="card" style="padding:.75rem; margin-top:.8rem;">
+              <p class="muted" style="margin:.1rem 0;">
+                <strong>Operator note:</strong> {{ issue.oper_note }}
+              </p>
+            </div>
+          {% endif %}
 
           <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.8rem;">
             <a

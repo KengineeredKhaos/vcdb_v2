@@ -996,3 +996,139 @@ Until then, it is **UNTERMINATED**.
 
 Existing Admin Inbox tests are workflow tests, not just route smoke tests.  
 They exist to prove queue posture, owning-slice launch, and non-mutation of foreign slice truth. Added slice functionality should be exercised  in the test regime as well before publishing.
+
+
+
+---
+
+## Finance addendum — Admin intervention posture
+
+Finance confirms the Admin Intervention pattern, but with one additional caution:
+Finance is a behind-the-curtain integrity slice whose failures may affect whether
+staff-facing money posture can be trusted at all.
+
+### Ownership rule in Finance
+
+Admin still owns:
+
+- visibility
+- queue posture
+- launch
+- operator triage
+
+Finance still owns:
+
+- detection
+- integrity truth
+- quarantine truth
+- repair logic
+- manual-resolution classification
+- terminal closure
+- audit / ledger consequences
+
+Admin must not become a second accounting engine, a second posting surface, or a
+shadow repair layer for Finance.
+
+### Finance issue posture canon
+
+Finance Admin issue surfaces should answer four plain questions before showing
+raw evidence:
+
+- What is the current posture?
+- What is the recommended next step?
+- Is a deterministic repair available?
+- What scope is affected?
+
+These answers should be understandable without color and without requiring the
+operator to decode JSON evidence first.
+
+### Quarantine canon in Finance
+
+Finance uses quarantine as the active safety fence and FinanceAdminIssue as the
+case/evidence file.
+
+Those are separate truths:
+
+- `FinanceAdminIssue` = the case, evidence, review state, and operator path
+- `FinanceQuarantine` = the active safety block preventing unsafe downstream use
+
+Do not collapse quarantine truth into the issue row, and do not treat the issue
+row alone as the active safety fence.
+
+### Scope canon in Finance
+
+Finance must narrow quarantine scope whenever it can prove the narrower blast
+radius honestly.
+
+Preferred posture:
+
+- funding demand scope when provable
+- project scope when provable
+- journal / semantic posting / ops-float scope when provable
+- global scope only when Finance cannot honestly prove narrower safety
+
+Global quarantine should be rare.
+
+But when an active global Finance quarantine exists, it is absolute for the
+staff Go/NoGo seam.
+
+If any active global Finance quarantine exists, Finance must return:
+
+- `no_go`
+- `escalate_to_admin = true`
+- a short plain message directing staff to contact Admin
+
+There is no staff override path for an active global Finance quarantine.
+
+### Repair canon in Finance
+
+Finance may auto-repair only truths that are rebuildable or deterministically
+derivable from more authoritative Finance truth.
+
+Examples of acceptable repair classes:
+
+- projection rebuild from authoritative journal truth
+- semantic posting fact correction from clean journal truth
+
+Finance must not silently rewrite authoritative journal truth in the name of
+Admin convenience.
+
+If journal truth is wrong, the Finance/Admin surface should classify, fence,
+document, and route the operator toward the appropriate manual accounting or
+future reversal/adjustment path rather than pretending to auto-fix it.
+
+### Operator note canon in Finance
+
+Finance issue notes should remain terse and operational.
+
+Use a short operator note only for current-status truth such as:
+
+- who was contacted
+- callback / handoff clue
+- expected next touch
+- current blocked / waiting posture
+
+Do not turn issue notes into narrative history blobs.
+
+### Staff-facing seam canon
+
+Staff does not need Finance internals.
+
+For staff-facing demand processing, Finance should expose only a trusted
+Go/NoGo-style seam:
+
+- safe to proceed now, or
+- blocked; contact Admin
+
+Admin/Auditor drill-down remains rich.
+Staff-facing Finance truth remains blunt, minimal, and trustworthy.
+
+### Reuse warning for future slices
+
+Finance demonstrates that some slices need both:
+
+- deterministic self-healing for derived truth, and
+- containment / escalation workflows for authoritative truth
+
+Future behind-the-curtain slices, especially Ledger, should copy the ownership
+pattern and safety posture, not merely the screen layout.

@@ -482,7 +482,7 @@ def test_posting_fact_drift_scan_detects_amount_and_key_drift(app):
         )
         fact = _fact_for_journal(journal_ulid)
         fact.amount_cents = 3101
-        fact.idempotency_key = "wrong-key"
+        fact.idempotency_key = f"wrong-key-{new_ulid()}"
         db.session.flush()
 
         result = posting_fact_drift_scan(

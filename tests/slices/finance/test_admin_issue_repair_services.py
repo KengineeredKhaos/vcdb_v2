@@ -9,21 +9,38 @@ from app.slices.admin.models import AdminAlert
 from app.slices.finance.admin_issue_repair_services import (
     balance_projection_rebuild_preview,
     commit_balance_projection_rebuild,
+    commit_posting_fact_drift_repair,
+    posting_fact_drift_repair_preview,
 )
 from app.slices.finance.admin_issue_services import (
     raise_balance_projection_drift_admin_issue,
     raise_integrity_admin_issue,
+    raise_posting_fact_drift_admin_issue,
 )
-from app.slices.finance.models import BalanceMonthly, FinanceAdminIssue
+from app.slices.finance.models import (
+    BalanceMonthly,
+    FinanceAdminIssue,
+    FinancePostingFact,
+    FinanceQuarantine,
+    JournalLine,
+)
+from app.slices.finance.quarantine_services import (
+    POSTURE_PROJECTION_BLOCKED,
+    SCOPE_GLOBAL,
+    STATUS_ACTIVE,
+    open_or_refresh_quarantine,
+)
 from app.slices.finance.services_integrity import (
     BALANCE_PROJECTION_DRIFT_REASON,
     balance_projection_drift_scan,
+    posting_fact_drift_scan,
 )
 from app.slices.finance.services_journal import (
     ensure_default_accounts,
     ensure_fund,
     post_journal,
 )
+from app.slices.finance.services_semantic_posting import post_income
 
 
 def _seed_refs() -> None:
@@ -429,3 +446,396 @@ def test_commit_balance_projection_rebuild_rejects_stale_preview(app):
             assert False, "expected ValueError"
         except ValueError as exc:
             assert "preview is stale" in str(exc)
+
+
+def _post_income_for_period(
+    *,
+    period_key: str,
+    amount_cents: int = 2500,
+) -> str:
+    out = post_income(
+        {
+            "amount_cents": amount_cents,
+            "happened_at_utc": _iso_for_period(period_key),
+            "fund_code": "unrestricted",
+            "fund_label": "Unrestricted Operating Fund",
+            "fund_restriction_type": "unrestricted",
+            "income_kind": "donation",
+            "receipt_method": "bank",
+            "source": "income",
+            "source_ref_ulid": new_ulid(),
+            "funding_demand_ulid": new_ulid(),
+            "request_id": new_ulid(),
+        },
+        dry_run=False,
+    )
+    return str(out["id"])
+
+
+def _fact_for_journal(journal_ulid: str) -> FinancePostingFact:
+    return (
+        db.session.query(FinancePostingFact)
+        .filter(FinancePostingFact.journal_ulid == journal_ulid)
+        .one()
+    )
+
+
+def _posting_fact_issue_for_period(period_key: str) -> str:
+    scan = posting_fact_drift_scan(
+        period_from=period_key,
+        period_to=period_key,
+    )
+    assert scan.ok is False
+
+    view = raise_posting_fact_drift_admin_issue(
+        scan_result=scan,
+        request_id=new_ulid(),
+        actor_ulid=None,
+    )
+    db.session.flush()
+    return view.issue_ulid
+
+
+def test_posting_fact_repair_preview_marks_existing_fact_repairable(app):
+    with app.app_context():
+        _seed_refs()
+        period_key = "2100-10"
+        journal_ulid = _post_income_for_period(
+            period_key=period_key,
+            amount_cents=3100,
+        )
+
+        fact = _fact_for_journal(journal_ulid)
+        expected_key = fact.idempotency_key
+        fact.amount_cents = 3101
+        wrong_key = f"wrong-key-{new_ulid()}"
+        fact.idempotency_key = wrong_key
+        db.session.flush()
+
+        issue_ulid = _posting_fact_issue_for_period(period_key)
+
+        preview = posting_fact_drift_repair_preview(
+            issue_ulid,
+            actor_ulid=new_ulid(),
+        )
+        db.session.flush()
+
+        assert preview.issue_ulid == issue_ulid
+        assert preview.repairable_count == 1
+        assert preview.manual_review_count == 0
+        assert "amount_cents" in preview.fields_changed
+        assert "idempotency_key" in preview.fields_changed
+
+        repair = preview.preview_json["repairable"][0]
+        assert repair["fact_ulid"] == fact.ulid
+        assert repair["before"]["amount_cents"] == 3101
+        assert repair["after"]["amount_cents"] == 3100
+        assert repair["before"]["idempotency_key"] == wrong_key
+        assert repair["after"]["idempotency_key"] == expected_key
+
+        issue = db.session.get(FinanceAdminIssue, issue_ulid)
+        assert issue is not None
+        assert issue.preview_json["kind"] == (
+            "posting_fact_drift_repair_preview"
+        )
+
+        # Preview must not mutate the fact row.
+        db.session.refresh(fact)
+        assert fact.amount_cents == 3101
+        assert fact.idempotency_key == wrong_key
+
+
+def test_posting_fact_repair_preview_rejects_wrong_issue_type(app):
+    with app.app_context():
+        _seed_refs()
+        view = raise_integrity_admin_issue(
+            reason_code="failure_finance_journal_integrity",
+            request_id=new_ulid(),
+            title="Wrong issue",
+            summary="Not a posting fact issue.",
+            detection={"finding_count": 1},
+            workflow_key="finance.journal_integrity",
+            target_ulid=None,
+            actor_ulid=None,
+        )
+        db.session.flush()
+
+        try:
+            posting_fact_drift_repair_preview(
+                view.issue_ulid,
+                actor_ulid=None,
+            )
+            assert False, "expected ValueError"
+        except ValueError as exc:
+            assert "PostingFact repair preview requires" in str(exc)
+
+
+def test_posting_fact_repair_preview_classifies_missing_fact_manual(app):
+    with app.app_context():
+        _seed_refs()
+        period_key = "2100-11"
+        funding_demand_ulid = new_ulid()
+
+        post_journal(
+            source="income",
+            external_ref_ulid=new_ulid(),
+            happened_at_utc=_iso_for_period(period_key),
+            currency="USD",
+            memo="semantic journal missing fact",
+            created_by_actor=None,
+            request_id=new_ulid(),
+            lines=[
+                {
+                    "account_code": "1000",
+                    "fund_code": "unrestricted",
+                    "funding_demand_ulid": funding_demand_ulid,
+                    "amount_cents": 1800,
+                },
+                {
+                    "account_code": "4000",
+                    "fund_code": "unrestricted",
+                    "funding_demand_ulid": funding_demand_ulid,
+                    "amount_cents": -1800,
+                },
+            ],
+        )
+
+        issue_ulid = _posting_fact_issue_for_period(period_key)
+        preview = posting_fact_drift_repair_preview(
+            issue_ulid,
+            actor_ulid=None,
+        )
+
+        assert preview.repairable_count == 0
+        assert preview.manual_review_count == 1
+        assert preview.preview_json["manual_review"][0]["code"] == (
+            "finance_posting_fact_missing_for_semantic_journal"
+        )
+
+
+def test_posting_fact_repair_preview_refuses_dirty_journal_truth(app):
+    with app.app_context():
+        _seed_refs()
+        period_key = "2100-12"
+        journal_ulid = _post_income_for_period(
+            period_key=period_key,
+            amount_cents=2200,
+        )
+        fact = _fact_for_journal(journal_ulid)
+        fact.amount_cents = 2201
+
+        line = (
+            db.session.query(JournalLine)
+            .filter(JournalLine.journal_ulid == journal_ulid)
+            .filter(JournalLine.amount_cents < 0)
+            .one()
+        )
+        line.amount_cents = -2100
+        db.session.flush()
+
+        issue_ulid = _posting_fact_issue_for_period(period_key)
+        preview = posting_fact_drift_repair_preview(
+            issue_ulid,
+            actor_ulid=None,
+        )
+
+        assert preview.repairable_count == 0
+        assert preview.manual_review_count == 1
+        manual = preview.preview_json["manual_review"][0]
+        assert manual["code"] == "finance_posting_fact_journal_not_clean"
+        assert manual["reason"] == "journal_integrity_blocks_fact_repair"
+
+
+def test_commit_posting_fact_repair_updates_fact_closes_and_releases(app):
+    with app.app_context():
+        _seed_refs()
+        period_key = "2101-01"
+        journal_ulid = _post_income_for_period(
+            period_key=period_key,
+            amount_cents=3100,
+        )
+
+        fact = _fact_for_journal(journal_ulid)
+        expected_key = fact.idempotency_key
+        fact.idempotency_key = f"wrong-key-{new_ulid()}"
+        fact.amount_cents = 3101
+        db.session.flush()
+
+        issue_ulid = _posting_fact_issue_for_period(period_key)
+        open_or_refresh_quarantine(
+            source_issue_ulid=issue_ulid,
+            scope_type=SCOPE_GLOBAL,
+            scope_ulid=None,
+            scope_label="Finance projection",
+            posture=POSTURE_PROJECTION_BLOCKED,
+            message="Posting fact drift blocks projection.",
+            actor_ulid=None,
+        )
+        posting_fact_drift_repair_preview(
+            issue_ulid,
+            actor_ulid=None,
+        )
+
+        result = commit_posting_fact_drift_repair(
+            issue_ulid,
+            actor_ulid=new_ulid(),
+        )
+        db.session.flush()
+
+        assert result.rescan_ok is True
+        assert result.issue_closed is True
+        assert result.facts_updated == 1
+        assert result.manual_review_count == 0
+        assert result.quarantines_released == 1
+
+        db.session.refresh(fact)
+        assert fact.amount_cents == 3100
+        assert fact.idempotency_key == expected_key
+
+        issue = db.session.get(FinanceAdminIssue, issue_ulid)
+        assert issue is not None
+        assert issue.issue_status == "resolved"
+        assert issue.source_status == "closed"
+        assert issue.close_reason == "posting_fact_repaired"
+        assert issue.resolution_json["rescan_ok"] is True
+
+        alert = _alert_for_issue(issue)
+        assert alert.admin_status == "source_closed"
+        assert alert.close_reason == "posting_fact_repaired"
+
+
+def test_commit_posting_fact_repair_requires_preview(app):
+    with app.app_context():
+        _seed_refs()
+        period_key = "2101-02"
+        journal_ulid = _post_income_for_period(
+            period_key=period_key,
+            amount_cents=1900,
+        )
+        fact = _fact_for_journal(journal_ulid)
+        fact.amount_cents = 1901
+        db.session.flush()
+
+        issue_ulid = _posting_fact_issue_for_period(period_key)
+
+        try:
+            commit_posting_fact_drift_repair(
+                issue_ulid,
+                actor_ulid=new_ulid(),
+            )
+            assert False, "expected ValueError"
+        except ValueError as exc:
+            assert "requires a current preview" in str(exc)
+
+
+def test_commit_posting_fact_repair_rejects_stale_preview(app):
+    with app.app_context():
+        _seed_refs()
+        period_key = "2101-03"
+        journal_ulid = _post_income_for_period(
+            period_key=period_key,
+            amount_cents=2000,
+        )
+        fact = _fact_for_journal(journal_ulid)
+        fact.amount_cents = 2001
+        db.session.flush()
+
+        issue_ulid = _posting_fact_issue_for_period(period_key)
+        posting_fact_drift_repair_preview(
+            issue_ulid,
+            actor_ulid=None,
+        )
+
+        fact.amount_cents = 2002
+        db.session.flush()
+
+        try:
+            commit_posting_fact_drift_repair(
+                issue_ulid,
+                actor_ulid=new_ulid(),
+            )
+            assert False, "expected ValueError"
+        except ValueError as exc:
+            assert "preview is stale" in str(exc)
+
+
+def test_commit_posting_fact_repair_leaves_open_when_manual_remains(app):
+    with app.app_context():
+        _seed_refs()
+        period_key = "2101-04"
+
+        journal_ulid = _post_income_for_period(
+            period_key=period_key,
+            amount_cents=2600,
+        )
+        fact = _fact_for_journal(journal_ulid)
+        fact.amount_cents = 2601
+
+        missing_fact_fd = new_ulid()
+        post_journal(
+            source="income",
+            external_ref_ulid=new_ulid(),
+            happened_at_utc=_iso_for_period(period_key),
+            currency="USD",
+            memo="semantic journal missing fact in same period",
+            created_by_actor=None,
+            request_id=new_ulid(),
+            lines=[
+                {
+                    "account_code": "1000",
+                    "fund_code": "unrestricted",
+                    "funding_demand_ulid": missing_fact_fd,
+                    "amount_cents": 1800,
+                },
+                {
+                    "account_code": "4000",
+                    "fund_code": "unrestricted",
+                    "funding_demand_ulid": missing_fact_fd,
+                    "amount_cents": -1800,
+                },
+            ],
+        )
+        db.session.flush()
+
+        issue_ulid = _posting_fact_issue_for_period(period_key)
+        quarantine = open_or_refresh_quarantine(
+            source_issue_ulid=issue_ulid,
+            scope_type=SCOPE_GLOBAL,
+            scope_ulid=None,
+            scope_label="Finance projection",
+            posture=POSTURE_PROJECTION_BLOCKED,
+            message="Posting fact drift blocks projection.",
+            actor_ulid=None,
+        )
+        preview = posting_fact_drift_repair_preview(
+            issue_ulid,
+            actor_ulid=None,
+        )
+        assert preview.repairable_count == 1
+        assert preview.manual_review_count == 1
+
+        result = commit_posting_fact_drift_repair(
+            issue_ulid,
+            actor_ulid=new_ulid(),
+        )
+        db.session.flush()
+
+        assert result.facts_updated == 1
+        assert result.rescan_ok is False
+        assert result.issue_closed is False
+        assert result.manual_review_count == 1
+        assert result.quarantines_released == 0
+
+        db.session.refresh(fact)
+        assert fact.amount_cents == 2600
+
+        issue = db.session.get(FinanceAdminIssue, issue_ulid)
+        assert issue is not None
+        assert issue.issue_status == "in_review"
+        assert issue.source_status == "open"
+        assert issue.resolution_json["rescan_ok"] is False
+        assert issue.resolution_json["rescan_findings"]
+
+        row = db.session.get(FinanceQuarantine, quarantine.quarantine_ulid)
+        assert row is not None
+        assert row.status == STATUS_ACTIVE

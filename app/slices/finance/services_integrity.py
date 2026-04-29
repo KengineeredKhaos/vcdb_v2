@@ -173,6 +173,14 @@ class OpsFloatSanityScanResult:
         }
 
 
+@dataclass(frozen=True)
+class FinanceIssueScope:
+    scope_type: str
+    scope_ulid: str | None
+    scope_label: str
+    notes: dict[str, Any] = field(default_factory=dict)
+
+
 def _finding(
     *,
     code: str,
@@ -221,6 +229,313 @@ def _orphan_lines() -> list[JournalLine]:
         .scalars()
         .all()
     )
+
+
+def _scope(
+    scope_type: str,
+    scope_ulid: str | None,
+    scope_label: str,
+    **notes: Any,
+) -> FinanceIssueScope:
+    return FinanceIssueScope(
+        scope_type=scope_type,
+        scope_ulid=scope_ulid,
+        scope_label=scope_label,
+        notes=dict(notes or {}),
+    )
+
+
+def _single_nonblank(values) -> str | None:
+    have = sorted({str(v).strip() for v in values if str(v or "").strip()})
+    if len(have) == 1:
+        return have[0]
+    return None
+
+
+def _journal_ids_from_findings(
+    findings: tuple[FinanceIntegrityFinding, ...],
+) -> set[str]:
+    return {
+        str(finding.journal_ulid).strip()
+        for finding in findings
+        if str(finding.journal_ulid or "").strip()
+    }
+
+
+def _journals_by_ulid(journal_ulids: set[str]) -> dict[str, Journal]:
+    if not journal_ulids:
+        return {}
+    rows = (
+        db.session.execute(
+            select(Journal).where(Journal.ulid.in_(sorted(journal_ulids)))
+        )
+        .scalars()
+        .all()
+    )
+    return {row.ulid: row for row in rows}
+
+
+def _period_keys_from_findings(
+    findings: tuple[FinanceIntegrityFinding, ...],
+) -> tuple[str, ...]:
+    periods = sorted(
+        {
+            str((finding.context or {}).get("period_key") or "").strip()
+            for finding in findings
+            if str((finding.context or {}).get("period_key") or "").strip()
+        }
+    )
+    return tuple(periods)
+
+
+def infer_journal_integrity_scope(
+    scan_result: JournalIntegrityScanResult,
+) -> FinanceIssueScope:
+    """Infer narrowest safe Journal integrity scope.
+
+    Preference:
+      funding_demand → project → journal → global
+
+    Rationale:
+      Journal truth usually affects the operator's confidence in a funding
+      stream more than one isolated row. Use journal-local only when Finance
+      cannot prove a cleaner funding/project scope.
+    """
+    journal_ids = _journal_ids_from_findings(scan_result.findings)
+    journals = _journals_by_ulid(journal_ids)
+
+    funding_demand_ulid = _single_nonblank(
+        row.funding_demand_ulid for row in journals.values()
+    )
+    if funding_demand_ulid:
+        return _scope(
+            "funding_demand",
+            funding_demand_ulid,
+            f"Funding Demand {funding_demand_ulid}",
+            journal_count=len(journal_ids),
+        )
+
+    project_ulid = _single_nonblank(
+        row.project_ulid for row in journals.values()
+    )
+    if project_ulid:
+        return _scope(
+            "project",
+            project_ulid,
+            f"Project {project_ulid}",
+            journal_count=len(journal_ids),
+        )
+
+    if len(journal_ids) == 1:
+        journal_ulid = next(iter(journal_ids))
+        return _scope(
+            "journal",
+            journal_ulid,
+            f"Journal {journal_ulid}",
+        )
+
+    return _scope("global", None, "Finance projection")
+
+
+def infer_balance_projection_scope(
+    scan_result: BalanceProjectionDriftScanResult,
+) -> FinanceIssueScope:
+    """Infer narrowest safe BalanceMonthly drift scope.
+
+    Current BalanceMonthly rows do not carry funding_demand_ulid, so the best
+    narrow scope we can reliably prove here is usually project. If not
+    project-scoped, remain global but keep the period in the label/notes when
+    it is unique so operators still get a useful clue.
+    """
+    project_ulid = _single_nonblank(
+        (finding.context or {}).get("project_ulid")
+        for finding in scan_result.findings
+    )
+    period_key = _single_nonblank(
+        _period_keys_from_findings(scan_result.findings)
+    )
+
+    if project_ulid:
+        return _scope(
+            "project",
+            project_ulid,
+            f"Project {project_ulid}",
+            period_key=period_key,
+        )
+
+    if period_key:
+        return _scope(
+            "global",
+            None,
+            f"Finance projection — period {period_key}",
+            period_key=period_key,
+        )
+
+    return _scope("global", None, "Finance projection")
+
+
+def infer_posting_fact_scope(
+    scan_result: PostingFactDriftScanResult,
+) -> FinanceIssueScope:
+    """Infer narrowest safe FinancePostingFact drift scope.
+
+    Preference:
+      funding_demand → project → journal → global
+    """
+    journal_ids = _journal_ids_from_findings(scan_result.findings)
+    journals = _journals_by_ulid(journal_ids)
+
+    funding_demand_ulid = _single_nonblank(
+        row.funding_demand_ulid for row in journals.values()
+    )
+    if funding_demand_ulid:
+        return _scope(
+            "funding_demand",
+            funding_demand_ulid,
+            f"Funding Demand {funding_demand_ulid}",
+            journal_count=len(journal_ids),
+        )
+
+    project_ulid = _single_nonblank(
+        row.project_ulid for row in journals.values()
+    )
+    if project_ulid:
+        return _scope(
+            "project",
+            project_ulid,
+            f"Project {project_ulid}",
+            journal_count=len(journal_ids),
+        )
+
+    if len(journal_ids) == 1:
+        journal_ulid = next(iter(journal_ids))
+        return _scope(
+            "journal",
+            journal_ulid,
+            f"Journal {journal_ulid}",
+        )
+
+    return _scope("global", None, "Finance semantic posting")
+
+
+def infer_control_state_scope(
+    scan_result: ControlStateDriftScanResult,
+) -> FinanceIssueScope:
+    reserve_ids = sorted(
+        {
+            str((finding.context or {}).get("reserve_ulid") or "").strip()
+            for finding in scan_result.findings
+            if str((finding.context or {}).get("reserve_ulid") or "").strip()
+        }
+    )
+    enc_ids = sorted(
+        {
+            str((finding.context or {}).get("encumbrance_ulid") or "").strip()
+            for finding in scan_result.findings
+            if str(
+                (finding.context or {}).get("encumbrance_ulid") or ""
+            ).strip()
+        }
+    )
+
+    reserves = (
+        db.session.execute(
+            select(Reserve).where(Reserve.ulid.in_(reserve_ids))
+        )
+        .scalars()
+        .all()
+        if reserve_ids
+        else []
+    )
+    encumbrances = (
+        db.session.execute(
+            select(Encumbrance).where(Encumbrance.ulid.in_(enc_ids))
+        )
+        .scalars()
+        .all()
+        if enc_ids
+        else []
+    )
+
+    funding_demand_ulid = _single_nonblank(
+        [row.funding_demand_ulid for row in reserves]
+        + [row.funding_demand_ulid for row in encumbrances]
+    )
+    if funding_demand_ulid:
+        return _scope(
+            "funding_demand",
+            funding_demand_ulid,
+            f"Funding Demand {funding_demand_ulid}",
+        )
+
+    project_ulid = _single_nonblank(
+        [row.project_ulid for row in reserves]
+        + [row.project_ulid for row in encumbrances]
+    )
+    if project_ulid:
+        return _scope(
+            "project",
+            project_ulid,
+            f"Project {project_ulid}",
+        )
+
+    return _scope("global", None, "Finance control state")
+
+
+def infer_ops_float_scope(
+    scan_result: OpsFloatSanityScanResult,
+) -> FinanceIssueScope:
+    ops_float_ids = sorted(
+        {
+            str((finding.context or {}).get("ops_float_ulid") or "").strip()
+            for finding in scan_result.findings
+            if str(
+                (finding.context or {}).get("ops_float_ulid") or ""
+            ).strip()
+        }
+    )
+
+    rows = (
+        db.session.execute(
+            select(OpsFloat).where(OpsFloat.ulid.in_(ops_float_ids))
+        )
+        .scalars()
+        .all()
+        if ops_float_ids
+        else []
+    )
+
+    if len(rows) == 1:
+        row = rows[0]
+        return _scope(
+            "ops_float",
+            row.ulid,
+            f"OpsFloat {row.ulid}",
+        )
+
+    funding_demand_ulid = _single_nonblank(
+        [row.source_funding_demand_ulid for row in rows]
+        + [row.dest_funding_demand_ulid for row in rows]
+    )
+    if funding_demand_ulid:
+        return _scope(
+            "funding_demand",
+            funding_demand_ulid,
+            f"Funding Demand {funding_demand_ulid}",
+        )
+
+    project_ulid = _single_nonblank(
+        [row.source_project_ulid for row in rows]
+        + [row.dest_project_ulid for row in rows]
+    )
+    if project_ulid:
+        return _scope(
+            "project",
+            project_ulid,
+            f"Project {project_ulid}",
+        )
+
+    return _scope("global", None, "Finance ops-float support")
 
 
 def journal_integrity_scan() -> JournalIntegrityScanResult:
@@ -424,6 +739,18 @@ def _balance_key_from_row(
         row.project_ulid,
         str(row.period_key),
     )
+    
+    
+def _balance_sort_key(item):
+    """Sort balance bucket rows safely when project_ulid may be None."""
+    key = item[0] if isinstance(item, tuple) and len(item) == 2 else item
+    account_code, fund_code, project_ulid, period_key = key
+    return (
+        str(account_code or ""),
+        str(fund_code or ""),
+        str(project_ulid or ""),
+        str(period_key or ""),
+    )
 
 
 def _projection_bucket_from_lines(
@@ -494,7 +821,7 @@ def balance_projection_drift_scan(
 
     findings: list[FinanceIntegrityFinding] = []
 
-    for key, bucket in sorted(expected.items()):
+    for key, bucket in sorted(expected.items(), key=_balance_sort_key):
         row = actual_by_key.get(key)
         acct, fund, project, period = key
 
@@ -550,7 +877,7 @@ def balance_projection_drift_scan(
                 )
             )
 
-    for key, row in sorted(actual_by_key.items()):
+    for key, row in sorted(actual_by_key.items(), key=_balance_sort_key):
         if key in expected:
             continue
 
@@ -1191,6 +1518,7 @@ __all__ = [
     "BALANCE_PROJECTION_DRIFT_REASON",
     "CONTROL_STATE_DRIFT_REASON",
     "FinanceIntegrityFinding",
+    "FinanceIssueScope",
     "BalanceProjectionDriftScanResult",
     "ControlStateDriftScanResult",
     "JournalIntegrityScanResult",
@@ -1201,6 +1529,11 @@ __all__ = [
     "PostingFactDriftScanResult",
     "balance_projection_drift_scan",
     "control_state_drift_scan",
+    "infer_balance_projection_scope",
+    "infer_control_state_scope",
+    "infer_journal_integrity_scope",
+    "infer_ops_float_scope",
+    "infer_posting_fact_scope",
     "journal_integrity_scan",
     "ops_float_sanity_scan",
     "posting_fact_drift_scan",

@@ -11,6 +11,7 @@ from app.slices.finance.admin_issue_services import (
     close_integrity_admin_issue,
     integrity_review_get,
     raise_integrity_admin_issue,
+    set_issue_oper_note,
     start_integrity_review,
 )
 from app.slices.finance.models import FinanceAdminIssue
@@ -120,6 +121,29 @@ def test_raise_integrity_admin_issue_is_deduped_by_request_reason_target(app):
         )
         assert len(alerts) == 1
         assert alerts[0].title == "Updated title"
+
+
+def test_set_issue_oper_note_updates_issue(app):
+    with app.app_context():
+        view = raise_integrity_admin_issue(
+            reason_code="anomaly_finance_control_state_drift",
+            request_id=new_ulid(),
+            title="Control drift",
+            summary="Reserve or Encumbrance drift was detected.",
+            detection={"finding_count": 1},
+            workflow_key="finance.control_state",
+            target_ulid=new_ulid(),
+            actor_ulid=None,
+        )
+        db.session.flush()
+
+        updated = set_issue_oper_note(
+            view.issue_ulid,
+            actor_ulid=new_ulid(),
+            oper_note="Called treasurer 14:20. Awaiting callback.",
+        )
+
+        assert updated.oper_note == "Called treasurer 14:20. Awaiting callback."
 
 
 def test_review_and_close_integrity_admin_issue_updates_alert(app):

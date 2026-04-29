@@ -176,6 +176,19 @@ class FundingDemandExecutionTruthDTO:
 
 
 @dataclass(frozen=True)
+class FundingDemandGoNoGoDTO:
+    funding_demand_ulid: str
+    project_ulid: str | None
+    go_nogo: str  # go | no_go
+    escalate_to_admin: bool
+    operator_message: str
+    blocking_reason_codes: tuple[str, ...]
+    blocking_scope_type: str | None
+    blocking_scope_ulid: str | None
+    blocking_scope_label: str | None
+
+
+@dataclass(frozen=True)
 class IncomePostRequestDTO:
     amount_cents: int
     happened_at_utc: str
@@ -402,6 +415,23 @@ def _load_encumbrance_provider(where: str):
         ) from exc
 
 
+def _load_go_nogo_provider(where: str):
+    try:
+        mod = importlib.import_module("app.slices.finance.services_dashboard")
+        fn = mod.get_funding_demand_go_nogo
+        return fn
+    except Exception as exc:  # noqa: BLE001
+        raise ContractError(
+            code="provider_missing",
+            where=where,
+            message=(
+                "Finance provider missing: "
+                "app.slices.finance.services_dashboard.get_funding_demand_go_nogo"
+            ),
+            http_status=500,
+        ) from exc
+
+
 def _to_money_by_key(rows: object) -> tuple[MoneyByKeyDTO, ...]:
     out: list[MoneyByKeyDTO] = []
     for r in rows or []:
@@ -539,6 +569,49 @@ def get_funding_demand_execution_truth(
             reserve_ulids=tuple(money.links.reserve_ulids or ()),
             encumbrance_ulids=tuple(money.links.encumbrance_ulids or ()),
             ops_float_ulids=tuple(ops.ops_float_ulids or ()),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _as_contract_error(where, exc) from exc
+
+
+def get_funding_demand_go_nogo(
+    funding_demand_ulid: str,
+    *,
+    project_ulid: str | None = None,
+) -> FundingDemandGoNoGoDTO:
+    """Return Finance integrity gate for staff-facing demand processing.
+
+    Canon note for Future Dev:
+      This is intentionally blunt. Staff does not need Finance internals.
+      Staff needs a trusted GO / NO GO answer for whether the funding stream
+      is sufficiently clean to allow demand processing right now.
+
+      This is not a funding sufficiency or policy decision seam.
+    """
+    where = "finance_v2.get_funding_demand_go_nogo"
+    try:
+        funding_demand_ulid = _require_ulid(
+            "funding_demand_ulid",
+            funding_demand_ulid,
+        )
+        if project_ulid is not None:
+            project_ulid = _require_ulid("project_ulid", project_ulid)
+
+        provider = _load_go_nogo_provider(where)
+        raw = provider(
+            funding_demand_ulid,
+            project_ulid=project_ulid,
+        )
+        return FundingDemandGoNoGoDTO(
+            funding_demand_ulid=str(raw["funding_demand_ulid"]),
+            project_ulid=raw.get("project_ulid"),
+            go_nogo=str(raw["go_nogo"]),
+            escalate_to_admin=bool(raw["escalate_to_admin"]),
+            operator_message=str(raw["operator_message"]),
+            blocking_reason_codes=tuple(raw.get("blocking_reason_codes") or ()),
+            blocking_scope_type=raw.get("blocking_scope_type"),
+            blocking_scope_ulid=raw.get("blocking_scope_ulid"),
+            blocking_scope_label=raw.get("blocking_scope_label"),
         )
     except Exception as exc:  # noqa: BLE001
         raise _as_contract_error(where, exc) from exc
@@ -1354,6 +1427,7 @@ def statement_of_activities(period: str) -> ActivitiesReportDTO:
 __all__ = [
     "FundingDemandMoneyViewDTO",
     "FundingDemandExecutionTruthDTO",
+    "FundingDemandGoNoGoDTO",
     "IncomePostRequestDTO",
     "ExpensePostRequestDTO",
     "PostedDTO",
@@ -1369,6 +1443,7 @@ __all__ = [
     "ReceiptDTO",
     "get_funding_demand_money_view",
     "get_funding_demand_execution_truth",
+    "get_funding_demand_go_nogo",
     "get_encumbrance",
     "post_income",
     "post_expense",

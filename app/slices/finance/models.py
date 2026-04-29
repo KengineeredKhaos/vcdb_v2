@@ -516,6 +516,9 @@ class FinanceAdminIssue(db.Model, ULIDPK, IsoTimestamps):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
 
+    oper_note: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
     detection_json: Mapped[dict[str, object]] = mapped_column(
         JSON, nullable=False, default=dict
     )
@@ -552,6 +555,9 @@ class FinanceAdminIssue(db.Model, ULIDPK, IsoTimestamps):
     dedupe_key: Mapped[str] = mapped_column(
         String(255), nullable=False, unique=True, index=True
     )
+    dedupe_scope: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -574,6 +580,138 @@ class FinanceAdminIssue(db.Model, ULIDPK, IsoTimestamps):
             "ix_finance_admin_issue_request_reason",
             "request_id",
             "reason_code",
+        ),
+    )
+
+
+class FinanceQuarantine(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "finance_quarantine"
+
+    reason_code: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True
+    )
+    scope_type: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    scope_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+    scope_label: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
+
+    source_issue_ulid: Mapped[str] = mapped_column(
+        String(26),
+        ForeignKey("finance_admin_issue.ulid"),
+        nullable=False,
+        index=True,
+    )
+    request_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True, default="active"
+    )
+    posture: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="projection_blocked"
+    )
+
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    notes_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+
+    opened_at_utc: Mapped[str] = mapped_column(String(30), nullable=False)
+    closed_at_utc: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )
+    closed_by_actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+    close_reason: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+
+    dedupe_key: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True, index=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "scope_type in "
+            "('global','project','funding_demand','journal',"
+            "'semantic_posting','ops_float')",
+            name="ck_finance_quarantine_scope_type",
+        ),
+        CheckConstraint(
+            "status in ('active','released','superseded')",
+            name="ck_finance_quarantine_status",
+        ),
+        CheckConstraint(
+            "posture in "
+            "('projection_blocked','posting_blocked',"
+            "'projection_and_posting_blocked')",
+            name="ck_finance_quarantine_posture",
+        ),
+        db.Index(
+            "ix_finance_quarantine_scope_status",
+            "scope_type",
+            "scope_ulid",
+            "status",
+        ),
+        db.Index(
+            "ix_finance_quarantine_issue_status",
+            "source_issue_ulid",
+            "status",
+        ),
+        db.Index(
+            "ix_finance_quarantine_reason_status",
+            "reason_code",
+            "status",
+        ),
+    )
+
+
+class FinanceSweepRun(db.Model, ULIDPK, IsoTimestamps):
+    __tablename__ = "finance_sweep_run"
+
+    request_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True
+    )
+    actor_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True, index=True
+    )
+    ran_at_utc: Mapped[str] = mapped_column(
+        String(30), nullable=False, index=True
+    )
+
+    scans_run: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    clean_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    dirty_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    issue_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quarantine_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+
+    summary_json: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "scans_run >= 0",
+            name="ck_finance_sweep_run_scans_nonnegative",
+        ),
+        CheckConstraint(
+            "clean_count >= 0 and dirty_count >= 0 "
+            "and issue_count >= 0 and quarantine_count >= 0",
+            name="ck_finance_sweep_run_counts_nonnegative",
+        ),
+        db.Index(
+            "ix_finance_sweep_run_ran_actor",
+            "ran_at_utc",
+            "actor_ulid",
         ),
     )
 

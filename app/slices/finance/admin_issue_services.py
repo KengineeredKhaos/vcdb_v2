@@ -47,6 +47,8 @@ class FinanceAdminIssueView:
     workflow_key: str
     target_ulid: str | None
     request_id: str
+    dedupe_scope: str | None
+    oper_note: str | None
     title: str
     summary: str
     detection: dict[str, Any]
@@ -69,10 +71,15 @@ def _dedupe_key(
     *,
     reason_code: str,
     request_id: str,
+    dedupe_scope: str | None = None,
     target_ulid: str | None,
 ) -> str:
     target = target_ulid or "~"
-    return f"{SOURCE_SLICE}:{reason_code}:{request_id}:{target}"
+    if dedupe_scope:
+        key = f"scope:{dedupe_scope}"
+    else:
+        key = f"request:{request_id}"
+    return f"{SOURCE_SLICE}:{reason_code}:{key}:{target}"
 
 
 def _to_view(row: FinanceAdminIssue) -> FinanceAdminIssueView:
@@ -84,6 +91,8 @@ def _to_view(row: FinanceAdminIssue) -> FinanceAdminIssueView:
         workflow_key=row.workflow_key,
         target_ulid=row.target_ulid,
         request_id=row.request_id,
+        oper_note=row.oper_note,
+        dedupe_scope=row.dedupe_scope,
         title=row.title,
         summary=row.summary,
         detection=dict(row.detection_json or {}),
@@ -244,6 +253,8 @@ def raise_integrity_admin_issue(
     workflow_key: str,
     target_ulid: str | None = None,
     source_status: str = "open",
+    dedupe_scope: str | None = None,
+    oper_note: str | None = None,
     actor_ulid: str | None = None,
 ) -> FinanceAdminIssueView:
     """Create or refresh a Finance-owned Admin issue.
@@ -257,6 +268,7 @@ def raise_integrity_admin_issue(
     key = _dedupe_key(
         reason_code=reason_code,
         request_id=request_id,
+        dedupe_scope=dedupe_scope,
         target_ulid=target_ulid,
     )
 
@@ -272,6 +284,8 @@ def raise_integrity_admin_issue(
             workflow_key=workflow_key,
             target_ulid=target_ulid,
             request_id=request_id,
+            dedupe_scope=dedupe_scope,
+            oper_note=(str(oper_note).strip() or None) if oper_note else None,
             title=title,
             summary=summary,
             detection_json=_normalize_json(detection),
@@ -294,6 +308,9 @@ def raise_integrity_admin_issue(
         row.issue_status = ISSUE_STATUS_OPEN
         row.workflow_key = workflow_key
         row.target_ulid = target_ulid
+        row.dedupe_scope = dedupe_scope
+        if oper_note is not None:
+            row.oper_note = str(oper_note).strip() or None
         row.title = title
         row.summary = summary
         row.detection_json = _normalize_json(detection)
@@ -416,6 +433,41 @@ def close_integrity_admin_issue(
     return _to_view(row)
 
 
+def set_issue_oper_note(
+    issue_ulid: str,
+    *,
+    actor_ulid: str,
+    oper_note: str | None,
+) -> FinanceAdminIssueView:
+    """Set terse operator note on a Finance issue.
+
+    Canon note for Future Dev:
+      This note is intentionally short and operational. It is not a diary.
+      Use it for current status / who was contacted / the next handoff clue.
+    """
+    if not actor_ulid:
+        raise ValueError("actor_ulid is required")
+
+    row = _get_issue_row(issue_ulid)
+    note = str(oper_note or "").strip()
+    if len(note) > 255:
+        raise ValueError("oper_note must be 255 characters or fewer")
+
+    row.oper_note = note or None
+    db.session.flush()
+
+    _emit_issue_event(
+        operation="admin_issue_oper_note_updated",
+        row=row,
+        actor_ulid=actor_ulid,
+        meta={
+            "has_oper_note": bool(row.oper_note),
+            "oper_note_len": len(row.oper_note or ""),
+        },
+    )
+    return _to_view(row)
+
+
 def _raise_from_scan(
     *,
     scan_result: object,
@@ -425,6 +477,7 @@ def _raise_from_scan(
     workflow_key: str,
     target_ulid: str | None = None,
     actor_ulid: str | None = None,
+    dedupe_scope: str | None = None,
 ) -> FinanceAdminIssueView:
     return raise_integrity_admin_issue(
         reason_code=str(getattr(scan_result, "reason_code")),
@@ -435,6 +488,7 @@ def _raise_from_scan(
         workflow_key=workflow_key,
         target_ulid=target_ulid,
         source_status=str(getattr(scan_result, "source_status")),
+        dedupe_scope=dedupe_scope,
         actor_ulid=actor_ulid,
     )
 
@@ -444,6 +498,7 @@ def raise_journal_integrity_admin_issue(
     scan_result: object,
     request_id: str,
     actor_ulid: str | None = None,
+    dedupe_scope: str | None = None,
 ) -> FinanceAdminIssueView:
     return _raise_from_scan(
         scan_result=scan_result,
@@ -456,6 +511,7 @@ def raise_journal_integrity_admin_issue(
         ),
         workflow_key="finance.journal_integrity",
         actor_ulid=actor_ulid,
+        dedupe_scope=dedupe_scope,
     )
 
 
@@ -464,6 +520,7 @@ def raise_balance_projection_drift_admin_issue(
     scan_result: object,
     request_id: str,
     actor_ulid: str | None = None,
+    dedupe_scope: str | None = None,
 ) -> FinanceAdminIssueView:
     return _raise_from_scan(
         scan_result=scan_result,
@@ -475,6 +532,7 @@ def raise_balance_projection_drift_admin_issue(
         ),
         workflow_key="finance.balance_projection",
         actor_ulid=actor_ulid,
+        dedupe_scope=dedupe_scope,
     )
 
 
@@ -483,6 +541,7 @@ def raise_posting_fact_drift_admin_issue(
     scan_result: object,
     request_id: str,
     actor_ulid: str | None = None,
+    dedupe_scope: str | None = None,
 ) -> FinanceAdminIssueView:
     return _raise_from_scan(
         scan_result=scan_result,
@@ -494,6 +553,7 @@ def raise_posting_fact_drift_admin_issue(
         ),
         workflow_key="finance.posting_fact",
         actor_ulid=actor_ulid,
+        dedupe_scope=dedupe_scope,
     )
 
 
@@ -502,6 +562,7 @@ def raise_control_state_drift_admin_issue(
     scan_result: object,
     request_id: str,
     actor_ulid: str | None = None,
+    dedupe_scope: str | None = None,
 ) -> FinanceAdminIssueView:
     return _raise_from_scan(
         scan_result=scan_result,
@@ -513,6 +574,7 @@ def raise_control_state_drift_admin_issue(
         ),
         workflow_key="finance.control_state",
         actor_ulid=actor_ulid,
+        dedupe_scope=dedupe_scope,
     )
 
 
@@ -521,6 +583,7 @@ def raise_ops_float_sanity_admin_issue(
     scan_result: object,
     request_id: str,
     actor_ulid: str | None = None,
+    dedupe_scope: str | None = None,
 ) -> FinanceAdminIssueView:
     return _raise_from_scan(
         scan_result=scan_result,
@@ -532,6 +595,7 @@ def raise_ops_float_sanity_admin_issue(
         ),
         workflow_key="finance.ops_float",
         actor_ulid=actor_ulid,
+        dedupe_scope=dedupe_scope,
     )
 
 
@@ -543,6 +607,7 @@ __all__ = [
     "ISSUE_STATUS_FALSE_POSITIVE",
     "ISSUE_STATUS_MANUAL_RESOLUTION_REQUIRED",
     "raise_integrity_admin_issue",
+    "set_issue_oper_note",
     "list_integrity_admin_issues",
     "integrity_review_get",
     "start_integrity_review",
