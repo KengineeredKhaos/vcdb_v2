@@ -22,13 +22,14 @@ from app.lib.jsonutil import dumps_compact, try_parse_json
 
 from .errors import (
     EventHashConflict,
-    LedgerBadArgument,
     LedgerBackupGateBlocked,
+    LedgerBadArgument,
     LedgerError,
     LedgerUnavailable,
     ProviderTemporarilyDown,
 )
 from .models import (
+    LedgerAdminIssue,
     LedgerEvent,
     LedgerHashchainCheck,
     LedgerHashchainRepair,
@@ -56,6 +57,7 @@ CHECK_KIND_VERIFY = "verify"
 CHECK_KIND_DAILY_CLOSE = "daily_close"
 CHECK_KIND_CRON_LEDGERCHECK = "cron_ledgercheck"
 CHECK_KIND_POST_REPAIR = "post_repair"
+CHECK_KIND_MANUAL_VERIFY = "manual_verify"
 
 
 def _clean_required_str(
@@ -332,9 +334,7 @@ def _make_event_row(
         request_id=env["request_id"],
         happened_at_utc=env["happened_at_utc"],
         refs_json=(
-            dumps_compact(env["refs"])
-            if env["refs"] is not None
-            else None
+            dumps_compact(env["refs"]) if env["refs"] is not None else None
         ),
         changed_json=(
             dumps_compact(env["changed"])
@@ -342,9 +342,7 @@ def _make_event_row(
             else None
         ),
         meta_json=(
-            dumps_compact(env["meta"])
-            if env["meta"] is not None
-            else None
+            dumps_compact(env["meta"]) if env["meta"] is not None else None
         ),
         prev_hash_hex=prev_hash_hex,
         curr_hash_hex=_hash_env(prev_hash_hex, env),
@@ -528,7 +526,10 @@ def verify_chain(chain_key: str | None = None) -> dict[str, Any]:
             prev_seq_for[ev.chain_key] = ev.chain_seq
             checked += 1
 
-        for (claim_chain, claim_prev), event_ulids in prev_hash_claims.items():
+        for (
+            claim_chain,
+            claim_prev,
+        ), event_ulids in prev_hash_claims.items():
             if len(event_ulids) <= 1:
                 continue
             anomalies.append(
@@ -588,16 +589,45 @@ def _reason_for_verify_result(result: dict[str, Any], check_kind: str) -> str:
     return REASON_ADVISORY_HASHCHAIN
 
 
+def _gate_posture_for_check(
+    *,
+    check_kind: str,
+    chain_key: str | None,
+    ok: bool,
+) -> dict[str, bool]:
+    """Return backup-gate posture without letting manual verify reopen it."""
+    if check_kind in {
+        CHECK_KIND_DAILY_CLOSE,
+        CHECK_KIND_CRON_LEDGERCHECK,
+        CHECK_KIND_POST_REPAIR,
+    }:
+        return {
+            "routine_backup_allowed": ok,
+            "dirty_forensic_backup_only": not ok,
+        }
+
+    status = latest_daily_close_status(chain_key=chain_key)
+    return {
+        "routine_backup_allowed": bool(
+            status.get("routine_backup_allowed", False)
+        ),
+        "dirty_forensic_backup_only": bool(
+            status.get("dirty_forensic_backup_only", True)
+        ),
+    }
+
+
 def record_hashchain_check(
     *,
     check_kind: str,
     result: dict[str, Any],
     request_id: str,
     actor_ulid: str | None,
+    issue_ulid: str | None,
     chain_key: str | None,
     started_at_utc: str | None = None,
 ) -> LedgerHashchainCheck:
-    """Persist verify/daily-close evidence for Auditor drill-down."""
+    """Persist hash-chain evidence for Auditor/Admin drill-down."""
     started = started_at_utc or result.get("as_of_utc") or now_iso8601_ms()
     completed = now_iso8601_ms()
     reason_code = _reason_for_verify_result(result, check_kind)
@@ -605,6 +635,11 @@ def record_hashchain_check(
     anomaly_count = len(result.get("anomalies") or [])
     failure_count = len(result.get("failures") or [])
     ok = bool(result.get("ok"))
+    gate_posture = _gate_posture_for_check(
+        check_kind=check_kind,
+        chain_key=chain_key,
+        ok=ok,
+    )
 
     row = LedgerHashchainCheck(
         check_kind=check_kind,
@@ -612,6 +647,7 @@ def record_hashchain_check(
         source_status=source_status,
         request_id=request_id,
         actor_ulid=actor_ulid,
+        issue_ulid=issue_ulid,
         chain_key=chain_key,
         started_at_utc=started,
         completed_at_utc=completed,
@@ -619,8 +655,8 @@ def record_hashchain_check(
         checked_count=int(result.get("checked") or 0),
         anomaly_count=anomaly_count,
         failure_count=failure_count,
-        routine_backup_allowed=ok,
-        dirty_forensic_backup_only=not ok,
+        routine_backup_allowed=gate_posture["routine_backup_allowed"],
+        dirty_forensic_backup_only=gate_posture["dirty_forensic_backup_only"],
         details_json=dict(result),
     )
     db.session.add(row)
@@ -714,6 +750,7 @@ def run_daily_close(
             result=result,
             request_id=request_id,
             actor_ulid=actor_ulid,
+            issue_ulid=None,
             chain_key=chain_key,
             started_at_utc=started,
         )
@@ -781,7 +818,7 @@ def repair_hashchain(
     actor_ulid: str | None,
     request_id: str,
     issue_ulid: str | None = None,
-    check_ulid: str | None = None,
+    source_check_ulid: str | None = None,
 ) -> dict[str, Any]:
     """
     Recompute one chain's prev/curr hashes in chain_seq order.
@@ -836,6 +873,7 @@ def repair_hashchain(
             result=after_verify,
             request_id=rid,
             actor_ulid=actor_ulid,
+            issue_ulid=issue_ulid,
             chain_key=clean_chain_key,
             started_at_utc=completed,
         )
@@ -855,7 +893,8 @@ def repair_hashchain(
             request_id=rid,
             actor_ulid=actor_ulid,
             issue_ulid=issue_ulid,
-            check_ulid=post_repair_check.ulid,
+            source_check_ulid=source_check_ulid,
+            post_repair_check_ulid=post_repair_check.ulid,
             chain_key=clean_chain_key,
             started_at_utc=started,
             completed_at_utc=completed,
@@ -866,6 +905,7 @@ def repair_hashchain(
             after_json={
                 "verify": after_verify,
                 "events": after_rows,
+                "source_check_ulid": source_check_ulid,
                 "post_repair_check_ulid": post_repair_check.ulid,
             },
             affected_event_ulids_json=affected,
@@ -885,7 +925,7 @@ def repair_hashchain(
             "source_status": repair.source_status,
             "chain_key": clean_chain_key,
             "issue_ulid": issue_ulid,
-            "check_ulid": check_ulid,
+            "source_check_ulid": source_check_ulid,
             "post_repair_check_ulid": post_repair_check.ulid,
             "affected_event_ulids": affected,
             "before": before_verify,
@@ -987,3 +1027,80 @@ def require_routine_backup_allowed(
         "routine backup/archive blocked by Ledger daily-close status: "
         f"{status.get('reason_code') or status.get('reason')}"
     )
+
+
+def get_integrity_summary() -> dict[str, Any]:
+    """
+    Read-only Ledger integrity summary for Admin/Auditor dashboard use.
+
+    This is intentionally small and utilitarian:
+    - current backup-gate posture
+    - open Ledger issue counts
+    - most recent check time
+    - most recent repair time
+
+    It does not expose full issue/check/repair drill-down. That remains on
+    Ledger-owned routes and services.
+    """
+    try:
+        gate = latest_daily_close_status()
+
+        latest_check = db.session.execute(
+            select(LedgerHashchainCheck)
+            .order_by(desc(LedgerHashchainCheck.created_at_utc))
+            .limit(1)
+        ).scalar_one_or_none()
+
+        latest_repair = db.session.execute(
+            select(LedgerHashchainRepair)
+            .order_by(desc(LedgerHashchainRepair.created_at_utc))
+            .limit(1)
+        ).scalar_one_or_none()
+
+        open_issues = list(
+            db.session.execute(
+                select(LedgerAdminIssue).where(
+                    LedgerAdminIssue.closed_at_utc.is_(None)
+                )
+            ).scalars()
+        )
+
+        failed_open_issue_count = sum(
+            1
+            for row in open_issues
+            if str(row.reason_code or "").startswith("failure_")
+        )
+        anomaly_open_issue_count = sum(
+            1
+            for row in open_issues
+            if str(row.reason_code or "").startswith("anomaly_")
+        )
+
+        return {
+            "has_gate_record": bool(gate.get("has_daily_close")),
+            "gate_check_ulid": gate.get("check_ulid"),
+            "gate_reason_code": gate.get("reason_code"),
+            "gate_source_status": gate.get("source_status"),
+            "routine_backup_allowed": bool(
+                gate.get("routine_backup_allowed", False)
+            ),
+            "dirty_forensic_backup_only": bool(
+                gate.get("dirty_forensic_backup_only", True)
+            ),
+            "last_check_at_utc": (
+                latest_check.completed_at_utc if latest_check else None
+            ),
+            "last_repair_at_utc": (
+                (
+                    latest_repair.completed_at_utc
+                    or latest_repair.created_at_utc
+                )
+                if latest_repair
+                else None
+            ),
+            "open_issue_count": len(open_issues),
+            "failed_open_issue_count": failed_open_issue_count,
+            "anomaly_open_issue_count": anomaly_open_issue_count,
+        }
+    except SQLAlchemyError as exc:
+        _raise_provider_error(during="ledger integrity summary", exc=exc)

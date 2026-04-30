@@ -34,6 +34,21 @@ class EmitResult:
     chain_key: str
 
 
+@dataclass(frozen=True)
+class LedgerIntegritySummaryDTO:
+    has_gate_record: bool
+    gate_check_ulid: str | None
+    gate_reason_code: str | None
+    gate_source_status: str | None
+    routine_backup_allowed: bool
+    dirty_forensic_backup_only: bool
+    last_check_at_utc: str | None
+    last_repair_at_utc: str | None
+    open_issue_count: int
+    failed_open_issue_count: int
+    anomaly_open_issue_count: int
+
+
 def emit(
     *,
     domain: str,
@@ -132,6 +147,55 @@ def verify(chain_key: str | None = None) -> dict[str, Any]:
             message=str(exc) or "ledger integrity error",
             http_status=409,
         ) from exc
+    except ProviderTemporarilyDown as exc:
+        raise ContractError(
+            code="provider_temporarily_down",
+            where=where,
+            message=str(exc) or "ledger provider temporarily down",
+            http_status=503,
+        ) from exc
+    except LedgerUnavailable as exc:
+        raise ContractError(
+            code="ledger_unavailable",
+            where=where,
+            message=str(exc) or "ledger provider unavailable",
+            http_status=503,
+        ) from exc
+    except Exception as exc:
+        raise ContractError(
+            code="internal_error",
+            where=where,
+            message=f"unexpected: {exc.__class__.__name__}",
+            http_status=500,
+        ) from exc
+
+
+def get_integrity_summary() -> LedgerIntegritySummaryDTO:
+    where = "ledger_v2.get_integrity_summary"
+
+    try:
+        raw = ledger_svc.get_integrity_summary()
+        return LedgerIntegritySummaryDTO(
+            has_gate_record=bool(raw.get("has_gate_record")),
+            gate_check_ulid=raw.get("gate_check_ulid"),
+            gate_reason_code=raw.get("gate_reason_code"),
+            gate_source_status=raw.get("gate_source_status"),
+            routine_backup_allowed=bool(
+                raw.get("routine_backup_allowed", False)
+            ),
+            dirty_forensic_backup_only=bool(
+                raw.get("dirty_forensic_backup_only", True)
+            ),
+            last_check_at_utc=raw.get("last_check_at_utc"),
+            last_repair_at_utc=raw.get("last_repair_at_utc"),
+            open_issue_count=int(raw.get("open_issue_count") or 0),
+            failed_open_issue_count=int(
+                raw.get("failed_open_issue_count") or 0
+            ),
+            anomaly_open_issue_count=int(
+                raw.get("anomaly_open_issue_count") or 0
+            ),
+        )
     except ProviderTemporarilyDown as exc:
         raise ContractError(
             code="provider_temporarily_down",

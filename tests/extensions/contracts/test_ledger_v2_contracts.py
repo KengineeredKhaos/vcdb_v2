@@ -93,3 +93,45 @@ def test_verify_maps_unavailable(monkeypatch):
     assert exc.code == "ledger_unavailable"
     assert exc.where == "ledger_v2.verify"
     assert exc.http_status == 503
+
+
+def test_get_integrity_summary_returns_dto(monkeypatch):
+    monkeypatch.setattr(
+        ledger_v2.ledger_svc,
+        "get_integrity_summary",
+        lambda: {
+            "has_gate_record": True,
+            "gate_check_ulid": "01CHECKCHECKCHECKCHECKCHECKC",
+            "gate_reason_code": "advisory_ledger_hashchain",
+            "gate_source_status": "clean",
+            "routine_backup_allowed": True,
+            "dirty_forensic_backup_only": False,
+            "last_check_at_utc": "2026-04-29T12:00:00.000Z",
+            "last_repair_at_utc": None,
+            "open_issue_count": 1,
+            "failed_open_issue_count": 0,
+            "anomaly_open_issue_count": 1,
+        },
+    )
+
+    result = ledger_v2.get_integrity_summary()
+
+    assert result.has_gate_record is True
+    assert result.routine_backup_allowed is True
+    assert result.open_issue_count == 1
+    assert result.anomaly_open_issue_count == 1
+
+
+def test_get_integrity_summary_maps_unavailable(monkeypatch):
+    def _boom():
+        raise LedgerUnavailable("ledger storage unavailable during summary")
+
+    monkeypatch.setattr(ledger_v2.ledger_svc, "get_integrity_summary", _boom)
+
+    with pytest.raises(ContractError) as excinfo:
+        ledger_v2.get_integrity_summary()
+
+    exc = excinfo.value
+    assert exc.code == "ledger_unavailable"
+    assert exc.where == "ledger_v2.get_integrity_summary"
+    assert exc.http_status == 503

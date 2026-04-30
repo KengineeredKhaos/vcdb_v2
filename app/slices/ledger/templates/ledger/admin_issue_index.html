@@ -1,0 +1,209 @@
+{% extends "layout/base.html" %}
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
+
+{% block title %}{{ page.title }}{% endblock %}
+
+{% block content %}
+<section class="hero" style="margin-top:18px;">
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+    <a class="btn" href="{{ back_dashboard_href }}">{{ back_dashboard_label }}</a>
+    {% if can_mutate %}
+      <a class="btn" href="{{ url_for('admin.inbox') }}">Back to Admin Inbox</a>
+    {% endif %}
+  </div>
+
+  <div class="hero-card">
+    <div class="glow"></div>
+    <h1>{{ page.title }}</h1>
+    <p class="muted">{{ page.summary }}</p>
+  </div>
+</section>
+
+{% if not can_mutate %}
+<section style="margin-top:18px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Read-only auditor view</h2>
+    <p style="margin-bottom:0;">
+      Auditor can inspect Ledger issue truth, checks, repairs, and current
+      backup-gate posture here. Ledger-owned mutation remains Admin-only.
+    </p>
+  </div>
+</section>
+{% endif %}
+
+<section class="features" style="margin-top:14px;">
+  <div class="card">
+    <h3 style="margin-top:0;">Issue view</h3>
+    <p><span class="kbd">{{ page.current_view }}</span></p>
+    <p class="muted" style="margin-bottom:0;">
+      <a href="{{ url_for('ledger.admin_issue_index', view='active') }}">Active</a>
+      —
+      <a href="{{ url_for('ledger.admin_issue_index', view='closed') }}">Closed</a>
+      —
+      <a href="{{ url_for('ledger.admin_issue_index', view='all') }}">All</a>
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Backup gate</h3>
+    {% if page.gate_status.has_daily_close %}
+      <p><span class="kbd">{{ "open" if page.gate_status.routine_backup_allowed else "blocked" }}</span></p>
+      <p class="muted" style="margin-bottom:0;">
+        reason={{ page.gate_status.reason_code }}
+        {% if page.gate_status.completed_at_utc %}
+          — checked={{ page.gate_status.completed_at_utc }}
+        {% endif %}
+      </p>
+    {% else %}
+      <p><span class="kbd">no record</span></p>
+      <p class="muted" style="margin-bottom:0;">
+        {{ page.gate_status.reason }}
+      </p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Visible issues</h3>
+    <p><span class="kbd">{{ page.issues|length }}</span></p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Recent evidence</h3>
+    <p><span class="kbd">{{ page.checks|length }} checks / {{ page.repairs|length }} repairs</span></p>
+  </div>
+</section>
+
+{% if can_mutate %}
+<section style="margin-top:18px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Ledger-owned actions</h2>
+    <p>
+      Run a fresh Ledger inspection now. This records a manual verify evidence
+      row. It does not reopen the routine backup gate.
+    </p>
+    <form method="post" action="{{ url_for('ledger.admin_issue_run_manual_verify') }}">
+      {{ csrf_field() }}
+      <button class="btn" type="submit">Run ledger verification now</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
+<section style="margin-top:18px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Ledger issues</h2>
+    {% if page.issues %}
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:.4rem;">Title</th>
+              <th style="text-align:left; padding:.4rem;">Status</th>
+              <th style="text-align:left; padding:.4rem;">Reason</th>
+              <th style="text-align:left; padding:.4rem;">Chain</th>
+              <th style="text-align:left; padding:.4rem;">Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in page.issues %}
+              <tr>
+                <td style="padding:.4rem; vertical-align:top;">
+                  <a href="{{ url_for('ledger.admin_issue_get', issue_ulid=row.issue_ulid) }}">
+                    {{ row.title }}
+                  </a>
+                </td>
+                <td style="padding:.4rem; vertical-align:top;"><code>{{ row.source_status }}</code></td>
+                <td style="padding:.4rem; vertical-align:top;"><code>{{ row.reason_code }}</code></td>
+                <td style="padding:.4rem; vertical-align:top;"><code>{{ row.chain_key or "—" }}</code></td>
+                <td style="padding:.4rem; vertical-align:top;"><code>{{ row.updated_at_utc }}</code></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted" style="margin-bottom:0;">No Ledger issues in this view.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section style="margin-top:18px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Recent checks</h2>
+    {% if page.checks %}
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:.4rem;">Check</th>
+              <th style="text-align:left; padding:.4rem;">Result</th>
+              <th style="text-align:left; padding:.4rem;">Reason</th>
+              <th style="text-align:left; padding:.4rem;">Chain</th>
+              <th style="text-align:left; padding:.4rem;">Completed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in page.checks %}
+              <tr>
+                <td style="padding:.4rem; vertical-align:top;">
+                  <a href="{{ url_for('ledger.hashchain_check_get', check_ulid=row.check_ulid) }}">
+                    {{ row.check_kind }}
+                  </a>
+                </td>
+                <td style="padding:.4rem; vertical-align:top;">
+                  <code>{{ "ok" if row.ok else "not_ok" }}</code>
+                </td>
+                <td style="padding:.4rem; vertical-align:top;"><code>{{ row.reason_code }}</code></td>
+                <td style="padding:.4rem; vertical-align:top;"><code>{{ row.chain_key or "—" }}</code></td>
+                <td style="padding:.4rem; vertical-align:top;"><code>{{ row.completed_at_utc }}</code></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted" style="margin-bottom:0;">No Ledger checks recorded yet.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section style="margin-top:18px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Recent repairs</h2>
+    {% if page.repairs %}
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:.4rem;">Repair</th>
+              <th style="text-align:left; padding:.4rem;">Status</th>
+              <th style="text-align:left; padding:.4rem;">Chain</th>
+              <th style="text-align:left; padding:.4rem;">Affected</th>
+              <th style="text-align:left; padding:.4rem;">Completed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in page.repairs %}
+              <tr>
+                <td style="padding:.4rem; vertical-align:top;">
+                  <a href="{{ url_for('ledger.hashchain_repair_get', repair_ulid=row.repair_ulid) }}">
+                    {{ row.repair_kind }}
+                  </a>
+                </td>
+                <td style="padding:.4rem; vertical-align:top;"><code>{{ row.source_status }}</code></td>
+                <td style="padding:.4rem; vertical-align:top;"><code>{{ row.chain_key or "—" }}</code></td>
+                <td style="padding:.4rem; vertical-align:top;"><code>{{ row.affected_count }}</code></td>
+                <td style="padding:.4rem; vertical-align:top;"><code>{{ row.completed_at_utc or "—" }}</code></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted" style="margin-bottom:0;">No Ledger repairs recorded yet.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

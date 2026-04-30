@@ -6,37 +6,81 @@
 {% block title %}{{ page.title }}{% endblock %}
 
 {% block content %}
-<section class="hero" style="margin-top: 18px;">
+<section class="hero" style="margin-top:18px;">
   <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
-    <a class="btn" href="{{ url_for('admin.inbox') }}">Back to Admin Inbox</a>
-    <a class="btn" href="{{ url_for('ledger.verify_endpoint') }}">Run Ledger Verify</a>
+    <a class="btn" href="{{ url_for('ledger.admin_issue_index') }}">Back to Ledger drill-down</a>
+    <a class="btn" href="{{ back_dashboard_href }}">{{ back_dashboard_label }}</a>
   </div>
 
   <div class="hero-card">
     <div class="glow"></div>
     <h1>{{ page.title }}</h1>
     <p class="muted">{{ page.summary }}</p>
+    <p class="muted">
+      reason={{ page.reason_code }}
+      — source_status={{ page.source_status }}
+      — request_id={{ page.request_id }}
+    </p>
   </div>
 </section>
 
-<section class="features" style="margin-top: 14px;">
+{% if not can_mutate %}
+<section style="margin-top:18px;">
   <div class="card">
-    <h3 style="margin-top: 0;">Reason</h3>
-    <p><code>{{ page.reason_code }}</code></p>
+    <h2 style="margin-top:0;">Read-only auditor view</h2>
+    <p style="margin-bottom:0;">
+      Auditor can inspect Ledger issue truth and attached evidence here.
+      Ledger-owned mutation remains Admin-only.
+    </p>
   </div>
+</section>
+{% endif %}
+
+<section class="features" style="margin-top:14px;">
   <div class="card">
-    <h3 style="margin-top: 0;">Status</h3>
-    <p><code>{{ page.source_status }}</code></p>
+    <h3 style="margin-top:0;">Backup posture</h3>
+    {% if page.backup_posture.routine_backup_allowed %}
+      <p><span class="kbd">routine backup allowed</span></p>
+    {% else %}
+      <p><span class="kbd">dirty forensic backup only</span></p>
+    {% endif %}
   </div>
+
   <div class="card">
-    <h3 style="margin-top: 0;">As of</h3>
-    <p><code>{{ page.as_of_utc }}</code></p>
+    <h3 style="margin-top:0;">Chain key</h3>
+    <p><code>{{ page.chain_key or "—" }}</code></p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Last verify</h3>
+    {% if page.last_verify_check_ulid %}
+      <p>
+        <a href="{{ url_for('ledger.hashchain_check_get', check_ulid=page.last_verify_check_ulid) }}">
+          Open check
+        </a>
+      </p>
+    {% else %}
+      <p><code>—</code></p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Last repair</h3>
+    {% if page.last_repair_ulid %}
+      <p>
+        <a href="{{ url_for('ledger.hashchain_repair_get', repair_ulid=page.last_repair_ulid) }}">
+          Open repair
+        </a>
+      </p>
+    {% else %}
+      <p><code>—</code></p>
+    {% endif %}
   </div>
 </section>
 
-<section style="margin-top: 18px;">
+<section style="margin-top:18px;">
   <div class="card">
-    <h2 style="margin-top: 0;">Ledger issue facts</h2>
+    <h2 style="margin-top:0;">Ledger issue facts</h2>
     <dl>
       <dt>Issue ULID</dt>
       <dd><code>{{ page.issue_ulid }}</code></dd>
@@ -63,17 +107,63 @@
   </div>
 </section>
 
-<section style="margin-top: 18px;">
+<section style="margin-top:18px;">
   <div class="card">
-    <h2 style="margin-top: 0;">Diagnostics</h2>
-    <pre style="white-space: pre-wrap;">{{ page.details | tojson(indent=2) }}</pre>
+    <h2 style="margin-top:0;">Related checks</h2>
+    {% if page.related_checks %}
+      <ul style="margin-bottom:0;">
+        {% for row in page.related_checks %}
+          <li>
+            <a href="{{ url_for('ledger.hashchain_check_get', check_ulid=row.check_ulid) }}">
+              {{ row.check_kind }}
+            </a>
+            — <code>{{ "ok" if row.ok else "not_ok" }}</code>
+            — <code>{{ row.reason_code }}</code>
+            — <code>{{ row.completed_at_utc }}</code>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted" style="margin-bottom:0;">No related check rows recorded.</p>
+    {% endif %}
   </div>
 </section>
 
-{% if page.allowed_actions %}
-<section style="margin-top: 18px;">
+<section style="margin-top:18px;">
   <div class="card">
-    <h2 style="margin-top: 0;">Ledger-owned actions</h2>
+    <h2 style="margin-top:0;">Related repairs</h2>
+    {% if page.related_repairs %}
+      <ul style="margin-bottom:0;">
+        {% for row in page.related_repairs %}
+          <li>
+            <a href="{{ url_for('ledger.hashchain_repair_get', repair_ulid=row.repair_ulid) }}">
+              {{ row.repair_kind }}
+            </a>
+            — <code>{{ row.source_status }}</code>
+            — affected=<code>{{ row.affected_count }}</code>
+            {% if row.completed_at_utc %}
+              — <code>{{ row.completed_at_utc }}</code>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted" style="margin-bottom:0;">No related repair rows recorded.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section style="margin-top:18px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Diagnostics</h2>
+    <pre style="white-space:pre-wrap;">{{ page.details | tojson(indent=2) }}</pre>
+  </div>
+</section>
+
+{% if can_mutate and page.allowed_actions %}
+<section style="margin-top:18px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Ledger-owned actions</h2>
     <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
       {% if "run_verify" in page.allowed_actions %}
         <form method="post" action="{{ url_for('ledger.admin_issue_run_verify', issue_ulid=page.issue_ulid) }}">
@@ -81,8 +171,6 @@
           <button class="btn" type="submit">Run verify for this issue</button>
         </form>
       {% endif %}
-
-
 
       {% if "repair_hashchain" in page.allowed_actions %}
         <form method="post" action="{{ url_for('ledger.admin_issue_repair_hashchain', issue_ulid=page.issue_ulid) }}">

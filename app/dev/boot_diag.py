@@ -1,4 +1,24 @@
 # app/dev/boot_diag.py
+
+"""
+Wholesale overhaul procedure
+delete migrations
+delete DB instances
+run these commands in order:
+
+
+flask --app manage_vcdb.py db migrate -m "Fresh DB Instance"
+flask --app manage_vcdb.py db upgrade
+flask --app manage_vcdb.py seed bootstrap --fresh --force
+export VCDB_ENV=test
+unset VCDB_DB
+flask --app manage_vcdb.py db upgrade
+flask --app manage_vcdb.py seed bootstrap --fresh --force
+export VCDB_ENV=development
+vcdb
+clear
+"""
+
 from __future__ import annotations
 
 import hashlib

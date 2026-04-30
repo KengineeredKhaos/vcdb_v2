@@ -24,6 +24,7 @@ class DashboardDTO:
     inbox_summary: InboxSummaryDTO
     policy_summary: PolicyHealthSummaryDTO
     auth_summary: AuthOperatorSummaryDTO
+    ledger_summary: LedgerDashboardSummaryDTO
     slice_cards: tuple[SliceHealthCardDTO, ...]
     recent_activity_summary: tuple[str, ...]
 
@@ -35,6 +36,7 @@ def to_dashboard(
     inbox_summary: InboxSummaryDTO,
     policy_summary: PolicyHealthSummaryDTO,
     auth_summary: AuthOperatorSummaryDTO,
+    ledger_summary: LedgerDashboardSummaryDTO,
     slice_cards: tuple[SliceHealthCardDTO, ...],
     recent_activity_summary: tuple[str, ...],
 ) -> DashboardDTO:
@@ -44,6 +46,7 @@ def to_dashboard(
         inbox_summary=inbox_summary,
         policy_summary=policy_summary,
         auth_summary=auth_summary,
+        ledger_summary=ledger_summary,
         slice_cards=slice_cards,
         recent_activity_summary=recent_activity_summary,
     )
@@ -79,6 +82,50 @@ def to_slice_health_card(
         status=status,
         summary=summary,
         attention_count=int(attention_count),
+        launch_route=launch_route,
+    )
+
+
+@dataclass(frozen=True)
+class LedgerDashboardSummaryDTO:
+    has_gate_record: bool
+    gate_reason_code: str | None
+    gate_source_status: str | None
+    routine_backup_allowed: bool
+    dirty_forensic_backup_only: bool
+    open_issue_count: int
+    failed_open_issue_count: int
+    anomaly_open_issue_count: int
+    last_check_at_utc: str | None
+    last_repair_at_utc: str | None
+    launch_route: str
+
+
+def to_ledger_dashboard_summary(
+    *,
+    has_gate_record: bool,
+    gate_reason_code: str | None,
+    gate_source_status: str | None,
+    routine_backup_allowed: bool,
+    dirty_forensic_backup_only: bool,
+    open_issue_count: int,
+    failed_open_issue_count: int,
+    anomaly_open_issue_count: int,
+    last_check_at_utc: str | None,
+    last_repair_at_utc: str | None,
+    launch_route: str,
+) -> LedgerDashboardSummaryDTO:
+    return LedgerDashboardSummaryDTO(
+        has_gate_record=bool(has_gate_record),
+        gate_reason_code=gate_reason_code,
+        gate_source_status=gate_source_status,
+        routine_backup_allowed=bool(routine_backup_allowed),
+        dirty_forensic_backup_only=bool(dirty_forensic_backup_only),
+        open_issue_count=int(open_issue_count),
+        failed_open_issue_count=int(failed_open_issue_count),
+        anomaly_open_issue_count=int(anomaly_open_issue_count),
+        last_check_at_utc=last_check_at_utc,
+        last_repair_at_utc=last_repair_at_utc,
         launch_route=launch_route,
     )
 

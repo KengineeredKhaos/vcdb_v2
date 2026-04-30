@@ -1,0 +1,139 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{{ page.title }}{% endblock %}
+
+{% block content %}
+<section class="hero" style="margin-top:18px;">
+  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem;">
+    <a class="btn" href="{{ url_for('ledger.admin_issue_index') }}">Back to Ledger drill-down</a>
+    {% if page.issue_ulid %}
+      <a class="btn" href="{{ url_for('ledger.admin_issue_get', issue_ulid=page.issue_ulid) }}">Back to issue</a>
+    {% endif %}
+    <a class="btn" href="{{ back_dashboard_href }}">{{ back_dashboard_label }}</a>
+  </div>
+
+  <div class="hero-card">
+    <div class="glow"></div>
+    <h1>{{ page.title }}</h1>
+    <p class="muted">{{ page.summary }}</p>
+  </div>
+</section>
+
+{% if not can_mutate %}
+<section style="margin-top:18px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Read-only auditor view</h2>
+    <p style="margin-bottom:0;">
+      This page is evidence-only. It shows what Ledger checked and what the
+      result was. Auditor cannot mutate from here.
+    </p>
+  </div>
+</section>
+{% endif %}
+
+<section class="features" style="margin-top:14px;">
+  <div class="card">
+    <h3 style="margin-top:0;">Result</h3>
+    <p><span class="kbd">{{ "ok" if page.ok else "not_ok" }}</span></p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Reason</h3>
+    <p><code>{{ page.reason_code }}</code></p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Status</h3>
+    <p><code>{{ page.source_status }}</code></p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Chain</h3>
+    <p><code>{{ page.chain_key or "—" }}</code></p>
+  </div>
+</section>
+
+<section style="margin-top:18px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Check facts</h2>
+    <dl>
+      <dt>Check ULID</dt>
+      <dd><code>{{ page.check_ulid }}</code></dd>
+
+      <dt>Issue ULID</dt>
+      <dd>
+        {% if page.issue_ulid %}
+          <a href="{{ url_for('ledger.admin_issue_get', issue_ulid=page.issue_ulid) }}">
+            {{ page.issue_ulid }}
+          </a>
+        {% else %}
+          <code>—</code>
+        {% endif %}
+      </dd>
+
+      <dt>Check kind</dt>
+      <dd><code>{{ page.check_kind }}</code></dd>
+
+      <dt>Request ID</dt>
+      <dd><code>{{ page.request_id }}</code></dd>
+
+      <dt>Actor ULID</dt>
+      <dd><code>{{ page.actor_ulid or "—" }}</code></dd>
+
+      <dt>Started</dt>
+      <dd><code>{{ page.started_at_utc }}</code></dd>
+
+      <dt>Completed</dt>
+      <dd><code>{{ page.completed_at_utc }}</code></dd>
+
+      <dt>Checked count</dt>
+      <dd><code>{{ page.checked_count }}</code></dd>
+
+      <dt>Anomaly count</dt>
+      <dd><code>{{ page.anomaly_count }}</code></dd>
+
+      <dt>Failure count</dt>
+      <dd><code>{{ page.failure_count }}</code></dd>
+    </dl>
+  </div>
+</section>
+
+<section style="margin-top:18px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Backup gate posture</h2>
+    {% if page.routine_backup_allowed %}
+      <p><span class="kbd">routine backup allowed</span></p>
+    {% else %}
+      <p><span class="kbd">dirty forensic backup only</span></p>
+    {% endif %}
+  </div>
+</section>
+
+<section style="margin-top:18px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Related repairs</h2>
+    {% if page.related_repairs %}
+      <ul style="margin-bottom:0;">
+        {% for row in page.related_repairs %}
+          <li>
+            <a href="{{ url_for('ledger.hashchain_repair_get', repair_ulid=row.repair_ulid) }}">
+              {{ row.repair_kind }}
+            </a>
+            — <code>{{ row.source_status }}</code>
+            — affected=<code>{{ row.affected_count }}</code>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted" style="margin-bottom:0;">No repairs point at this check row.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section style="margin-top:18px;">
+  <div class="card">
+    <h2 style="margin-top:0;">Check details</h2>
+    <pre style="white-space:pre-wrap;">{{ page.details | tojson(indent=2) }}</pre>
+  </div>
+</section>
+{% endblock %}

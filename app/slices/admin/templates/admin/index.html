@@ -22,6 +22,53 @@
   </div>
 
   <div class="card">
+    <h2 style="margin-top: 0;">Finance</h2>
+    <p>Integrity, quarantine, and repair drill-down.</p>
+    <p>Run Finance self-checks and open slice-owned issue evidence.</p>
+    <p>
+      <a class="btn" href="{{ url_for('finance.admin_issue_index') }}">
+        Open Finance Control Surface
+      </a>
+    </p>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top: 0;">Ledger</h2>
+    <p>
+      Backup gate:
+      {% if page.ledger_summary.routine_backup_allowed %}
+        <span class="kbd">open</span>
+      {% else %}
+        <span class="kbd">not active</span>
+      {% endif %}
+    </p>
+
+    {% if page.ledger_summary.has_gate_record %}
+      <p>
+        Gate reason:
+        <code>{{ page.ledger_summary.gate_reason_code or "—" }}</code>
+      </p>
+      <p>
+        Gate status:
+        <code>{{ page.ledger_summary.gate_source_status or "—" }}</code>
+      </p>
+    {% else %}
+      <p>No gate record has been captured yet.</p>
+    {% endif %}
+
+    <p>Open issues: {{ page.ledger_summary.open_issue_count }}</p>
+    <p>Failed-family open issues: {{ page.ledger_summary.failed_open_issue_count }}</p>
+    <p>Anomaly-family open issues: {{ page.ledger_summary.anomaly_open_issue_count }}</p>
+    <p>Last check: {{ page.ledger_summary.last_check_at_utc or "—" }}</p>
+    <p>Last repair: {{ page.ledger_summary.last_repair_at_utc or "—" }}</p>
+    <p>
+      <a class="btn" href="{{ url_for(page.ledger_summary.launch_route) }}">
+        Open Ledger Control Surface
+      </a>
+    </p>
+  </div>
+
+  <div class="card">
     <h2 style="margin-top: 0;">Policy</h2>
     <p>Policies: {{ page.policy_summary.policy_count }}</p>
     <p>Valid: {{ page.policy_summary.valid_count }}</p>
@@ -44,30 +91,6 @@
       <a class="btn" href="{{ url_for('admin.auth_operators') }}">
         Open Auth User List
       </a>
-    </p>
-  </div>
-
-  <div class="card">
-    <h2 style="margin-top: 0;">Finance</h2>
-    <p>Integrity, quarantine, and repair drill-down.</p>
-    <p>Run Finance self-checks and open slice-owned issue evidence.</p>
-    <p>
-      <a class="btn" href="{{ url_for('finance.admin_issue_index') }}">
-        Open Finance Control Surface
-      </a>
-    </p>
-  </div>
-
-  <div class="card">
-    <h2 style="margin-top: 0;">Ledger</h2>
-    <p>Maintenance and repair surface.</p>
-    <p>
-      Surface not yet built. This card reserves Ledger's place on the
-      Admin Dashboard so behind-the-curtain slices remain visible and
-      intentional.
-    </p>
-    <p>
-      <span class="kbd">STAGED</span>
     </p>
   </div>
 </section>
@@ -98,7 +121,7 @@
 </section>
 
 <section style="margin-top: 18px;">
-  <h2>Recent activity</h2>
+  <h2>Notes for Future Developers</h2>
   {% if page.recent_activity_summary %}
     <div class="card">
       <ul style="margin: 0; padding-left: 1.2rem;">
@@ -119,8 +142,9 @@
   <h2>Diagnostics</h2>
   <div class="card">
     <p class="muted">
-      Development-only inspection and route-probe tooling.
-      Not part of Admin intervention workflow.
+      Development-only inspection and route-probe tooling.<br>
+      <strong>Not part of Admin intervention workflow.</strong><br>
+      <strong>Hic Sund Dracones</strong> - <i>here be dragons!</i>
     </p>
     <p>
       <a class="btn" href="{{ url_for('admin.dev_toolbox') }}">

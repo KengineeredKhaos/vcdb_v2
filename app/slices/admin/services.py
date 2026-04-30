@@ -31,6 +31,7 @@ from app.extensions.contracts import (
     auth_v1,
     entity_v2,
     governance_v2,
+    ledger_v2,
 )
 from app.extensions.contracts.admin_v2 import (
     AdminAlertCloseDTO,
@@ -57,6 +58,7 @@ from .mapper import (
     to_dashboard,
     to_inbox_item,
     to_inbox_page,
+    to_ledger_dashboard_summary,
     to_inbox_summary,
     to_policy_detail_page,
     to_policy_health_summary,
@@ -1056,12 +1058,28 @@ def get_dashboard() -> DashboardDTO:
     auth_page = get_auth_operators_page()
     auth_summary = auth_page.auth_summary
     auth_rows = auth_page.items
+    ledger_summary = ledger_v2.get_integrity_summary()
+    ledger_card = to_ledger_dashboard_summary(
+        has_gate_record=ledger_summary.has_gate_record,
+        gate_reason_code=ledger_summary.gate_reason_code,
+        gate_source_status=ledger_summary.gate_source_status,
+        routine_backup_allowed=ledger_summary.routine_backup_allowed,
+        dirty_forensic_backup_only=(
+            ledger_summary.dirty_forensic_backup_only
+        ),
+        open_issue_count=ledger_summary.open_issue_count,
+        failed_open_issue_count=ledger_summary.failed_open_issue_count,
+        anomaly_open_issue_count=ledger_summary.anomaly_open_issue_count,
+        last_check_at_utc=ledger_summary.last_check_at_utc,
+        last_repair_at_utc=ledger_summary.last_repair_at_utc,
+        launch_route="ledger.admin_issue_index",
+    )
 
     slice_cards = (
         to_slice_health_card(
             slice_key="admin_inbox",
             label="Inbox",
-            status="live" if inbox_items else "scaffold",
+            status="live" if inbox_items else "ready",
             summary="Unified Admin triage surface.",
             attention_count=len(inbox_items),
             launch_route="admin.inbox",
@@ -1092,11 +1110,21 @@ def get_dashboard() -> DashboardDTO:
             attention_count=auth_summary.attention_count,
             launch_route="admin.auth_operators",
         ),
+        to_slice_health_card(
+            slice_key="admin_ledger",
+            label="Ledger",
+            status="live",
+            summary="Ledger integrity drill-down and repair evidence.",
+            attention_count=ledger_card.open_issue_count,
+            launch_route=ledger_card.launch_route,
+        ),
     )
 
     recent_activity_summary = (
-        "Admin control surface scaffold is live.",
-        "Policy workflow now reads Governance through contracts.",
+        "This block is reserved for future dashboard summary work.",
+        "It is not a live activity feed.",
+        "Do not present hand-written prose here as system telemetry.",
+        "Prefer computed posture summaries or remove this block entirely.",
     )
 
     return to_dashboard(
@@ -1108,6 +1136,7 @@ def get_dashboard() -> DashboardDTO:
         inbox_summary=inbox_summary,
         policy_summary=policy_summary,
         auth_summary=auth_summary,
+        ledger_summary=ledger_card,
         slice_cards=slice_cards,
         recent_activity_summary=recent_activity_summary,
     )

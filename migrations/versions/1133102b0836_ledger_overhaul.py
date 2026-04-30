@@ -1,8 +1,8 @@
-"""empty message
+"""ledger overhaul
 
-Revision ID: 0ebeaf31225e
+Revision ID: 1133102b0836
 Revises: 
-Create Date: 2026-04-26 05:12:44.280521
+Create Date: 2026-04-29 13:54:33.789283
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '0ebeaf31225e'
+revision = '1133102b0836'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -235,6 +235,48 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_finance_account_active'), ['active'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_account_code'), ['code'], unique=True)
         batch_op.create_index(batch_op.f('ix_finance_account_type'), ['type'], unique=False)
+
+    op.create_table('finance_admin_issue',
+    sa.Column('reason_code', sa.String(length=128), nullable=False),
+    sa.Column('source_status', sa.String(length=64), nullable=False),
+    sa.Column('issue_status', sa.String(length=32), nullable=False),
+    sa.Column('workflow_key', sa.String(length=128), nullable=False),
+    sa.Column('target_ulid', sa.String(length=26), nullable=True),
+    sa.Column('request_id', sa.String(length=64), nullable=False),
+    sa.Column('title', sa.String(length=200), nullable=False),
+    sa.Column('summary', sa.Text(), nullable=False),
+    sa.Column('oper_note', sa.String(length=255), nullable=True),
+    sa.Column('detection_json', sa.JSON(), nullable=False),
+    sa.Column('preview_json', sa.JSON(), nullable=False),
+    sa.Column('resolution_json', sa.JSON(), nullable=False),
+    sa.Column('opened_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('review_started_at_utc', sa.String(length=30), nullable=True),
+    sa.Column('review_started_by_actor_ulid', sa.String(length=26), nullable=True),
+    sa.Column('resolved_at_utc', sa.String(length=30), nullable=True),
+    sa.Column('resolved_by_actor_ulid', sa.String(length=26), nullable=True),
+    sa.Column('close_reason', sa.String(length=64), nullable=True),
+    sa.Column('admin_alert_ulid', sa.String(length=26), nullable=True),
+    sa.Column('dedupe_key', sa.String(length=255), nullable=False),
+    sa.Column('dedupe_scope', sa.String(length=255), nullable=True),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
+    sa.CheckConstraint("issue_status in ('open','in_review','resolved','false_positive','manual_resolution_required')", name='ck_finance_admin_issue_status'),
+    sa.PrimaryKeyConstraint('ulid')
+    )
+    with op.batch_alter_table('finance_admin_issue', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_finance_admin_issue_admin_alert_ulid'), ['admin_alert_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_admin_issue_dedupe_key'), ['dedupe_key'], unique=True)
+        batch_op.create_index(batch_op.f('ix_finance_admin_issue_dedupe_scope'), ['dedupe_scope'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_admin_issue_issue_status'), ['issue_status'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_admin_issue_reason_code'), ['reason_code'], unique=False)
+        batch_op.create_index('ix_finance_admin_issue_reason_status', ['reason_code', 'issue_status'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_admin_issue_request_id'), ['request_id'], unique=False)
+        batch_op.create_index('ix_finance_admin_issue_request_reason', ['request_id', 'reason_code'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_admin_issue_source_status'), ['source_status'], unique=False)
+        batch_op.create_index('ix_finance_admin_issue_status_updated', ['issue_status', 'updated_at_utc'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_admin_issue_target_ulid'), ['target_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_admin_issue_workflow_key'), ['workflow_key'], unique=False)
 
     op.create_table('finance_balance_monthly',
     sa.Column('account_code', sa.String(length=24), nullable=False),
@@ -462,6 +504,29 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_finance_stat_metric_metric_code'), ['metric_code'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_stat_metric_period_key'), ['period_key'], unique=False)
 
+    op.create_table('finance_sweep_run',
+    sa.Column('request_id', sa.String(length=64), nullable=False),
+    sa.Column('actor_ulid', sa.String(length=26), nullable=True),
+    sa.Column('ran_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('scans_run', sa.Integer(), nullable=False),
+    sa.Column('clean_count', sa.Integer(), nullable=False),
+    sa.Column('dirty_count', sa.Integer(), nullable=False),
+    sa.Column('issue_count', sa.Integer(), nullable=False),
+    sa.Column('quarantine_count', sa.Integer(), nullable=False),
+    sa.Column('summary_json', sa.JSON(), nullable=False),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
+    sa.CheckConstraint('clean_count >= 0 and dirty_count >= 0 and issue_count >= 0 and quarantine_count >= 0', name='ck_finance_sweep_run_counts_nonnegative'),
+    sa.CheckConstraint('scans_run >= 0', name='ck_finance_sweep_run_scans_nonnegative'),
+    sa.PrimaryKeyConstraint('ulid')
+    )
+    with op.batch_alter_table('finance_sweep_run', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_finance_sweep_run_actor_ulid'), ['actor_ulid'], unique=False)
+        batch_op.create_index('ix_finance_sweep_run_ran_actor', ['ran_at_utc', 'actor_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_sweep_run_ran_at_utc'), ['ran_at_utc'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_sweep_run_request_id'), ['request_id'], unique=True)
+
     op.create_table('gov_canonical_state',
     sa.Column('code', sa.String(length=2), nullable=False),
     sa.Column('name', sa.String(length=64), nullable=False),
@@ -579,6 +644,7 @@ def upgrade():
     sa.Column('source_status', sa.String(length=64), nullable=False),
     sa.Column('request_id', sa.String(length=64), nullable=False),
     sa.Column('actor_ulid', sa.String(length=26), nullable=True),
+    sa.Column('issue_ulid', sa.String(length=26), nullable=True),
     sa.Column('chain_key', sa.String(length=40), nullable=True),
     sa.Column('started_at_utc', sa.String(length=30), nullable=False),
     sa.Column('completed_at_utc', sa.String(length=30), nullable=False),
@@ -595,6 +661,7 @@ def upgrade():
     sa.PrimaryKeyConstraint('ulid')
     )
     with op.batch_alter_table('ledger_hashchain_check', schema=None) as batch_op:
+        batch_op.create_index('ix_ledger_hashchain_check_issue_created', ['issue_ulid', 'created_at_utc'], unique=False)
         batch_op.create_index('ix_ledger_hashchain_check_kind_created', ['check_kind', 'created_at_utc'], unique=False)
         batch_op.create_index('ix_ledger_hashchain_check_reason', ['reason_code', 'source_status'], unique=False)
 
@@ -605,7 +672,8 @@ def upgrade():
     sa.Column('request_id', sa.String(length=64), nullable=False),
     sa.Column('actor_ulid', sa.String(length=26), nullable=True),
     sa.Column('issue_ulid', sa.String(length=26), nullable=True),
-    sa.Column('check_ulid', sa.String(length=26), nullable=True),
+    sa.Column('source_check_ulid', sa.String(length=26), nullable=True),
+    sa.Column('post_repair_check_ulid', sa.String(length=26), nullable=True),
     sa.Column('chain_key', sa.String(length=40), nullable=True),
     sa.Column('started_at_utc', sa.String(length=30), nullable=False),
     sa.Column('completed_at_utc', sa.String(length=30), nullable=True),
@@ -621,6 +689,8 @@ def upgrade():
     with op.batch_alter_table('ledger_hashchain_repair', schema=None) as batch_op:
         batch_op.create_index('ix_ledger_hashchain_repair_chain', ['chain_key', 'created_at_utc'], unique=False)
         batch_op.create_index('ix_ledger_hashchain_repair_issue', ['issue_ulid'], unique=False)
+        batch_op.create_index('ix_ledger_hashchain_repair_post_check', ['post_repair_check_ulid'], unique=False)
+        batch_op.create_index('ix_ledger_hashchain_repair_source_check', ['source_check_ulid'], unique=False)
 
     op.create_table('logi_item',
     sa.Column('category', sa.String(length=64), nullable=False),
@@ -935,6 +1005,7 @@ def upgrade():
     sa.Column('amount_cents', sa.Integer(), nullable=False),
     sa.Column('source', sa.String(length=32), nullable=False),
     sa.Column('source_ref_ulid', sa.String(length=26), nullable=True),
+    sa.Column('idempotency_key', sa.String(length=200), nullable=False),
     sa.Column('happened_at_utc', sa.String(length=30), nullable=False),
     sa.Column('actor_ulid', sa.String(length=26), nullable=True),
     sa.Column('ulid', sa.String(length=26), nullable=False),
@@ -951,6 +1022,7 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_finance_posting_fact_fund_code'), ['fund_code'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_posting_fact_funding_demand_ulid'), ['funding_demand_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_posting_fact_happened_at_utc'), ['happened_at_utc'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_posting_fact_idempotency_key'), ['idempotency_key'], unique=True)
         batch_op.create_index(batch_op.f('ix_finance_posting_fact_journal_ulid'), ['journal_ulid'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_posting_fact_method_key'), ['method_key'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_posting_fact_posting_family'), ['posting_family'], unique=False)
@@ -959,6 +1031,43 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_finance_posting_fact_semantic_key'), ['semantic_key'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_posting_fact_source'), ['source'], unique=False)
         batch_op.create_index(batch_op.f('ix_finance_posting_fact_source_ref_ulid'), ['source_ref_ulid'], unique=False)
+
+    op.create_table('finance_quarantine',
+    sa.Column('reason_code', sa.String(length=128), nullable=False),
+    sa.Column('scope_type', sa.String(length=64), nullable=False),
+    sa.Column('scope_ulid', sa.String(length=26), nullable=True),
+    sa.Column('scope_label', sa.String(length=200), nullable=True),
+    sa.Column('source_issue_ulid', sa.String(length=26), nullable=False),
+    sa.Column('request_id', sa.String(length=64), nullable=False),
+    sa.Column('status', sa.String(length=32), nullable=False),
+    sa.Column('posture', sa.String(length=64), nullable=False),
+    sa.Column('message', sa.Text(), nullable=False),
+    sa.Column('notes_json', sa.JSON(), nullable=False),
+    sa.Column('opened_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('closed_at_utc', sa.String(length=30), nullable=True),
+    sa.Column('closed_by_actor_ulid', sa.String(length=26), nullable=True),
+    sa.Column('close_reason', sa.String(length=128), nullable=True),
+    sa.Column('dedupe_key', sa.String(length=255), nullable=False),
+    sa.Column('ulid', sa.String(length=26), nullable=False),
+    sa.Column('created_at_utc', sa.String(length=30), nullable=False),
+    sa.Column('updated_at_utc', sa.String(length=30), nullable=False),
+    sa.CheckConstraint("posture in ('projection_blocked','posting_blocked','projection_and_posting_blocked')", name='ck_finance_quarantine_posture'),
+    sa.CheckConstraint("scope_type in ('global','project','funding_demand','journal','semantic_posting','ops_float')", name='ck_finance_quarantine_scope_type'),
+    sa.CheckConstraint("status in ('active','released','superseded')", name='ck_finance_quarantine_status'),
+    sa.ForeignKeyConstraint(['source_issue_ulid'], ['finance_admin_issue.ulid'], ),
+    sa.PrimaryKeyConstraint('ulid')
+    )
+    with op.batch_alter_table('finance_quarantine', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_finance_quarantine_dedupe_key'), ['dedupe_key'], unique=True)
+        batch_op.create_index('ix_finance_quarantine_issue_status', ['source_issue_ulid', 'status'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_quarantine_reason_code'), ['reason_code'], unique=False)
+        batch_op.create_index('ix_finance_quarantine_reason_status', ['reason_code', 'status'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_quarantine_request_id'), ['request_id'], unique=False)
+        batch_op.create_index('ix_finance_quarantine_scope_status', ['scope_type', 'scope_ulid', 'status'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_quarantine_scope_type'), ['scope_type'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_quarantine_scope_ulid'), ['scope_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_quarantine_source_issue_ulid'), ['source_issue_ulid'], unique=False)
+        batch_op.create_index(batch_op.f('ix_finance_quarantine_status'), ['status'], unique=False)
 
     op.create_table('finance_reimbursement',
     sa.Column('grant_ulid', sa.String(length=26), nullable=False),
@@ -1952,6 +2061,19 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_finance_reimbursement_claim_number'))
 
     op.drop_table('finance_reimbursement')
+    with op.batch_alter_table('finance_quarantine', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_finance_quarantine_status'))
+        batch_op.drop_index(batch_op.f('ix_finance_quarantine_source_issue_ulid'))
+        batch_op.drop_index(batch_op.f('ix_finance_quarantine_scope_ulid'))
+        batch_op.drop_index(batch_op.f('ix_finance_quarantine_scope_type'))
+        batch_op.drop_index('ix_finance_quarantine_scope_status')
+        batch_op.drop_index(batch_op.f('ix_finance_quarantine_request_id'))
+        batch_op.drop_index('ix_finance_quarantine_reason_status')
+        batch_op.drop_index(batch_op.f('ix_finance_quarantine_reason_code'))
+        batch_op.drop_index('ix_finance_quarantine_issue_status')
+        batch_op.drop_index(batch_op.f('ix_finance_quarantine_dedupe_key'))
+
+    op.drop_table('finance_quarantine')
     with op.batch_alter_table('finance_posting_fact', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_finance_posting_fact_source_ref_ulid'))
         batch_op.drop_index(batch_op.f('ix_finance_posting_fact_source'))
@@ -1961,6 +2083,7 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_finance_posting_fact_posting_family'))
         batch_op.drop_index(batch_op.f('ix_finance_posting_fact_method_key'))
         batch_op.drop_index(batch_op.f('ix_finance_posting_fact_journal_ulid'))
+        batch_op.drop_index(batch_op.f('ix_finance_posting_fact_idempotency_key'))
         batch_op.drop_index(batch_op.f('ix_finance_posting_fact_happened_at_utc'))
         batch_op.drop_index(batch_op.f('ix_finance_posting_fact_funding_demand_ulid'))
         batch_op.drop_index(batch_op.f('ix_finance_posting_fact_fund_code'))
@@ -2071,6 +2194,8 @@ def downgrade():
 
     op.drop_table('logi_item')
     with op.batch_alter_table('ledger_hashchain_repair', schema=None) as batch_op:
+        batch_op.drop_index('ix_ledger_hashchain_repair_source_check')
+        batch_op.drop_index('ix_ledger_hashchain_repair_post_check')
         batch_op.drop_index('ix_ledger_hashchain_repair_issue')
         batch_op.drop_index('ix_ledger_hashchain_repair_chain')
 
@@ -2078,6 +2203,7 @@ def downgrade():
     with op.batch_alter_table('ledger_hashchain_check', schema=None) as batch_op:
         batch_op.drop_index('ix_ledger_hashchain_check_reason')
         batch_op.drop_index('ix_ledger_hashchain_check_kind_created')
+        batch_op.drop_index('ix_ledger_hashchain_check_issue_created')
 
     op.drop_table('ledger_hashchain_check')
     with op.batch_alter_table('ledger_event', schema=None) as batch_op:
@@ -2113,6 +2239,13 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_gov_canonical_state_code'))
 
     op.drop_table('gov_canonical_state')
+    with op.batch_alter_table('finance_sweep_run', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_finance_sweep_run_request_id'))
+        batch_op.drop_index(batch_op.f('ix_finance_sweep_run_ran_at_utc'))
+        batch_op.drop_index('ix_finance_sweep_run_ran_actor')
+        batch_op.drop_index(batch_op.f('ix_finance_sweep_run_actor_ulid'))
+
+    op.drop_table('finance_sweep_run')
     with op.batch_alter_table('finance_stat_metric', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_finance_stat_metric_period_key'))
         batch_op.drop_index(batch_op.f('ix_finance_stat_metric_metric_code'))
@@ -2192,6 +2325,21 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_finance_balance_monthly_account_code'))
 
     op.drop_table('finance_balance_monthly')
+    with op.batch_alter_table('finance_admin_issue', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_finance_admin_issue_workflow_key'))
+        batch_op.drop_index(batch_op.f('ix_finance_admin_issue_target_ulid'))
+        batch_op.drop_index('ix_finance_admin_issue_status_updated')
+        batch_op.drop_index(batch_op.f('ix_finance_admin_issue_source_status'))
+        batch_op.drop_index('ix_finance_admin_issue_request_reason')
+        batch_op.drop_index(batch_op.f('ix_finance_admin_issue_request_id'))
+        batch_op.drop_index('ix_finance_admin_issue_reason_status')
+        batch_op.drop_index(batch_op.f('ix_finance_admin_issue_reason_code'))
+        batch_op.drop_index(batch_op.f('ix_finance_admin_issue_issue_status'))
+        batch_op.drop_index(batch_op.f('ix_finance_admin_issue_dedupe_scope'))
+        batch_op.drop_index(batch_op.f('ix_finance_admin_issue_dedupe_key'))
+        batch_op.drop_index(batch_op.f('ix_finance_admin_issue_admin_alert_ulid'))
+
+    op.drop_table('finance_admin_issue')
     with op.batch_alter_table('finance_account', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_finance_account_type'))
         batch_op.drop_index(batch_op.f('ix_finance_account_code'))

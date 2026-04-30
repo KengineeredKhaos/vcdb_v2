@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import desc, or_, select
 
 from app.extensions import db, event_bus
 from app.extensions.contracts.admin_v2 import (
@@ -18,13 +18,20 @@ from app.extensions.contracts.admin_v2 import (
 from app.lib.chrono import now_iso8601_ms
 from app.lib.guards import ensure_request_id
 
-from .models import LedgerAdminIssue, LedgerHashchainCheck
+from .models import (
+    LedgerAdminIssue,
+    LedgerHashchainCheck,
+    LedgerHashchainRepair,
+)
 from .services import (
+    CHECK_KIND_MANUAL_VERIFY,
     REASON_ADVISORY_CRON_LEDGERCHECK,
     REASON_ADVISORY_HASHCHAIN,
     REASON_ANOMALY_HASHCHAIN,
     REASON_FAILURE_CRON_LEDGERCHECK,
     REASON_FAILURE_HASHCHAIN,
+    latest_daily_close_status,
+    record_hashchain_check,
     repair_hashchain,
     verify_chain,
 )
@@ -247,8 +254,80 @@ def raise_hashchain_advisory(
     return None
 
 
+def ledger_drilldown_index(
+    *,
+    view: str = "active",
+    limit: int = 20,
+) -> dict[str, Any]:
+    clean_view = _clean_issue_view(view)
+    issues = _list_issues(view=clean_view, limit=limit)
+    checks = _list_checks(limit=limit)
+    repairs = _list_repairs(limit=limit)
+    gate_status = latest_daily_close_status()
+
+    return {
+        "title": "Ledger integrity drill-down",
+        "summary": (
+            "Ledger owns integrity truth, evidence, and repair history. "
+            "Admin launches Ledger-owned actions. Auditor reads."
+        ),
+        "current_view": clean_view,
+        "gate_status": gate_status,
+        "issues": tuple(_issue_index_row(row) for row in issues),
+        "checks": tuple(_check_index_row(row) for row in checks),
+        "repairs": tuple(_repair_index_row(row) for row in repairs),
+    }
+
+
+def run_manual_integrity_check(
+    *,
+    actor_ulid: str | None,
+    request_id: str | None,
+    chain_key: str | None = None,
+) -> dict[str, Any]:
+    """
+    Run an Admin-initiated Ledger inspection from the drill-down landing page.
+
+    This is evidence-only. It records a manual verify check row and may
+    create or refresh a Ledger admin issue when dirty, but it does not
+    reopen the backup gate.
+    """
+    rid = ensure_request_id(request_id)
+    started = now_iso8601_ms()
+    result = verify_chain(chain_key=chain_key)
+
+    broken = result.get("broken") or {}
+    derived_chain_key = (
+        chain_key or str(broken.get("chain_key") or "").strip() or None
+    )
+
+    check = record_hashchain_check(
+        check_kind=CHECK_KIND_MANUAL_VERIFY,
+        result=result,
+        request_id=rid,
+        actor_ulid=actor_ulid,
+        issue_ulid=None,
+        chain_key=derived_chain_key,
+        started_at_utc=started,
+    )
+    receipt = sync_hashchain_issue_from_check(
+        check=check,
+        result=result,
+        actor_ulid=actor_ulid,
+    )
+    return {
+        "ok": bool(result.get("ok")),
+        "check_ulid": check.ulid,
+        "chain_key": derived_chain_key,
+        "alert_queued": bool(receipt),
+    }
+
+
 def ledger_issue_get(issue_ulid: str) -> dict[str, Any]:
     issue = _get_issue_or_raise(issue_ulid)
+    details = dict(issue.details_json or {})
+    related_checks = _list_checks(issue_ulid=issue.ulid, limit=10)
+    related_repairs = _list_repairs(issue_ulid=issue.ulid, limit=10)
     return {
         "title": issue.title,
         "summary": issue.summary,
@@ -258,14 +337,79 @@ def ledger_issue_get(issue_ulid: str) -> dict[str, Any]:
         "request_id": issue.request_id,
         "target_ulid": issue.target_ulid,
         "chain_key": issue.chain_key,
-        "event_ulid": issue.event_ulid
-        or _first_failure_event_ulid(issue.details_json or {}),
-        "details": issue.details_json or {},
+        "event_ulid": issue.event_ulid or _first_failure_event_ulid(details),
+        "details": details,
         "closed_at_utc": issue.closed_at_utc,
         "close_reason": issue.close_reason,
         "backup_posture": _backup_posture(issue),
         "allowed_actions": _allowed_actions(issue),
+        "last_verify_check_ulid": _latest_detail_check_ulid(details),
+        "last_repair_ulid": _latest_detail_repair_ulid(details),
+        "related_checks": tuple(
+            _check_index_row(row) for row in related_checks
+        ),
+        "related_repairs": tuple(
+            _repair_index_row(row) for row in related_repairs
+        ),
         "as_of_utc": now_iso8601_ms(),
+    }
+
+
+def ledger_check_get(check_ulid: str) -> dict[str, Any]:
+    check = _get_check_or_raise(check_ulid)
+    issue = _get_issue_optional(check.issue_ulid)
+    repairs = _list_repairs_for_check(check.ulid)
+
+    return {
+        "title": f"Ledger check — {check.check_kind}",
+        "summary": "Ledger hash-chain evidence row.",
+        "check_ulid": check.ulid,
+        "issue_ulid": check.issue_ulid,
+        "issue_title": issue.title if issue else None,
+        "reason_code": check.reason_code,
+        "source_status": check.source_status,
+        "request_id": check.request_id,
+        "actor_ulid": check.actor_ulid,
+        "chain_key": check.chain_key,
+        "check_kind": check.check_kind,
+        "started_at_utc": check.started_at_utc,
+        "completed_at_utc": check.completed_at_utc,
+        "ok": bool(check.ok),
+        "checked_count": check.checked_count,
+        "anomaly_count": check.anomaly_count,
+        "failure_count": check.failure_count,
+        "routine_backup_allowed": bool(check.routine_backup_allowed),
+        "dirty_forensic_backup_only": bool(check.dirty_forensic_backup_only),
+        "details": check.details_json or {},
+        "related_repairs": tuple(_repair_index_row(row) for row in repairs),
+    }
+
+
+def ledger_repair_get(repair_ulid: str) -> dict[str, Any]:
+    repair = _get_repair_or_raise(repair_ulid)
+    issue = _get_issue_optional(repair.issue_ulid)
+
+    return {
+        "title": "Ledger repair evidence",
+        "summary": "Ledger-owned hash-chain repair record.",
+        "repair_ulid": repair.ulid,
+        "issue_ulid": repair.issue_ulid,
+        "issue_title": issue.title if issue else None,
+        "repair_kind": repair.repair_kind,
+        "reason_code": repair.reason_code,
+        "source_status": repair.source_status,
+        "request_id": repair.request_id,
+        "actor_ulid": repair.actor_ulid,
+        "chain_key": repair.chain_key,
+        "source_check_ulid": repair.source_check_ulid,
+        "post_repair_check_ulid": repair.post_repair_check_ulid,
+        "started_at_utc": repair.started_at_utc,
+        "completed_at_utc": repair.completed_at_utc,
+        "summary_text": repair.summary,
+        "affected_event_ulids": tuple(repair.affected_event_ulids_json or ()),
+        "affected_count": len(repair.affected_event_ulids_json or ()),
+        "before": repair.before_json or {},
+        "after": repair.after_json or {},
     }
 
 
@@ -275,20 +419,36 @@ def run_verify_for_issue(
     actor_ulid: str | None,
     request_id: str | None,
 ) -> dict[str, Any]:
-    """Run verification for the issue chain and refresh issue context."""
+    """Run investigation verify for the issue chain and record evidence."""
     rid = ensure_request_id(request_id)
     issue = _get_issue_or_raise(issue_ulid)
+    started = now_iso8601_ms()
     result = verify_chain(chain_key=issue.chain_key)
+    check = record_hashchain_check(
+        check_kind=CHECK_KIND_MANUAL_VERIFY,
+        result=result,
+        request_id=rid,
+        actor_ulid=actor_ulid,
+        issue_ulid=issue.ulid,
+        chain_key=issue.chain_key,
+        started_at_utc=started,
+    )
 
     details = dict(issue.details_json or {})
-    details["last_verify"] = result
-    details["last_verify_at_utc"] = now_iso8601_ms()
-    issue.details_json = details
-    issue.source_status = (
-        SOURCE_STATUS_INVESTIGATING
-        if not result.get("ok")
-        else issue.source_status
+    details["last_verify"] = _build_check_context(
+        check=check,
+        result=result,
     )
+    issue.details_json = details
+
+    changed_fields = ["details_json"]
+    if (
+        not result.get("ok")
+        and issue.source_status != SOURCE_STATUS_INVESTIGATING
+    ):
+        issue.source_status = SOURCE_STATUS_INVESTIGATING
+        changed_fields.append("source_status")
+
     issue.updated_at_utc = now_iso8601_ms()
 
     event_bus.emit(
@@ -301,12 +461,14 @@ def run_verify_for_issue(
             "issue_ulid": issue.ulid,
             "chain_key": issue.chain_key,
             "event_ulid": issue.event_ulid,
+            "check_ulid": check.ulid,
         },
-        changed={"fields": ["details_json", "source_status"]},
+        changed={"fields": changed_fields},
         meta={
             "origin": "ledger_admin_issue",
             "reason_code": issue.reason_code,
             "verify_ok": bool(result.get("ok")),
+            "check_kind": CHECK_KIND_MANUAL_VERIFY,
         },
         happened_at_utc=now_iso8601_ms(),
         chain_key="ledger.health",
@@ -330,14 +492,20 @@ def repair_hashchain_for_issue(
         raise ValueError("Ledger hash-chain repair requires chain_key")
 
     details = dict(issue.details_json or {})
-    check_ulid = str(details.get("check_ulid") or "") or None
+    last_verify = details.get("last_verify") or {}
+    source_check_ulid = None
+    if isinstance(last_verify, dict):
+        source_check_ulid = str(last_verify.get("check_ulid") or "") or None
+    source_check_ulid = source_check_ulid or (
+        str(details.get("check_ulid") or "") or None
+    )
 
     result = repair_hashchain(
         chain_key=issue.chain_key,
         actor_ulid=actor_ulid,
         request_id=rid,
         issue_ulid=issue.ulid,
-        check_ulid=check_ulid,
+        source_check_ulid=source_check_ulid,
     )
 
     updated_details = dict(issue.details_json or {})
@@ -505,6 +673,7 @@ def _build_check_context(
 ) -> dict[str, Any]:
     return {
         "check_ulid": check.ulid,
+        "issue_ulid": check.issue_ulid,
         "reason_code": check.reason_code,
         "check_kind": check.check_kind,
         "source_status": check.source_status,
@@ -739,9 +908,9 @@ def _alert_context(issue: LedgerAdminIssue) -> dict[str, Any]:
         "reason_code": issue.reason_code,
         "source_status": issue.source_status,
         "chain_key": issue.chain_key,
-        "event_ulid": issue.event_ulid
-        or _first_failure_event_ulid(details),
-        "check_ulid": details.get("check_ulid"),
+        "event_ulid": issue.event_ulid or _first_failure_event_ulid(details),
+        "check_ulid": _latest_detail_check_ulid(details),
+        "last_repair_ulid": _latest_detail_repair_ulid(details),
         "routine_backup_allowed": details.get("routine_backup_allowed"),
         "dirty_forensic_backup_only": details.get(
             "dirty_forensic_backup_only"
@@ -771,3 +940,166 @@ def _allowed_actions(issue: LedgerAdminIssue) -> tuple[str, ...]:
         actions.append("repair_hashchain")
     actions.extend(["close_restored", "close_no_repair"])
     return tuple(actions)
+
+
+def _clean_issue_view(view: str | None) -> str:
+    clean = str(view or "active").strip().lower()
+    if clean in {"active", "closed", "all"}:
+        return clean
+    return "active"
+
+
+def _list_issues(
+    *,
+    view: str,
+    limit: int,
+) -> list[LedgerAdminIssue]:
+    stmt = select(LedgerAdminIssue)
+    if view == "active":
+        stmt = stmt.where(LedgerAdminIssue.closed_at_utc.is_(None))
+    elif view == "closed":
+        stmt = stmt.where(LedgerAdminIssue.closed_at_utc.is_not(None))
+
+    stmt = stmt.order_by(desc(LedgerAdminIssue.updated_at_utc)).limit(limit)
+    return list(db.session.execute(stmt).scalars())
+
+
+def _list_checks(
+    *,
+    issue_ulid: str | None = None,
+    limit: int = 20,
+) -> list[LedgerHashchainCheck]:
+    stmt = select(LedgerHashchainCheck)
+    if issue_ulid:
+        stmt = stmt.where(LedgerHashchainCheck.issue_ulid == issue_ulid)
+    stmt = stmt.order_by(desc(LedgerHashchainCheck.created_at_utc)).limit(
+        limit
+    )
+    return list(db.session.execute(stmt).scalars())
+
+
+def _list_repairs(
+    *,
+    issue_ulid: str | None = None,
+    limit: int = 20,
+) -> list[LedgerHashchainRepair]:
+    stmt = select(LedgerHashchainRepair)
+    if issue_ulid:
+        stmt = stmt.where(LedgerHashchainRepair.issue_ulid == issue_ulid)
+    stmt = stmt.order_by(desc(LedgerHashchainRepair.created_at_utc)).limit(
+        limit
+    )
+    return list(db.session.execute(stmt).scalars())
+
+
+def _list_repairs_for_check(
+    check_ulid: str,
+) -> list[LedgerHashchainRepair]:
+    stmt = (
+        select(LedgerHashchainRepair)
+        .where(
+            or_(
+                LedgerHashchainRepair.source_check_ulid == check_ulid,
+                LedgerHashchainRepair.post_repair_check_ulid == check_ulid,
+            )
+        )
+        .order_by(desc(LedgerHashchainRepair.created_at_utc))
+    )
+    return list(db.session.execute(stmt).scalars())
+
+
+def _issue_index_row(issue: LedgerAdminIssue) -> dict[str, Any]:
+    details = dict(issue.details_json or {})
+    return {
+        "issue_ulid": issue.ulid,
+        "title": issue.title,
+        "reason_code": issue.reason_code,
+        "source_status": issue.source_status,
+        "chain_key": issue.chain_key,
+        "event_ulid": issue.event_ulid or _first_failure_event_ulid(details),
+        "request_id": issue.request_id,
+        "closed_at_utc": issue.closed_at_utc,
+        "updated_at_utc": issue.updated_at_utc,
+        "last_verify_check_ulid": _latest_detail_check_ulid(details),
+        "last_repair_ulid": _latest_detail_repair_ulid(details),
+    }
+
+
+def _check_index_row(check: LedgerHashchainCheck) -> dict[str, Any]:
+    return {
+        "check_ulid": check.ulid,
+        "issue_ulid": check.issue_ulid,
+        "check_kind": check.check_kind,
+        "reason_code": check.reason_code,
+        "source_status": check.source_status,
+        "chain_key": check.chain_key,
+        "completed_at_utc": check.completed_at_utc,
+        "ok": bool(check.ok),
+        "checked_count": check.checked_count,
+        "anomaly_count": check.anomaly_count,
+        "failure_count": check.failure_count,
+        "routine_backup_allowed": bool(check.routine_backup_allowed),
+        "dirty_forensic_backup_only": bool(check.dirty_forensic_backup_only),
+    }
+
+
+def _repair_index_row(repair: LedgerHashchainRepair) -> dict[str, Any]:
+    return {
+        "repair_ulid": repair.ulid,
+        "issue_ulid": repair.issue_ulid,
+        "repair_kind": repair.repair_kind,
+        "reason_code": repair.reason_code,
+        "source_status": repair.source_status,
+        "chain_key": repair.chain_key,
+        "completed_at_utc": repair.completed_at_utc,
+        "source_check_ulid": repair.source_check_ulid,
+        "post_repair_check_ulid": repair.post_repair_check_ulid,
+        "affected_count": len(repair.affected_event_ulids_json or ()),
+    }
+
+
+def _get_issue_optional(issue_ulid: str | None) -> LedgerAdminIssue | None:
+    if not issue_ulid:
+        return None
+    return db.session.get(LedgerAdminIssue, issue_ulid)
+
+
+def _get_check_or_raise(check_ulid: str) -> LedgerHashchainCheck:
+    row = db.session.get(LedgerHashchainCheck, check_ulid)
+    if row is None:
+        raise LookupError(f"Ledger hashchain check not found: {check_ulid}")
+    return row
+
+
+def _get_repair_or_raise(repair_ulid: str) -> LedgerHashchainRepair:
+    row = db.session.get(LedgerHashchainRepair, repair_ulid)
+    if row is None:
+        raise LookupError(f"Ledger hashchain repair not found: {repair_ulid}")
+    return row
+
+
+def _latest_detail_check_ulid(
+    details: dict[str, Any] | None,
+) -> str | None:
+    if not isinstance(details, dict):
+        return None
+    last_verify = details.get("last_verify") or {}
+    if isinstance(last_verify, dict):
+        value = str(last_verify.get("check_ulid") or "").strip()
+        if value:
+            return value
+    value = str(details.get("check_ulid") or "").strip()
+    return value or None
+
+
+def _latest_detail_repair_ulid(
+    details: dict[str, Any] | None,
+) -> str | None:
+    if not isinstance(details, dict):
+        return None
+    last_repair = details.get("last_repair") or {}
+    if isinstance(last_repair, dict):
+        value = str(last_repair.get("repair_ulid") or "").strip()
+        if value:
+            return value
+    return None

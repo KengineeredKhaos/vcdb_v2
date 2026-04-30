@@ -148,6 +148,7 @@ class LedgerHashchainCheck(db.Model, ULIDPK, IsoTimestamps):
 
     request_id: Mapped[str] = mapped_column(String(64), nullable=False)
     actor_ulid: Mapped[str | None] = mapped_column(String(26), nullable=True)
+    issue_ulid: Mapped[str | None] = mapped_column(String(26), nullable=True)
     chain_key: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     started_at_utc: Mapped[str] = mapped_column(String(30), nullable=False)
@@ -180,6 +181,11 @@ class LedgerHashchainCheck(db.Model, ULIDPK, IsoTimestamps):
             "reason_code",
             "source_status",
         ),
+        Index(
+            "ix_ledger_hashchain_check_issue_created",
+            "issue_ulid",
+            "created_at_utc",
+        ),
     )
 
 
@@ -200,7 +206,12 @@ class LedgerHashchainRepair(db.Model, ULIDPK, IsoTimestamps):
     request_id: Mapped[str] = mapped_column(String(64), nullable=False)
     actor_ulid: Mapped[str | None] = mapped_column(String(26), nullable=True)
     issue_ulid: Mapped[str | None] = mapped_column(String(26), nullable=True)
-    check_ulid: Mapped[str | None] = mapped_column(String(26), nullable=True)
+    source_check_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
+    post_repair_check_ulid: Mapped[str | None] = mapped_column(
+        String(26), nullable=True
+    )
     chain_key: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     started_at_utc: Mapped[str] = mapped_column(String(30), nullable=False)
@@ -228,5 +239,13 @@ class LedgerHashchainRepair(db.Model, ULIDPK, IsoTimestamps):
         Index(
             "ix_ledger_hashchain_repair_issue",
             "issue_ulid",
+        ),
+        Index(
+            "ix_ledger_hashchain_repair_source_check",
+            "source_check_ulid",
+        ),
+        Index(
+            "ix_ledger_hashchain_repair_post_check",
+            "post_repair_check_ulid",
         ),
     )

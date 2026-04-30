@@ -18,6 +18,10 @@ def admin_client(app):
 def test_admin_index_renders(admin_client):
     resp = admin_client.get("/admin/")
     assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Ledger" in body
+    assert "Open Ledger Control Surface" in body
+    assert "Backup gate:" in body
 
 
 def test_admin_inbox_renders(admin_client):
