@@ -8,7 +8,6 @@
 
   <form method="post" action="{{ url_for('entity.wizard_person_core') }}" class="card" style="padding:1rem;max-width:42rem;">
     {{ form.hidden_tag() }}
-    {{ csrf_field() }}
     <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
 
     <div class="fld">

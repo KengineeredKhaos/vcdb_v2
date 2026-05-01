@@ -1,15 +1,12 @@
 {% extends "layout/base.html" %}
-{# templates/macros.html #}
-{% macro csrf_field() -%}
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-{%- endmacro %}
+
 {% block title %}Entity Wizard — Role{% endblock %}
 
 {% block content %}
   <h1>Step 4 — Initial domain role</h1>
   <p><strong>Entity:</strong> <span class="kbd">{{ entity_ulid }}</span></p>
 
-  <form method="post" {{ csrf_field() }} action="{{ url_for('entity.wizard_role_post', entity_ulid=entity_ulid) }}" class="card" style="padding:1rem;max-width:42rem;">
+  <form method="post" action="{{ url_for('entity.wizard_role_post', entity_ulid=entity_ulid) }}" class="card" style="padding:1rem;max-width:42rem;">
     {{ form.hidden_tag() }}
     <input type="hidden" name="wiz_nonce" value="{{ wiz_nonce }}">
 

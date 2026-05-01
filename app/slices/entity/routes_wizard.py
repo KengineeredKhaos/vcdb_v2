@@ -827,8 +827,19 @@ def wizard_next(entity_ulid: str):
         }
     )
 
+    view_entity_url = None
+    try:
+        view_entity_url = url_for(
+            "entity.view_entity",
+            entity_ulid=entity_ulid,
+            request_id=rid,
+        )
+    except Exception:
+        view_entity_url = None
+
     return render_template(
         "entity/wizard_next.html",
         entity_ulid=entity_ulid,
         actions=actions,
+        view_entity_url=view_entity_url,
     )

@@ -13,13 +13,11 @@
     {% endfor %}
     <p>
       <a class="btn" href="{{ url_for('entity.list_people') }}">People</a>
-      <a class="btn" href="{{ url_for('entity.list_orgs', entity_ulid=entity_ulid) }}">Organizations</a>
+      <a class="btn" href="{{ url_for('entity.list_orgs') }}">Organizations</a>
       <a class="btn" href="{{ url_for('entity.wizard_start', reset=1) }}">Start New</a>
     </p>
-    {% if has_endpoint('entity.view_entity') %}
-      <a class="btn" href="{{ url_for('entity.view_entity', entity_ulid=entity_ulid, request_id=request_id) }}">
-      View Entity Record
-      </a>
+    {% if view_entity_url %}
+      <a class="btn" href="{{ view_entity_url }}">View Entity Record</a>
     {% endif %}
 
   </div>
